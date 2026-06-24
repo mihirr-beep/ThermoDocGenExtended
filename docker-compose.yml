@@ -1,0 +1,33 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: "Thermo@123"
+      MYSQL_DATABASE: "test_plan_generator"
+    ports:
+      - "3307:3306"          # host 3307 -> container 3306 (avoid clashing with a local MySQL)
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pThermo@123"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build: .
+    environment:
+      MYSQL_HOST: "db"
+      MYSQL_PORT: "3306"
+      MYSQL_USER: "root"
+      MYSQL_PASSWORD: "Thermo@123"
+      MYSQL_DATABASE: "test_plan_generator"
+      APP_ENV: "development"
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

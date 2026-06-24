@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Page Not Found | Test Request Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.6s ease-out',
+                        'bounce-in': 'bounceIn 0.8s ease-out',
+                        'float': 'float 3s ease-in-out infinite',
+                        'slide-in-left': 'slideInLeft 0.8s ease-out',
+                        'slide-in-right': 'slideInRight 0.8s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' }
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' }
+                        },
+                        bounceIn: {
+                            '0%': { transform: 'scale(0.3)', opacity: '0' },
+                            '50%': { transform: 'scale(1.05)' },
+                            '70%': { transform: 'scale(0.9)' },
+                            '100%': { transform: 'scale(1)', opacity: '1' }
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-10px)' }
+                        },
+                        slideInLeft: {
+                            '0%': { transform: 'translateX(-100%)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' }
+                        },
+                        slideInRight: {
+                            '0%': { transform: 'translateX(100%)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        }
+
+        .glass-effect {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .illustration-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .error-card {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .floating-shapes {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        .floating-shapes:nth-child(2) {
+            animation-delay: -2s;
+        }
+
+        .floating-shapes:nth-child(3) {
+            animation-delay: -4s;
+        }
+
+        /* Compact layout for single page fit */
+        .error-compact {
+            min-height: 100vh;
+            padding: 0.5rem;
+        }
+
+        .error-compact .glass-effect {
+            margin: 0.5rem;
+        }
+
+        .error-compact .p-6 {
+            padding: 1rem;
+        }
+
+        .error-compact .mb-6 {
+            margin-bottom: 0.75rem;
+        }
+
+        .error-compact .mb-4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .error-compact .space-y-3>*+* {
+            margin-top: 0.5rem;
+        }
+
+        .error-compact .text-8xl {
+            font-size: 4rem;
+        }
+
+        .error-compact .text-2xl {
+            font-size: 1.25rem;
+        }
+
+        .error-compact .text-3xl {
+            font-size: 1.5rem;
+        }
+
+        .error-compact .text-6xl {
+            font-size: 3rem;
+        }
+
+        .error-compact .w-32 {
+            width: 6rem;
+        }
+
+        .error-compact .h-32 {
+            height: 6rem;
+        }
+
+        .error-compact .w-16 {
+            width: 4rem;
+        }
+
+        .error-compact .h-16 {
+            height: 4rem;
+        }
+
+        .error-compact .w-16 {
+            width: 3rem;
+        }
+
+        .error-compact .h-16 {
+            height: 3rem;
+        }
+
+        .error-compact .w-12 {
+            width: 2.5rem;
+        }
+
+        .error-compact .h-12 {
+            height: 2.5rem;
+        }
+
+        .error-compact .w-8 {
+            width: 1.5rem;
+        }
+
+        .error-compact .h-8 {
+            height: 1.5rem;
+        }
+
+        .error-compact .w-4 {
+            width: 1rem;
+        }
+
+        .error-compact .h-4 {
+            height: 1rem;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .glass-effect {
+                margin: 1rem;
+            }
+
+            .p-8 {
+                padding: 1.5rem;
+            }
+
+            .space-y-4>*+* {
+                margin-top: 0.75rem;
+            }
+
+            .space-y-2>*+* {
+                margin-top: 0.5rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .max-w-4xl {
+                max-width: 100%;
+            }
+
+            .p-8 {
+                padding: 1rem;
+            }
+
+            .text-4xl {
+                font-size: 1.875rem;
+            }
+
+            .text-xl {
+                font-size: 1.125rem;
+            }
+
+            .mb-8 {
+                margin-bottom: 1.5rem;
+            }
+
+            .mb-6 {
+                margin-bottom: 1rem;
+            }
+
+            .space-y-4>*+* {
+                margin-top: 0.5rem;
+            }
+        }
+
+        @media (max-height: 800px) {
+            .min-h-screen {
+                min-height: auto;
+                padding: 1rem 0;
+            }
+
+            .p-8 {
+                padding: 1rem;
+            }
+
+            .mb-8 {
+                margin-bottom: 1rem;
+            }
+
+            .mb-6 {
+                margin-bottom: 0.75rem;
+            }
+
+            .space-y-4>*+* {
+                margin-top: 0.5rem;
+            }
+
+            .space-y-2>*+* {
+                margin-top: 0.25rem;
+            }
+        }
+    </style>
+</head>
+
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4 overflow-hidden error-compact">
+    <!-- Floating Background Shapes -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-20 left-20 w-32 h-32 bg-white/5 rounded-full floating-shapes"></div>
+        <div class="absolute top-40 right-32 w-24 h-24 bg-white/5 rounded-full floating-shapes"></div>
+        <div class="absolute bottom-32 left-32 w-40 h-40 bg-white/5 rounded-full floating-shapes"></div>
+        <div class="absolute bottom-20 right-20 w-28 h-28 bg-white/5 rounded-full floating-shapes"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="relative w-full max-w-6xl animate-fade-in">
+        <div class="glass-effect rounded-3xl shadow-2xl overflow-hidden flex">
+            <!-- Left Side - Illustration -->
+            <div
+                class="hidden lg:flex lg:w-1/2 illustration-gradient items-center justify-center p-4 animate-slide-in-left">
+                <div class="text-center text-white">
+                    <!-- Animated 404 Illustration -->
+                    <div class="mb-4 animate-bounce-in">
+                        <div
+                            class="inline-flex items-center justify-center w-32 h-32 bg-white/20 backdrop-blur-sm rounded-full shadow-2xl mb-4 border border-white/30">
+                            <svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33">
+                                </path>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Error Number -->
+                    <div class="mb-4">
+                        <h1 class="text-8xl font-bold mb-2 tracking-tight animate-pulse-slow">404</h1>
+                        <p class="text-2xl text-white/90 font-semibold">Page Not Found</p>
+                    </div>
+
+                    <!-- Helpful Message -->
+                    <div class="space-y-2 text-left max-w-sm mx-auto">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <span class="text-white/90">The page you're looking for doesn't exist</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                    </path>
+                                </svg>
+                            </div>
+                            <span class="text-white/90">Return to the home page</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                            <span class="text-white/90">Check the URL for typos</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side - Content -->
+            <div class="w-full lg:w-1/2 p-4 animate-slide-in-right">
+                <!-- Mobile Brand Section (hidden on desktop) -->
+                <div class="lg:hidden text-center mb-4 animate-bounce-in">
+                    <div
+                        class="inline-flex items-center justify-center w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl shadow-2xl mb-4 border border-white/30">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33">
+                            </path>
+                        </svg>
+                    </div>
+                    <h1 class="text-6xl font-bold text-white mb-2 tracking-tight animate-pulse-slow">404</h1>
+                    <p class="text-white/80">Page Not Found</p>
+                </div>
+
+                <!-- Desktop Brand Section -->
+                <div class="hidden lg:block text-center mb-4 animate-bounce-in">
+                    <h1 class="text-3xl font-bold text-white mb-2 tracking-tight">Oops! Page Not Found</h1>
+                    <p class="text-white/80">The page you're looking for doesn't exist</p>
+                </div>
+
+                <!-- Error Content Card -->
+                <div class="error-card rounded-2xl shadow-2xl p-4 animate-slide-up">
+                    <!-- Error Message -->
+                    <div class="text-center mb-4">
+                        <div class="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-4">
+                            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
+                                </path>
+                            </svg>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-900 mb-2">Page Not Found</h2>
+                        <p class="text-gray-600 mb-4">Sorry, we couldn't find the page you're looking for. It might have
+                            been moved, deleted, or you entered the wrong URL.</p>
+                    </div>
+
+                    <!-- Error Details -->
+                    <div class="bg-gray-50 rounded-xl p-3 mb-4">
+                        <div class="flex items-start space-x-3">
+                            <div class="flex-shrink-0">
+                                <svg class="w-5 h-5 text-gray-400 mt-0.5" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">What happened?</h3>
+                                <ul class="text-sm text-gray-600 space-y-1">
+                                    <li>• The page may have been moved or deleted</li>
+                                    <li>• You may have typed the wrong URL</li>
+                                    <li>• The link you followed might be broken</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="space-y-2">
+                        {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('index') }}"
+                            class="w-full inline-flex items-center justify-center px-4 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-300 shadow-lg hover:shadow-xl">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                </path>
+                            </svg>
+                            Go to Home
+                        </a>
+                        {% else %}
+                        <a href="{{ url_for('auth.login') }}"
+                            class="w-full inline-flex items-center justify-center px-4 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-300 shadow-lg hover:shadow-xl">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1">
+                                </path>
+                            </svg>
+                            Login to Continue
+                        </a>
+                        {% endif %}
+
+                        <div class="flex space-x-3">
+                            <button onclick="history.back()"
+                                class="flex-1 inline-flex items-center justify-center px-4 py-3 border border-gray-300 text-sm font-medium rounded-xl text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-300">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                                </svg>
+                                Go Back
+                            </button>
+
+                            <button onclick="location.reload()"
+                                class="flex-1 inline-flex items-center justify-center px-4 py-3 border border-gray-300 text-sm font-medium rounded-xl text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-300">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Help Section -->
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <div class="text-center">
+                            <p class="text-sm text-gray-500 mb-3">Need help? Contact our support team</p>
+                            <a href="mailto:sohan.haspula@thermofisher.com"
+                                class="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                                    </path>
+                                </svg>
+                                Contact Support
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</body>
+
+</html>
