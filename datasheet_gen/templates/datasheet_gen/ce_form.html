@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}CE Datasheet - {{ tco_id }}{% endblock %}
+
+{% macro field(name, value='', placeholder='') %}
+<input type="text" name="{{ name }}" value="{{ value }}" placeholder="{{ placeholder }}"
+       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+{% endmacro %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">CE Test Data Sheet</h1>
+      <p class="text-sm text-gray-500">IEC-FRM-504 &middot; TCO {{ tco_id }} &middot; {{ test_name }}</p>
+    </div>
+    <a href="{{ url_for('assigned_test') }}" class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">&larr; Back</a>
+  </div>
+
+  <form id="ceForm" enctype="multipart/form-data" class="space-y-6">
+    <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
+    <input type="hidden" name="tco_id" value="{{ tco_id }}">
+
+    <!-- 1. EUT & TECHNICAL DETAILS -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">1. EUT &amp; Technical Details</h2>
+      <h3 class="text-sm font-semibold text-gray-600 mb-2">EUT Details</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Job Number</label>{{ field('job_number', prefill.job_number) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Name</label>{{ field('eut_name', prefill.eut_name) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Model/SKU Number</label>{{ field('eut_model', prefill.eut_model) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Serial Number</label>{{ field('eut_serial', prefill.eut_serial) }}</div>
+      </div>
+
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-gray-600">EUT Modification Record</h3>
+        <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+      <table class="w-full text-sm border border-gray-200">
+        <thead class="bg-gray-50"><tr>
+          <th class="p-2 text-left">State</th><th class="p-2 text-left">Description</th>
+          <th class="p-2 text-left">Fitted by</th><th class="p-2 text-left">Date</th><th></th></tr></thead>
+        <tbody id="rows-mod">
+          <tr>
+            <td class="p-1"><input name="mod_state[]" value="0" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="mod_description[]" value="Initial state" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="mod_fitted_by[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input type="date" name="mod_date[]" max="{{ today }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 2. MEASUREMENT UNCERTAINTY -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">2. Measurement Uncertainty</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Uncertainty - CE</label>{{ field('measurement_uncertainty', prefill.measurement_uncertainty) }}</div>
+      </div>
+    </section>
+
+    <!-- 3. FUNCTIONAL CHECK -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">3. Functional Check</h2>
+      <div><label class="block text-sm font-medium text-gray-700 mb-1">SOP Reference Number</label>{{ field('sop_reference', prefill.sop_reference) }}</div>
+    </section>
+
+    <!-- 4. TEST SPECIFICATION -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">4. Test Specification</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Product Standard</label>{{ field('product_standard', prefill.product_standard) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Basic Standard</label>{{ field('basic_standard', prefill.basic_standard) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Classification - Group</label>
+          <select name="classification_group" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">Select</option>
+            {% for o in ['Group 1','Group 2'] %}<option {{ 'selected' if prefill.classification_group==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Classification - Class</label>
+          <select name="classification_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">Select</option>
+            {% for o in ['Class A','Class B'] %}<option {{ 'selected' if prefill.classification_class==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Port</label>
+          <select name="test_port" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% for o in ['Power Line','Signal Line','Telecommunication Port'] %}<option {{ 'selected' if prefill.test_port==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Coupling Method</label>
+          <select name="coupling_method" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% for o in ['LISN','Custom'] %}<option {{ 'selected' if prefill.coupling_method==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Frequency Range</label>{{ field('frequency_range', prefill.frequency_range) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Resolution Bandwidth (Hz)</label>{{ field('resolution_bandwidth') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>
+          <select name="detector" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% for o in ['Quasi-peak & Average','Quasi-peak','Average','Peak'] %}<option {{ 'selected' if prefill.detector==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>{{ field('eut_modification_state', prefill.eut_modification_state) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
+          <select name="eut_configuration" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Input Voltage &amp; Frequency</label>{{ field('eut_voltage_frequency', prefill.eut_voltage_frequency) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ambient Temperature (&deg;C)</label>{{ field('ambient_temperature') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Relative Humidity (%)</label>{{ field('relative_humidity') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Date</label><input type="date" name="test_date" max="{{ today }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested by</label>{{ field('tested_by', prefill.tested_by) }}</div>
+      </div>
+    </section>
+
+    <!-- 5. DEVIATION -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">5. Deviation from the Standard</h2>
+      <textarea name="deviation" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.deviation }}</textarea>
+    </section>
+
+    <!-- 6. TEST LIMITS -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">6. Test Limits (dB&micro;V)</h2>
+      <table class="w-full text-sm border border-gray-200">
+        <thead class="bg-gray-50"><tr><th class="p-2 text-left">Frequency (MHz)</th><th class="p-2 text-left">Quasi-Peak</th><th class="p-2 text-left">Average</th></tr></thead>
+        <tbody>
+          <tr><td class="p-2">0.15 to 0.50</td>
+            <td class="p-1">{{ field('limit_qp_015_050') }}</td><td class="p-1">{{ field('limit_avg_015_050') }}</td></tr>
+          <tr><td class="p-2">0.50 to 30</td>
+            <td class="p-1">{{ field('limit_qp_050_30') }}</td><td class="p-1">{{ field('limit_avg_050_30') }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 7. TEST PROCEDURE -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Procedure</h2>
+      <textarea name="test_procedure" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.test_procedure }}</textarea>
+    </section>
+
+    <!-- 8. MEASUREMENT DATA -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">8. Measurement Data</h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
+          <input type="file" name="plot_line" accept="image/*" class="w-full text-sm"></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
+          <input type="file" name="plot_neutral" accept="image/*" class="w-full text-sm"></div>
+      </div>
+
+      {% for grp, label in [('line','Table 1 - Line (Quasi-peak &amp; Average)'), ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)')] %}
+      <div class="flex items-center justify-between mb-2 mt-4">
+        <h3 class="text-sm font-semibold text-gray-600">{{ label|safe }}</h3>
+        <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+      <table class="w-full text-xs border border-gray-200">
+        <thead class="bg-gray-50"><tr>
+          <th class="p-1">Freq (MHz)</th><th class="p-1">QP</th><th class="p-1">QP Limit</th><th class="p-1">QP Margin</th>
+          <th class="p-1">Avg</th><th class="p-1">Avg Limit</th><th class="p-1">Avg Margin</th><th></th></tr></thead>
+        <tbody id="rows-{{ grp }}">
+          <tr>
+            {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
+            <td class="p-1"><input name="{{ grp }}_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+            <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+          </tr>
+        </tbody>
+      </table>
+      {% endfor %}
+    </section>
+
+    <!-- 9. TEST SETUP PICTURES -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">9. Test Setup Pictures</h2>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (9&times;14 cm)</label>
+      <input type="file" name="photo_setup" accept="image/*" class="w-full text-sm">
+    </section>
+
+    <!-- 10. TEST EQUIPMENT USED -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-bold text-gray-900">10. Test Equipment Used</h2>
+        <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+      <table class="w-full text-sm border border-gray-200">
+        <thead class="bg-gray-50"><tr>
+          <th class="p-2 text-left">Equipment Name</th><th class="p-2 text-left">Make</th><th class="p-2 text-left">Model No.</th>
+          <th class="p-2 text-left">Serial No.</th><th class="p-2 text-left">Calibration Due</th><th></th></tr></thead>
+        <tbody id="rows-eq">
+          <tr>
+            <td class="p-1"><input name="eq_name[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_make[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_model[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 11. SOFTWARE USED -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">11. Software Used</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version') }}</div>
+      </div>
+    </section>
+
+    <!-- 12. RESULT -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">12. Result</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Result Class</label>
+          <select name="result_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">Select</option><option>A</option><option>B</option></select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Overall Result</label>
+          <select name="overall_result" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">Select</option><option>PASS</option><option>FAIL</option></select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Name)</label>{{ field('tested_by_name', prefill.tested_by) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Date)</label><input type="date" name="tested_by_date" max="{{ today }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Signature (image)</label>
+          <input type="file" name="signature" accept="image/*" class="w-full text-sm"></div>
+      </div>
+    </section>
+
+    <div class="flex justify-end gap-3 pb-12">
+      <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
+      <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
+    </div>
+  </form>
+</div>
+
+<!-- row templates -->
+<template id="tpl-mod"><tr>
+  <td class="p-1"><input name="mod_state[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input name="mod_description[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input name="mod_fitted_by[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input type="date" name="mod_date[]" max="{{ today }}" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+<template id="tpl-eq"><tr>
+  <td class="p-1"><input name="eq_name[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input name="eq_make[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input name="eq_model[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
+  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+<template id="tpl-line"><tr>
+  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
+  <td class="p-1"><input name="line_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+<template id="tpl-neutral"><tr>
+  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
+  <td class="p-1"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function addRow(type) {
+    const tpl = document.getElementById('tpl-' + type);
+    document.getElementById('rows-' + type).appendChild(tpl.content.cloneNode(true));
+  }
+  function delRow(btn) {
+    const tbody = btn.closest('tbody');
+    if (tbody.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+  }
+  document.getElementById('ceForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('genBtn');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating...';
+    fetch('/datasheet/ce/generate', { method: 'POST', body: new FormData(this) })
+      .then(r => r.json())
+      .then(res => {
+        btn.disabled = false; btn.textContent = orig;
+        if (res.success) {
+          showMessage('Datasheet generated. Downloading...', 'success');
+          window.location.href = res.download_url;
+        } else {
+          showMessage(res.message || 'Failed to generate datasheet.', 'error');
+        }
+      })
+      .catch(() => { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
+  });
+</script>
+{% endblock %}

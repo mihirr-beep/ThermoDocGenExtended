@@ -7,8 +7,11 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-# PyMySQL needs `cryptography` for MySQL 8's caching_sha2_password auth.
-RUN pip install --no-cache-dir cryptography
+# Extra deps not in requirements.txt:
+#  - cryptography: PyMySQL needs it for MySQL 8 caching_sha2_password auth
+#  - docxtpl: used by the datasheet_gen module to render the CE datasheet
+#  - Pillow: downscale large uploaded images so the generated .docx stays small
+RUN pip install --no-cache-dir cryptography docxtpl Pillow
 
 COPY . .
 

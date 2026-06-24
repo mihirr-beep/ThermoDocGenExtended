@@ -1,0 +1,373 @@
+{
+  "code": "VOLTAGEDIPS",
+  "name": "Voltage Dips & Interruptions",
+  "form": "IEC-FRM-505",
+  "sections": [
+    {
+      "title": "Voltage Dips & Interruptions",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
+    {
+      "title": "EUT DETAILS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "job_number",
+              "label": "Job Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_name",
+              "label": "EUT Name",
+              "input": "text"
+            },
+            {
+              "key": "eut_model_sku_number",
+              "label": "EUT Model/SKU Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_serial_number",
+              "label": "EUT Serial Number",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EUT MODIFICATION RECORD",
+      "items": [
+        {
+          "type": "table",
+          "key": "eut_modification_rec_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Modification state"
+            },
+            {
+              "key": "c1",
+              "label": "Description of Modification still fitted to EUT"
+            },
+            {
+              "key": "c2",
+              "label": "Modification fitted by"
+            },
+            {
+              "key": "c3",
+              "label": "Date modification fitted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FUNCTIONAL CHECK",
+      "items": [
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text"
+        }
+      ]
+    },
+    {
+      "title": "MONITORING PARAMETERS:",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "monitoring_parameters",
+          "label": "Monitoring Parameters"
+        }
+      ]
+    },
+    {
+      "title": "VOLTAGE DIPS & INTERRUPTIONS IMMUNITY TEST",
+      "items": []
+    },
+    {
+      "title": "TEST SPECIFICATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "product_standard",
+              "label": "Product Standard",
+              "input": "text"
+            },
+            {
+              "key": "basic_standard",
+              "label": "Basic Standard",
+              "input": "text"
+            },
+            {
+              "key": "immunity_test_requirement",
+              "label": "Immunity test requirement",
+              "input": "text"
+            },
+            {
+              "key": "test_port",
+              "label": "Test Port",
+              "input": "text"
+            },
+            {
+              "key": "test_level",
+              "label": "Test Level",
+              "input": "text"
+            },
+            {
+              "key": "test_level_2",
+              "label": "Test Level",
+              "input": "text"
+            },
+            {
+              "key": "test_level_3",
+              "label": "Test Level",
+              "input": "text"
+            },
+            {
+              "key": "number_of_voltage_dips_interruptions",
+              "label": "Number of Voltage Dips/Interruptions",
+              "input": "text"
+            },
+            {
+              "key": "time_between_dips_interruptions",
+              "label": "Time between Dips/Interruptions",
+              "input": "text"
+            },
+            {
+              "key": "phase_angle",
+              "label": "Phase Angle",
+              "input": "text"
+            },
+            {
+              "key": "test_mode",
+              "label": "Test Mode",
+              "input": "text"
+            },
+            {
+              "key": "eut_modification_state",
+              "label": "EUT Modification state (Refer 1.2)",
+              "input": "text"
+            },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "text"
+            },
+            {
+              "key": "eut_input_voltage_frequency",
+              "label": "EUT Input Voltage & Frequency",
+              "input": "text"
+            },
+            {
+              "key": "ambient_temperature",
+              "label": "Ambient Temperature (°C)",
+              "input": "text"
+            },
+            {
+              "key": "relative_humidity",
+              "label": "Relative Humidity (%)",
+              "input": "text"
+            },
+            {
+              "key": "test_date",
+              "label": "Test Date",
+              "input": "text"
+            },
+            {
+              "key": "tested_by",
+              "label": "Tested by",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DEVIATION FROM THE STANDARD",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
+      ]
+    },
+    {
+      "title": "TEST PROCEDURE",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "test_procedure",
+          "label": "Test Procedure"
+        }
+      ]
+    },
+    {
+      "title": "TEST OBSERVATION",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_observation_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Test Level % Ut"
+            },
+            {
+              "key": "c1",
+              "label": "Duration (cycles/periods)"
+            },
+            {
+              "key": "c2",
+              "label": "Observation"
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "key": "test_observation_rows_2",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Test Level % Ut"
+            },
+            {
+              "key": "c1",
+              "label": "Duration (cycles/periods)"
+            },
+            {
+              "key": "c2",
+              "label": "Observation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TEST SETUP PICTURES",
+      "items": [
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: Voltage Dips and short Interruptions test setup"
+        }
+      ]
+    },
+    {
+      "title": "TEST EQUIPMENT USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_equipment_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Equipment Name"
+            },
+            {
+              "key": "c1",
+              "label": "Make"
+            },
+            {
+              "key": "c2",
+              "label": "Model No."
+            },
+            {
+              "key": "c3",
+              "label": "Serial No."
+            },
+            {
+              "key": "c4",
+              "label": "Calibration Due"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SOFTWARE USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "software_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Software Name"
+            },
+            {
+              "key": "c1",
+              "label": "Software Version"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RESULT",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "required_performance_criteria",
+              "label": "Required Performance Criteria",
+              "input": "text"
+            },
+            {
+              "key": "required_performance_criteria_2",
+              "label": "Required Performance Criteria",
+              "input": "text"
+            },
+            {
+              "key": "required_performance_criteria_3",
+              "label": "Required Performance Criteria",
+              "input": "text"
+            },
+            {
+              "key": "met_performance_criteria",
+              "label": "Met Performance Criteria",
+              "input": "text"
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "tested_by_2",
+              "label": "Tested By",
+              "input": "text"
+            },
+            {
+              "key": "name",
+              "label": "Name",
+              "input": "text"
+            },
+            {
+              "key": "signature",
+              "label": "Signature",
+              "input": "image"
+            },
+            {
+              "key": "date",
+              "label": "Date",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

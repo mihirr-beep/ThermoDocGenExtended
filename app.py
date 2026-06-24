@@ -3381,6 +3381,10 @@ Please do not reply to this email.
     # Register enhanced test plan creation routes
     create_upload_routes(flask_app)
 
+    # Datasheet generation module (new, modular - see datasheet_gen/)
+    from datasheet_gen import register_datasheet_gen
+    register_datasheet_gen(flask_app)
+
     # Import and register authentication routes
     from auth_routes import auth_bp
     flask_app.register_blueprint(auth_bp)

@@ -1,0 +1,445 @@
+{
+  "code": "SURGE",
+  "name": "Surge",
+  "form": "IEC-FRM-510",
+  "sections": [
+    {
+      "title": "Surge",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
+    {
+      "title": "EUT DETAILS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "job_number",
+              "label": "Job Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_name",
+              "label": "EUT Name",
+              "input": "text"
+            },
+            {
+              "key": "eut_model_sku_number",
+              "label": "EUT Model/SKU Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_serial_number",
+              "label": "EUT Serial Number",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EUT MODIFICATION RECORD",
+      "items": [
+        {
+          "type": "table",
+          "key": "eut_modification_rec_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Modification state"
+            },
+            {
+              "key": "c1",
+              "label": "Description of Modification still fitted to EUT"
+            },
+            {
+              "key": "c2",
+              "label": "Modification fitted by"
+            },
+            {
+              "key": "c3",
+              "label": "Date modification fitted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FUNCTIONAL CHECK",
+      "items": [
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text"
+        }
+      ]
+    },
+    {
+      "title": "MONITORING PARAMETERS:",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "monitoring_parameters",
+          "label": "Monitoring Parameters"
+        }
+      ]
+    },
+    {
+      "title": "SURGE IMMUNITY TEST",
+      "items": []
+    },
+    {
+      "title": "TEST SPECIFICATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "product_standard",
+              "label": "Product Standard",
+              "input": "text"
+            },
+            {
+              "key": "basic_standard",
+              "label": "Basic Standard",
+              "input": "text"
+            },
+            {
+              "key": "immunity_test_requirement",
+              "label": "Immunity test requirement",
+              "input": "text"
+            },
+            {
+              "key": "test_port",
+              "label": "Test Port",
+              "input": "text"
+            },
+            {
+              "key": "test_voltage",
+              "label": "Test Voltage(kV)",
+              "input": "text"
+            },
+            {
+              "key": "test_voltage_2",
+              "label": "Test Voltage(kV)",
+              "input": "text"
+            },
+            {
+              "key": "coupling_phases",
+              "label": "Coupling Phases:",
+              "input": "text"
+            },
+            {
+              "key": "repetition_rate",
+              "label": "Repetition Rate",
+              "input": "text"
+            },
+            {
+              "key": "test_mode",
+              "label": "Test Mode",
+              "input": "text"
+            },
+            {
+              "key": "eut_modification_state",
+              "label": "EUT Modification state \n(Refer 1.2)",
+              "input": "text"
+            },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "text"
+            },
+            {
+              "key": "eut_input_voltage_frequency",
+              "label": "EUT Input Voltage & Frequency",
+              "input": "text"
+            },
+            {
+              "key": "ambient_temperature",
+              "label": "Ambient Temperature (°C)",
+              "input": "text"
+            },
+            {
+              "key": "relative_humidity",
+              "label": "Relative Humidity (%)",
+              "input": "text"
+            },
+            {
+              "key": "test_date",
+              "label": "Test Date",
+              "input": "text"
+            },
+            {
+              "key": "tested_by",
+              "label": "Tested by",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DEVIATION FROM THE STANDARD",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
+      ]
+    },
+    {
+      "title": "TEST PROCEDURE",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "test_procedure",
+          "label": "Test Procedure"
+        }
+      ]
+    },
+    {
+      "title": "TEST OBSERVATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "test_level",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "test_level_2",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "test_level_3",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "f_0_5",
+              "label": "+0.5",
+              "input": "text"
+            },
+            {
+              "key": "f_0_5_2",
+              "label": "-0.5",
+              "input": "text"
+            },
+            {
+              "key": "f_1_0",
+              "label": "+1.0",
+              "input": "text"
+            },
+            {
+              "key": "f_1_0_2",
+              "label": "-1.0",
+              "input": "text"
+            },
+            {
+              "key": "f_2_0",
+              "label": "+2.0",
+              "input": "text"
+            },
+            {
+              "key": "f_2_0_2",
+              "label": "-2.0",
+              "input": "text"
+            },
+            {
+              "key": "f_4_0",
+              "label": "+4.0",
+              "input": "text"
+            },
+            {
+              "key": "f_4_0_2",
+              "label": "-4.0",
+              "input": "text"
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "test_level_4",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "test_level_5",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "test_level_6",
+              "label": "Test Level (kV)",
+              "input": "text"
+            },
+            {
+              "key": "f_0_5_3",
+              "label": "+0.5",
+              "input": "text"
+            },
+            {
+              "key": "f_0_5_4",
+              "label": "-0.5",
+              "input": "text"
+            },
+            {
+              "key": "f_1_0_3",
+              "label": "+1.0",
+              "input": "text"
+            },
+            {
+              "key": "f_1_0_4",
+              "label": "-1.0",
+              "input": "text"
+            },
+            {
+              "key": "f_2_0_3",
+              "label": "+2.0",
+              "input": "text"
+            },
+            {
+              "key": "f_2_0_4",
+              "label": "-2.0",
+              "input": "text"
+            },
+            {
+              "key": "f_4_0_3",
+              "label": "+4.0",
+              "input": "text"
+            },
+            {
+              "key": "f_4_0_4",
+              "label": "-4.0",
+              "input": "text"
+            }
+          ]
+        },
+        {
+          "type": "static_table"
+        }
+      ]
+    },
+    {
+      "title": "TEST SETUP PICTURES",
+      "items": [
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: Surge test setup - Power Line"
+        },
+        {
+          "type": "image",
+          "key": "img_photo_2",
+          "label": "Photo 2: Surge test setup - Signal Line"
+        }
+      ]
+    },
+    {
+      "title": "TEST EQUIPMENT USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_equipment_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Equipment Name"
+            },
+            {
+              "key": "c1",
+              "label": "Make"
+            },
+            {
+              "key": "c2",
+              "label": "Model No."
+            },
+            {
+              "key": "c3",
+              "label": "Serial No."
+            },
+            {
+              "key": "c4",
+              "label": "Calibration Due"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SOFTWARE USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "software_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Software Name"
+            },
+            {
+              "key": "c1",
+              "label": "Software Version"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RESULT",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "required_performance_criteria",
+              "label": "Required Performance Criteria",
+              "input": "text"
+            },
+            {
+              "key": "met_performance_criteria",
+              "label": "Met Performance Criteria",
+              "input": "text"
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "tested_by_2",
+              "label": "Tested By",
+              "input": "text"
+            },
+            {
+              "key": "name",
+              "label": "Name",
+              "input": "text"
+            },
+            {
+              "key": "signature",
+              "label": "Signature",
+              "input": "image"
+            },
+            {
+              "key": "date",
+              "label": "Date",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

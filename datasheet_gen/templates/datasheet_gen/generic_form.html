@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ schema.name }} Datasheet - {{ tco_id }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ schema.name }} Test Data Sheet</h1>
+      <p class="text-sm text-gray-500">{{ schema.form }} &middot; TCO {{ tco_id }} &middot; {{ test_name }}</p>
+    </div>
+    <a href="{{ url_for('assigned_test') }}" class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">&larr; Back</a>
+  </div>
+
+  <form id="dsForm" enctype="multipart/form-data" class="space-y-6">
+    <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
+    <input type="hidden" name="tco_id" value="{{ tco_id }}">
+
+    {% for sec in schema.sections %}
+      {% if sec['items'] %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-lg font-bold text-gray-900 mb-4">{{ loop.index }}. {{ sec.title|title }}</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {% for it in sec['items'] %}
+
+            {% if it.type == 'field' and it.input == 'image' %}
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }} (image)</label>
+                <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm">
+              </div>
+
+            {% elif it.type == 'field' %}
+              {% set isdate = 'date' in it.key|lower %}
+              {% set isdue = 'due' in it.key|lower or 'cal' in it.key|lower %}
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
+                {% if isdate %}
+                  <input type="date" name="{{ it.key }}" {% if not isdue %}max="{{ today }}"{% endif %}
+                         value="{{ prefill.get(it.key, '') }}"
+                         class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                {% else %}
+                  <input type="text" name="{{ it.key }}" value="{{ prefill.get(it.key, '') }}"
+                         class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                {% endif %}
+              </div>
+
+            {% elif it.type == 'textarea' %}
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
+                <textarea name="{{ it.key }}" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.get(it.key, '') }}</textarea>
+              </div>
+
+            {% elif it.type == 'image' %}
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
+                <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm">
+              </div>
+
+            {% elif it.type == 'table' %}
+              <div class="md:col-span-2">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-semibold text-gray-600">Rows</span>
+                  <button type="button" onclick="addRow('{{ it.key }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+                </div>
+                <div class="overflow-x-auto">
+                <table class="w-full text-xs border border-gray-200">
+                  <thead class="bg-gray-50"><tr>
+                    {% for col in it['columns'] %}<th class="p-1 text-left">{{ col.label }}</th>{% endfor %}<th></th>
+                  </tr></thead>
+                  <tbody id="rows-{{ it.key }}">
+                    <tr>
+                      {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+                      <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+                <template id="tpl-{{ it.key }}"><tr>
+                  {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+                  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+                </tr></template>
+              </div>
+
+            {% elif it.type == 'static_table' %}
+              <div class="md:col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                This test has a complex results table — its grid is included (empty) in the generated Word document; fill it directly there.
+              </div>
+            {% endif %}
+
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    {% endfor %}
+
+    <div class="flex justify-end gap-3 pb-12">
+      <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
+      <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
+    </div>
+  </form>
+</div>
+
+{% block extra_js %}
+<script>
+  function addRow(key) {
+    var tpl = document.getElementById('tpl-' + key);
+    document.getElementById('rows-' + key).appendChild(tpl.content.cloneNode(true));
+  }
+  function delRow(btn) {
+    var tb = btn.closest('tbody');
+    if (tb.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+  }
+  document.getElementById('dsForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('genBtn'); var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating...';
+    fetch('/datasheet/g/{{ code }}/generate', { method: 'POST', body: new FormData(this) })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = orig;
+        if (res.success) { showMessage('Datasheet generated. Downloading...', 'success'); window.location.href = res.download_url; }
+        else { showMessage(res.message || 'Failed to generate datasheet.', 'error'); }
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
+  });
+</script>
+{% endblock %}
+{% endblock %}

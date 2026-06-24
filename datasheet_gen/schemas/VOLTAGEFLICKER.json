@@ -1,0 +1,367 @@
+{
+  "code": "VOLTAGEFLICKER",
+  "name": "Flicker",
+  "form": "IEC-FRM-506",
+  "sections": [
+    {
+      "title": "Flicker",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
+    {
+      "title": "EUT DETAILS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "job_number",
+              "label": "Job Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_name",
+              "label": "EUT Name",
+              "input": "text"
+            },
+            {
+              "key": "eut_model_sku_number",
+              "label": "EUT Model/SKU Number",
+              "input": "text"
+            },
+            {
+              "key": "eut_serial_number",
+              "label": "EUT Serial Number",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EUT MODIFICATION RECORD",
+      "items": [
+        {
+          "type": "table",
+          "key": "eut_modification_rec_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Modification state"
+            },
+            {
+              "key": "c1",
+              "label": "Description of Modification still fitted to EUT"
+            },
+            {
+              "key": "c2",
+              "label": "Modification fitted by"
+            },
+            {
+              "key": "c3",
+              "label": "Date modification fitted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MEASUREMENT UNCERTAINITY",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "name_of_the_test",
+              "label": "Name of the Test",
+              "input": "text"
+            },
+            {
+              "key": "voltage_fluctuation_and_flicker_emission",
+              "label": "Voltage Fluctuation and Flicker Emission",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FUNCTIONAL CHECK",
+      "items": [
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text"
+        }
+      ]
+    },
+    {
+      "title": "VOLTAGE FLUCTUATION AND FLICKER EMISSION TEST",
+      "items": []
+    },
+    {
+      "title": "TEST SPECIFICATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "product_standard",
+              "label": "Product Standard",
+              "input": "text"
+            },
+            {
+              "key": "basic_standard",
+              "label": "Basic Standard",
+              "input": "text"
+            },
+            {
+              "key": "short_term_flicker_measurement_time",
+              "label": "Short Term Flicker Measurement Time (Pst)",
+              "input": "text"
+            },
+            {
+              "key": "long_term_flicker_measurement_time",
+              "label": "Long Term Flicker Measurement Time (Plt)",
+              "input": "text"
+            },
+            {
+              "key": "test_mode",
+              "label": "Test Mode",
+              "input": "text"
+            },
+            {
+              "key": "eut_modification_state",
+              "label": "EUT Modification state (Refer 1.2)",
+              "input": "text"
+            },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "text"
+            },
+            {
+              "key": "eut_input_voltage_frequency",
+              "label": "EUT Input Voltage & Frequency",
+              "input": "text"
+            },
+            {
+              "key": "ambient_temperature",
+              "label": "Ambient Temperature (°C)",
+              "input": "text"
+            },
+            {
+              "key": "relative_humidity",
+              "label": "Relative Humidity (%)",
+              "input": "text"
+            },
+            {
+              "key": "test_date",
+              "label": "Test Date",
+              "input": "text"
+            },
+            {
+              "key": "tested_by",
+              "label": "Tested by",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DEVIATION FROM THE STANDARD",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
+      ]
+    },
+    {
+      "title": "TEST LIMITS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "flicker_measurement",
+              "label": "Flicker Measurement",
+              "input": "text"
+            },
+            {
+              "key": "pst",
+              "label": "Pst",
+              "input": "text"
+            },
+            {
+              "key": "plt",
+              "label": "Plt",
+              "input": "text"
+            },
+            {
+              "key": "tmax",
+              "label": "Tmax (s)",
+              "input": "text"
+            },
+            {
+              "key": "dmax",
+              "label": "dmax (%)",
+              "input": "text"
+            },
+            {
+              "key": "dc",
+              "label": "dc (%)",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TEST PROCEDURE",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "test_procedure",
+          "label": "Test Procedure"
+        }
+      ]
+    },
+    {
+      "title": "MEASUREMENT DATA",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "flicker_measurement_2",
+              "label": "Flicker Measurement",
+              "input": "text"
+            },
+            {
+              "key": "pst_2",
+              "label": "Pst",
+              "input": "text"
+            },
+            {
+              "key": "plt_2",
+              "label": "Plt",
+              "input": "text"
+            },
+            {
+              "key": "tmax_2",
+              "label": "Tmax (s)",
+              "input": "text"
+            },
+            {
+              "key": "dmax_2",
+              "label": "dmax (%)",
+              "input": "text"
+            },
+            {
+              "key": "dc_2",
+              "label": "dc (%)",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TEST SETUP PICTURES",
+      "items": [
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: Voltage fluctuations & flicker emissions test setup_Power Port"
+        }
+      ]
+    },
+    {
+      "title": "TEST EQUIPMENT USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_equipment_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Equipment Name"
+            },
+            {
+              "key": "c1",
+              "label": "Make"
+            },
+            {
+              "key": "c2",
+              "label": "Model No."
+            },
+            {
+              "key": "c3",
+              "label": "Serial No."
+            },
+            {
+              "key": "c4",
+              "label": "Calibration Due"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SOFTWARE USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "software_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Software Name"
+            },
+            {
+              "key": "c1",
+              "label": "Software Version"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RESULT",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "tested_by_2",
+              "label": "Tested By",
+              "input": "text"
+            },
+            {
+              "key": "name",
+              "label": "Name",
+              "input": "text"
+            },
+            {
+              "key": "signature",
+              "label": "Signature",
+              "input": "image"
+            },
+            {
+              "key": "date",
+              "label": "Date",
+              "input": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

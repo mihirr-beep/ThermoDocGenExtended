@@ -486,20 +486,21 @@
                                     <span class="text-[10px] text-gray-400">No action required</span>
                                     {% else %}
                                     <div class="flex flex-col gap-2">
-                                        {% if 'surge' in ((assignment.test_name or '') | lower) and app_environment != 'production' %}
+                                        {% set _tn = (assignment.test_name or '')|upper %}
+                                        {% if _tn == 'CE' %}
                                         <button type="button" data-test-name="{{ assignment.test_name|e }}"
                                             data-tco-id="{{ plan.tco_id|e }}"
                                             data-plan-id="{{ plan.id if plan.id is not none else '' }}"
-                                            data-test-name-lower="{{ ((assignment.test_name or '') | lower)|e }}"
                                             data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
-                                            data-engineer-name="{{ (assignment.test_person_name or plan.assigned_engineer_name or '')|e }}"
-                                            data-job-number="{{ (plan.job_number or '')|e }}"
-                                            data-product-name="{{ (plan.product_name or plan.name or '')|e }}"
-                                            data-open-surge-datasheet="true"
-                                            onclick="openSurgeTestDataSheetFromData(this); return false;"
-                                            class="js-open-surge-datasheet inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            onclick="openCETestDataSheetFromData(this); return false;"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Generate Datasheet
                                         </button>
+                                        {% elif _tn in ['CRF','EFT','ESD','HARMONIC','PFMF','RE','RS_RI','SURGE','VOLTAGEDIPS','VOLTAGEFLICKER'] %}
+                                        <a href="/datasheet/g/{{ _tn }}/{{ assignment.id }}/form"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Generate Datasheet
+                                        </a>
                                         {% else %}
                                         <button type="button" data-assignment-id="{{ assignment.id }}"
                                             data-test-name="{{ assignment.test_name }}" data-tco-id="{{ plan.tco_id }}"
@@ -3550,6 +3551,15 @@
     }
 
     window.openSurgeTestDataSheetFromData = openSurgeTestDataSheetFromData;
+
+    function openCETestDataSheetFromData(button) {
+        if (!button) return false;
+        var aid = button.dataset.assignmentId || '';
+        if (!aid) { alert('Missing assignment id.'); return false; }
+        window.location.href = '/datasheet/ce/' + aid + '/form';
+        return false;
+    }
+    window.openCETestDataSheetFromData = openCETestDataSheetFromData;
     window.openTestDataSheetFromData = openTestDataSheetFromData;
 
     function openTestDataSheet(testName, tcoId, planId, testNameLower, assignmentId = null, assignedEngineerName = null, jobNumber = null, productName = null) {
@@ -3852,12 +3862,18 @@
         data.test_plan_id = currentTestPlanId;
         data.tco_id = currentTcoId;
 
-        // TODO: Send to backend API endpoint
-        console.log('Submitting CE Test Data:', data);
-
-        // For now, just show success message
-        alert('Test data saved successfully! (Backend integration pending)');
-        closeCETestDataSheet();
+        // Send to backend -> generate the CE datasheet .docx
+        fetch('/datasheet/ce/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ form_data: data, assignment_id: currentAssignmentId, tco_id: currentTcoId })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) { window.location.href = res.download_url; closeCETestDataSheet(); }
+                else { alert(res.message || 'Failed to generate datasheet.'); }
+            })
+            .catch(function () { alert('Network error while generating datasheet.'); });
     }
 
     // Close modal when clicking outside
