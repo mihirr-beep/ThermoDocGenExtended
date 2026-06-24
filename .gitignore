@@ -54,5 +54,4 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-
 node_modules/

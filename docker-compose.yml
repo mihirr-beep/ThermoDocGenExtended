@@ -25,6 +25,8 @@ services:
       APP_ENV: "development"
     ports:
       - "5000:5000"
+    volumes:
+      - .:/app                 # live code: edits + new scripts appear in the container (dev)
     depends_on:
       db:
         condition: service_healthy
