@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block title %}{{ schema.name }} Datasheet - {{ tco_id }}{% endblock %}
 
+{% macro render_field(f, prefill, today) %}
+  {% if f.input == 'image' %}
+    <div class="md:col-span-2">
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }} (image)</label>
+      <input type="file" name="{{ f.key }}" accept="image/*" class="w-full text-sm">
+    </div>
+  {% else %}
+    {% set isdate = 'date' in f.key|lower %}
+    {% set isdue = 'due' in f.key|lower or 'cal' in f.key|lower %}
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
+      {% if isdate %}
+        <input type="date" name="{{ f.key }}" {% if not isdue %}max="{{ today }}"{% endif %}
+               value="{{ prefill.get(f.key, '') }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+      {% else %}
+        <input type="text" name="{{ f.key }}" value="{{ prefill.get(f.key, '') }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+      {% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="max-w-6xl mx-auto">
   <div class="flex items-center justify-between mb-4">
@@ -15,33 +38,22 @@
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
+    {% set ns = namespace(n=0) %}
     {% for sec in schema.sections %}
       {% if sec['items'] %}
+      {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 class="text-lg font-bold text-gray-900 mb-4">{{ loop.index }}. {{ sec.title|title }}</h2>
+        <h2 class="text-lg font-bold text-gray-900 mb-4">{{ ns.n }}. {{ sec.title }}</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           {% for it in sec['items'] %}
 
-            {% if it.type == 'field' and it.input == 'image' %}
-              <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }} (image)</label>
-                <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm">
-              </div>
+            {% if it.type == 'fields' %}
+              {% for f in it['fields'] %}
+                {{ render_field(f, prefill, today) }}
+              {% endfor %}
 
             {% elif it.type == 'field' %}
-              {% set isdate = 'date' in it.key|lower %}
-              {% set isdue = 'due' in it.key|lower or 'cal' in it.key|lower %}
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
-                {% if isdate %}
-                  <input type="date" name="{{ it.key }}" {% if not isdue %}max="{{ today }}"{% endif %}
-                         value="{{ prefill.get(it.key, '') }}"
-                         class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                {% else %}
-                  <input type="text" name="{{ it.key }}" value="{{ prefill.get(it.key, '') }}"
-                         class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                {% endif %}
-              </div>
+              {{ render_field(it, prefill, today) }}
 
             {% elif it.type == 'textarea' %}
               <div class="md:col-span-2">

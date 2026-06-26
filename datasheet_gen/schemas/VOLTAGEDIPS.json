@@ -8,11 +8,11 @@
       "items": []
     },
     {
-      "title": "EUT AND TECHNICAL DETAILS",
+      "title": "EUT And Technical Details",
       "items": []
     },
     {
-      "title": "EUT DETAILS",
+      "title": "EUT Details",
       "items": [
         {
           "type": "fields",
@@ -42,7 +42,7 @@
       ]
     },
     {
-      "title": "EUT MODIFICATION RECORD",
+      "title": "EUT Modification Record",
       "items": [
         {
           "type": "table",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "title": "FUNCTIONAL CHECK",
+      "title": "Functional Check",
       "items": [
         {
           "type": "field",
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "title": "MONITORING PARAMETERS:",
+      "title": "Monitoring Parameters",
       "items": [
         {
           "type": "textarea",
@@ -90,11 +90,11 @@
       ]
     },
     {
-      "title": "VOLTAGE DIPS & INTERRUPTIONS IMMUNITY TEST",
+      "title": "Voltage Dips & Interruptions Immunity Test",
       "items": []
     },
     {
-      "title": "TEST SPECIFICATION",
+      "title": "Test Specification",
       "items": [
         {
           "type": "fields",
@@ -194,7 +194,7 @@
       ]
     },
     {
-      "title": "DEVIATION FROM THE STANDARD",
+      "title": "Deviation From The Standard",
       "items": [
         {
           "type": "textarea",
@@ -204,7 +204,7 @@
       ]
     },
     {
-      "title": "TEST PROCEDURE",
+      "title": "Test Procedure",
       "items": [
         {
           "type": "textarea",
@@ -214,7 +214,7 @@
       ]
     },
     {
-      "title": "TEST OBSERVATION",
+      "title": "Test Observation",
       "items": [
         {
           "type": "table",
@@ -255,7 +255,7 @@
       ]
     },
     {
-      "title": "TEST SETUP PICTURES",
+      "title": "Test Setup Pictures",
       "items": [
         {
           "type": "image",
@@ -265,7 +265,7 @@
       ]
     },
     {
-      "title": "TEST EQUIPMENT USED",
+      "title": "Test Equipment Used",
       "items": [
         {
           "type": "table",
@@ -296,7 +296,7 @@
       ]
     },
     {
-      "title": "SOFTWARE USED",
+      "title": "Software Used",
       "items": [
         {
           "type": "table",
@@ -315,7 +315,7 @@
       ]
     },
     {
-      "title": "RESULT",
+      "title": "Result",
       "items": [
         {
           "type": "fields",

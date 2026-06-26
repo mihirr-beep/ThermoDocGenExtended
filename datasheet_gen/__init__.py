@@ -5,10 +5,14 @@ Self-contained: new module only. Register it on the Flask app with one call
 """
 from .routes import datasheet_gen_bp
 from .generic_routes import datasheet_generic_bp
+from .schema import ensure_datasheet_columns
 
 
 def register_datasheet_gen(app):
     """Mount the datasheet generation blueprints (bespoke CE + generic engine)."""
     app.register_blueprint(datasheet_gen_bp)
     app.register_blueprint(datasheet_generic_bp)
+    # Ensure planner_entries has the datasheet/report columns this feature writes
+    # (app.py's raw table creator predates them; see schema.py for the why).
+    ensure_datasheet_columns(app)
     return app

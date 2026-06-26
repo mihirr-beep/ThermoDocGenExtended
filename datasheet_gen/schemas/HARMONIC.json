@@ -8,11 +8,11 @@
       "items": []
     },
     {
-      "title": "EUT AND TECHNICAL DETAILS",
+      "title": "EUT And Technical Details",
       "items": []
     },
     {
-      "title": "EUT DETAILS",
+      "title": "EUT Details",
       "items": [
         {
           "type": "fields",
@@ -42,7 +42,7 @@
       ]
     },
     {
-      "title": "EUT MODIFICATION RECORD",
+      "title": "EUT Modification Record",
       "items": [
         {
           "type": "table",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "title": "MEASUREMENT UNCERTAINITY",
+      "title": "Measurement Uncertainity",
       "items": [
         {
           "type": "fields",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "title": "FUNCTIONAL CHECK",
+      "title": "Functional Check",
       "items": [
         {
           "type": "field",
@@ -100,11 +100,11 @@
       ]
     },
     {
-      "title": "HARMONIC CURRENT EMISSION TEST",
+      "title": "Harmonic Current Emission Test",
       "items": []
     },
     {
-      "title": "TEST SPECIFICATION",
+      "title": "Test Specification",
       "items": [
         {
           "type": "fields",
@@ -151,7 +151,7 @@
             },
             {
               "key": "eut_modification_state",
-              "label": "EUT Modification state \n(Refer 1.2)",
+              "label": "EUT Modification state (Refer 1.2)",
               "input": "text"
             },
             {
@@ -189,7 +189,7 @@
       ]
     },
     {
-      "title": "DEVIATION FROM THE STANDARD",
+      "title": "Deviation From The Standard",
       "items": [
         {
           "type": "textarea",
@@ -199,7 +199,7 @@
       ]
     },
     {
-      "title": "TEST LIMITS",
+      "title": "Test Limits",
       "items": [
         {
           "type": "table",
@@ -232,7 +232,7 @@
       ]
     },
     {
-      "title": "TEST PROCEDURE",
+      "title": "Test Procedure",
       "items": [
         {
           "type": "textarea",
@@ -242,7 +242,7 @@
       ]
     },
     {
-      "title": "MEASUREMENT DATA",
+      "title": "Measurement Data",
       "items": [
         {
           "type": "static_table"
@@ -250,7 +250,7 @@
       ]
     },
     {
-      "title": "TEST SETUP PICTURES",
+      "title": "Test Setup Pictures",
       "items": [
         {
           "type": "image",
@@ -260,7 +260,7 @@
       ]
     },
     {
-      "title": "TEST EQUIPMENT USED",
+      "title": "Test Equipment Used",
       "items": [
         {
           "type": "table",
@@ -291,7 +291,7 @@
       ]
     },
     {
-      "title": "SOFTWARE USED",
+      "title": "Software Used",
       "items": [
         {
           "type": "table",
@@ -310,7 +310,7 @@
       ]
     },
     {
-      "title": "RESULT",
+      "title": "Result",
       "items": [
         {
           "type": "fields",

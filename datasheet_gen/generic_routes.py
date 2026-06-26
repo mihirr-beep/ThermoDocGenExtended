@@ -29,20 +29,19 @@ def _valid(code):
 def _future(schema, form_data):
     today = datetime.now().date()
     bad = []
-    for sec in schema["sections"]:
-        for it in sec["items"]:
-            if it["type"] != "field":
-                continue
-            k = it["key"].lower()
-            if "date" in k and not any(x in k for x in ("due", "cal")):
-                v = form_data.get(it["key"])
-                v = v.strip() if isinstance(v, str) else ""
-                if v:
-                    try:
-                        if datetime.strptime(v, "%Y-%m-%d").date() > today:
-                            bad.append(it["label"])
-                    except ValueError:
-                        pass
+    for f in gs.iter_scalar_fields(schema):
+        if f.get("input") == "image":
+            continue
+        k = f["key"].lower()
+        if "date" in k and not any(x in k for x in ("due", "cal")):
+            v = form_data.get(f["key"])
+            v = v.strip() if isinstance(v, str) else ""
+            if v:
+                try:
+                    if datetime.strptime(v, "%Y-%m-%d").date() > today:
+                        bad.append(f.get("label", f["key"]))
+                except ValueError:
+                    pass
     out = []
     for x in bad:
         if x not in out:
