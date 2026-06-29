@@ -79,10 +79,12 @@
                     {% for col in it['columns'] %}<th class="p-1 text-left">{{ col.label }}</th>{% endfor %}<th></th>
                   </tr></thead>
                   <tbody id="rows-{{ it.key }}">
+                    {% for row in (it['rows'] or [None]) %}
                     <tr>
-                      {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+                      {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
                       <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
                     </tr>
+                    {% endfor %}
                   </tbody>
                 </table>
                 </div>
