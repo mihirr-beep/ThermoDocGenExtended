@@ -245,7 +245,8 @@
       "title": "Measurement Data",
       "items": [
         {
-          "type": "static_table"
+          "type": "static_table",
+          "label": "Average / Maximum Harmonic Current Results (fixed harmonic-order grid)"
         }
       ]
     },

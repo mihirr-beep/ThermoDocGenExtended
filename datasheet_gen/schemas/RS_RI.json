@@ -232,7 +232,55 @@
       "title": "Test Observation",
       "items": [
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_rs",
+          "label": "Frequency bands × Polarization",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Frequency (MHz)"
+            },
+            {
+              "key": "c1",
+              "label": "Test level (V/m)"
+            },
+            {
+              "key": "c2",
+              "label": "Dwell time (s)"
+            },
+            {
+              "key": "c3",
+              "label": "H-Pol 0°"
+            },
+            {
+              "key": "c4",
+              "label": "H-Pol 90°"
+            },
+            {
+              "key": "c5",
+              "label": "H-Pol 180°"
+            },
+            {
+              "key": "c6",
+              "label": "H-Pol 270°"
+            },
+            {
+              "key": "c7",
+              "label": "V-Pol 0°"
+            },
+            {
+              "key": "c8",
+              "label": "V-Pol 90°"
+            },
+            {
+              "key": "c9",
+              "label": "V-Pol 180°"
+            },
+            {
+              "key": "c10",
+              "label": "V-Pol 270°"
+            }
+          ]
         }
       ]
     },

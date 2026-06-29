@@ -327,7 +327,79 @@
           ]
         },
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_surge",
+          "label": "Signal Lines × Test Level (kV) — CM/DM",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Name of the signal Line"
+            },
+            {
+              "key": "c1",
+              "label": "+0.25 CM"
+            },
+            {
+              "key": "c2",
+              "label": "+0.25 DM"
+            },
+            {
+              "key": "c3",
+              "label": "-0.25 CM"
+            },
+            {
+              "key": "c4",
+              "label": "-0.25 DM"
+            },
+            {
+              "key": "c5",
+              "label": "+0.5 CM"
+            },
+            {
+              "key": "c6",
+              "label": "+0.5 DM"
+            },
+            {
+              "key": "c7",
+              "label": "-0.5 CM"
+            },
+            {
+              "key": "c8",
+              "label": "-0.5 DM"
+            },
+            {
+              "key": "c9",
+              "label": "+1.0 CM"
+            },
+            {
+              "key": "c10",
+              "label": "+1.0 DM"
+            },
+            {
+              "key": "c11",
+              "label": "-1.0 CM"
+            },
+            {
+              "key": "c12",
+              "label": "-1.0 DM"
+            },
+            {
+              "key": "c13",
+              "label": "+2.0 CM"
+            },
+            {
+              "key": "c14",
+              "label": "+2.0 DM"
+            },
+            {
+              "key": "c15",
+              "label": "-2.0 CM"
+            },
+            {
+              "key": "c16",
+              "label": "-2.0 DM"
+            }
+          ]
         }
       ]
     },

@@ -207,7 +207,47 @@
       "title": "Test Observation",
       "items": [
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_pfmf",
+          "label": "Field Strength × Coil Orientation",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Field Strength (A/m)"
+            },
+            {
+              "key": "c1",
+              "label": "Power Frequency"
+            },
+            {
+              "key": "c2",
+              "label": "Proximity 0°"
+            },
+            {
+              "key": "c3",
+              "label": "Proximity 90°"
+            },
+            {
+              "key": "c4",
+              "label": "Proximity 180°"
+            },
+            {
+              "key": "c5",
+              "label": "Proximity 270°"
+            },
+            {
+              "key": "c6",
+              "label": "Immersion X"
+            },
+            {
+              "key": "c7",
+              "label": "Immersion Y"
+            },
+            {
+              "key": "c8",
+              "label": "Immersion Z"
+            }
+          ]
         }
       ]
     },

@@ -94,7 +94,7 @@
 
             {% elif it.type == 'static_table' %}
               <div class="md:col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                This test has a complex results table — its grid is included (empty) in the generated Word document; fill it directly there.
+                {% if it.label %}<span class="font-semibold">{{ it.label }}.</span> {% endif %}This is a fixed results grid — it is included (empty) in the generated Word document; fill it directly there.
               </div>
             {% endif %}
 

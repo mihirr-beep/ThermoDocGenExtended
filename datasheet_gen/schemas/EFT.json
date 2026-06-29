@@ -272,7 +272,47 @@
           ]
         },
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_eft",
+          "label": "Signal Lines × Test Level (kV)",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Signal Lines (e.g. RS232, RJ45)"
+            },
+            {
+              "key": "c1",
+              "label": "+0.25"
+            },
+            {
+              "key": "c2",
+              "label": "-0.25"
+            },
+            {
+              "key": "c3",
+              "label": "+0.5"
+            },
+            {
+              "key": "c4",
+              "label": "-0.5"
+            },
+            {
+              "key": "c5",
+              "label": "+1"
+            },
+            {
+              "key": "c6",
+              "label": "-1"
+            },
+            {
+              "key": "c7",
+              "label": "+2"
+            },
+            {
+              "key": "c8",
+              "label": "-2"
+            }
+          ]
         }
       ]
     },
