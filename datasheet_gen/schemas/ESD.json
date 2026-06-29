@@ -212,13 +212,121 @@
       "title": "Test Observation",
       "items": [
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_indirect",
+          "label": "Contact Discharge — Indirect Method (HCP/VCP)",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "S. No."
+            },
+            {
+              "key": "c1",
+              "label": "Name of test points"
+            },
+            {
+              "key": "c2",
+              "label": "+2"
+            },
+            {
+              "key": "c3",
+              "label": "-2"
+            },
+            {
+              "key": "c4",
+              "label": "+4"
+            },
+            {
+              "key": "c5",
+              "label": "-4"
+            },
+            {
+              "key": "c6",
+              "label": "+8"
+            },
+            {
+              "key": "c7",
+              "label": "-8"
+            }
+          ]
         },
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_direct",
+          "label": "Contact Discharge — Direct Method",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "S. No."
+            },
+            {
+              "key": "c1",
+              "label": "Name of test points"
+            },
+            {
+              "key": "c2",
+              "label": "+2"
+            },
+            {
+              "key": "c3",
+              "label": "-2"
+            },
+            {
+              "key": "c4",
+              "label": "+4"
+            },
+            {
+              "key": "c5",
+              "label": "-4"
+            },
+            {
+              "key": "c6",
+              "label": "+8"
+            },
+            {
+              "key": "c7",
+              "label": "-8"
+            }
+          ]
         },
         {
-          "type": "static_table"
+          "type": "table",
+          "key": "obs_air",
+          "label": "Air Discharge",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "S. No."
+            },
+            {
+              "key": "c1",
+              "label": "Name of test points"
+            },
+            {
+              "key": "c2",
+              "label": "+2"
+            },
+            {
+              "key": "c3",
+              "label": "-2"
+            },
+            {
+              "key": "c4",
+              "label": "+4"
+            },
+            {
+              "key": "c5",
+              "label": "-4"
+            },
+            {
+              "key": "c6",
+              "label": "+8"
+            },
+            {
+              "key": "c7",
+              "label": "-8"
+            }
+          ]
         }
       ]
     },
