@@ -26,7 +26,8 @@ SCALAR_FIELDS = [
     "step_size", "detector", "measurement_time", "test_mode", "eut_modification_state",
     "eut_configuration", "eut_voltage_frequency", "ambient_temperature",
     "relative_humidity", "test_date", "tested_by", "deviation", "test_procedure",
-    "limit_qp_015_050", "limit_avg_015_050", "limit_qp_050_30", "limit_avg_050_30",
+    "limit_qp_015_050", "limit_avg_015_050", "limit_qp_050_5", "limit_avg_050_5",
+    "limit_qp_5_30", "limit_avg_5_30",
     "software_used", "software_version", "result_class", "overall_result",
     "tested_by_name", "tested_by_date",
 ]
@@ -173,6 +174,88 @@ def _ce_detail(request_obj):
     return None
 
 
+PROCEDURE_TEMPLATE = (
+    "The EUT was placed on a wooden table / insulation support at {height} height. "
+    "The EUT was tested at the conducted emissions test site with a horizontal ground "
+    "reference plane and a vertical ground reference plane bonded together. The power "
+    "supply to the EUT and auxiliary equipment was fed through LISN.\n\n"
+    "LISN (Voltage Method): The conducted emission was measured through the 50 Ω RF "
+    "port of the LISN using an EMI receiver carried out in FFT mode, and conducted "
+    "emission from the EUT coupled through the Power (mains) port was plotted in the "
+    "graph. The dominant peaks at various frequencies, closer to and/or above the limit "
+    "line, were identified and listed. Quasi-peak and Average measured frequencies are "
+    "compared with the limit specified in the standard."
+)
+
+
+def procedure_for_config(config):
+    """CE test-procedure text. Only the EUT height differs by configuration:
+    Tabletop -> 0.1m, Floor standing -> 0.8m. (Section 7 is read-only in the form
+    and driven by the EUT Configuration dropdown in section 4.)"""
+    height = "0.8m" if _s(config).lower().startswith("floor") else "0.1m"
+    return PROCEDURE_TEMPLATE.format(height=height)
+
+
+# Test-limit prefills by classification class (dBµV), per the DS504 sheet.
+# Three frequency bands: 0.15-0.50, 0.50-5, 5-30 MHz.
+_CE_CLASS_LIMITS = {
+    "A": {"limit_qp_015_050": "79",    "limit_avg_015_050": "66",
+          "limit_qp_050_5":   "73",    "limit_avg_050_5":   "60",
+          "limit_qp_5_30":    "73",    "limit_avg_5_30":    "60"},
+    "B": {"limit_qp_015_050": "66-56", "limit_avg_015_050": "56-46",
+          "limit_qp_050_5":   "56",    "limit_avg_050_5":   "46",
+          "limit_qp_5_30":    "60",    "limit_avg_5_30":    "50"},
+}
+_CE_LIMIT_KEYS = ("limit_qp_015_050", "limit_avg_015_050", "limit_qp_050_5",
+                  "limit_avg_050_5", "limit_qp_5_30", "limit_avg_5_30")
+
+
+def class_letter(class_value):
+    """Map a Classification-Class value ('Class A' / 'A' / 'Class B' / 'B') to 'A'/'B'/''."""
+    v = _s(class_value).upper()
+    if "B" in v:
+        return "B"
+    if "A" in v:
+        return "A"
+    return ""
+
+
+def ce_limits_for_class(class_value):
+    letter = class_letter(class_value)
+    return dict(_CE_CLASS_LIMITS.get(letter, {k: "" for k in _CE_LIMIT_KEYS}))
+
+
+def collect_ce_equipment_rows():
+    """Prefill CE 'Test Equipment Used' rows from the Equipment Master.
+
+    There is no per-request FK to Equipment, so equipment is selected by the
+    Equipment.test_name text column (comma-separated test codes, e.g. 'CE' or
+    'CE,RE'). Returns {name, make, model, serial, cal_due} dicts matching the CE
+    form's eq_name[]/eq_make[]/eq_model[]/eq_serial[]/eq_cal_due[] fields.
+    """
+    try:
+        from models import db, Equipment
+        candidates = Equipment.query.filter(
+            Equipment.test_name.isnot(None),
+            db.or_(Equipment.test_name.ilike("%CE%"),
+                   Equipment.test_name.ilike("%conducted%")),
+        ).order_by(Equipment.sl_no.asc(), Equipment.name.asc()).all()
+    except Exception:
+        return []
+    rows = []
+    for eq in candidates:
+        tn = eq.test_name or ""
+        tokens = [t.strip().upper() for t in tn.split(",")]
+        if "CE" not in tokens and "conducted emission" not in tn.lower():
+            continue  # avoid loose substring hits (e.g. "deviCE")
+        cd = getattr(eq, "calibration_due_date", None)
+        rows.append({
+            "name": _s(eq.name), "make": _s(eq.make), "model": _s(eq.model_no),
+            "serial": _s(eq.serial_no), "cal_due": cd.isoformat() if cd else "",
+        })
+    return rows
+
+
 def collect_ce_prefill(request_obj, assignment=None):
     ce = _ce_detail(request_obj) if request_obj is not None else None
     # EUT model/serial come from the primary Product Identity columns (Model
@@ -182,6 +265,8 @@ def collect_ce_prefill(request_obj, assignment=None):
     model = _ra(request_obj, "model_number") or _join(getattr(request_obj, "additional_models", []), "model_number")
     serial = _ra(request_obj, "serial_number") or _join(getattr(request_obj, "serial_numbers", []), "serial_number")
     tested_by = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
+    class_value = _ra(request_obj, "class_type") or (_s(getattr(ce, "ce_class", "")) if ce else "")
+    config = _eut_config(request_obj)
     data = {
         # auto from request
         "job_number": _ra(request_obj, "job_number", "tco_id"),
@@ -190,23 +275,37 @@ def collect_ce_prefill(request_obj, assignment=None):
         "eut_serial": serial,
         "product_standard": _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else "",
         # classification: overall Class/Group from the Test Request; per-test class as fallback
-        "classification_class": _ra(request_obj, "class_type") or (_s(getattr(ce, "ce_class", "")) if ce else ""),
+        "classification_class": class_value,
         "classification_group": _ra(request_obj, "product_group"),
-        "eut_configuration": _eut_config(request_obj),
+        "eut_configuration": config,
         "test_mode": _ra(request_obj, "test_configuration", "operation_modes"),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,
-        # sensible defaults from the form/document
+        # sensible defaults from the form/document (DS504 + Krishna feedback)
         "measurement_uncertainty": "± 3.368 dB",
         "basic_standard": "Sysmex",
         "sop_reference": "IEC-SOP-505",
-        "test_port": "Power Line",
-        "coupling_method": "LISN",
+        "test_port": "Power Line",            # editable
+        "coupling_method": "LISN",            # editable
         "frequency_range": _s(getattr(ce, "freq_range", "")) if ce and getattr(ce, "freq_range", "") else "150 kHz - 30 MHz",
-        "detector": "Quasi-peak & Average",
+        "resolution_bandwidth": "9K",
+        "step_size": "4K",
+        "detector": "Quasi-peak",
+        "measurement_time": "1",
         "deviation": "NA",
-        "test_procedure": STANDARD_PROCEDURE,
-        "eut_modification_state": "0 - Initial state",
+        # section 7: read-only, driven by EUT Configuration
+        "test_procedure": procedure_for_config(config),
+        # section 4: linked to the Modification Record (initial state = 0)
+        "eut_modification_state": "0",
+        # section 11: fixed software defaults
+        "software_used": "PMM Suite",
+        "software_version": "2.54",
+        # section 12: Result Class follows Classification - Class
+        "result_class": class_letter(class_value),
     }
+    # section 6: test limits derived from classification class
+    data.update(ce_limits_for_class(class_value))
+    # section 10: equipment rows from the Equipment Master (CE-tagged)
+    data["equipment"] = collect_ce_equipment_rows()
     return data

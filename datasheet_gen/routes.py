@@ -19,7 +19,8 @@ from .service import build_ce_context, collect_ce_prefill
 from .generator import render_ce_datasheet
 from . import records as R
 
-datasheet_gen_bp = Blueprint("datasheet_gen", __name__, template_folder="templates")
+datasheet_gen_bp = Blueprint("datasheet_gen", __name__, template_folder="templates",
+                             static_folder="static", static_url_path="/datasheet_gen_static")
 
 _IMAGE_VARS = ("plot_line", "plot_neutral", "photo_setup", "signature")
 

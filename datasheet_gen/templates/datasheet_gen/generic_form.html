@@ -182,35 +182,10 @@
   </div>
 </div>
 
-<!-- Cropper modal -->
-<div id="cropperModal" class="ds-overlay ds-cropz">
-  <div class="ds-bg"></div>
-  <div class="ds-center mid" onclick="if(event.target===this){cancelCrop();}">
-    <div class="ds-panel narrow">
-      <div class="ds-head">
-        <div>
-          <h3>Crop image</h3>
-          <p>Drag across the image to select the area to keep, then Apply. The crop is used in the generated document.</p>
-        </div>
-        <button type="button" onclick="cancelCrop()" style="border:none;background:none;font-size:22px;line-height:1;color:#9ca3af;cursor:pointer;">&times;</button>
-      </div>
-      <div style="padding:20px;text-align:center;">
-        <div id="cropStage" style="position:relative;display:inline-block;max-width:100%;user-select:none;touch-action:none;">
-          <img id="cropImg" style="max-width:100%;max-height:60vh;display:block;">
-          <div id="cropSel" style="position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,.15);display:none;pointer-events:none;"></div>
-        </div>
-        <p style="font-size:11px;color:#6b7280;margin-top:8px;">Target size in document: <span id="cropBox" style="font-weight:600;"></span></p>
-      </div>
-      <div class="ds-foot">
-        <button type="button" class="ds-b" onclick="clearCropSel()">Clear selection</button>
-        <button type="button" class="ds-b" onclick="cancelCrop()">Cancel</button>
-        <button type="button" class="ds-b green" onclick="applyCrop()">Apply crop</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- (image editing handled by the shared Edit dialog: datasheet_gen/static/ds_image_editor.js) -->
 
 {% block extra_js %}
+<script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
   function addRow(key) {
     var tpl = document.getElementById('tpl-' + key);
@@ -405,7 +380,7 @@
       var actions=document.createElement('div'); actions.style.marginTop='5px';
       var cropBtn=document.createElement('button'); cropBtn.type='button';
       cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
-      cropBtn.textContent='✂ Crop'; cropBtn.onclick=function(){ openCropper(key); };
+      cropBtn.textContent='✎ Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
       actions.appendChild(cropBtn);
       if (originalFiles[key]){
         var resetBtn=document.createElement('button'); resetBtn.type='button';
@@ -466,71 +441,28 @@
   }
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
 
-  /* ---- cropper ---- */
-  var cropState={key:null, sx:0, sy:0, ex:0, ey:0, drawing:false, has:false};
-  function openCropper(key){
+  /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
+  function openImageEditor(key){
     var file=imgFileFor(key); if(!file){ showMessage('Upload an image first.','error'); return; }
     if(!originalFiles[key]) originalFiles[key]=file;
-    cropState={key:key, sx:0,sy:0,ex:0,ey:0,drawing:false,has:false};
-    var img=document.getElementById('cropImg');
-    img.src=URL.createObjectURL(file);
-    document.getElementById('cropSel').style.display='none';
-    var box=imageBoxMM(key);
-    document.getElementById('cropBox').textContent=box[0]+' × '+box[1]+' mm';
-    document.getElementById('cropperModal').classList.add('open');
-  }
-  function cancelCrop(){ document.getElementById('cropperModal').classList.remove('open'); }
-  function clearCropSel(){ cropState.has=false; document.getElementById('cropSel').style.display='none'; }
-  function drawSel(){
-    var img=document.getElementById('cropImg'), sel=document.getElementById('cropSel');
-    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
-    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
-    sel.style.left=(img.offsetLeft+x)+'px'; sel.style.top=(img.offsetTop+y)+'px';
-    sel.style.width=w+'px'; sel.style.height=h+'px'; sel.style.display='block';
-  }
-  function applyCrop(){
-    var key=cropState.key, file=imgFileFor(key); if(!file){ cancelCrop(); return; }
-    var img=document.getElementById('cropImg');
-    var rect=img.getBoundingClientRect();
-    var scaleX=img.naturalWidth/rect.width, scaleY=img.naturalHeight/rect.height;
-    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
-    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
-    if(!cropState.has || w<5 || h<5){ showMessage('Draw a crop area on the image first.','error'); return; }
-    var sx=Math.round(x*scaleX), sy=Math.round(y*scaleY), sw=Math.round(w*scaleX), sh=Math.round(h*scaleY);
-    var src=new Image();
-    src.onload=function(){
-      var canvas=document.createElement('canvas'); canvas.width=sw; canvas.height=sh;
-      canvas.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
-      var isPng=(file.type==='image/png');
-      canvas.toBlob(function(blob){
-        var cropped=new File([blob], key+'_cropped.'+(isPng?'png':'jpg'), {type: blob.type});
-        setInputFile(key, cropped);
-        cancelCrop(); buildPreview(); showMessage('Image cropped.','success');
-      }, isPng?'image/png':'image/jpeg', 0.92);
-    };
-    src.src=URL.createObjectURL(file);
+    if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
+    DSImageEditor.open({
+      file:file, boxMM:imageBoxMM(key),
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
-    // lift modals out of any positioned/stacking container so they overlay the fixed navbar
-    ['previewModal','cropperModal'].forEach(function(id){ var m=document.getElementById(id); if(m) document.body.appendChild(m); });
+    // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
+    var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
-    // track originals so Reset works after cropping / re-uploads
+    // track originals so Reset works after editing / re-uploads
     schemaImageKeys().forEach(function(key){
       var el=inputByName(key);
       if (el) el.addEventListener('change', function(){
         if (el.files && el.files[0]) originalFiles[key]=el.files[0]; else delete originalFiles[key];
       });
     });
-    // cropper drag-to-select
-    var stage=document.getElementById('cropStage'), img=document.getElementById('cropImg');
-    function point(e){ var r=img.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX), cy=(e.touches?e.touches[0].clientY:e.clientY);
-      return { x:Math.min(Math.max(cx-r.left,0),r.width), y:Math.min(Math.max(cy-r.top,0),r.height) }; }
-    function down(e){ e.preventDefault(); var p=point(e); cropState.sx=p.x; cropState.sy=p.y; cropState.ex=p.x; cropState.ey=p.y; cropState.drawing=true; cropState.has=true; drawSel(); }
-    function move(e){ if(!cropState.drawing) return; var p=point(e); cropState.ex=p.x; cropState.ey=p.y; drawSel(); }
-    function up(){ cropState.drawing=false; }
-    stage.addEventListener('mousedown', down); document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-    stage.addEventListener('touchstart', down, {passive:false}); document.addEventListener('touchmove', move, {passive:false}); document.addEventListener('touchend', up);
   });
 </script>
 {% endblock %}

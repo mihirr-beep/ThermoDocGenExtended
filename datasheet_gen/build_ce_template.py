@@ -165,15 +165,31 @@ def main(src):
                 remove_para(np)
             break
 
-    # Table 4 - Test limits (2 bands, per the document)
-    for row in t[4].rows:
+    # Table 4 - Test limits (3 bands per the DS504 sheet: 0.15-0.50, 0.50-5, 5-30).
+    # The source doc only ships two rows (0.15-0.50 and 0.50-30); we relabel the
+    # second to 0.50-5 and clone it to add the 5-30 band so regeneration stays in
+    # sync with the form/service (which prefill all three bands from the class).
+    import copy
+    from docx.table import _Row
+    limits_tbl = t[4]
+    row_050 = None
+    for row in limits_tbl.rows:
         lbl = row.cells[0].text.strip()
         if lbl.startswith("0.15"):
             set_cell(row.cells[1], "{{ limit_qp_015_050 }}")
             set_cell(row.cells[2], "{{ limit_avg_015_050 }}")
         elif lbl.startswith("0.50"):
-            set_cell(row.cells[1], "{{ limit_qp_050_30 }}")
-            set_cell(row.cells[2], "{{ limit_avg_050_30 }}")
+            set_cell(row.cells[0], "0.50 to 5")
+            set_cell(row.cells[1], "{{ limit_qp_050_5 }}")
+            set_cell(row.cells[2], "{{ limit_avg_050_5 }}")
+            row_050 = row
+    if row_050 is not None:
+        new_tr = copy.deepcopy(row_050._tr)
+        row_050._tr.addnext(new_tr)
+        nr = _Row(new_tr, limits_tbl)
+        set_cell(nr.cells[0], "5 to 30")
+        set_cell(nr.cells[1], "{{ limit_qp_5_30 }}")
+        set_cell(nr.cells[2], "{{ limit_avg_5_30 }}")
 
     # Test procedure: make the first procedure line editable, drop the boilerplate
     proc = find_para(doc, "The test procedure was in accordance")

@@ -10,7 +10,7 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 from docx.oxml.ns import qn
 
-from .layout import polish_layout
+from .layout import polish_layout, page_break_before_top_sections
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "word_templates", "IEC-FRM-504_CE.docx")
 
@@ -64,6 +64,7 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
         context[var] = _fit_image(tpl, path, _IMAGE_BOXES[var]) if (path and os.path.exists(path)) else ""
     tpl.render(context, autoescape=True)
     polish_layout(tpl.docx)
+    page_break_before_top_sections(tpl.docx)   # each top-level section (2, 3, ...) on a new page
     strip_trailing_blank_paragraphs(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)

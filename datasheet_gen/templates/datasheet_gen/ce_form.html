@@ -91,24 +91,18 @@
             <option value="">Select</option>
             {% for o in ['Class A','Class B'] %}<option {{ 'selected' if prefill.classification_class==o }}>{{ o }}</option>{% endfor %}
           </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Port</label>
-          <select name="test_port" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['Power Line','Signal Line','Telecommunication Port'] %}<option {{ 'selected' if prefill.test_port==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Coupling Method</label>
-          <select name="coupling_method" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['LISN','Custom'] %}<option {{ 'selected' if prefill.coupling_method==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Port</label>{{ field('test_port', prefill.test_port) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Coupling Method</label>{{ field('coupling_method', prefill.coupling_method) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Frequency Range</label>{{ field('frequency_range', prefill.frequency_range) }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Resolution Bandwidth (Hz)</label>{{ field('resolution_bandwidth') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>
-          <select name="detector" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['Quasi-peak & Average','Quasi-peak','Average','Peak'] %}<option {{ 'selected' if prefill.detector==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Resolution Bandwidth (Hz)</label>{{ field('resolution_bandwidth', prefill.resolution_bandwidth) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size', prefill.step_size) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>{{ field('detector', prefill.detector) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time', prefill.measurement_time) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>{{ field('eut_modification_state', prefill.eut_modification_state) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>
+          <input type="text" name="eut_modification_state" id="eut_modification_state" value="{{ prefill.eut_modification_state }}" readonly
+                 title="Auto-filled from the EUT Modification Record in section 1"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
           <select name="eut_configuration" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
@@ -134,9 +128,11 @@
         <thead class="bg-gray-50"><tr><th class="p-2 text-left">Frequency (MHz)</th><th class="p-2 text-left">Quasi-Peak</th><th class="p-2 text-left">Average</th></tr></thead>
         <tbody>
           <tr><td class="p-2">0.15 to 0.50</td>
-            <td class="p-1">{{ field('limit_qp_015_050') }}</td><td class="p-1">{{ field('limit_avg_015_050') }}</td></tr>
-          <tr><td class="p-2">0.50 to 30</td>
-            <td class="p-1">{{ field('limit_qp_050_30') }}</td><td class="p-1">{{ field('limit_avg_050_30') }}</td></tr>
+            <td class="p-1">{{ field('limit_qp_015_050', prefill.limit_qp_015_050) }}</td><td class="p-1">{{ field('limit_avg_015_050', prefill.limit_avg_015_050) }}</td></tr>
+          <tr><td class="p-2">0.50 to 5</td>
+            <td class="p-1">{{ field('limit_qp_050_5', prefill.limit_qp_050_5) }}</td><td class="p-1">{{ field('limit_avg_050_5', prefill.limit_avg_050_5) }}</td></tr>
+          <tr><td class="p-2">5 to 30</td>
+            <td class="p-1">{{ field('limit_qp_5_30', prefill.limit_qp_5_30) }}</td><td class="p-1">{{ field('limit_avg_5_30', prefill.limit_avg_5_30) }}</td></tr>
         </tbody>
       </table>
     </section>
@@ -144,7 +140,9 @@
     <!-- 7. TEST PROCEDURE -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Procedure</h2>
-      <textarea name="test_procedure" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.test_procedure }}</textarea>
+      <p class="text-xs text-gray-500 mb-1">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only.</p>
+      <textarea name="test_procedure" id="test_procedure" rows="6" readonly
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700">{{ prefill.test_procedure }}</textarea>
     </section>
 
     <!-- 8. MEASUREMENT DATA -->
@@ -202,14 +200,16 @@
           <th class="p-2 text-left">Equipment Name</th><th class="p-2 text-left">Make</th><th class="p-2 text-left">Model No.</th>
           <th class="p-2 text-left">Serial No.</th><th class="p-2 text-left">Calibration Due</th><th></th></tr></thead>
         <tbody id="rows-eq">
+          {% for eq in (prefill.equipment or [None]) %}
           <tr>
-            <td class="p-1"><input name="eq_name[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_make[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_model[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_name[]" value="{{ eq.name if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_make[]" value="{{ eq.make if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_model[]" value="{{ eq.model if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_serial[]" value="{{ eq.serial if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input type="date" name="eq_cal_due[]" value="{{ eq.cal_due if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
             <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
           </tr>
+          {% endfor %}
         </tbody>
       </table>
     </section>
@@ -218,8 +218,8 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">11. Software Used</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used', prefill.software_used) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version', prefill.software_version) }}</div>
       </div>
     </section>
 
@@ -229,7 +229,8 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Result Class</label>
           <select name="result_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            <option value="">Select</option><option>A</option><option>B</option></select></div>
+            <option value="">Select</option>
+            {% for o in ['A','B'] %}<option {{ 'selected' if prefill.result_class==o }}>{{ o }}</option>{% endfor %}</select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Overall Result</label>
           <select name="overall_result" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             <option value="">Select</option><option>PASS</option><option>FAIL</option></select></div>
@@ -321,36 +322,11 @@
   </div>
 </div>
 
-<!-- Cropper modal -->
-<div id="cropperModal" class="ds-overlay ds-cropz">
-  <div class="ds-bg"></div>
-  <div class="ds-center mid" onclick="if(event.target===this){cancelCrop();}">
-    <div class="ds-panel narrow">
-      <div class="ds-head">
-        <div>
-          <h3>Crop image</h3>
-          <p>Drag across the image to select the area to keep, then Apply. The crop is used in the generated document.</p>
-        </div>
-        <button type="button" onclick="cancelCrop()" style="border:none;background:none;font-size:22px;line-height:1;color:#9ca3af;cursor:pointer;">&times;</button>
-      </div>
-      <div style="padding:20px;text-align:center;">
-        <div id="cropStage" style="position:relative;display:inline-block;max-width:100%;user-select:none;touch-action:none;">
-          <img id="cropImg" style="max-width:100%;max-height:60vh;display:block;">
-          <div id="cropSel" style="position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,.15);display:none;pointer-events:none;"></div>
-        </div>
-        <p style="font-size:11px;color:#6b7280;margin-top:8px;">Target size in document: <span id="cropBox" style="font-weight:600;"></span></p>
-      </div>
-      <div class="ds-foot">
-        <button type="button" class="ds-b" onclick="clearCropSel()">Clear selection</button>
-        <button type="button" class="ds-b" onclick="cancelCrop()">Cancel</button>
-        <button type="button" class="ds-b green" onclick="applyCrop()">Apply crop</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- (image editing handled by the shared Edit dialog: datasheet_gen/static/ds_image_editor.js) -->
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
   function addRow(type) {
     const tpl = document.getElementById('tpl-' + type);
@@ -523,7 +499,7 @@
       var actions=document.createElement('div'); actions.style.marginTop='5px';
       var cropBtn=document.createElement('button'); cropBtn.type='button';
       cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
-      cropBtn.textContent='✂ Crop'; cropBtn.onclick=function(){ openCropper(key); };
+      cropBtn.textContent='✎ Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
       actions.appendChild(cropBtn);
       if (originalFiles[key]){
         var resetBtn=document.createElement('button'); resetBtn.type='button';
@@ -597,67 +573,89 @@
   }
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
 
-  /* ---- cropper ---- */
-  var cropState={key:null, sx:0, sy:0, ex:0, ey:0, drawing:false, has:false};
-  function openCropper(key){
+  /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
+  function openImageEditor(key){
     var file=imgFileFor(key); if(!file){ showMessage('Upload an image first.','error'); return; }
     if(!originalFiles[key]) originalFiles[key]=file;
-    cropState={key:key, sx:0,sy:0,ex:0,ey:0,drawing:false,has:false};
-    document.getElementById('cropImg').src=URL.createObjectURL(file);
-    document.getElementById('cropSel').style.display='none';
-    var box=imageBoxMM(key);
-    document.getElementById('cropBox').textContent=box[0]+' × '+box[1]+' mm';
-    document.getElementById('cropperModal').classList.add('open');
-  }
-  function cancelCrop(){ document.getElementById('cropperModal').classList.remove('open'); }
-  function clearCropSel(){ cropState.has=false; document.getElementById('cropSel').style.display='none'; }
-  function drawSel(){
-    var img=document.getElementById('cropImg'), sel=document.getElementById('cropSel');
-    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
-    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
-    sel.style.left=(img.offsetLeft+x)+'px'; sel.style.top=(img.offsetTop+y)+'px';
-    sel.style.width=w+'px'; sel.style.height=h+'px'; sel.style.display='block';
-  }
-  function applyCrop(){
-    var key=cropState.key, file=imgFileFor(key); if(!file){ cancelCrop(); return; }
-    var img=document.getElementById('cropImg');
-    var rect=img.getBoundingClientRect();
-    var scaleX=img.naturalWidth/rect.width, scaleY=img.naturalHeight/rect.height;
-    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
-    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
-    if(!cropState.has || w<5 || h<5){ showMessage('Draw a crop area on the image first.','error'); return; }
-    var sx=Math.round(x*scaleX), sy=Math.round(y*scaleY), sw=Math.round(w*scaleX), sh=Math.round(h*scaleY);
-    var src=new Image();
-    src.onload=function(){
-      var canvas=document.createElement('canvas'); canvas.width=sw; canvas.height=sh;
-      canvas.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
-      var isPng=(file.type==='image/png');
-      canvas.toBlob(function(blob){
-        var cropped=new File([blob], key+'_cropped.'+(isPng?'png':'jpg'), {type: blob.type});
-        setInputFile(key, cropped);
-        cancelCrop(); buildPreview(); showMessage('Image cropped.','success');
-      }, isPng?'image/png':'image/jpeg', 0.92);
-    };
-    src.src=URL.createObjectURL(file);
+    if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
+    DSImageEditor.open({
+      file:file, boxMM:imageBoxMM(key),
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
-    // lift modals out of any positioned/stacking container so they overlay the fixed navbar
-    ['previewModal','cropperModal'].forEach(function(id){ var m=document.getElementById(id); if(m) document.body.appendChild(m); });
+    // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
+    var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(function(el){
       el.addEventListener('change', function(){
         if (el.files && el.files[0]) originalFiles[el.name]=el.files[0]; else delete originalFiles[el.name];
       });
     });
-    var stage=document.getElementById('cropStage'), img=document.getElementById('cropImg');
-    function point(e){ var r=img.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX), cy=(e.touches?e.touches[0].clientY:e.clientY);
-      return { x:Math.min(Math.max(cx-r.left,0),r.width), y:Math.min(Math.max(cy-r.top,0),r.height) }; }
-    function down(e){ e.preventDefault(); var p=point(e); cropState.sx=p.x; cropState.sy=p.y; cropState.ex=p.x; cropState.ey=p.y; cropState.drawing=true; cropState.has=true; drawSel(); }
-    function move(e){ if(!cropState.drawing) return; var p=point(e); cropState.ex=p.x; cropState.ey=p.y; drawSel(); }
-    function up(){ cropState.drawing=false; }
-    stage.addEventListener('mousedown', down); document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-    stage.addEventListener('touchstart', down, {passive:false}); document.addEventListener('touchmove', move, {passive:false}); document.addEventListener('touchend', up);
   });
+</script>
+<script>
+/* CE field linkages (DS504): live behaviour on top of the server-side prefill. */
+(function(){
+  function q(name){ return document.querySelector('[name="'+name+'"]'); }
+  function val(name){ var e=q(name); return e?e.value:''; }
+  function setVal(name,v){ var e=q(name); if(e) e.value=v; }
+
+  // Section 4 EUT Modification State <- Section 1 EUT Modification Record (State column)
+  function syncModState(){
+    var seen={}, states=[];
+    document.querySelectorAll('input[name="mod_state[]"]').forEach(function(el){
+      var v=(el.value||'').trim();
+      if(v && !seen[v]){ seen[v]=1; states.push(v); }
+    });
+    setVal('eut_modification_state', states.join(', '));
+  }
+
+  // Section 6 Test Limits + Section 12 Result Class <- Classification - Class
+  var CE_LIMITS={
+    A:{limit_qp_015_050:'79',   limit_avg_015_050:'66',   limit_qp_050_5:'73', limit_avg_050_5:'60', limit_qp_5_30:'73', limit_avg_5_30:'60'},
+    B:{limit_qp_015_050:'66-56',limit_avg_015_050:'56-46',limit_qp_050_5:'56', limit_avg_050_5:'46', limit_qp_5_30:'60', limit_avg_5_30:'50'}
+  };
+  function classLetter(){
+    var v=(val('classification_class')||'').toUpperCase();
+    if(v.indexOf('B')>=0) return 'B';
+    if(v.indexOf('A')>=0) return 'A';
+    return '';
+  }
+  function applyLimits(){
+    var L=CE_LIMITS[classLetter()]; if(!L) return;
+    Object.keys(L).forEach(function(k){ setVal(k, L[k]); });
+  }
+  function syncResultClass(){ setVal('result_class', classLetter()); }
+
+  // Section 7 Test Procedure (read-only) <- Section 4 EUT Configuration (height 0.1m/0.8m)
+  var PROC="The EUT was placed on a wooden table / insulation support at {H} height. "+
+    "The EUT was tested at the conducted emissions test site with a horizontal ground reference "+
+    "plane and a vertical ground reference plane bonded together. The power supply to the EUT and "+
+    "auxiliary equipment was fed through LISN.\n\nLISN (Voltage Method): The conducted emission was "+
+    "measured through the 50 Ω RF port of the LISN using an EMI receiver carried out in FFT mode, "+
+    "and conducted emission from the EUT coupled through the Power (mains) port was plotted in the "+
+    "graph. The dominant peaks at various frequencies, closer to and/or above the limit line, were "+
+    "identified and listed. Quasi-peak and Average measured frequencies are compared with the limit "+
+    "specified in the standard.";
+  function setProcedure(){
+    var cfg=(val('eut_configuration')||'').toLowerCase();
+    setVal('test_procedure', PROC.replace('{H}', cfg.indexOf('floor')>=0 ? '0.8m' : '0.1m'));
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    syncModState();
+    var modBody=document.getElementById('rows-mod');
+    if(modBody){
+      modBody.addEventListener('input', function(e){ if(e.target && e.target.name==='mod_state[]') syncModState(); });
+      new MutationObserver(syncModState).observe(modBody, {childList:true});
+    }
+    var cls=q('classification_class');
+    if(cls) cls.addEventListener('change', function(){ applyLimits(); syncResultClass(); });
+    var cfg=q('eut_configuration');
+    if(cfg) cfg.addEventListener('change', setProcedure);
+  });
+})();
 </script>
 {% endblock %}

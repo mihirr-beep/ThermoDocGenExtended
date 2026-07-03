@@ -180,6 +180,22 @@ def _keep_row(tr_obj):
             _keep_with_next(cp)
 
 
+def page_break_before_top_sections(doc):
+    """Force every top-level section (a 'Heading 1' paragraph) after the first to
+    begin on a new page. Uses the paragraph's page-break-before property, which is
+    reflow-safe (the heading stays pinned to the top of a fresh page) rather than a
+    manual break run that could drift. The first top-level section is left in place
+    so the document does not open with a blank page."""
+    first = True
+    for p in doc.paragraphs:
+        name = (p.style.name if p.style is not None else "") or ""
+        if name.strip().lower() in ("heading 1", "heading1"):
+            if first:
+                first = False
+            else:
+                p.paragraph_format.page_break_before = True
+
+
 def polish_layout(doc):
     """Apply all layout fixes to a rendered document (body only; headers/footers
     are left untouched)."""
