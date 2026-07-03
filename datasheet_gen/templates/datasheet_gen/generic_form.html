@@ -46,6 +46,13 @@
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
+    {% if draft_status %}
+    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm">
+      {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
+      {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+    </div>
+    {% endif %}
+
     {% set ns = namespace(n=0) %}
     {% for sec in schema.sections %}
       {% if sec['items'] %}
@@ -119,6 +126,7 @@
 
     <div class="flex justify-end gap-3 pb-12">
       <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
+      <button type="button" id="draftBtn" class="px-6 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 shadow">Save as Draft</button>
       <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
     </div>
   </form>
@@ -310,6 +318,19 @@
         btn.disabled = false; btn.textContent = orig;
         if (res.success) { showMessage('Datasheet generated. Downloading...', 'success'); window.location.href = res.download_url; }
         else { showMessage(res.message || 'Failed to generate datasheet.', 'error'); }
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
+  });
+
+  document.getElementById('draftBtn').addEventListener('click', function () {
+    var btn = this, orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving...';
+    fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: new FormData(document.getElementById('dsForm')) })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = orig;
+        showMessage(res.success ? 'Draft saved — you can continue later.' : (res.message || 'Failed to save draft.'),
+                    res.success ? 'success' : 'error');
       })
       .catch(function () { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
   });

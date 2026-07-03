@@ -17,6 +17,7 @@ from werkzeug.utils import secure_filename
 from models import db, PlannerEntry, EMCRequest
 from .service import build_ce_context, collect_ce_prefill
 from .generator import render_ce_datasheet
+from . import records as R
 
 datasheet_gen_bp = Blueprint("datasheet_gen", __name__, template_folder="templates")
 
@@ -98,12 +99,25 @@ def ce_form(assignment_id):
     if not _can_access(assignment):
         abort(403)
     prefill = collect_ce_prefill(_parent_request(assignment), assignment)
+    # Resume a saved draft/record: scalar values the engineer already entered win
+    # over the DB auto-fill, so re-opening the form continues where they left off.
+    draft = R.draft_form(assignment.id)
+    draft_status = ""
+    if draft:
+        rec = R.get_record_for_assignment(assignment.id)
+        draft_status = (rec or {}).get("status", "")
+        for k, v in draft.items():
+            if not k.endswith("[]") and isinstance(v, str) and v.strip():
+                prefill[k] = v
+    saved_images = [os.path.basename(p) for p in R.draft_images(assignment.id).values() if p]
     return render_template(
         "datasheet_gen/ce_form.html",
         assignment_id=assignment.id,
         tco_id=assignment.tco_id or "",
         test_name=assignment.test_name or "CE",
         prefill=prefill,
+        draft_status=draft_status,
+        saved_images=saved_images,
         today=datetime.now().strftime("%Y-%m-%d"),
     )
 
@@ -150,6 +164,42 @@ def _save_images(files, assignment_id):
     return images
 
 
+def _merge_draft_images(assignment_id, images):
+    """Fill any image the engineer didn't re-upload from a previously saved draft."""
+    merged = dict(images or {})
+    for k, p in R.draft_images(assignment_id).items():
+        if k not in merged and p and os.path.exists(p):
+            merged[k] = p
+    return merged
+
+
+@datasheet_gen_bp.route("/datasheet/ce/save-draft", methods=["POST"])
+@login_required
+def save_draft_ce():
+    """Persist the CE form as a draft (status 'Not Submitted') without generating
+    the document, so the engineer can continue later."""
+    try:
+        form_data, assignment_id, tco_id, files = _read_payload()
+        if not assignment_id:
+            return jsonify(success=False, message="Assignment ID is required"), 400
+        try:
+            assignment_id = int(assignment_id)
+        except (TypeError, ValueError):
+            return jsonify(success=False, message="Invalid assignment ID"), 400
+        assignment = db.session.get(PlannerEntry, assignment_id)
+        if assignment is None:
+            return jsonify(success=False, message="Assignment not found"), 404
+        if not _can_access(assignment):
+            return jsonify(success=False, message="Access denied"), 403
+        images = _save_images(files, assignment_id)
+        R.upsert_record(assignment, "CE", form_data, images, R.DRAFT, user=current_user)
+        return jsonify(success=True, message="Draft saved")
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        current_app.logger.error("Error saving CE draft: %s", exc)
+        return jsonify(success=False, message="An error occurred while saving the draft"), 500
+
+
 @datasheet_gen_bp.route("/datasheet/ce/generate", methods=["POST"])
 @login_required
 def generate_ce():
@@ -175,7 +225,7 @@ def generate_ce():
 
         parent = _parent_request(assignment)
         context = build_ce_context(form_data)
-        images = _save_images(files, assignment_id)
+        images = _merge_draft_images(assignment_id, _save_images(files, assignment_id))
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_tco = secure_filename(str(tco_id or (parent.tco_id if parent else "") or "TCO"))
@@ -217,6 +267,16 @@ def generate_ce():
             pass
 
         db.session.commit()
+
+        # Persist the filled form as a Submitted datasheet record (best-effort:
+        # a store failure must not fail an otherwise-successful generation).
+        try:
+            R.upsert_record(assignment, "CE", form_data, images, R.SUBMITTED,
+                            generated_file_path=output_path, user=current_user)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            current_app.logger.error("CE datasheet record save failed: %s", exc)
+
         return jsonify(
             success=True,
             message="CE datasheet generated successfully",
