@@ -87,7 +87,8 @@ def insert_measure_table_after(doc, paragraph, loop_var, item):
 SPEC_MAP = {
     "Product Standard": ("{{ product_standard }}", ""),
     "Basic Standard": ("{{ basic_standard }}", ""),
-    "Classification": ("{{ classification_group }}", "{{ classification_class }}"),
+    # {{r }}: rendered as RichText (human-ticked checkboxes) by the generator
+    "Classification": ("{{r classification_group }}", "{{r classification_class }}"),
     "Test Port": ("{{ test_port }}", ""),
     "Coupling Method": ("{{ coupling_method }}", ""),
     "Frequency Range": ("{{ frequency_range }}", ""),
@@ -151,12 +152,18 @@ def main(src):
     dev_head = find_para(doc, "DEVIATION FROM THE STANDARD")
     if dev_head:
         na = insert_paragraph_after(dev_head, "{{ deviation }}")
-        # remove the original "NA" paragraph that followed
+        # remove the original "NA" paragraph that followed (it may be separated
+        # from the placeholder by empty spacer paragraphs — skip those)
         nxt = na._p.getnext()
-        if nxt is not None and nxt.tag.endswith('}p'):
+        while nxt is not None and nxt.tag.endswith('}p'):
             np = Paragraph(nxt, na._parent)
-            if np.text.strip().upper() == "NA":
+            txt = np.text.strip()
+            if not txt:
+                nxt = nxt.getnext()
+                continue
+            if txt.upper() == "NA":
                 remove_para(np)
+            break
 
     # Table 4 - Test limits (2 bands, per the document)
     for row in t[4].rows:
@@ -228,6 +235,13 @@ def main(src):
     os.makedirs(OUT_DIR, exist_ok=True)
     doc.save(OUT)
     print(f"Saved template -> {OUT}  (removed {removed} manual page break(s))")
+
+    # Put each measurement image ON TOP with its caption directly BELOW (no
+    # spacing). build_ce_template inserts the image after the caption, so reuse
+    # the shared layout fixer to reorder + tighten. Keeps rebuilds consistent.
+    from fix_template_layout import fix_doc
+    fix_doc(OUT)
+    print("Applied image-above-caption layout fix.")
 
 
 if __name__ == "__main__":

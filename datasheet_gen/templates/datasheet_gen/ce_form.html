@@ -33,7 +33,10 @@
 
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold text-gray-600">EUT Modification Record</h3>
-        <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="uploadCSV('mod')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+          <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        </div>
       </div>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr>
@@ -151,7 +154,10 @@
       {% for grp, label in [('line','Table 1 - Line (Quasi-peak &amp; Average)'), ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)')] %}
       <div class="flex items-center justify-between mb-2 mt-4">
         <h3 class="text-sm font-semibold text-gray-600">{{ label|safe }}</h3>
-        <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="uploadCSV('{{ grp }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+          <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        </div>
       </div>
       <table class="w-full text-xs border border-gray-200">
         <thead class="bg-gray-50"><tr>
@@ -179,7 +185,10 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-2">
         <h2 class="text-lg font-bold text-gray-900">10. Test Equipment Used</h2>
-        <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="uploadCSV('eq')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+          <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        </div>
       </div>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr>
@@ -253,6 +262,84 @@
   {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
   <td class="p-1"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+
+<!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
+<style>
+  #previewBtn{position:fixed;right:24px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
+    padding:12px 20px;background:#059669;color:#fff;font-weight:600;border:none;border-radius:9999px;
+    box-shadow:0 10px 20px rgba(0,0,0,.25);cursor:pointer;font-size:15px;}
+  #previewBtn:hover{background:#047857;}
+  .ds-overlay{position:fixed;inset:0;z-index:1000;display:none;}
+  .ds-overlay.open{display:block;}
+  .ds-overlay.ds-cropz{z-index:1001;}
+  .ds-bg{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+  .ds-center{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;}
+  .ds-center.mid{align-items:center;}
+  .ds-panel{position:relative;background:#f3f4f6;border-radius:12px;box-shadow:0 25px 50px rgba(0,0,0,.4);width:100%;max-width:920px;margin:24px 0;}
+  .ds-panel.narrow{max-width:760px;background:#fff;}
+  .ds-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid #e5e7eb;background:#fff;border-radius:12px 12px 0 0;position:sticky;top:0;}
+  .ds-head h3{font-weight:700;color:#111827;margin:0;font-size:16px;}
+  .ds-head p{font-size:11px;color:#6b7280;margin:2px 0 0;max-width:560px;}
+  .ds-doc{background:#fff;margin:0 auto;border:1px solid #e5e7eb;max-width:820px;padding:44px 48px;min-height:200px;}
+  .ds-b{padding:6px 12px;font-size:13px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;}
+  .ds-b.primary{background:#2563eb;color:#fff;border-color:#2563eb;}
+  .ds-b.green{background:#059669;color:#fff;border-color:#059669;}
+  .ds-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid #e5e7eb;}
+</style>
+
+<!-- Floating Preview button -->
+<button type="button" id="previewBtn">
+  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+  Preview
+</button>
+
+<!-- Preview modal -->
+<div id="previewModal" class="ds-overlay">
+  <div class="ds-bg" onclick="closePreview()"></div>
+  <div class="ds-center" onclick="if(event.target===this){closePreview();}">
+    <div class="ds-panel">
+      <div class="ds-head">
+        <div>
+          <h3>Document Preview</h3>
+          <p>Layout preview of the .docx with the data entered so far. Images are shown at their true document size &amp; fit.</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="ds-b primary" onclick="closePreview(); document.getElementById('genBtn').click();">Generate .docx</button>
+          <button type="button" class="ds-b" onclick="closePreview()">Close</button>
+        </div>
+      </div>
+      <div style="padding:20px;"><div id="previewDoc" class="ds-doc"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Cropper modal -->
+<div id="cropperModal" class="ds-overlay ds-cropz">
+  <div class="ds-bg"></div>
+  <div class="ds-center mid" onclick="if(event.target===this){cancelCrop();}">
+    <div class="ds-panel narrow">
+      <div class="ds-head">
+        <div>
+          <h3>Crop image</h3>
+          <p>Drag across the image to select the area to keep, then Apply. The crop is used in the generated document.</p>
+        </div>
+        <button type="button" onclick="cancelCrop()" style="border:none;background:none;font-size:22px;line-height:1;color:#9ca3af;cursor:pointer;">&times;</button>
+      </div>
+      <div style="padding:20px;text-align:center;">
+        <div id="cropStage" style="position:relative;display:inline-block;max-width:100%;user-select:none;touch-action:none;">
+          <img id="cropImg" style="max-width:100%;max-height:60vh;display:block;">
+          <div id="cropSel" style="position:absolute;border:2px dashed #10b981;background:rgba(16,185,129,.15);display:none;pointer-events:none;"></div>
+        </div>
+        <p style="font-size:11px;color:#6b7280;margin-top:8px;">Target size in document: <span id="cropBox" style="font-weight:600;"></span></p>
+      </div>
+      <div class="ds-foot">
+        <button type="button" class="ds-b" onclick="clearCropSel()">Clear selection</button>
+        <button type="button" class="ds-b" onclick="cancelCrop()">Cancel</button>
+        <button type="button" class="ds-b green" onclick="applyCrop()">Apply crop</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -260,6 +347,94 @@
   function addRow(type) {
     const tpl = document.getElementById('tpl-' + type);
     document.getElementById('rows-' + type).appendChild(tpl.content.cloneNode(true));
+  }
+  function uploadCSV(key) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const text = evt.target.result;
+        const rows = parseCSV(text);
+        if (rows.length === 0) return;
+        
+        const tbody = document.getElementById('rows-' + key);
+        const tpl = document.getElementById('tpl-' + key);
+        if (!tbody || !tpl) return;
+        
+        // Find if first row is header by checking if values match column keys
+        let startIdx = 0;
+        const firstRow = rows[0];
+        const isHeader = firstRow.some(val => {
+          const v = val.toLowerCase();
+          return v.includes('freq') || v.includes('state') || v.includes('equipment') || 
+                 v.includes('make') || v.includes('model') || v.includes('serial') || 
+                 v.includes('cal') || v.includes('date') || v.includes('qp') || v.includes('avg');
+        });
+        if (isHeader) {
+          startIdx = 1;
+        }
+        
+        // Clear existing rows
+        tbody.innerHTML = '';
+        
+        for (let i = startIdx; i < rows.length; i++) {
+          const rowData = rows[i];
+          if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
+          
+          const clone = tpl.content.cloneNode(true);
+          const inputs = clone.querySelectorAll('input, select, textarea');
+          
+          for (let j = 0; j < inputs.length; j++) {
+            if (j < rowData.length) {
+              inputs[j].value = rowData[j].trim();
+            }
+          }
+          tbody.appendChild(clone);
+        }
+        showMessage('CSV imported successfully!', 'success');
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  function parseCSV(text) {
+    const lines = [];
+    let row = [""];
+    let inQuotes = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      const next = text[i+1];
+      
+      if (c === '"') {
+        if (inQuotes && next === '"') {
+          row[row.length - 1] += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (c === ',' && !inQuotes) {
+        row.push("");
+      } else if ((c === '\r' || c === '\n') && !inQuotes) {
+        if (c === '\r' && next === '\n') {
+          i++; // Skip \n
+        }
+        lines.push(row);
+        row = [""];
+      } else {
+        row[row.length - 1] += c;
+      }
+    }
+    if (row.length > 1 || row[0] !== "") {
+      lines.push(row);
+    }
+    return lines;
   }
   function delRow(btn) {
     const tbody = btn.closest('tbody');
@@ -282,6 +457,186 @@
         }
       })
       .catch(() => { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
+  });
+
+  /* =========================================================================
+     Document Preview + built-in image cropper (DOM-driven, no dependencies)
+     ========================================================================= */
+  var DS_TCO = {{ tco_id|tojson }};
+  var PXMM = 2.6;
+  var originalFiles = {};
+
+  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':String(s)); return d.innerHTML; }
+  function cssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s; }
+  function pretty(n){ return (n||'').replace(/_/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}); }
+
+  // Mirror datasheet_gen/generator._IMAGE_BOXES (aspect box the .docx fits images into)
+  function imageBoxMM(key){
+    var k=(key||'').toLowerCase();
+    if (k.indexOf('sign')>=0) return [40,20];
+    if (k.indexOf('photo')>=0) return [140,90];
+    return [150,90];                     // plot_line / plot_neutral / default
+  }
+  function inputByName(key){ return document.querySelector('[name="'+cssEsc(key)+'"]'); }
+  function imgFileFor(key){ var el=inputByName(key); return (el && el.files && el.files[0]) ? el.files[0] : null; }
+
+  function kv(label,val,block){
+    var d=document.createElement('div'); d.style.cssText='font-size:12px;margin:3px 0;';
+    d.innerHTML='<span style="font-weight:600;">'+esc(label)+':</span> ';
+    var v=document.createElement('span'); v.style.whiteSpace=block?'pre-wrap':'normal';
+    v.textContent=(val && String(val).trim()!=='') ? val : '—';
+    d.appendChild(v); return d;
+  }
+  function renderPreviewImage(key,label){
+    var box=imageBoxMM(key), w=Math.round(box[0]*PXMM), h=Math.round(box[1]*PXMM);
+    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
+    var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:4px;'; lbl.textContent=label||key; wrap.appendChild(lbl);
+    var frame=document.createElement('div');
+    frame.style.cssText='border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    var file=imgFileFor(key);
+    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); }
+    else { var ph=document.createElement('div'); ph.style.cssText='color:#94a3b8;font-size:11px;'; ph.textContent='(no image uploaded)'; frame.appendChild(ph); }
+    wrap.appendChild(frame);
+    var cap=document.createElement('div'); cap.style.cssText='font-size:10px;color:#64748b;margin-top:2px;'; cap.textContent='Document size: '+box[0]+' × '+box[1]+' mm'; wrap.appendChild(cap);
+    if (file){
+      var actions=document.createElement('div'); actions.style.marginTop='5px';
+      var cropBtn=document.createElement('button'); cropBtn.type='button';
+      cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
+      cropBtn.textContent='✂ Crop'; cropBtn.onclick=function(){ openCropper(key); };
+      actions.appendChild(cropBtn);
+      if (originalFiles[key]){
+        var resetBtn=document.createElement('button'); resetBtn.type='button';
+        resetBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
+        resetBtn.textContent='↺ Reset'; resetBtn.onclick=function(){ resetImage(key); };
+        actions.appendChild(resetBtn);
+      }
+      wrap.appendChild(actions);
+    }
+    return wrap;
+  }
+  function renderDomTable(t){
+    var ths=Array.prototype.slice.call(t.querySelectorAll('thead th')).map(function(x){return x.textContent.trim();});
+    if (ths.length && ths[ths.length-1]==='') ths.pop();
+    var rows=[];
+    Array.prototype.slice.call(t.querySelectorAll('tbody tr')).forEach(function(tr){
+      var vals=[];
+      Array.prototype.slice.call(tr.children).forEach(function(td){
+        if (td.querySelector('button')) return;               // actions cell
+        var ctrl=td.querySelector('input, select, textarea');
+        vals.push(ctrl ? ctrl.value.trim() : td.textContent.trim());
+      });
+      if (vals.some(function(v){return v!=='';})) rows.push(vals);
+    });
+    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
+    var tb=document.createElement('table'); tb.style.cssText='border-collapse:collapse;width:100%;font-size:11px;';
+    var head='<tr>'+ths.map(function(h){return '<th style="border:1px solid #999;padding:3px;background:#f3f4f6;text-align:left;">'+esc(h)+'</th>';}).join('')+'</tr>';
+    var body=rows.map(function(r){return '<tr>'+r.map(function(v){return '<td style="border:1px solid #999;padding:3px;">'+esc(v)+'</td>';}).join('')+'</tr>';}).join('');
+    if (!rows.length) body='<tr><td colspan="'+Math.max(ths.length,1)+'" style="border:1px solid #999;padding:6px;color:#999;text-align:center;">(no rows entered)</td></tr>';
+    tb.innerHTML=head+body; wrap.appendChild(tb); return wrap;
+  }
+  function buildPreview(){
+    var doc=document.getElementById('previewDoc'); doc.innerHTML='';
+    var head=document.createElement('div');
+    head.innerHTML='<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px;">'
+      +'<div style="font-size:18px;font-weight:700;">CE Test Data Sheet</div>'
+      +'<div style="font-size:12px;color:#555;">IEC-FRM-504 &middot; TCO '+esc(DS_TCO)+'</div></div>';
+    doc.appendChild(head);
+    document.querySelectorAll('#ceForm section').forEach(function(sec){
+      var secEl=document.createElement('div');
+      var h2=sec.querySelector('h2');
+      var title=document.createElement('div'); title.style.cssText='font-weight:700;font-size:14px;margin:14px 0 6px;'; title.textContent=h2?h2.textContent.trim():''; secEl.appendChild(title);
+      // scalar fields: a <label> paired with an input(non-file)/select in the same wrapper, not inside a table
+      sec.querySelectorAll('label').forEach(function(lbl){
+        var ctrl=lbl.parentElement.querySelector('input:not([type=file]), select');
+        if (ctrl && !ctrl.closest('table')) secEl.appendChild(kv(lbl.textContent.trim(), ctrl.value, false));
+      });
+      // textareas (deviation / test procedure have no <label>)
+      sec.querySelectorAll('textarea').forEach(function(ta){
+        var lbl=ta.parentElement.querySelector('label');
+        secEl.appendChild(kv(lbl?lbl.textContent.trim():pretty(ta.name), ta.value, true));
+      });
+      // images
+      sec.querySelectorAll('input[type=file]').forEach(function(f){
+        var lbl=f.parentElement.querySelector('label');
+        secEl.appendChild(renderPreviewImage(f.name, lbl?lbl.textContent.trim():f.name));
+      });
+      // tables
+      sec.querySelectorAll('table').forEach(function(t){ secEl.appendChild(renderDomTable(t)); });
+      doc.appendChild(secEl);
+    });
+  }
+  function openPreview(){ buildPreview(); document.getElementById('previewModal').classList.add('open'); }
+  function closePreview(){ document.getElementById('previewModal').classList.remove('open'); }
+
+  /* ---- set / reset the underlying file input ---- */
+  function setInputFile(key,file){
+    var el=inputByName(key); if(!el) return;
+    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
+    catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
+  }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
+
+  /* ---- cropper ---- */
+  var cropState={key:null, sx:0, sy:0, ex:0, ey:0, drawing:false, has:false};
+  function openCropper(key){
+    var file=imgFileFor(key); if(!file){ showMessage('Upload an image first.','error'); return; }
+    if(!originalFiles[key]) originalFiles[key]=file;
+    cropState={key:key, sx:0,sy:0,ex:0,ey:0,drawing:false,has:false};
+    document.getElementById('cropImg').src=URL.createObjectURL(file);
+    document.getElementById('cropSel').style.display='none';
+    var box=imageBoxMM(key);
+    document.getElementById('cropBox').textContent=box[0]+' × '+box[1]+' mm';
+    document.getElementById('cropperModal').classList.add('open');
+  }
+  function cancelCrop(){ document.getElementById('cropperModal').classList.remove('open'); }
+  function clearCropSel(){ cropState.has=false; document.getElementById('cropSel').style.display='none'; }
+  function drawSel(){
+    var img=document.getElementById('cropImg'), sel=document.getElementById('cropSel');
+    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
+    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
+    sel.style.left=(img.offsetLeft+x)+'px'; sel.style.top=(img.offsetTop+y)+'px';
+    sel.style.width=w+'px'; sel.style.height=h+'px'; sel.style.display='block';
+  }
+  function applyCrop(){
+    var key=cropState.key, file=imgFileFor(key); if(!file){ cancelCrop(); return; }
+    var img=document.getElementById('cropImg');
+    var rect=img.getBoundingClientRect();
+    var scaleX=img.naturalWidth/rect.width, scaleY=img.naturalHeight/rect.height;
+    var x=Math.min(cropState.sx,cropState.ex), y=Math.min(cropState.sy,cropState.ey);
+    var w=Math.abs(cropState.ex-cropState.sx), h=Math.abs(cropState.ey-cropState.sy);
+    if(!cropState.has || w<5 || h<5){ showMessage('Draw a crop area on the image first.','error'); return; }
+    var sx=Math.round(x*scaleX), sy=Math.round(y*scaleY), sw=Math.round(w*scaleX), sh=Math.round(h*scaleY);
+    var src=new Image();
+    src.onload=function(){
+      var canvas=document.createElement('canvas'); canvas.width=sw; canvas.height=sh;
+      canvas.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
+      var isPng=(file.type==='image/png');
+      canvas.toBlob(function(blob){
+        var cropped=new File([blob], key+'_cropped.'+(isPng?'png':'jpg'), {type: blob.type});
+        setInputFile(key, cropped);
+        cancelCrop(); buildPreview(); showMessage('Image cropped.','success');
+      }, isPng?'image/png':'image/jpeg', 0.92);
+    };
+    src.src=URL.createObjectURL(file);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    // lift modals out of any positioned/stacking container so they overlay the fixed navbar
+    ['previewModal','cropperModal'].forEach(function(id){ var m=document.getElementById(id); if(m) document.body.appendChild(m); });
+    document.getElementById('previewBtn').addEventListener('click', openPreview);
+    document.querySelectorAll('#ceForm input[type=file]').forEach(function(el){
+      el.addEventListener('change', function(){
+        if (el.files && el.files[0]) originalFiles[el.name]=el.files[0]; else delete originalFiles[el.name];
+      });
+    });
+    var stage=document.getElementById('cropStage'), img=document.getElementById('cropImg');
+    function point(e){ var r=img.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX), cy=(e.touches?e.touches[0].clientY:e.clientY);
+      return { x:Math.min(Math.max(cx-r.left,0),r.width), y:Math.min(Math.max(cy-r.top,0),r.height) }; }
+    function down(e){ e.preventDefault(); var p=point(e); cropState.sx=p.x; cropState.sy=p.y; cropState.ex=p.x; cropState.ey=p.y; cropState.drawing=true; cropState.has=true; drawSel(); }
+    function move(e){ if(!cropState.drawing) return; var p=point(e); cropState.ex=p.x; cropState.ey=p.y; drawSel(); }
+    function up(){ cropState.drawing=false; }
+    stage.addEventListener('mousedown', down); document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    stage.addEventListener('touchstart', down, {passive:false}); document.addEventListener('touchmove', move, {passive:false}); document.addEventListener('touchend', up);
   });
 </script>
 {% endblock %}

@@ -8,11 +8,11 @@
       "items": []
     },
     {
-      "title": "EUT And Technical Details",
+      "title": "EUT AND TECHNICAL DETAILS",
       "items": []
     },
     {
-      "title": "EUT Details",
+      "title": "EUT DETAILS",
       "items": [
         {
           "type": "fields",
@@ -20,29 +20,33 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "EUT Modification Record",
+      "title": "EUT MODIFICATION RECORD",
       "items": [
         {
           "type": "table",
@@ -69,7 +73,7 @@
       ]
     },
     {
-      "title": "Measurement Uncertainity",
+      "title": "MEASUREMENT UNCERTAINITY",
       "items": [
         {
           "type": "fields",
@@ -77,19 +81,21 @@
             {
               "key": "name_of_the_test",
               "label": "Name of the Test",
-              "input": "text"
+              "input": "text",
+              "default": "Measurement Uncertainty"
             },
             {
               "key": "harmonic_current_emission",
               "label": "Harmonic Current Emission",
-              "input": "text"
+              "input": "text",
+              "default": "± 5.807%"
             }
           ]
         }
       ]
     },
     {
-      "title": "Functional Check",
+      "title": "FUNCTIONAL CHECK",
       "items": [
         {
           "type": "field",
@@ -100,11 +106,11 @@
       ]
     },
     {
-      "title": "Harmonic Current Emission Test",
+      "title": "HARMONIC CURRENT EMISSION TEST",
       "items": []
     },
     {
-      "title": "Test Specification",
+      "title": "TEST SPECIFICATION",
       "items": [
         {
           "type": "fields",
@@ -112,84 +118,111 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "classification",
               "label": "Classification",
-              "input": "text"
+              "input": "text",
+              "checkbox": [
+                "Class A",
+                "Class B",
+                "Class C",
+                "Class D"
+              ],
+              "default": ""
             },
             {
               "key": "frequency_range",
               "label": "Frequency Range",
-              "input": "text"
+              "input": "text",
+              "default": "50 Hz to 2 kHz"
             },
             {
               "key": "maximum_harmonics",
               "label": "Maximum Harmonics",
-              "input": "text"
+              "input": "text",
+              "default": "40th Harmonics"
             },
             {
               "key": "measurement_time",
               "label": "Measurement Time",
-              "input": "text"
+              "input": "text",
+              "default": "10 minutes"
             },
             {
               "key": "test_port",
               "label": "Test Port",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
-              "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "label": "EUT Modification state \n(Refer 1.2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_col_1",
+              "label": "EUT Configuration (Col 2)",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_col_2",
+              "label": "EUT Configuration (Col 3)",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "Deviation From The Standard",
+      "title": "DEVIATION FROM THE STANDARD",
       "items": [
         {
           "type": "textarea",
@@ -199,7 +232,7 @@
       ]
     },
     {
-      "title": "Test Limits",
+      "title": "TEST LIMITS",
       "items": [
         {
           "type": "table",
@@ -232,167 +265,26 @@
       ]
     },
     {
-      "title": "Test Procedure",
+      "title": "TEST PROCEDURE",
       "items": [
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was placed on a wooden table/insulation support at 0.8/0.1m height. The power supply to the EUT was fed through a clean AC power source. The AC power source is in series with current transformer. The input voltage and frequency were set in the software as per the EUT specifications. The classification of the EUT and limits were selected as specified in the standard. The harmonic current emissions up to 40th harmonic was measured and compared with the limit specified in the standard."
         }
       ]
     },
     {
-      "title": "Measurement Data",
+      "title": "MEASUREMENT DATA",
       "items": [
         {
-          "type": "table",
-          "key": "harmonic_results",
-          "label": "Average Harmonic Current Results",
-          "columns": [
-            {
-              "key": "c0",
-              "label": "Harmonic Order (n)"
-            },
-            {
-              "key": "c1",
-              "label": "Ieff (A)"
-            },
-            {
-              "key": "c2",
-              "label": "% of limit"
-            },
-            {
-              "key": "c3",
-              "label": "Limit (A)"
-            }
-          ],
-          "rows": [
-            {
-              "c0": "1"
-            },
-            {
-              "c0": "2"
-            },
-            {
-              "c0": "3"
-            },
-            {
-              "c0": "4"
-            },
-            {
-              "c0": "5"
-            },
-            {
-              "c0": "6"
-            },
-            {
-              "c0": "7"
-            },
-            {
-              "c0": "8"
-            },
-            {
-              "c0": "9"
-            },
-            {
-              "c0": "10"
-            },
-            {
-              "c0": "11"
-            },
-            {
-              "c0": "12"
-            },
-            {
-              "c0": "13"
-            },
-            {
-              "c0": "14"
-            },
-            {
-              "c0": "15"
-            },
-            {
-              "c0": "16"
-            },
-            {
-              "c0": "17"
-            },
-            {
-              "c0": "18"
-            },
-            {
-              "c0": "19"
-            },
-            {
-              "c0": "20"
-            },
-            {
-              "c0": "21"
-            },
-            {
-              "c0": "22"
-            },
-            {
-              "c0": "23"
-            },
-            {
-              "c0": "24"
-            },
-            {
-              "c0": "25"
-            },
-            {
-              "c0": "26"
-            },
-            {
-              "c0": "27"
-            },
-            {
-              "c0": "28"
-            },
-            {
-              "c0": "29"
-            },
-            {
-              "c0": "30"
-            },
-            {
-              "c0": "31"
-            },
-            {
-              "c0": "32"
-            },
-            {
-              "c0": "33"
-            },
-            {
-              "c0": "34"
-            },
-            {
-              "c0": "35"
-            },
-            {
-              "c0": "36"
-            },
-            {
-              "c0": "37"
-            },
-            {
-              "c0": "38"
-            },
-            {
-              "c0": "39"
-            },
-            {
-              "c0": "40"
-            }
-          ]
+          "type": "static_table"
         }
       ]
     },
     {
-      "title": "Test Setup Pictures",
+      "title": "TEST SETUP PICTURES",
       "items": [
         {
           "type": "image",
@@ -402,7 +294,7 @@
       ]
     },
     {
-      "title": "Test Equipment Used",
+      "title": "TEST EQUIPMENT USED",
       "items": [
         {
           "type": "table",
@@ -433,7 +325,7 @@
       ]
     },
     {
-      "title": "Software Used",
+      "title": "SOFTWARE USED",
       "items": [
         {
           "type": "table",
@@ -452,30 +344,55 @@
       ]
     },
     {
-      "title": "Result",
+      "title": "RESULT",
       "items": [
         {
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
+              "key": "result_class",
+              "label": "Result Class",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "default": ""
             },
+            {
+              "key": "overall_result",
+              "label": "Overall Result",
+              "input": "text",
+              "options": [
+                "PASS",
+                "FAIL"
+              ],
+              "default": ""
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
             {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

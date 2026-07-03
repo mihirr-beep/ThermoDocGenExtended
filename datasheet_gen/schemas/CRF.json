@@ -8,11 +8,11 @@
       "items": []
     },
     {
-      "title": "EUT And Technical Details",
+      "title": "EUT AND TECHNICAL DETAILS",
       "items": []
     },
     {
-      "title": "EUT Details",
+      "title": "EUT DETAILS",
       "items": [
         {
           "type": "fields",
@@ -20,29 +20,33 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "EUT Modification Record",
+      "title": "EUT MODIFICATION RECORD",
       "items": [
         {
           "type": "table",
@@ -69,7 +73,7 @@
       ]
     },
     {
-      "title": "Functional Check",
+      "title": "FUNCTIONAL CHECK",
       "items": [
         {
           "type": "field",
@@ -80,7 +84,7 @@
       ]
     },
     {
-      "title": "Monitoring Parameters",
+      "title": "MONITORING PARAMETERS:",
       "items": [
         {
           "type": "textarea",
@@ -90,11 +94,11 @@
       ]
     },
     {
-      "title": "Conducted Radio Frequency Immunity Test",
+      "title": "CONDUCTED RADIO FREQUENCY IMMUNITY TEST",
       "items": []
     },
     {
-      "title": "Test Specification",
+      "title": "TEST SPECIFICATION",
       "items": [
         {
           "type": "fields",
@@ -102,109 +106,141 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "immunity_test_requirement",
               "label": "Immunity test requirement",
-              "input": "text"
+              "input": "text",
+              "default": "Basic     Industrial     Controlled    Custom"
             },
             {
-              "key": "test_port",
-              "label": "Test Port",
-              "input": "text"
+              "key": "test_port_col_1",
+              "label": "Test Port (Col 2)",
+              "input": "text",
+              "default": "Power Line"
             },
             {
-              "key": "coupling_method",
-              "label": "Coupling Method",
-              "input": "text"
+              "key": "test_port_col_2",
+              "label": "Test Port (Col 3)",
+              "input": "text",
+              "default": "Signal Line"
             },
             {
-              "key": "test_level",
-              "label": "Test Level",
-              "input": "text"
+              "key": "coupling_method_col_1",
+              "label": "Coupling Method (Col 2)",
+              "input": "text",
+              "default": "CDN"
+            },
+            {
+              "key": "coupling_method_col_2",
+              "label": "Coupling Method (Col 3)",
+              "input": "text",
+              "default": "EM Clamp"
             },
             {
               "key": "frequency_range",
               "label": "Frequency Range",
-              "input": "text"
+              "input": "text",
+              "default": "150kHz-80MHz  150kHz-230MHz    Custom___"
             },
             {
               "key": "frequency_step_size",
               "label": "Frequency Step size",
-              "input": "text"
+              "input": "text",
+              "default": "1 %"
             },
             {
               "key": "dwell_time",
               "label": "Dwell Time",
-              "input": "text"
+              "input": "text",
+              "default": "3 seconds"
             },
             {
               "key": "modulation",
               "label": "Modulation",
-              "input": "text"
+              "input": "text",
+              "default": "Amplitude Modulation"
             },
             {
               "key": "modulation_depth",
               "label": "Modulation depth",
-              "input": "text"
+              "input": "text",
+              "default": "80%"
             },
             {
               "key": "modulation_frequency",
               "label": "Modulation Frequency",
-              "input": "text"
+              "input": "text",
+              "default": "1kHz"
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
-              "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "label": "EUT Modification state \n(Refer 1.2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_1_vrms_3_vrms_10_vrms_custom",
+              "label": "EUT Configuration - 1 Vrms 3 Vrms 10 Vrms Custom___",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_1_vrms_3_vrms_10_vrms_custom_2",
+              "label": "EUT Configuration - 1 Vrms 3 Vrms 10 Vrms Custom___",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "Deviation From The Standard",
+      "title": "DEVIATION FROM THE STANDARD",
       "items": [
         {
           "type": "textarea",
@@ -214,35 +250,87 @@
       ]
     },
     {
-      "title": "Test Procedure",
+      "title": "TEST PROCEDURE",
       "items": [
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nPower Line:\n\nThe EUT was tested in the CRF test site with a GRP. The EUT was placed on a 0.1 m insulation support on the GRP. The cables between the coupling and decoupling devices and the EUT was kept as short as possible, and it was neither bundled nor wrapped and the cable was kept 30mm above the reference ground plane. The power supply to the EUT was fed through a CDN which is bonded to the GRP. The RF power from the signal source was amplified and fed through the RF input port of the CDN and superimposed on the power lines of the EUT with reference to ground plane.\n\nSignal Line:\n\nThe EUT was tested in the CRF test site with a ground reference plane. The EUT was placed on a 0.1 m insulation support on the GRP. The RF power from the signal source was amplified and fed through the RF port of the EM clamp and superimposed on the signal lines of the EUT with reference to ground plane.\n\nThe RF voltage was amplitude modulated to 80% depth with 1 kHz sine wave in the frequency range as per standard. During the test, performance of the EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
     {
-      "title": "Test Observation",
+      "title": "TEST OBSERVATION",
       "items": [
         {
           "type": "fields",
           "fields": [
             {
-              "key": "frequency_range_2",
-              "label": "Frequency range (MHz)",
-              "input": "text"
+              "key": "frequency_range_port_name_col_2",
+              "label": "Frequency range (MHz) - Port Name (Col 3)",
+              "input": "text",
+              "default": "Test Level (Vrms)"
             },
             {
-              "key": "f_0_15_to_80",
-              "label": "0.15 to 80",
-              "input": "text"
+              "key": "frequency_range_port_name_col_3",
+              "label": "Frequency range (MHz) - Port Name (Col 4)",
+              "input": "text",
+              "default": "Coupling method"
             },
             {
-              "key": "ism_band",
-              "label": "ISM Band (1)",
-              "input": "text"
+              "key": "frequency_range_port_name_col_4",
+              "label": "Frequency range (MHz) - Port Name (Col 5)",
+              "input": "text",
+              "default": "Observation"
+            },
+            {
+              "key": "f_0_15_to_80_col_1",
+              "label": "0.15 to 80 (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_15_to_80_col_2",
+              "label": "0.15 to 80 (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_15_to_80_col_3",
+              "label": "0.15 to 80 (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_15_to_80_col_4",
+              "label": "0.15 to 80 (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "ism_band_col_1",
+              "label": "ISM Band (1) (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "ism_band_col_2",
+              "label": "ISM Band (1) (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "ism_band_col_3",
+              "label": "ISM Band (1) (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "ism_band_col_4",
+              "label": "ISM Band (1) (Col 5)",
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -275,7 +363,7 @@
       ]
     },
     {
-      "title": "Test Setup Pictures",
+      "title": "TEST SETUP PICTURES",
       "items": [
         {
           "type": "image",
@@ -290,7 +378,7 @@
       ]
     },
     {
-      "title": "Test Equipment Used",
+      "title": "TEST EQUIPMENT USED",
       "items": [
         {
           "type": "table",
@@ -321,7 +409,7 @@
       ]
     },
     {
-      "title": "Software Used",
+      "title": "SOFTWARE USED",
       "items": [
         {
           "type": "table",
@@ -340,7 +428,7 @@
       ]
     },
     {
-      "title": "Result",
+      "title": "RESULT",
       "items": [
         {
           "type": "fields",
@@ -348,12 +436,14 @@
             {
               "key": "required_performance_criteria",
               "label": "Required Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "met_performance_criteria",
               "label": "Met Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -361,24 +451,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

@@ -43,6 +43,50 @@ def _s(value):
     return str(value).strip()
 
 
+# --- Checkbox rendering -------------------------------------------------------
+# The source datasheets show classification etc. as ticked checkboxes. docxtpl
+# only renders text, so we turn the selected value into a marked-up option line
+# using ballot-box glyphs, e.g. "Class A" -> "☒ Class A   ☐ Class B".
+CHECK_ON = "☒"   # ☒ ballot box with X
+CHECK_OFF = "☐"  # ☐ empty ballot box
+
+
+def as_checkbox_line(value, options):
+    """Return 'a<gap>b<gap>...' where the option matching `value` is ticked.
+
+    Matching is case-insensitive and tolerant of "A" vs "Class A" style values.
+    If nothing matches (blank/unknown), every box is left empty.
+    """
+    val = _s(value).lower()
+    parts = []
+    for opt in options:
+        o = str(opt).strip()
+        ol = o.lower()
+        hit = bool(val) and (val == ol or val in ol or ol in val
+                             or val == ol.split()[-1] or ol.split()[-1] == val)
+        parts.append(("{} {}".format(CHECK_ON if hit else CHECK_OFF, o)))
+    return "   ".join(parts)
+
+
+def _ra(obj, *names):
+    """First non-empty attribute value from obj across the given names."""
+    for n in names:
+        v = getattr(obj, n, None) if obj is not None else None
+        if v not in (None, ""):
+            return _s(v)
+    return ""
+
+
+def _eut_config(request_obj):
+    """Normalise the request's form-factor to the datasheet's Tabletop/Floor wording."""
+    pt = _ra(request_obj, "product_type").lower()
+    if pt.startswith("floor"):
+        return "Floor standing"
+    if pt.startswith("table") or "table" in pt:
+        return "Tabletop"
+    return _ra(request_obj, "product_type", "type_others")
+
+
 def _list(form_data, key):
     value = form_data.get(key)
     if value is None:
@@ -87,6 +131,12 @@ def build_ce_context(form_data):
          "neutral_avg[]", "neutral_avg_limit[]", "neutral_avg_margin[]"],
         meas_names,
     )
+
+    # Render classification selections as human-ticked checkboxes in the document
+    # (the template uses {{r ... }} placeholders for these two fields).
+    from .layout import human_checkbox
+    ctx["classification_group"] = human_checkbox(ctx.get("classification_group"), ["Group 1", "Group 2"])
+    ctx["classification_class"] = human_checkbox(ctx.get("classification_class"), ["Class A", "Class B"])
     return ctx
 
 
@@ -125,19 +175,31 @@ def _ce_detail(request_obj):
 
 def collect_ce_prefill(request_obj, assignment=None):
     ce = _ce_detail(request_obj) if request_obj is not None else None
+    # EUT model/serial come from the primary Product Identity columns (Model
+    # Number/SKU, Serial Number). Fall back to the multi-valued child rows only
+    # when the primary scalar is empty. (The old code read additional_models,
+    # which is the OPTIONAL "Sample 2" model, so it was usually blank.)
+    model = _ra(request_obj, "model_number") or _join(getattr(request_obj, "additional_models", []), "model_number")
+    serial = _ra(request_obj, "serial_number") or _join(getattr(request_obj, "serial_numbers", []), "serial_number")
+    tested_by = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     data = {
         # auto from request
-        "job_number": _s(getattr(request_obj, "job_number", "") or getattr(request_obj, "tco_id", "")) if request_obj else "",
-        "eut_name": _s(getattr(request_obj, "product_name", "")) if request_obj else "",
-        "eut_model": _join(getattr(request_obj, "additional_models", []), "model_number") if request_obj else "",
-        "eut_serial": _join(getattr(request_obj, "serial_numbers", []), "serial_number") if request_obj else "",
+        "job_number": _ra(request_obj, "job_number", "tco_id"),
+        "eut_name": _ra(request_obj, "product_name"),
+        "eut_model": model,
+        "eut_serial": serial,
         "product_standard": _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else "",
-        "classification_class": _s(getattr(ce, "ce_class", "")) if ce else "",
-        "classification_group": "",
+        # classification: overall Class/Group from the Test Request; per-test class as fallback
+        "classification_class": _ra(request_obj, "class_type") or (_s(getattr(ce, "ce_class", "")) if ce else ""),
+        "classification_group": _ra(request_obj, "product_group"),
+        "eut_configuration": _eut_config(request_obj),
+        "test_mode": _ra(request_obj, "test_configuration", "operation_modes"),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
-        "tested_by": _s(getattr(assignment, "test_person_name", "")) if assignment else "",
+        "tested_by": tested_by,
+        "tested_by_name": tested_by,
         # sensible defaults from the form/document
         "measurement_uncertainty": "± 3.368 dB",
+        "basic_standard": "Sysmex",
         "sop_reference": "IEC-SOP-505",
         "test_port": "Power Line",
         "coupling_method": "LISN",

@@ -1,5 +1,46 @@
 """Schema-driven context building + prefill for the generic datasheet engine."""
-from .service import _join, _fmt_supply  # reuse CE helpers
+from .service import _join, _fmt_supply, _ra, _eut_config, as_checkbox_line  # reuse CE helpers
+
+# registry code -> (EMCRequestTest.test_code, detail relationship attribute)
+_DETAIL_ATTR = {
+    "RE": ("RE", "re_detail"),
+    "ESD": ("ESD", "esd_detail"),
+    "HARMONIC": ("HARMONIC", "harmonic_detail"),
+    "VOLTAGEFLICKER": ("FLICKER", "flicker_detail"),
+    "RS_RI": ("RS", "rs_detail"),
+    "EFT": ("EFT", "eft_detail"),
+    "SURGE": ("SURGE", "surge_detail"),
+    "CRF": ("CRF", "crf_detail"),
+    "PFMF": ("POWER_FREQ", "power_freq_detail"),
+    "VOLTAGEDIPS": ("VOLTAGE_DIPS", "voltage_dips_detail"),
+}
+
+
+def _test_detail(request_obj, schema_code):
+    """The per-test detail row (EMCRequestTest{X}) for this schema's test, if any."""
+    mapping = _DETAIL_ATTR.get((schema_code or "").upper())
+    if not mapping or request_obj is None:
+        return None
+    test_code, attr = mapping
+    for test in getattr(request_obj, "tests", []) or []:
+        if str(getattr(test, "test_code", "")).upper() == test_code:
+            return getattr(test, attr, None)
+    return None
+
+
+def _norm_class(value):
+    """'A' / 'a' / 'Class A' -> 'Class A' (so it matches checkbox options)."""
+    v = str(value or "").strip()
+    if len(v) == 1 and v.upper() in "ABCD":
+        return "Class " + v.upper()
+    return v
+
+
+def _is_custom(value):
+    """A TR spec value is only worth prefilling when it's a real custom value,
+    not the 'As per standard' marker (the printed option row covers that)."""
+    v = str(value or "").strip()
+    return bool(v) and "standard" not in v.lower()
 
 
 def _s(value):
@@ -51,7 +92,13 @@ def build_context(schema, form_data):
     for f in iter_scalar_fields(schema):
         if f.get("input") == "image":
             continue
-        ctx[f["key"]] = _s(form_data.get(f["key"]))
+        val = _s(form_data.get(f["key"]))
+        # Fields declared with a "checkbox" option list render as human-ticked
+        # checkboxes (their template placeholder is {{r key }}).
+        if f.get("checkbox"):
+            from .layout import human_checkbox
+            val = human_checkbox(val, f["checkbox"])
+        ctx[f["key"]] = val
     # repeating tables
     for sec in schema["sections"]:
         for it in sec["items"]:
@@ -78,22 +125,32 @@ def collect_prefill(schema, request_obj, assignment):
     empty (e.g. a single-model request), so prefill works regardless of how the
     request was captured.
     """
-    job = name = model = serial = standard = vf = ""
+    job = name = model = serial = standard = vf = monitoring = test_mode = cfg = ""
     if request_obj is not None:
-        job = _s(getattr(request_obj, "job_number", "") or getattr(request_obj, "tco_id", ""))
-        name = _s(getattr(request_obj, "product_name", ""))
-        model = (_join(getattr(request_obj, "additional_models", []), "model_number")
-                 or _s(getattr(request_obj, "model_number", "")))
-        serial = (_join(getattr(request_obj, "serial_numbers", []), "serial_number")
-                  or _s(getattr(request_obj, "serial_number", "")))
+        job = _ra(request_obj, "job_number", "tco_id")
+        name = _ra(request_obj, "product_name")
+        # Primary Product-Identity columns first, multi-valued child rows as fallback.
+        model = _ra(request_obj, "model_number") or _join(getattr(request_obj, "additional_models", []), "model_number")
+        serial = _ra(request_obj, "serial_number") or _join(getattr(request_obj, "serial_numbers", []), "serial_number")
         standard = _join(getattr(request_obj, "product_standards", []), "standard_value")
         vf = _fmt_supply(getattr(request_obj, "supply_vf_values", []))
+        monitoring = _ra(request_obj, "monitoring_parameters")
+        test_mode = _ra(request_obj, "test_configuration", "operation_modes")
+        cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
     eng = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
+    detail = _test_detail(request_obj, schema.get("code"))
 
     pre = {}
     for f in iter_scalar_fields(schema):
         if f.get("input") == "image":
             continue
+        default = str(f.get("default") or "")
+        if "default" in f and "{{" not in default and "{%" not in default:
+            val = f["default"]
+            # source-doc boilerplate token -> the request's actual standard
+            if isinstance(val, str) and "<Standard name>" in val and standard:
+                val = val.replace("<Standard name>", standard)
+            pre[f["key"]] = val            # never surface template syntax as a value
         k = f["key"].lower()
         if "job_number" in k:
             pre[f["key"]] = job
@@ -105,8 +162,50 @@ def collect_prefill(schema, request_obj, assignment):
             pre[f["key"]] = serial
         elif "product_standard" in k:
             pre[f["key"]] = standard
+        elif k == "basic_standard":
+            pre[f["key"]] = "Sysmex"          # manager: baseline basic standard
+        elif "monitoring_parameters" in k:
+            pre[f["key"]] = monitoring
         elif "voltage" in k and "frequency" in k:
             pre[f["key"]] = vf
+        elif k == "test_mode":
+            pre[f["key"]] = test_mode
+        elif "modification_state" in k:
+            pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
+        elif k.startswith("eut_configuration"):
+            # The doc prints Tabletop / Floor standing in adjacent cells; keep the
+            # cell matching the request's form factor, blank the other one.
+            if cfg:
+                d = default.lower()
+                if "tabletop" in d:
+                    pre[f["key"]] = "Tabletop" if cfg == "Tabletop" else ""
+                elif "floor" in d:
+                    pre[f["key"]] = "Floor standing" if cfg == "Floor standing" else ""
+        elif f.get("checkbox") and k.startswith("classification"):
+            # tick Group from TR product_group, Class from TR class (or the
+            # harmonics equipment class for the HARMONIC datasheet)
+            opts = " ".join(str(o) for o in f["checkbox"]).lower()
+            if "group" in opts:
+                pre[f["key"]] = _ra(request_obj, "product_group")
+            else:
+                pre[f["key"]] = _norm_class(
+                    _s(getattr(detail, "harmonic_class", "")) or _ra(request_obj, "class_type"))
+        elif k == "direct_contact_discharge" or k.startswith("indirect_contact_discharge"):
+            v = _s(getattr(detail, "contact_level", ""))
+            if _is_custom(v):
+                pre[f["key"]] = v
+        elif k == "air_discharge":
+            v = _s(getattr(detail, "air_level", ""))
+            if _is_custom(v):
+                pre[f["key"]] = v
+        elif k == "frequency_range":
+            v = _s(getattr(detail, "freq_range", ""))
+            if _is_custom(v):
+                pre[f["key"]] = v
+        elif k == "result_class":
+            # 'Class A' -> 'A' (the doc sentence reads 'as per Class {{ result_class }} limit')
+            ct = _ra(request_obj, "class_type")
+            pre[f["key"]] = ct.split()[-1].upper() if ct and ct.split()[-1].upper() in ("A", "B") else ""
         elif "tested_by" in k or k == "tested_by":
             pre[f["key"]] = eng
         elif k == "deviation":

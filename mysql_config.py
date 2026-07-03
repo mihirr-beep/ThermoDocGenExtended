@@ -2,6 +2,28 @@ import hashlib
 import os
 from datetime import timedelta
 
+# Load .env file if it exists in the app directory
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+if os.path.exists(_env_path):
+    with open(_env_path, 'r', encoding='utf-8') as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith('#') or '=' not in _line:
+                continue
+            _key, _val = _line.split('=', 1)
+            _key = _key.strip()
+            _val = _val.strip().strip("'\"")
+            if _key:
+                os.environ[_key] = _val
+
+# Register PyMySQL as MySQLdb shim (works without PYTHONPATH)
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass
+
+
 
 def _build_default_secret_key() -> str:
     """Create a stable, app-scoped development secret key.

@@ -8,11 +8,11 @@
       "items": []
     },
     {
-      "title": "EUT And Technical Details",
+      "title": "EUT AND TECHNICAL DETAILS",
       "items": []
     },
     {
-      "title": "EUT Details",
+      "title": "EUT DETAILS",
       "items": [
         {
           "type": "fields",
@@ -20,29 +20,33 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "EUT Modification Record",
+      "title": "EUT MODIFICATION RECORD",
       "items": [
         {
           "type": "table",
@@ -69,7 +73,7 @@
       ]
     },
     {
-      "title": "Functional Check",
+      "title": "FUNCTIONAL CHECK",
       "items": [
         {
           "type": "field",
@@ -80,7 +84,7 @@
       ]
     },
     {
-      "title": "Monitoring Parameters",
+      "title": "MONITORING PARAMETERS:",
       "items": [
         {
           "type": "textarea",
@@ -90,11 +94,11 @@
       ]
     },
     {
-      "title": "Power Frequency Magnetic Field Immunity Test",
+      "title": "POWER FREQUENCY MAGNETIC FIELD IMMUNITY TEST",
       "items": []
     },
     {
-      "title": "Test Specification",
+      "title": "TEST SPECIFICATION",
       "items": [
         {
           "type": "fields",
@@ -102,89 +106,117 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "immunity_test_requirement",
               "label": "Immunity test requirement",
-              "input": "text"
+              "input": "text",
+              "default": "Basic   Industrial       Controlled    Custom"
             },
             {
               "key": "test_port",
               "label": "Test Port",
-              "input": "text"
+              "input": "text",
+              "default": "Enclosure"
             },
             {
-              "key": "test_level",
-              "label": "Test Level",
-              "input": "text"
+              "key": "test_method_1a_m_3a_m_30a_m_custom",
+              "label": "Test Method - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "Proximity method"
             },
             {
-              "key": "test_method",
-              "label": "Test Method",
-              "input": "text"
+              "key": "test_method_1a_m_3a_m_30a_m_custom_2",
+              "label": "Test Method - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "Immersion method"
             },
             {
-              "key": "coil_orientation",
-              "label": "Coil Orientation",
-              "input": "text"
+              "key": "coil_orientation_1a_m_3a_m_30a_m_custom",
+              "label": "Coil Orientation - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "0°  90°  180° 270°"
+            },
+            {
+              "key": "coil_orientation_1a_m_3a_m_30a_m_custom_2",
+              "label": "Coil Orientation - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "X  Y  Z"
             },
             {
               "key": "test_duration",
               "label": "Test Duration(sec)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
-              "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "label": "EUT Modification state \n(Refer 1.2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_1a_m_3a_m_30a_m_custom",
+              "label": "EUT Configuration - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_1a_m_3a_m_30a_m_custom_2",
+              "label": "EUT Configuration - 1A/m 3A/m 30A/m Custom______",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
       ]
     },
     {
-      "title": "Deviation From The Standard",
+      "title": "DEVIATION FROM THE STANDARD",
       "items": [
         {
           "type": "textarea",
@@ -194,65 +226,88 @@
       ]
     },
     {
-      "title": "Test Procedure",
+      "title": "TEST PROCEDURE",
       "items": [
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe equipment was tested at the PFMF test site with a ground reference plane. The EUT was placed on a 0.5/0.1m wooden table/insulation support which was in turn placed on the GRP/Non-GRP. The test generator was bonded directly on to the GRP and connected to an Induction coil (1m x 1m) through a HV cable. The current and frequency of the source was set according to the requirement. The correction factor for the induction coil was compensated to achieve the required field strength. The AC current generated from the generator was given through the induction coil and power frequency magnetic field was generated through the coil. The test was repeated by changing the coil orientation in different axis/directions. During the test performance of the EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
     {
-      "title": "Test Observation",
+      "title": "TEST OBSERVATION",
       "items": [
         {
-          "type": "table",
-          "key": "obs_pfmf",
-          "label": "Field Strength × Coil Orientation",
-          "columns": [
+          "type": "fields",
+          "fields": [
             {
-              "key": "c0",
-              "label": "Field Strength (A/m)"
+              "key": "field_strength_power_frequency",
+              "label": "Field Strength(A/m) - Power Frequency",
+              "input": "text",
+              "default": "Coil Orientation"
             },
             {
-              "key": "c1",
-              "label": "Power Frequency"
+              "key": "field_strength_power_frequency_col_2",
+              "label": "Field Strength(A/m) - Power Frequency (Col 3)",
+              "input": "text",
+              "default": "Proximity method"
             },
             {
-              "key": "c2",
-              "label": "Proximity 0°"
+              "key": "field_strength_power_frequency_col_6",
+              "label": "Field Strength(A/m) - Power Frequency (Col 7)",
+              "input": "text",
+              "default": "Immersion method"
             },
             {
-              "key": "c3",
-              "label": "Proximity 90°"
+              "key": "field_strength_power_frequency_col_2_2",
+              "label": "Field Strength(A/m) - Power Frequency (Col 3)",
+              "input": "text",
+              "default": "0°"
             },
             {
-              "key": "c4",
-              "label": "Proximity 180°"
+              "key": "field_strength_power_frequency_col_3",
+              "label": "Field Strength(A/m) - Power Frequency (Col 4)",
+              "input": "text",
+              "default": "90°"
             },
             {
-              "key": "c5",
-              "label": "Proximity 270°"
+              "key": "field_strength_power_frequency_col_4",
+              "label": "Field Strength(A/m) - Power Frequency (Col 5)",
+              "input": "text",
+              "default": "180°"
             },
             {
-              "key": "c6",
-              "label": "Immersion X"
+              "key": "field_strength_power_frequency_col_5",
+              "label": "Field Strength(A/m) - Power Frequency (Col 6)",
+              "input": "text",
+              "default": "270°"
             },
             {
-              "key": "c7",
-              "label": "Immersion Y"
+              "key": "field_strength_power_frequency_col_6_2",
+              "label": "Field Strength(A/m) - Power Frequency (Col 7)",
+              "input": "text",
+              "default": "X"
             },
             {
-              "key": "c8",
-              "label": "Immersion Z"
+              "key": "field_strength_power_frequency_col_7",
+              "label": "Field Strength(A/m) - Power Frequency (Col 8)",
+              "input": "text",
+              "default": "Y"
+            },
+            {
+              "key": "field_strength_power_frequency_col_8",
+              "label": "Field Strength(A/m) - Power Frequency (Col 9)",
+              "input": "text",
+              "default": "Z"
             }
           ]
         }
       ]
     },
     {
-      "title": "Test Setup Pictures",
+      "title": "TEST SETUP PICTURES",
       "items": [
         {
           "type": "image",
@@ -262,7 +317,7 @@
       ]
     },
     {
-      "title": "Test Equipment Used",
+      "title": "TEST EQUIPMENT USED",
       "items": [
         {
           "type": "table",
@@ -293,7 +348,7 @@
       ]
     },
     {
-      "title": "Software Used",
+      "title": "SOFTWARE USED",
       "items": [
         {
           "type": "table",
@@ -312,7 +367,7 @@
       ]
     },
     {
-      "title": "Result",
+      "title": "RESULT",
       "items": [
         {
           "type": "fields",
@@ -320,12 +375,14 @@
             {
               "key": "required_performance_criteria",
               "label": "Required Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "met_performance_criteria",
               "label": "Met Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -333,24 +390,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
