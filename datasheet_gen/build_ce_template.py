@@ -69,9 +69,9 @@ def wrap_loop(table, data_index, loop_var):
 
 
 def insert_measure_table_after(doc, paragraph, loop_var, item):
-    header = ["Frequency (MHz)", "QP (dBuV)", "QP Limit", "QP Margin",
-              "Avg (dBuV)", "Avg Limit", "Avg Margin"]
-    cols = ["freq", "qp", "qp_limit", "qp_margin", "avg", "avg_limit", "avg_margin"]
+    header = ["Frequency (MHz)", "Q-peak (dBµV)", "Limit (dBµV)", "Margin (dB)",
+              "Frequency (MHz)", "Average (dBµV)", "Limit (dBµV)", "Margin (dB)"]
+    cols = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
     tbl = doc.add_table(rows=4, cols=len(header))
     tbl.style = "Table Grid"
     for j, h in enumerate(header):
@@ -98,7 +98,8 @@ SPEC_MAP = {
     "Measurement time": ("{{ measurement_time }}", ""),
     "Test Mode": ("{{ test_mode }}", ""),
     "EUT Modification state": ("{{ eut_modification_state }}", ""),
-    "EUT Configuration": ("{{ eut_configuration }}", ""),
+    # Checkboxes (Tabletop | Floor standing), one per cell, ticked via RichText
+    "EUT Configuration": ("{{r eut_config_tabletop }}", "{{r eut_config_floor }}"),
     "EUT Input Voltage": ("{{ eut_voltage_frequency }}", ""),
     "Ambient Temperature": ("{{ ambient_temperature }}", ""),
     "Relative Humidity": ("{{ relative_humidity }}", ""),
@@ -194,7 +195,7 @@ def main(src):
     # Test procedure: make the first procedure line editable, drop the boilerplate
     proc = find_para(doc, "The test procedure was in accordance")
     if proc:
-        proc.text = "{{ test_procedure }}"
+        proc.text = "{{r test_procedure }}"   # RichText: bold "LISN (Voltage Method):" header
         for prefix in ("The EUT was placed", "LISN (Voltage Method)",
                        "The conducted emission was measured"):
             p = find_para(doc, prefix)
@@ -230,8 +231,8 @@ def main(src):
     # Result paragraph + sign-off
     result = find_para(doc, "Conducted Emissions from the EUT as per Class")
     if result:
-        result.text = ("Conducted Emissions from the EUT as per Class "
-                       "{{ result_class }} limit: {{ overall_result }}")
+        result.text = ("Conducted Emissions from the EUT as per "
+                       "{{r result_class_label }} limit: {{r result_checkbox }}")
     signoff = {"Name": "{{ tested_by_name }}", "Signature": "{{ signature }}", "Date": "{{ tested_by_date }}"}
     for row in t[7].rows:
         if row.cells[0].text.strip() in signoff:

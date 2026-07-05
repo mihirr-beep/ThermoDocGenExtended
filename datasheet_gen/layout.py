@@ -262,3 +262,102 @@ def polish_layout(doc):
             if _row_is_header(rows[0]):
                 _mark_header_row(rows[0])    # repeat header on continuation pages
         _equalize_columns(tbl)
+
+
+def ce_finalize_layout(doc):
+    """CE-only pagination + caption placement (per the DS504 reference layout).
+
+    Applied after polish_layout + page_break_before_top_sections, from the CE
+    generator only (generic forms are untouched). It:
+
+      1. Moves each "Table N:" caption to sit BELOW its table (the source
+         template puts the caption above; the reference shows image-then-caption
+         and table-then-caption -- caption always below the object).
+      2. Forces page breaks so the datasheet paginates like the reference:
+           * "TEST PROCEDURE"      -> new page: procedure + Measurement-Data
+                                       figure 1 & table 1 sit together.
+           * Figure 2 block        -> new page: figure 2 & table 2 on their own page.
+           * "TEST SETUP PICTURES" -> new page: photo (2.6) + equipment (2.7) together.
+           * "SOFTWARE USED"       -> new page: software (2.8) + result (2.9) last page.
+      3. Keeps each image -> caption -> table block from splitting across a page.
+    """
+    # 0) collapse runs of >1 consecutive blank paragraphs to a single blank. The
+    #    source template carries several spacer lines (e.g. 4 blanks before
+    #    "Measurement Data") that waste ~2cm and push the Table 1 caption onto the
+    #    next page; one blank is enough separation.
+    #    Table-aware: a table (or any non-paragraph) between two blanks breaks the
+    #    run, so the single spacer between a table and the next heading is kept.
+    body = doc.element.body
+    w_p = qn("w:p")
+    prev_blank = False
+    for el in list(body):
+        if el.tag == w_p:
+            txt = "".join(t.text or "" for t in el.iter(qn("w:t"))).strip()
+            has_img = el.findall(".//" + qn("w:drawing")) or el.findall(".//" + qn("w:pict"))
+            blank = (not txt) and (not has_img)
+            if blank and prev_blank:
+                body.remove(el)
+            else:
+                prev_blank = blank
+        else:
+            prev_blank = False   # table / sectPr / etc. ends the blank run
+
+    # 1) table caption -> below its table
+    for p in list(doc.paragraphs):
+        t = _text(p).strip()
+        if t[:6].lower() == "table " and ":" in t[:14]:
+            nxt = p._p.getnext()
+            if nxt is not None and nxt.tag == qn("w:tbl"):
+                nxt.addnext(p._p)   # relocate the caption to after the table
+
+    # 2) reset all keep-with-next (polish_layout glues nearly every paragraph,
+    #    which would otherwise chain the whole document into one un-fittable block).
+    for p in doc.paragraphs:
+        p.paragraph_format.keep_with_next = False
+
+    # 3) Group the tail of the datasheet into discrete keep-together blocks, each
+    #    of which fits on one page, and let Word FLOW them (no forced page breaks,
+    #    which double up into blank pages when the previous page is full). A block
+    #    that doesn't fit the remaining space moves whole to the next page, giving:
+    #      p1 section 1 | p2 2.1-2.3 | p3 procedure+fig1/table1 | p4 fig2/table2
+    #      p5 photo(2.6)+equipment(2.7) | p6 software(2.8)+result(2.9)
+    paras = doc.paragraphs
+    texts = [_text(p).strip().lower() for p in paras]
+
+    def find(pred, start=0):
+        for k in range(start, len(paras)):
+            if pred(texts[k]):
+                return k
+        return None
+
+    a0 = find(lambda t: t == "test procedure")                       # procedure + fig1/table1
+    b0 = find(lambda t: t.startswith("figure 2"))                    # fig2/table2 (image is b0-1)
+    c0 = find(lambda t: t == "test setup pictures")                  # photo + equipment
+    d0 = find(lambda t: t == "software used")                        # software + result
+
+    def glue(start, end):
+        """Bind [start, end) into one keep-together block: keep_together stops any
+        single paragraph (e.g. the procedure text) splitting across pages, and
+        keep_with_next chains the members. The last member is left free so the
+        next block can begin on a fresh page."""
+        if start is None:
+            return
+        end = len(paras) if end is None else end
+        last = min(end, len(paras))
+        for k in range(start, last):
+            paras[k].paragraph_format.keep_together = True
+        for k in range(start, last - 1):
+            paras[k].paragraph_format.keep_with_next = True
+
+    fig2_img = (b0 - 1) if b0 else None
+    glue(a0, fig2_img)          # Group A: procedure .. table 1 (+ caption)
+    glue(fig2_img, c0)          # Group B: figure 2 .. table 2 (+ caption)
+    glue(c0, d0)                # Group C: 2.6 photo + 2.7 equipment
+    glue(d0, None)              # Group D: 2.8 software + 2.9 result
+
+    # 2.8 Software + 2.9 Result belong together on the final page. Group C
+    # (photo + equipment) leaves the page part-empty, so software would otherwise
+    # flow up onto it; a page break here moves the pair down cleanly (Group C is
+    # not full, so this does not create a blank page).
+    if d0 is not None:
+        paras[d0].paragraph_format.page_break_before = True

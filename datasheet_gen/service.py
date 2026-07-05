@@ -4,13 +4,14 @@ collect auto-fill values from the request to pre-populate the form.
 Field names below are the canonical names used by the CE form page, the context,
 and the template placeholders (all aligned).
 """
+import re
 
 STANDARD_PROCEDURE = (
     "The EUT was placed on a wooden table / insulation support at 0.8 / 0.1 m height. "
     "The EUT was tested at the conducted emissions test site with a horizontal ground "
     "reference plane and a vertical ground reference plane bonded together. The power "
     "supply to the EUT and auxiliary equipment was fed through LISN.\n\n"
-    "LISN (Voltage Method): The conducted emission was measured through the 50 Ω RF "
+    "LISN (Voltage Method):\nThe conducted emission was measured through the 50 Ω RF "
     "port of the LISN using an EMI receiver carried out in FFT mode, and conducted "
     "emission from the EUT coupled through the Power (mains) port was plotted in the "
     "graph. The dominant peaks at various frequencies, closer to and/or above the limit "
@@ -119,17 +120,20 @@ def build_ce_context(form_data):
         ["eq_name[]", "eq_make[]", "eq_model[]", "eq_serial[]", "eq_cal_due[]"],
         ["name", "make", "model", "serial", "cal_due"],
     )
-    meas_names = ["freq", "qp", "qp_limit", "qp_margin", "avg", "avg_limit", "avg_margin"]
+    # 8-column measurement layout: Q-peak block (own frequency) | Average block (own
+    # frequency). The two frequencies differ because the max Q-peak and max Average in
+    # a band occur at different points (see the "Build from raw scan" reducer in the form).
+    meas_names = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
     ctx["line_rows"] = _rows(
         form_data,
-        ["line_freq[]", "line_qp[]", "line_qp_limit[]", "line_qp_margin[]",
-         "line_avg[]", "line_avg_limit[]", "line_avg_margin[]"],
+        ["line_qp_freq[]", "line_qp[]", "line_qp_limit[]", "line_qp_margin[]",
+         "line_avg_freq[]", "line_avg[]", "line_avg_limit[]", "line_avg_margin[]"],
         meas_names,
     )
     ctx["neutral_rows"] = _rows(
         form_data,
-        ["neutral_freq[]", "neutral_qp[]", "neutral_qp_limit[]", "neutral_qp_margin[]",
-         "neutral_avg[]", "neutral_avg_limit[]", "neutral_avg_margin[]"],
+        ["neutral_qp_freq[]", "neutral_qp[]", "neutral_qp_limit[]", "neutral_qp_margin[]",
+         "neutral_avg_freq[]", "neutral_avg[]", "neutral_avg_limit[]", "neutral_avg_margin[]"],
         meas_names,
     )
 
@@ -138,6 +142,20 @@ def build_ce_context(form_data):
     from .layout import human_checkbox
     ctx["classification_group"] = human_checkbox(ctx.get("classification_group"), ["Group 1", "Group 2"])
     ctx["classification_class"] = human_checkbox(ctx.get("classification_class"), ["Class A", "Class B"])
+    # EUT Configuration as ticked checkboxes, one option per cell (Tabletop | Floor
+    # standing) so both options stay visible with the selected one ticked, matching
+    # the source form (template uses {{r eut_config_tabletop }} / {{r eut_config_floor }}).
+    ctx["eut_config_tabletop"] = human_checkbox(ctx.get("eut_configuration"), ["Tabletop"])
+    ctx["eut_config_floor"] = human_checkbox(ctx.get("eut_configuration"), ["Floor standing"])
+    # Result line: bold the class label and show PASS / FAIL as ticked checkboxes so
+    # the outcome is easy to see (template: {{r result_class_label }} / {{r result_checkbox }}).
+    from docxtpl import RichText
+    _rc = (ctx.get("result_class") or "").strip()
+    ctx["result_class_label"] = RichText(("Class " + _rc) if _rc else "Class", bold=True)
+    ctx["result_checkbox"] = human_checkbox(ctx.get("overall_result"), ["PASS", "FAIL"])
+    # Test procedure as RichText so "LISN (Voltage Method):" renders bold, on its
+    # own line (template uses {{r test_procedure }}).
+    ctx["test_procedure"] = procedure_richtext(ctx.get("test_procedure", ""))
     return ctx
 
 
@@ -175,11 +193,12 @@ def _ce_detail(request_obj):
 
 
 PROCEDURE_TEMPLATE = (
+    "The test procedure was in accordance with {basic_standard}.\n\n"
     "The EUT was placed on a wooden table / insulation support at {height} height. "
     "The EUT was tested at the conducted emissions test site with a horizontal ground "
     "reference plane and a vertical ground reference plane bonded together. The power "
     "supply to the EUT and auxiliary equipment was fed through LISN.\n\n"
-    "LISN (Voltage Method): The conducted emission was measured through the 50 Ω RF "
+    "LISN (Voltage Method):\nThe conducted emission was measured through the 50 Ω RF "
     "port of the LISN using an EMI receiver carried out in FFT mode, and conducted "
     "emission from the EUT coupled through the Power (mains) port was plotted in the "
     "graph. The dominant peaks at various frequencies, closer to and/or above the limit "
@@ -187,13 +206,59 @@ PROCEDURE_TEMPLATE = (
     "compared with the limit specified in the standard."
 )
 
+# Basic Standard is DERIVED from the selected Product Standard (per the DS504 sheet).
+# Matched on a punctuation/space-insensitive token so it tolerates "IEC 61326-1:2020",
+# "IEC61326-1:2020", etc.
+_BASIC_STANDARD_MAP = [
+    ("en61326", "EN 55011:2016+A2:2021"),                 # EN 61326-1:2021
+    ("iec61326", "CISPR 11:2015+A1:2016+A2:2019"),        # IEC 61326-1:2020
+    ("ices", "CISPR 11:2015+A1:2016+A2:2019"),            # ICES-001 Issue 5
+    ("part15", "ANSI C63.4:2024"),                        # 47 CFR Part 15 Subpart B:2024
+    ("cfr", "ANSI C63.4:2024"),
+    ("fcc", "ANSI C63.4:2024"),
+]
 
-def procedure_for_config(config):
-    """CE test-procedure text. Only the EUT height differs by configuration:
-    Tabletop -> 0.1m, Floor standing -> 0.8m. (Section 7 is read-only in the form
-    and driven by the EUT Configuration dropdown in section 4.)"""
+
+def basic_standard_for(product_standard):
+    """Return the Basic Standard for the given Product Standard, or '' if unknown:
+        IEC 61326-1:2020                          -> CISPR 11:2015+A1:2016+A2:2019
+        EN 61326-1:2021                           -> EN 55011:2016+A2:2021
+        ICES-001 Issue 5 (all clauses except 3.3) -> CISPR 11:2015+A1:2016+A2:2019
+        47 CFR Part 15 Subpart B:2024 (Clause 15)  -> ANSI C63.4:2024
+    """
+    key = re.sub(r"[^a-z0-9]", "", _s(product_standard).lower())
+    for token, basic in _BASIC_STANDARD_MAP:
+        if token in key:
+            return basic
+    return ""
+
+
+def procedure_richtext(text):
+    """Render the (read-only) test procedure as docxtpl RichText so the
+    "LISN (Voltage Method):" line is BOLD and stands on its own like a header,
+    while newlines become line breaks. Used via the {{r test_procedure }} tag."""
+    from docxtpl import RichText
+    marker = "LISN (Voltage Method):"
+    rt = RichText()
+    for i, line in enumerate(_s(text).split("\n")):
+        if i:
+            rt.add("\n")                       # preserve the original line break
+        if line.strip() == marker:
+            rt.add(marker, bold=True)          # bold, on its own line (header)
+        elif line:
+            rt.add(line)
+    return rt
+
+
+def procedure_for_config(config, basic_standard=""):
+    """CE test-procedure text. The opening line names the basic standard; the EUT
+    height differs by configuration (Tabletop -> 0.1m, Floor standing -> 0.8m).
+    Section 7 is read-only in the form, driven by Product Standard + EUT Configuration."""
     height = "0.8m" if _s(config).lower().startswith("floor") else "0.1m"
-    return PROCEDURE_TEMPLATE.format(height=height)
+    return PROCEDURE_TEMPLATE.format(
+        basic_standard=(_s(basic_standard) or "the applicable basic standard"),
+        height=height,
+    )
 
 
 # Test-limit prefills by classification class (dBµV), per the DS504 sheet.
@@ -256,6 +321,17 @@ def collect_ce_equipment_rows():
     return rows
 
 
+def _first_config_line(text):
+    """Test Mode shows only the FIRST line/item of the (often long, numbered) EUT
+    test-configuration text, with any leading '1.'/'1)' numbering + tab stripped."""
+    t = _s(text).strip()
+    if not t:
+        return ""
+    first = t.splitlines()[0].strip()
+    first = re.sub(r"^\s*\d+[.)]\s*", "", first)
+    return first.strip()
+
+
 def collect_ce_prefill(request_obj, assignment=None):
     ce = _ce_detail(request_obj) if request_obj is not None else None
     # EUT model/serial come from the primary Product Identity columns (Model
@@ -267,24 +343,26 @@ def collect_ce_prefill(request_obj, assignment=None):
     tested_by = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     class_value = _ra(request_obj, "class_type") or (_s(getattr(ce, "ce_class", "")) if ce else "")
     config = _eut_config(request_obj)
+    product_standard = _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else ""
+    basic_standard = basic_standard_for(product_standard)   # derived from product standard (DS504)
     data = {
         # auto from request
         "job_number": _ra(request_obj, "job_number", "tco_id"),
         "eut_name": _ra(request_obj, "product_name"),
         "eut_model": model,
         "eut_serial": serial,
-        "product_standard": _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else "",
+        "product_standard": product_standard,
         # classification: overall Class/Group from the Test Request; per-test class as fallback
         "classification_class": class_value,
         "classification_group": _ra(request_obj, "product_group"),
         "eut_configuration": config,
-        "test_mode": _ra(request_obj, "test_configuration", "operation_modes"),
+        "test_mode": _first_config_line(_ra(request_obj, "test_configuration", "operation_modes")),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,
         # sensible defaults from the form/document (DS504 + Krishna feedback)
         "measurement_uncertainty": "± 3.368 dB",
-        "basic_standard": "Sysmex",
+        "basic_standard": basic_standard,
         "sop_reference": "IEC-SOP-505",
         "test_port": "Power Line",            # editable
         "coupling_method": "LISN",            # editable
@@ -295,7 +373,7 @@ def collect_ce_prefill(request_obj, assignment=None):
         "measurement_time": "1",
         "deviation": "NA",
         # section 7: read-only, driven by EUT Configuration
-        "test_procedure": procedure_for_config(config),
+        "test_procedure": procedure_for_config(config, basic_standard),
         # section 4: linked to the Modification Record (initial state = 0)
         "eut_modification_state": "0",
         # section 11: fixed software defaults

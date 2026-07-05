@@ -98,11 +98,11 @@
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size', prefill.step_size) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>{{ field('detector', prefill.detector) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time', prefill.measurement_time) }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode', prefill.test_mode) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>
-          <input type="text" name="eut_modification_state" id="eut_modification_state" value="{{ prefill.eut_modification_state }}" readonly
-                 title="Auto-filled from the EUT Modification Record in section 1"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"></div>
+          <input type="text" name="eut_modification_state" id="eut_modification_state" value="{{ prefill.eut_modification_state }}"
+                 title="Current modification level. Defaults to the latest State in the EUT Modification Record above; editable."
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
           <select name="eut_configuration" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
@@ -141,41 +141,49 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Procedure</h2>
       <p class="text-xs text-gray-500 mb-1">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only.</p>
-      <textarea name="test_procedure" id="test_procedure" rows="6" readonly
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700">{{ prefill.test_procedure }}</textarea>
+      <input type="hidden" name="test_procedure" id="test_procedure" value="{{ prefill.test_procedure }}">
+      <div id="test_procedure_view"
+           class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm leading-relaxed"
+           style="white-space: pre-line;">{{ prefill.test_procedure }}</div>
     </section>
 
     <!-- 8. MEASUREMENT DATA -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">8. Measurement Data</h2>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
-          <input type="file" name="plot_line" accept="image/*" class="w-full text-sm"></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
-          <input type="file" name="plot_neutral" accept="image/*" class="w-full text-sm"></div>
-      </div>
-
-      {% for grp, label in [('line','Table 1 - Line (Quasi-peak &amp; Average)'), ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)')] %}
-      <div class="flex items-center justify-between mb-2 mt-4">
-        <h3 class="text-sm font-semibold text-gray-600">{{ label|safe }}</h3>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="uploadCSV('{{ grp }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
-          <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      {% for grp, tlabel, plot, flabel in [
+           ('line','Table 1 - Line (Quasi-peak &amp; Average)','plot_line','Figure 1 - Line plot (9&times;16 cm)'),
+           ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)','plot_neutral','Figure 2 - Neutral plot (9&times;16 cm)') ] %}
+      <div class="border border-gray-200 rounded-xl p-4 {{ 'mb-4' if grp == 'line' else '' }}">
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ flabel|safe }}</label>
+          <input type="file" name="{{ plot }}" accept="image/*" class="w-full text-sm">
+        </div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-semibold text-gray-600">{{ tlabel|safe }}</h3>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="buildFromRawScan('{{ grp }}')"
+                    title="Upload the full instrument sweep CSV (0.15-30 MHz). The worst-case (max) Q-peak and max Average row in each frequency band is extracted automatically."
+                    class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
+            <button type="button" onclick="uploadCSV('{{ grp }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+            <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs border border-gray-200">
+          <thead class="bg-gray-50"><tr>
+            <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
+            <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
+          <tbody id="rows-{{ grp }}">
+            <tr>
+              {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
+              <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="{{ grp }}_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+              <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+            </tr>
+          </tbody>
+        </table>
         </div>
       </div>
-      <table class="w-full text-xs border border-gray-200">
-        <thead class="bg-gray-50"><tr>
-          <th class="p-1">Freq (MHz)</th><th class="p-1">QP</th><th class="p-1">QP Limit</th><th class="p-1">QP Margin</th>
-          <th class="p-1">Avg</th><th class="p-1">Avg Limit</th><th class="p-1">Avg Margin</th><th></th></tr></thead>
-        <tbody id="rows-{{ grp }}">
-          <tr>
-            {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-            <td class="p-1"><input name="{{ grp }}_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-            <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
-          </tr>
-        </tbody>
-      </table>
       {% endfor %}
     </section>
 
@@ -264,12 +272,12 @@
   <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
 <template id="tpl-line"><tr>
-  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-  <td class="p-1"><input name="line_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+  {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
+  <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="line_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
 <template id="tpl-neutral"><tr>
-  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-  <td class="p-1"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+  {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
+  <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
 
 <!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
@@ -420,6 +428,120 @@
     }
     return lines;
   }
+  // ---- Build a measurement table from a RAW instrument sweep (0.15-30 MHz) ----
+  // The uploaded CSV holds one row per measured frequency. For each CISPR sub-band
+  // we keep only the WORST case: the row with the max Q-peak (left half) and the row
+  // with the max Average (right half). 6 bands -> 6 rows. Separate button from the
+  // plain "Upload CSV" (which pastes rows verbatim).
+  const CE_SCAN_BANDS = [[0.15, 0.5], [0.5, 1], [1, 5], [5, 10], [10, 20], [20, 30]];
+
+  function scanNum(v) {
+    if (v == null) return null;
+    var t = String(v).replace(/−/g, '-').replace(/[^0-9eE.+-]/g, '');
+    if (t === '' || t === '-' || t === '+' || t === '.') return null;
+    var n = parseFloat(t);
+    return isNaN(n) ? null : n;
+  }
+  function scanStr(v) { return (v == null ? '' : String(v)).trim(); }
+
+  // Anchor columns Frequency / Q-peak / Average from the header; Limit & Margin are
+  // the two columns immediately after each. Falls back to the fixed instrument order:
+  // Frequency, QPeak, Limit, Delta, Avg, Limit, Delta.
+  function detectScanColumns(rows) {
+    var idx = { freq: 0, qp: 1, qp_limit: 2, qp_margin: 3, avg: 4, avg_limit: 5, avg_margin: 6 };
+    for (var r = 0; r < Math.min(rows.length, 6); r++) {
+      var f = -1, q = -1, a = -1;
+      for (var i = 0; i < rows[r].length; i++) {
+        var c = String(rows[r][i] || '').toLowerCase();
+        if (f < 0 && c.indexOf('freq') >= 0) f = i;
+        if (q < 0 && (c.indexOf('qpeak') >= 0 || c.indexOf('q-peak') >= 0 || c.indexOf('quasi') >= 0)) q = i;
+        if (a < 0 && (c.indexOf('avg') >= 0 || c.indexOf('average') >= 0)) a = i;
+      }
+      if (f >= 0 && q >= 0 && a >= 0) {
+        idx = { freq: f, qp: q, qp_limit: q + 1, qp_margin: q + 2, avg: a, avg_limit: a + 1, avg_margin: a + 2 };
+        break;
+      }
+    }
+    return idx;
+  }
+
+  function reduceRawScan(rows) {
+    if (!rows || !rows.length) throw new Error('The CSV file is empty.');
+    var col = detectScanColumns(rows);
+    // Keep numeric data rows only. Non-numeric frequency cells (the "Frequency",
+    // "55011bqp" and "[MHz]" header/label rows) are skipped automatically.
+    var data = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var fN = scanNum(r[col.freq]), qN = scanNum(r[col.qp]), aN = scanNum(r[col.avg]);
+      if (fN === null || (qN === null && aN === null)) continue;
+      data.push({
+        fN: fN, qN: qN, aN: aN,
+        freq: scanStr(r[col.freq]),
+        qp: scanStr(r[col.qp]), qp_limit: scanStr(r[col.qp_limit]), qp_margin: scanStr(r[col.qp_margin]),
+        avg: scanStr(r[col.avg]), avg_limit: scanStr(r[col.avg_limit]), avg_margin: scanStr(r[col.avg_margin])
+      });
+    }
+    if (!data.length) throw new Error('No numeric measurement rows found - check the CSV columns.');
+
+    var out = [];
+    for (var b = 0; b < CE_SCAN_BANDS.length; b++) {
+      var lo = CE_SCAN_BANDS[b][0], hi = CE_SCAN_BANDS[b][1], last = (b === CE_SCAN_BANDS.length - 1);
+      var qpRow = null, avRow = null;
+      for (var k = 0; k < data.length; k++) {
+        var d = data[k];
+        if (d.fN < lo || (last ? d.fN > hi : d.fN >= hi)) continue;
+        if (d.qN !== null && (qpRow === null || d.qN > qpRow.qN)) qpRow = d;
+        if (d.aN !== null && (avRow === null || d.aN > avRow.aN)) avRow = d;
+      }
+      out.push({
+        qp_freq: qpRow ? qpRow.freq : '', qp: qpRow ? qpRow.qp : '',
+        qp_limit: qpRow ? qpRow.qp_limit : '', qp_margin: qpRow ? qpRow.qp_margin : '',
+        avg_freq: avRow ? avRow.freq : '', avg: avRow ? avRow.avg : '',
+        avg_limit: avRow ? avRow.avg_limit : '', avg_margin: avRow ? avRow.avg_margin : ''
+      });
+    }
+    return out;
+  }
+
+  function fillMeasureRows(key, rows) {
+    var tbody = document.getElementById('rows-' + key);
+    var tpl = document.getElementById('tpl-' + key);
+    if (!tbody || !tpl) return;
+    var order = ['qp_freq', 'qp', 'qp_limit', 'qp_margin', 'avg_freq', 'avg', 'avg_limit', 'avg_margin'];
+    tbody.innerHTML = '';
+    rows.forEach(function (rd) {
+      var clone = tpl.content.cloneNode(true);
+      var inputs = clone.querySelectorAll('input');
+      order.forEach(function (c, i) { if (inputs[i]) inputs[i].value = rd[c] || ''; });
+      tbody.appendChild(clone);
+    });
+    if (!tbody.querySelectorAll('tr').length) tbody.appendChild(tpl.content.cloneNode(true));
+  }
+
+  function buildFromRawScan(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var reduced = reduceRawScan(parseCSV(evt.target.result));
+          var filled = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+          fillMeasureRows(key, reduced);
+          showMessage('Raw scan reduced to ' + filled + ' band row(s).', filled ? 'success' : 'error');
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not process the raw scan CSV.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
   function delRow(btn) {
     const tbody = btn.closest('tbody');
     if (tbody.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
@@ -511,6 +633,38 @@
     }
     return wrap;
   }
+  // Inline thumbnail shown right under each image picker as soon as a file is chosen.
+  function renderInlineThumb(key){
+    var holder=document.getElementById('inlinethumb-'+key);
+    if(!holder) return;
+    holder.innerHTML='';
+    var file=imgFileFor(key);
+    if(!file) return;
+    var box=imageBoxMM(key);
+    var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
+    var frame=document.createElement('div');
+    frame.style.cssText='display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+    var img=document.createElement('img');
+    img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;';
+    img.src=URL.createObjectURL(file);
+    frame.appendChild(img); wrap.appendChild(frame);
+    var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;';
+    meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document';
+    wrap.appendChild(meta);
+    var actions=document.createElement('div'); actions.style.marginTop='5px';
+    var editBtn=document.createElement('button'); editBtn.type='button';
+    editBtn.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
+    editBtn.textContent='✎ Edit / Crop'; editBtn.onclick=function(){ openImageEditor(key); };
+    actions.appendChild(editBtn);
+    if(originalFiles[key] && originalFiles[key]!==file){
+      var rb=document.createElement('button'); rb.type='button';
+      rb.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
+      rb.textContent='↺ Reset'; rb.onclick=function(){ resetImage(key); };
+      actions.appendChild(rb);
+    }
+    wrap.appendChild(actions);
+    holder.appendChild(wrap);
+  }
   function renderDomTable(t){
     var ths=Array.prototype.slice.call(t.querySelectorAll('thead th')).map(function(x){return x.textContent.trim();});
     if (ths.length && ths[ths.length-1]==='') ths.pop();
@@ -571,7 +725,7 @@
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   function openImageEditor(key){
@@ -580,7 +734,7 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:file, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); }
     });
   }
 
@@ -589,8 +743,11 @@
     var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(function(el){
+      var holder=document.createElement('div'); holder.id='inlinethumb-'+el.name;   // inline preview goes here
+      el.insertAdjacentElement('afterend', holder);
       el.addEventListener('change', function(){
         if (el.files && el.files[0]) originalFiles[el.name]=el.files[0]; else delete originalFiles[el.name];
+        renderInlineThumb(el.name);        // show the picked image right under the picker
       });
     });
   });
@@ -602,14 +759,17 @@
   function val(name){ var e=q(name); return e?e.value:''; }
   function setVal(name,v){ var e=q(name); if(e) e.value=v; }
 
-  // Section 4 EUT Modification State <- Section 1 EUT Modification Record (State column)
+  // Section 4 EUT Modification State <- the latest (current) row of the EUT Modification
+  // Record. Auto-fills as a default only; once the user edits the field, their value wins.
+  var modStateEdited = false;
   function syncModState(){
-    var seen={}, states=[];
+    if(modStateEdited) return;                 // user overrode it -> leave their value alone
+    var last='';
     document.querySelectorAll('input[name="mod_state[]"]').forEach(function(el){
       var v=(el.value||'').trim();
-      if(v && !seen[v]){ seen[v]=1; states.push(v); }
+      if(v) last=v;                            // keep the last non-empty state = current mod level
     });
-    setVal('eut_modification_state', states.join(', '));
+    setVal('eut_modification_state', last);
   }
 
   // Section 6 Test Limits + Section 12 Result Class <- Classification - Class
@@ -629,11 +789,22 @@
   }
   function syncResultClass(){ setVal('result_class', classLetter()); }
 
-  // Section 7 Test Procedure (read-only) <- Section 4 EUT Configuration (height 0.1m/0.8m)
-  var PROC="The EUT was placed on a wooden table / insulation support at {H} height. "+
+  // Section 3 Basic Standard <- Section 2 Product Standard (DS504 derivation)
+  function deriveBasic(ps){
+    var k=(ps||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(k.indexOf('en61326')>=0) return 'EN 55011:2016+A2:2021';
+    if(k.indexOf('iec61326')>=0) return 'CISPR 11:2015+A1:2016+A2:2019';
+    if(k.indexOf('ices')>=0) return 'CISPR 11:2015+A1:2016+A2:2019';
+    if(k.indexOf('part15')>=0 || k.indexOf('cfr')>=0 || k.indexOf('fcc')>=0) return 'ANSI C63.4:2024';
+    return '';
+  }
+  // Section 7 Test Procedure (read-only): top line names the basic standard;
+  // EUT height is 0.1m (Tabletop) / 0.8m (Floor standing).
+  var PROC="The test procedure was in accordance with {S}.\n\n"+
+    "The EUT was placed on a wooden table / insulation support at {H} height. "+
     "The EUT was tested at the conducted emissions test site with a horizontal ground reference "+
     "plane and a vertical ground reference plane bonded together. The power supply to the EUT and "+
-    "auxiliary equipment was fed through LISN.\n\nLISN (Voltage Method): The conducted emission was "+
+    "auxiliary equipment was fed through LISN.\n\nLISN (Voltage Method):\nThe conducted emission was "+
     "measured through the 50 Ω RF port of the LISN using an EMI receiver carried out in FFT mode, "+
     "and conducted emission from the EUT coupled through the Power (mains) port was plotted in the "+
     "graph. The dominant peaks at various frequencies, closer to and/or above the limit line, were "+
@@ -641,7 +812,20 @@
     "specified in the standard.";
   function setProcedure(){
     var cfg=(val('eut_configuration')||'').toLowerCase();
-    setVal('test_procedure', PROC.replace('{H}', cfg.indexOf('floor')>=0 ? '0.8m' : '0.1m'));
+    var basic=(val('basic_standard')||'').trim() || 'the applicable basic standard';
+    var txt=PROC.replace('{S}', basic).replace('{H}', cfg.indexOf('floor')>=0 ? '0.8m' : '0.1m');
+    var hid=document.getElementById('test_procedure');       if(hid)  hid.value=txt;          // submitted value (plain)
+    var view=document.getElementById('test_procedure_view');
+    if(view){                                                                                 // read-only display
+      var esc=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      esc=esc.replace('LISN (Voltage Method):','<strong>LISN (Voltage Method):</strong>');    // bold header
+      view.innerHTML=esc;                                                                     // white-space:pre-line keeps breaks
+    }
+  }
+  function syncBasicStandard(){
+    var b=deriveBasic(val('product_standard'));
+    if(b) setVal('basic_standard', b);   // derive when recognised; otherwise leave editable value
+    setProcedure();                      // procedure top line follows the basic standard
   }
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -651,10 +835,16 @@
       modBody.addEventListener('input', function(e){ if(e.target && e.target.name==='mod_state[]') syncModState(); });
       new MutationObserver(syncModState).observe(modBody, {childList:true});
     }
+    var mstate=q('eut_modification_state');
+    if(mstate) mstate.addEventListener('input', function(){ modStateEdited=true; });   // a manual edit takes over
     var cls=q('classification_class');
     if(cls) cls.addEventListener('change', function(){ applyLimits(); syncResultClass(); });
     var cfg=q('eut_configuration');
     if(cfg) cfg.addEventListener('change', setProcedure);
+    var ps=q('product_standard');
+    if(ps) ps.addEventListener('input', syncBasicStandard);   // Basic Standard + procedure follow Product Standard
+    syncBasicStandard();   // also derive once on load: keeps Basic Standard consistent with Product Standard
+                           // even when a stale saved draft carried an old value (e.g. "Sysmex")
   });
 })();
 </script>

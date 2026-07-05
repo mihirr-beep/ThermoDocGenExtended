@@ -10,7 +10,7 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 from docx.oxml.ns import qn
 
-from .layout import polish_layout, page_break_before_top_sections
+from .layout import polish_layout, page_break_before_top_sections, ce_finalize_layout
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "word_templates", "IEC-FRM-504_CE.docx")
 
@@ -34,8 +34,8 @@ def strip_trailing_blank_paragraphs(doc):
 # Per the document: plots 9x16 cm, photo 9x14 cm. Stored as (max_width_mm, max_height_mm);
 # the image is scaled to fit WITHIN this box (aspect preserved). Widths kept <= page text width.
 _IMAGE_BOXES = {
-    "plot_line": (150, 90),
-    "plot_neutral": (150, 90),
+    "plot_line": (150, 68),      # height-bound; with blank-collapse this fits procedure + plot + table + captions on one page
+    "plot_neutral": (150, 68),
     "photo_setup": (140, 90),
     "signature": (40, 20),
 }
@@ -65,6 +65,7 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
     tpl.render(context, autoescape=True)
     polish_layout(tpl.docx)
     page_break_before_top_sections(tpl.docx)   # each top-level section (2, 3, ...) on a new page
+    ce_finalize_layout(tpl.docx)               # CE pagination: measurement blocks, captions, 2.6+2.7 / 2.8+2.9
     strip_trailing_blank_paragraphs(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)

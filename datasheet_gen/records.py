@@ -404,12 +404,12 @@ def _table_from_form(form, key_prefix, col_keys):
 _CE_TABLES = [
     ("EUT Modification Record", "mod_", [("State", "state"), ("Description", "description"),
                                          ("Fitted by", "fitted_by"), ("Date", "date")]),
-    ("Line measurements", "line_", [("Freq (MHz)", "freq"), ("QP", "qp"), ("QP Limit", "qp_limit"),
-                                    ("QP Margin", "qp_margin"), ("Avg", "avg"),
-                                    ("Avg Limit", "avg_limit"), ("Avg Margin", "avg_margin")]),
-    ("Neutral measurements", "neutral_", [("Freq (MHz)", "freq"), ("QP", "qp"), ("QP Limit", "qp_limit"),
-                                          ("QP Margin", "qp_margin"), ("Avg", "avg"),
-                                          ("Avg Limit", "avg_limit"), ("Avg Margin", "avg_margin")]),
+    ("Line measurements", "line_", [("Frequency (MHz)", "qp_freq"), ("Q-peak", "qp"), ("Limit", "qp_limit"),
+                                    ("Margin", "qp_margin"), ("Frequency (MHz)", "avg_freq"), ("Average", "avg"),
+                                    ("Limit", "avg_limit"), ("Margin", "avg_margin")]),
+    ("Neutral measurements", "neutral_", [("Frequency (MHz)", "qp_freq"), ("Q-peak", "qp"), ("Limit", "qp_limit"),
+                                          ("Margin", "qp_margin"), ("Frequency (MHz)", "avg_freq"), ("Average", "avg"),
+                                          ("Limit", "avg_limit"), ("Margin", "avg_margin")]),
     ("Test Equipment Used", "eq_", [("Equipment", "name"), ("Make", "make"), ("Model", "model"),
                                     ("Serial", "serial"), ("Calibration Due", "cal_due")]),
 ]
