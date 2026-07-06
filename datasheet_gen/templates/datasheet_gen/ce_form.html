@@ -772,14 +772,30 @@
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
+  // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
+  // can reframe / select a different portion of the full image.
   function openImageEditor(key){
-    var file=imgFileFor(key); if(!file){ showMessage('Upload an image first.','error'); return; }
-    if(!originalFiles[key]) originalFiles[key]=file;
+    var orig=originalFiles[key]||imgFileFor(key); if(!orig){ showMessage('Upload an image first.','error'); return; }
+    if(!originalFiles[key]) originalFiles[key]=orig;
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
-      file:file, boxMM:imageBoxMM(key),
+      file:orig, boxMM:imageBoxMM(key),
       onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); }
     });
+  }
+
+  // Conform a freshly-picked image to its document-slot ratio immediately, keeping
+  // the raw upload (in originalFiles) so Edit can still reframe a different portion.
+  // Falls back to the raw file if the editor isn't available.
+  function autoFitUpload(key){
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
+    var raw=el.files[0]; originalFiles[key]=raw;
+    if(window.DSImageEditor && DSImageEditor.autoFit){
+      DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
+        if(fitted && fitted!==raw) setInputFile(key, fitted);
+        renderInlineThumb(key);
+      }});
+    } else { renderInlineThumb(key); }
   }
 
   // Wire an image <input type=file>: inline-preview holder + change handler. Used for the
@@ -788,10 +804,7 @@
     if (el.dataset.wired) return; el.dataset.wired = '1';
     var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
     el.insertAdjacentElement('afterend', holder);
-    el.addEventListener('change', function(){
-      if (el.files && el.files[0]) originalFiles[el.name] = el.files[0]; else delete originalFiles[el.name];
-      renderInlineThumb(el.name);
-    });
+    el.addEventListener('change', function(){ autoFitUpload(el.name); });   // auto-fit to the doc slot on upload
   }
 
   // ---- Measurement Data: repeatable Test records (each = label + Line + Neutral) ----

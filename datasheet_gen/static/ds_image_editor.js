@@ -7,8 +7,10 @@
  *     onApply: function(newFile){}  // called with the edited image File
  *   });
  *
- * Tools: crop locked to the client's fixed 16 x 9 cm (16 wide, 9 tall) ratio,
- * auto-fitted to any upload; rotate 90 L/R; grayscale; brightness & contrast.
+ * Tools: crop locked to the document box ratio (boxMM), auto-fitted (centred) to
+ * any upload; rotate 90 L/R; grayscale; brightness & contrast. Also exposes
+ * DSImageEditor.autoFit({file, boxMM, onApply}) which centre-crops to the box
+ * ratio WITHOUT opening the dialog (used to conform an image on upload).
  * No external dependencies.
  */
 (function () {
@@ -53,7 +55,7 @@
     '      <button type="button" class="dsie-x" data-act="cancel">&times;</button>' +
     '    </div>' +
     '    <div class="dsie-tools">' +
-    '      <div class="dsie-grp"><span class="lbl">Crop</span><span class="dsie-cropnote">16 &times; 9 cm (fixed) &mdash; drag to re-position</span></div>' +
+    '      <div class="dsie-grp"><span class="lbl">Crop</span><span class="dsie-cropnote" id="dsie-cropnote">drag to re-position</span></div>' +
     '      <div class="dsie-grp"><span class="lbl">Rotate</span>' +
     '        <button type="button" class="dsie-chip" data-act="rotL">&#8634; 90&deg;</button>' +
     '        <button type="button" class="dsie-chip" data-act="rotR">90&deg; &#8635;</button></div>' +
@@ -89,7 +91,8 @@
     els.bright = ov.querySelector("#dsie-bright");
     els.contrast = ov.querySelector("#dsie-contrast");
     els.hint = ov.querySelector("#dsie-hint");
-    els.img.onload = function () { if (S) setDefaultSel(); };  // auto-fit a 16:9 crop to any upload
+    els.cropnote = ov.querySelector("#dsie-cropnote");
+    els.img.onload = function () { if (S) setDefaultSel(); };  // auto-fit a box-ratio crop to any upload
 
     ov.addEventListener("click", function (e) {
       var act = e.target.getAttribute("data-act");
@@ -132,16 +135,15 @@
     mounted = true;
   }
 
-  // The client uses a single fixed crop of 16 cm (width) x 9 cm (height) = 16:9.
-  var CROP_RATIO = 16 / 9;
-
-  // Auto-fit the largest centred 16:9 crop to the current (rotated) image, so any
-  // upload "fits in" by default the same way it does in the preview box.
+  // Auto-fit the largest centred crop matching the document box ratio (S.ratio,
+  // derived from boxMM) to the current (rotated) image, so the default framing
+  // equals the document slot the image will occupy.
   function setDefaultSel() {
     var r = els.img.getBoundingClientRect(), rw = r.width, rh = r.height;
     if (!rw || !rh) return;
+    var ratio = S.ratio || (16 / 9);
     var w, h;
-    if (rw / rh > CROP_RATIO) { h = rh; w = h * CROP_RATIO; } else { w = rw; h = w / CROP_RATIO; }
+    if (rw / rh > ratio) { h = rh; w = h * ratio; } else { w = rw; h = w / ratio; }
     S.sel = { x: (rw - w) / 2, y: (rh - h) / 2, w: w, h: h };
     renderSel();
   }
@@ -173,7 +175,7 @@
   }
 
   function resetAll() {
-    S.angle = 0; S.ratio = CROP_RATIO; S.gray = false; S.bright = 1; S.contrast = 1; S.sel = null;
+    S.angle = 0; S.ratio = S.boxRatio || (16 / 9); S.gray = false; S.bright = 1; S.contrast = 1; S.sel = null;
     els.gray.classList.remove("active");
     els.bright.value = 100; els.contrast.value = 100;
     renderWork();
@@ -205,17 +207,53 @@
 
   function close() { if (els.ov) els.ov.classList.remove("open"); }
 
+  function boxRatioOf(box) {
+    return (box && box[0] && box[1]) ? (box[0] / box[1]) : (16 / 9);
+  }
+
   function open(opts) {
     if (!opts || !opts.file) return;
     mount();
-    S = { file: opts.file, box: opts.boxMM || [150, 90], onApply: opts.onApply,
-          angle: 0, ratio: CROP_RATIO, gray: false, bright: 1, contrast: 1, sel: null, drawing: false, natural: null, work: null };
+    var box = opts.boxMM || [150, 90];
+    var ratio = boxRatioOf(box);
+    S = { file: opts.file, box: box, boxRatio: ratio, onApply: opts.onApply,
+          angle: 0, ratio: ratio, gray: false, bright: 1, contrast: 1, sel: null, drawing: false, natural: null, work: null };
     els.gray.classList.remove("active"); els.bright.value = 100; els.contrast.value = 100;
+    if (els.cropnote) els.cropnote.textContent = box[0] + " × " + box[1] + " mm — drag to re-position";
     var img = new Image();
     img.onload = function () { S.natural = img; renderWork(); els.ov.classList.add("open"); };
     img.onerror = function () { alert("Could not load the image for editing."); };
     img.src = URL.createObjectURL(opts.file);
   }
 
-  window.DSImageEditor = { open: open };
+  // Centre-crop `opts.file` to the box ratio and hand back the cropped File via
+  // opts.onApply WITHOUT opening the dialog. Used to conform an image on upload
+  // so the preview matches the document slot immediately; the caller keeps the
+  // original around so the user can still reframe a different portion via open().
+  function autoFit(opts) {
+    if (!opts || !opts.file) { if (opts && opts.onApply) opts.onApply(null); return; }
+    var box = opts.boxMM || [150, 90];
+    var ratio = boxRatioOf(box);
+    var isPng = (opts.file.type === "image/png");
+    var img = new Image();
+    img.onload = function () {
+      var nw = img.naturalWidth, nh = img.naturalHeight, cw, ch;
+      if (!nw || !nh) { if (opts.onApply) opts.onApply(opts.file); return; }
+      if (nw / nh > ratio) { ch = nh; cw = ch * ratio; } else { cw = nw; ch = cw / ratio; }
+      var sx = (nw - cw) / 2, sy = (nh - ch) / 2;
+      var out = document.createElement("canvas");
+      out.width = Math.max(1, Math.round(cw)); out.height = Math.max(1, Math.round(ch));
+      out.getContext("2d").drawImage(img, sx, sy, cw, ch, 0, 0, out.width, out.height);
+      out.toBlob(function (blob) {
+        if (!blob) { if (opts.onApply) opts.onApply(opts.file); return; }
+        var f = new File([blob], baseName(opts.file.name) + "_fit." + (isPng ? "png" : "jpg"),
+                         { type: blob.type || (isPng ? "image/png" : "image/jpeg") });
+        if (opts.onApply) opts.onApply(f);
+      }, isPng ? "image/png" : "image/jpeg", 0.92);
+    };
+    img.onerror = function () { if (opts.onApply) opts.onApply(opts.file); };
+    img.src = URL.createObjectURL(opts.file);
+  }
+
+  window.DSImageEditor = { open: open, autoFit: autoFit };
 })();
