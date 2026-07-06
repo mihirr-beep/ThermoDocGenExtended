@@ -177,6 +177,11 @@ def main(src):
     for row in limits_tbl.rows:
         lbl = row.cells[0].text.strip()
         if lbl.startswith("0.15"):
+            # Source doc centres this first label; the other rows are left-aligned.
+            # Force left so the whole frequency column matches.
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            for p in row.cells[0].paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             set_cell(row.cells[1], "{{ limit_qp_015_050 }}")
             set_cell(row.cells[2], "{{ limit_avg_015_050 }}")
         elif lbl.startswith("0.50"):
