@@ -194,7 +194,7 @@ def _ce_detail(request_obj):
 
 PROCEDURE_TEMPLATE = (
     "The test procedure was in accordance with {basic_standard}.\n\n"
-    "The EUT was placed on a wooden table / insulation support at {height} height. "
+    "The EUT was placed on {surface} at {height} height. "
     "The EUT was tested at the conducted emissions test site with a horizontal ground "
     "reference plane and a vertical ground reference plane bonded together. The power "
     "supply to the EUT and auxiliary equipment was fed through LISN.\n\n"
@@ -220,17 +220,27 @@ _BASIC_STANDARD_MAP = [
 
 
 def basic_standard_for(product_standard):
-    """Return the Basic Standard for the given Product Standard, or '' if unknown:
+    """Return the Basic Standard(s) for the given Product Standard(s). A CE request
+    may cite several product standards (joined with ';'); each maps to its own basic
+    (measurement) standard, so we map EACH and return the DISTINCT set, joined:
         IEC 61326-1:2020                          -> CISPR 11:2015+A1:2016+A2:2019
         EN 61326-1:2021                           -> EN 55011:2016+A2:2021
         ICES-001 Issue 5 (all clauses except 3.3) -> CISPR 11:2015+A1:2016+A2:2019
-        47 CFR Part 15 Subpart B:2024 (Clause 15)  -> ANSI C63.4:2024
+        47 CFR Part 15 Subpart B:2024 (Clause 15) -> ANSI C63.4:2024
+    e.g. all four -> "CISPR 11:2015+A1:2016+A2:2019; EN 55011:2016+A2:2021; ANSI C63.4:2024".
+    Unknown standards are skipped; returns '' if none match.
     """
-    key = re.sub(r"[^a-z0-9]", "", _s(product_standard).lower())
-    for token, basic in _BASIC_STANDARD_MAP:
-        if token in key:
-            return basic
-    return ""
+    out = []
+    for part in re.split(r"[;\n]+", _s(product_standard)):
+        key = re.sub(r"[^a-z0-9]", "", part.lower())
+        if not key:
+            continue
+        for token, basic in _BASIC_STANDARD_MAP:
+            if token in key:
+                if basic not in out:
+                    out.append(basic)
+                break                        # first (most specific) match per product standard
+    return "; ".join(out)
 
 
 def procedure_richtext(text):
@@ -252,11 +262,16 @@ def procedure_richtext(text):
 
 def procedure_for_config(config, basic_standard=""):
     """CE test-procedure text. The opening line names the basic standard; the EUT
-    height differs by configuration (Tabletop -> 0.1m, Floor standing -> 0.8m).
+    placement follows the configuration:
+        Tabletop       -> wooden table at 0.8m
+        Floor standing -> insulation support at 0.1m
     Section 7 is read-only in the form, driven by Product Standard + EUT Configuration."""
-    height = "0.8m" if _s(config).lower().startswith("floor") else "0.1m"
+    is_floor = _s(config).lower().startswith("floor")
+    height = "0.1m" if is_floor else "0.8m"
+    surface = "an insulation support" if is_floor else "a wooden table"
     return PROCEDURE_TEMPLATE.format(
         basic_standard=(_s(basic_standard) or "the applicable basic standard"),
+        surface=surface,
         height=height,
     )
 

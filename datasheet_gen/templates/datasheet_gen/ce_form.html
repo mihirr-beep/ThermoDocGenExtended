@@ -790,18 +790,26 @@
   function syncResultClass(){ setVal('result_class', classLetter()); }
 
   // Section 3 Basic Standard <- Section 2 Product Standard (DS504 derivation)
+  // Map EACH product standard (a request may cite several, ';'-joined) to its basic
+  // standard and return the DISTINCT set joined. Mirrors service.basic_standard_for.
   function deriveBasic(ps){
-    var k=(ps||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-    if(k.indexOf('en61326')>=0) return 'EN 55011:2016+A2:2021';
-    if(k.indexOf('iec61326')>=0) return 'CISPR 11:2015+A1:2016+A2:2019';
-    if(k.indexOf('ices')>=0) return 'CISPR 11:2015+A1:2016+A2:2019';
-    if(k.indexOf('part15')>=0 || k.indexOf('cfr')>=0 || k.indexOf('fcc')>=0) return 'ANSI C63.4:2024';
-    return '';
+    var MAP=[['en61326','EN 55011:2016+A2:2021'],['iec61326','CISPR 11:2015+A1:2016+A2:2019'],
+             ['ices','CISPR 11:2015+A1:2016+A2:2019'],['part15','ANSI C63.4:2024'],
+             ['cfr','ANSI C63.4:2024'],['fcc','ANSI C63.4:2024']];
+    var out=[];
+    (ps||'').split(/[;\n]+/).forEach(function(part){
+      var k=part.toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(!k) return;
+      for(var i=0;i<MAP.length;i++){
+        if(k.indexOf(MAP[i][0])>=0){ if(out.indexOf(MAP[i][1])<0) out.push(MAP[i][1]); break; }
+      }
+    });
+    return out.join('; ');
   }
   // Section 7 Test Procedure (read-only): top line names the basic standard;
   // EUT height is 0.1m (Tabletop) / 0.8m (Floor standing).
   var PROC="The test procedure was in accordance with {S}.\n\n"+
-    "The EUT was placed on a wooden table / insulation support at {H} height. "+
+    "The EUT was placed on {SURFACE} at {H} height. "+
     "The EUT was tested at the conducted emissions test site with a horizontal ground reference "+
     "plane and a vertical ground reference plane bonded together. The power supply to the EUT and "+
     "auxiliary equipment was fed through LISN.\n\nLISN (Voltage Method):\nThe conducted emission was "+
@@ -813,7 +821,10 @@
   function setProcedure(){
     var cfg=(val('eut_configuration')||'').toLowerCase();
     var basic=(val('basic_standard')||'').trim() || 'the applicable basic standard';
-    var txt=PROC.replace('{S}', basic).replace('{H}', cfg.indexOf('floor')>=0 ? '0.8m' : '0.1m');
+    var isFloor=cfg.indexOf('floor')>=0;   // Tabletop -> wooden table @0.8m ; Floor -> insulation support @0.1m
+    var txt=PROC.replace('{S}', basic)
+                .replace('{SURFACE}', isFloor ? 'an insulation support' : 'a wooden table')
+                .replace('{H}', isFloor ? '0.1m' : '0.8m');
     var hid=document.getElementById('test_procedure');       if(hid)  hid.value=txt;          // submitted value (plain)
     var view=document.getElementById('test_procedure_view');
     if(view){                                                                                 // read-only display
