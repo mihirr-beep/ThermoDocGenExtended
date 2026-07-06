@@ -7,6 +7,7 @@ GET  /datasheet/ce/<assignment_id>/prefill   -> auto-fill values as JSON (option
 """
 import json
 import os
+import re
 from datetime import datetime
 
 from flask import (Blueprint, request, jsonify, send_file, url_for,
@@ -16,13 +17,11 @@ from werkzeug.utils import secure_filename
 
 from models import db, PlannerEntry, EMCRequest
 from .service import build_ce_context, collect_ce_prefill
-from .generator import render_ce_datasheet
+from .generator import render_ce_datasheet, _IMAGE_VARS
 from . import records as R
 
 datasheet_gen_bp = Blueprint("datasheet_gen", __name__, template_folder="templates",
                              static_folder="static", static_url_path="/datasheet_gen_static")
-
-_IMAGE_VARS = ("plot_line", "plot_neutral", "photo_setup", "signature")
 
 
 def _output_dir():
@@ -154,7 +153,8 @@ def _save_images(files, assignment_id):
     img_dir = os.path.join(_output_dir(), "images")
     os.makedirs(img_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    for var in _IMAGE_VARS:
+    plot_keys = [k for k in files.keys() if re.match(r"^plot_(line|neutral)_\d+$", k)]
+    for var in list(_IMAGE_VARS) + plot_keys:
         fs = files.get(var)
         if fs and (fs.filename or "").strip():
             safe = secure_filename(fs.filename)

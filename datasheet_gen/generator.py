@@ -34,12 +34,18 @@ def strip_trailing_blank_paragraphs(doc):
 # Per the document: plots 9x16 cm, photo 9x14 cm. Stored as (max_width_mm, max_height_mm);
 # the image is scaled to fit WITHIN this box (aspect preserved). Widths kept <= page text width.
 _IMAGE_BOXES = {
-    "plot_line": (150, 68),      # height-bound; with blank-collapse this fits procedure + plot + table + captions on one page
-    "plot_neutral": (150, 68),
+    "func_line": (150, 90),      # 1.4 Functional Check plots: two stacked on their own page
+    "func_neutral": (150, 90),
+    "ambient_line": (150, 90),   # 1.5 Ambient plots: two stacked on their own page
+    "ambient_neutral": (150, 90),
     "photo_setup": (140, 90),
     "signature": (40, 20),
 }
 _IMAGE_VARS = tuple(_IMAGE_BOXES)
+# 2.5 Measurement-Data plots are per-Test (plot_line_i / plot_neutral_i), injected into
+# each measurement_records entry at render time. Sized so each Figure+Table fills its own
+# page (reference layout: one figure+table per page).
+_PLOT_BOX = (150, 90)
 
 
 def _fit_image(tpl, path, box):
@@ -56,17 +62,42 @@ def _fit_image(tpl, path, box):
         return InlineImage(tpl, path, width=Mm(box_w))
 
 
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+
+
+def _add_image_borders(doc, emu=6350, color="000000"):
+    """Wrap every inline body image in a thin rectangular border (a box), matching the
+    reference datasheet where the plots sit in a bordered box. The header logo lives in
+    the header (not the body), so it is left untouched. emu=6350 -> 0.5pt."""
+    for spPr in doc.element.body.iter("{%s}spPr" % _PIC_NS):
+        for ln in spPr.findall("{%s}ln" % _A_NS):
+            spPr.remove(ln)
+        ln = spPr.makeelement("{%s}ln" % _A_NS, {"w": str(emu)})
+        fill = spPr.makeelement("{%s}solidFill" % _A_NS, {})
+        clr = spPr.makeelement("{%s}srgbClr" % _A_NS, {"val": color})
+        fill.append(clr)
+        ln.append(fill)
+        spPr.append(ln)
+
+
 def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLATE_PATH):
     tpl = DocxTemplate(template_path)
     images = images or {}
     for var in _IMAGE_VARS:
         path = images.get(var)
         context[var] = _fit_image(tpl, path, _IMAGE_BOXES[var]) if (path and os.path.exists(path)) else ""
+    # per-Test measurement plots (plot_line_i / plot_neutral_i) -> InlineImage on each record
+    for rec in context.get("measurement_records") or []:
+        for role in ("plot_line", "plot_neutral"):
+            path = images.get(rec.get(role + "_key"))
+            rec[role] = _fit_image(tpl, path, _PLOT_BOX) if (path and os.path.exists(path)) else ""
     tpl.render(context, autoescape=True)
     polish_layout(tpl.docx)
     page_break_before_top_sections(tpl.docx)   # each top-level section (2, 3, ...) on a new page
     ce_finalize_layout(tpl.docx)               # CE pagination: measurement blocks, captions, 2.6+2.7 / 2.8+2.9
     strip_trailing_blank_paragraphs(tpl.docx)
+    _add_image_borders(tpl.docx)               # box every plot/photo image (reference layout)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

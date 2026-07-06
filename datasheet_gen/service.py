@@ -107,6 +107,39 @@ def _rows(form_data, keys, names):
     return out
 
 
+_MEAS_NAMES = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
+
+
+def _measurement_records(form_data):
+    """One record per Test: label + line_rows + neutral_rows + the two plot image keys.
+    The form sends a hidden meas_index[] (active record indices, in order); each record i
+    uses meas_label_i, plot_line_i/plot_neutral_i and line{i}_*[] / neutral{i}_*[] fields."""
+    def keys(grp, i):
+        return ["%s%s_%s[]" % (grp, i, c) for c in _MEAS_NAMES]
+    order = _list(form_data, "meas_index[]")
+    records = []
+    if order:
+        for i in order:
+            i = _s(i).strip()
+            if not i:
+                continue
+            records.append({
+                "label": _s(form_data.get("meas_label_" + i)),
+                "line_rows": _rows(form_data, keys("line", i), _MEAS_NAMES),
+                "neutral_rows": _rows(form_data, keys("neutral", i), _MEAS_NAMES),
+                "plot_line_key": "plot_line_" + i,
+                "plot_neutral_key": "plot_neutral_" + i,
+            })
+    else:
+        # legacy single-record fallback (un-indexed line_*/neutral_* fields)
+        line = _rows(form_data, keys("line", ""), _MEAS_NAMES)
+        neutral = _rows(form_data, keys("neutral", ""), _MEAS_NAMES)
+        if line or neutral:
+            records.append({"label": "", "line_rows": line, "neutral_rows": neutral,
+                            "plot_line_key": "plot_line", "plot_neutral_key": "plot_neutral"})
+    return records
+
+
 def build_ce_context(form_data):
     ctx = {f: _s(form_data.get(f)) for f in SCALAR_FIELDS}
 
@@ -120,22 +153,8 @@ def build_ce_context(form_data):
         ["eq_name[]", "eq_make[]", "eq_model[]", "eq_serial[]", "eq_cal_due[]"],
         ["name", "make", "model", "serial", "cal_due"],
     )
-    # 8-column measurement layout: Q-peak block (own frequency) | Average block (own
-    # frequency). The two frequencies differ because the max Q-peak and max Average in
-    # a band occur at different points (see the "Build from raw scan" reducer in the form).
-    meas_names = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
-    ctx["line_rows"] = _rows(
-        form_data,
-        ["line_qp_freq[]", "line_qp[]", "line_qp_limit[]", "line_qp_margin[]",
-         "line_avg_freq[]", "line_avg[]", "line_avg_limit[]", "line_avg_margin[]"],
-        meas_names,
-    )
-    ctx["neutral_rows"] = _rows(
-        form_data,
-        ["neutral_qp_freq[]", "neutral_qp[]", "neutral_qp_limit[]", "neutral_qp_margin[]",
-         "neutral_avg_freq[]", "neutral_avg[]", "neutral_avg_limit[]", "neutral_avg_margin[]"],
-        meas_names,
-    )
+    # 8-column measurement layout, repeated per Test record (label + Line + Neutral).
+    ctx["measurement_records"] = _measurement_records(form_data)
 
     # Render classification selections as human-ticked checkboxes in the document
     # (the template uses {{r ... }} placeholders for these two fields).
@@ -216,6 +235,10 @@ _BASIC_STANDARD_MAP = [
     ("part15", "ANSI C63.4:2024"),                        # 47 CFR Part 15 Subpart B:2024
     ("cfr", "ANSI C63.4:2024"),
     ("fcc", "ANSI C63.4:2024"),
+    # Product standard that is ALREADY a basic/emission standard -> maps to itself
+    ("en55011", "EN 55011:2016+A2:2021"),
+    ("cispr11", "CISPR 11:2015+A1:2016+A2:2019"),
+    ("c634", "ANSI C63.4:2024"),                          # ANSI C63.4
 ]
 
 

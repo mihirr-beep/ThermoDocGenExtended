@@ -73,6 +73,23 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">3. Functional Check</h2>
       <div><label class="block text-sm font-medium text-gray-700 mb-1">SOP Reference Number</label>{{ field('sop_reference', prefill.sop_reference) }}</div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
+        <input type="file" name="func_line" accept="image/*" class="w-full text-sm">
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Neutral</label>
+        <input type="file" name="func_neutral" accept="image/*" class="w-full text-sm">
+      </div>
+      <h3 class="text-sm font-semibold text-gray-700 mt-6 mb-1">Ambient (1.5)</h3>
+      <div class="mt-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
+        <input type="file" name="ambient_line" accept="image/*" class="w-full text-sm">
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Neutral</label>
+        <input type="file" name="ambient_neutral" accept="image/*" class="w-full text-sm">
+      </div>
     </section>
 
     <!-- 4. TEST SPECIFICATION -->
@@ -147,44 +164,15 @@
            style="white-space: pre-line;">{{ prefill.test_procedure }}</div>
     </section>
 
-    <!-- 8. MEASUREMENT DATA -->
+    <!-- 8. MEASUREMENT DATA (one block per Test; add more via "+ Add Test") -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">8. Measurement Data</h2>
-
-      {% for grp, tlabel, plot, flabel in [
-           ('line','Table 1 - Line (Quasi-peak &amp; Average)','plot_line','Figure 1 - Line plot (9&times;16 cm)'),
-           ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)','plot_neutral','Figure 2 - Neutral plot (9&times;16 cm)') ] %}
-      <div class="border border-gray-200 rounded-xl p-4 {{ 'mb-4' if grp == 'line' else '' }}">
-        <div class="mb-3">
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ flabel|safe }}</label>
-          <input type="file" name="{{ plot }}" accept="image/*" class="w-full text-sm">
-        </div>
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="text-sm font-semibold text-gray-600">{{ tlabel|safe }}</h3>
-          <div class="flex items-center gap-2">
-            <button type="button" onclick="buildFromRawScan('{{ grp }}')"
-                    title="Upload the full instrument sweep CSV (0.15-30 MHz). The worst-case (max) Q-peak and max Average row in each frequency band is extracted automatically."
-                    class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
-            <button type="button" onclick="uploadCSV('{{ grp }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
-            <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
-          </div>
-        </div>
-        <div class="overflow-x-auto">
-        <table class="w-full text-xs border border-gray-200">
-          <thead class="bg-gray-50"><tr>
-            <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
-            <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
-          <tbody id="rows-{{ grp }}">
-            <tr>
-              {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
-              <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="{{ grp }}_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-              <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
-            </tr>
-          </tbody>
-        </table>
-        </div>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-gray-900">8. Measurement Data</h2>
+        <button type="button" onclick="addTest()"
+                title="Add another measurement Test (e.g. a different frequency range or operating condition). Each Test has its own label, plots and tables."
+                class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Test</button>
       </div>
-      {% endfor %}
+      <div id="meas-records"></div>
     </section>
 
     <!-- 9. TEST SETUP PICTURES -->
@@ -271,14 +259,63 @@
   <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
   <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
-<template id="tpl-line"><tr>
-  {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
-  <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="line_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
-<template id="tpl-neutral"><tr>
-  {% for c in ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'] %}
-  <td class="p-1{{ ' border-l-2 border-gray-300' if c == 'avg_freq' else '' }}"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+<!-- One Measurement Data record (a "Test"); JS clones it and swaps %%I%% for a unique index -->
+<template id="tpl-meas-record">
+<div class="meas-record border-2 border-gray-300 rounded-xl p-4 mb-5" data-idx="%%I%%">
+  <div class="flex items-start justify-between mb-3">
+    <div class="flex-1 mr-4">
+      <label class="block text-sm font-semibold text-gray-800 mb-1">Test label</label>
+      <input name="meas_label_%%I%%" placeholder="e.g. 230 V / 50 Hz, Normal mode, 0.15-30 MHz" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+      <input type="hidden" name="meas_index[]" value="%%I%%">
+    </div>
+    <button type="button" onclick="removeTest(this)" class="text-xs px-2 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 mt-6">Remove Test</button>
+  </div>
+  <div class="border border-gray-200 rounded-xl p-4 mb-4">
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
+      <input type="file" name="plot_line_%%I%%" accept="image/*" class="w-full text-sm">
+    </div>
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-gray-600">Table 1 - Line (Quasi-peak &amp; Average)</h3>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="buildFromRawScan('line%%I%%')" title="Upload the full instrument sweep CSV (0.15-30 MHz); the worst-case Q-peak and Average per band are extracted." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
+        <button type="button" onclick="uploadCSV('line%%I%%')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+        <button type="button" onclick="addRow('line%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border border-gray-200">
+      <thead class="bg-gray-50"><tr>
+        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
+        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
+      <tbody id="rows-line%%I%%"></tbody>
+    </table>
+    </div>
+  </div>
+  <div class="border border-gray-200 rounded-xl p-4">
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
+      <input type="file" name="plot_neutral_%%I%%" accept="image/*" class="w-full text-sm">
+    </div>
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-gray-600">Table 2 - Neutral (Quasi-peak &amp; Average)</h3>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="buildFromRawScan('neutral%%I%%')" title="Upload the full instrument sweep CSV (0.15-30 MHz); the worst-case Q-peak and Average per band are extracted." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
+        <button type="button" onclick="uploadCSV('neutral%%I%%')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+        <button type="button" onclick="addRow('neutral%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border border-gray-200">
+      <thead class="bg-gray-50"><tr>
+        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
+        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
+      <tbody id="rows-neutral%%I%%"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+</template>
 
 <!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
 <style>
@@ -336,9 +373,32 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
-  function addRow(type) {
-    const tpl = document.getElementById('tpl-' + type);
-    document.getElementById('rows-' + type).appendChild(tpl.content.cloneNode(true));
+  var MEAS_COLS = ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'];
+  function isMeasKey(k){ return /^(line|neutral)/.test(k); }   // measurement group keys are line{i}/neutral{i}
+  // Build one 8-column measurement <tr> for group key (e.g. "line0"); values optional.
+  function makeMeasRow(grpKey, values) {
+    var tr = document.createElement('tr');
+    MEAS_COLS.forEach(function (c) {
+      var td = document.createElement('td');
+      td.className = 'p-1' + (c === 'avg_freq' ? ' border-l-2 border-gray-300' : '');
+      var inp = document.createElement('input');
+      inp.name = grpKey + '_' + c + '[]';
+      inp.className = 'w-full px-1 py-1 border rounded';
+      if (values && values[c] != null) inp.value = values[c];
+      td.appendChild(inp); tr.appendChild(td);
+    });
+    var td = document.createElement('td'); td.className = 'p-1';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'text-red-500'; b.textContent = '×';
+    b.onclick = function () { delRow(b); };
+    td.appendChild(b); tr.appendChild(td);
+    return tr;
+  }
+  function addRow(key) {
+    var tbody = document.getElementById('rows-' + key);
+    if (!tbody) return;
+    if (isMeasKey(key)) { tbody.appendChild(makeMeasRow(key)); return; }
+    var tpl = document.getElementById('tpl-' + key);          // mod / eq tables still use <template>
+    if (tpl) tbody.appendChild(tpl.content.cloneNode(true));
   }
   function uploadCSV(key) {
     const input = document.createElement('input');
@@ -347,46 +407,37 @@
     input.onchange = function(e) {
       const file = e.target.files[0];
       if (!file) return;
-      
       const reader = new FileReader();
       reader.onload = function(evt) {
-        const text = evt.target.result;
-        const rows = parseCSV(text);
+        const rows = parseCSV(evt.target.result);
         if (rows.length === 0) return;
-        
         const tbody = document.getElementById('rows-' + key);
-        const tpl = document.getElementById('tpl-' + key);
-        if (!tbody || !tpl) return;
-        
-        // Find if first row is header by checking if values match column keys
+        if (!tbody) return;
+        var meas = isMeasKey(key);
+        var tpl = meas ? null : document.getElementById('tpl-' + key);
+        if (!meas && !tpl) return;
         let startIdx = 0;
-        const firstRow = rows[0];
-        const isHeader = firstRow.some(val => {
-          const v = val.toLowerCase();
-          return v.includes('freq') || v.includes('state') || v.includes('equipment') || 
-                 v.includes('make') || v.includes('model') || v.includes('serial') || 
+        const isHeader = rows[0].some(function (val) {
+          var v = (val || '').toLowerCase();
+          return v.includes('freq') || v.includes('state') || v.includes('equipment') ||
+                 v.includes('make') || v.includes('model') || v.includes('serial') ||
                  v.includes('cal') || v.includes('date') || v.includes('qp') || v.includes('avg');
         });
-        if (isHeader) {
-          startIdx = 1;
-        }
-        
-        // Clear existing rows
+        if (isHeader) startIdx = 1;
         tbody.innerHTML = '';
-        
         for (let i = startIdx; i < rows.length; i++) {
           const rowData = rows[i];
           if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
-          
-          const clone = tpl.content.cloneNode(true);
-          const inputs = clone.querySelectorAll('input, select, textarea');
-          
-          for (let j = 0; j < inputs.length; j++) {
-            if (j < rowData.length) {
-              inputs[j].value = rowData[j].trim();
-            }
+          if (meas) {
+            var vals = {};
+            MEAS_COLS.forEach(function (c, j) { vals[c] = (rowData[j] || '').trim(); });
+            tbody.appendChild(makeMeasRow(key, vals));
+          } else {
+            const clone = tpl.content.cloneNode(true);
+            const inputs = clone.querySelectorAll('input, select, textarea');
+            for (let j = 0; j < inputs.length; j++) if (j < rowData.length) inputs[j].value = rowData[j].trim();
+            tbody.appendChild(clone);
           }
-          tbody.appendChild(clone);
         }
         showMessage('CSV imported successfully!', 'success');
       };
@@ -506,17 +557,10 @@
 
   function fillMeasureRows(key, rows) {
     var tbody = document.getElementById('rows-' + key);
-    var tpl = document.getElementById('tpl-' + key);
-    if (!tbody || !tpl) return;
-    var order = ['qp_freq', 'qp', 'qp_limit', 'qp_margin', 'avg_freq', 'avg', 'avg_limit', 'avg_margin'];
+    if (!tbody) return;
     tbody.innerHTML = '';
-    rows.forEach(function (rd) {
-      var clone = tpl.content.cloneNode(true);
-      var inputs = clone.querySelectorAll('input');
-      order.forEach(function (c, i) { if (inputs[i]) inputs[i].value = rd[c] || ''; });
-      tbody.appendChild(clone);
-    });
-    if (!tbody.querySelectorAll('tr').length) tbody.appendChild(tpl.content.cloneNode(true));
+    rows.forEach(function (rd) { tbody.appendChild(makeMeasRow(key, rd)); });
+    if (!tbody.querySelectorAll('tr').length) tbody.appendChild(makeMeasRow(key));
   }
 
   function buildFromRawScan(key) {
@@ -738,18 +782,44 @@
     });
   }
 
+  // Wire an image <input type=file>: inline-preview holder + change handler. Used for the
+  // fixed images (func/photo/signature) on load and for each Test's plots as they're added.
+  function wireImageInput(el){
+    if (el.dataset.wired) return; el.dataset.wired = '1';
+    var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
+    el.insertAdjacentElement('afterend', holder);
+    el.addEventListener('change', function(){
+      if (el.files && el.files[0]) originalFiles[el.name] = el.files[0]; else delete originalFiles[el.name];
+      renderInlineThumb(el.name);
+    });
+  }
+
+  // ---- Measurement Data: repeatable Test records (each = label + Line + Neutral) ----
+  var measSeq = 0;   // stable, ever-incrementing record index (survives deletions)
+  function addTest(label, data){
+    var idx = measSeq++;
+    var tpl = document.getElementById('tpl-meas-record');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML.replace(/%%I%%/g, idx).trim();
+    var block = wrap.firstElementChild;
+    document.getElementById('meas-records').appendChild(block);
+    if (data && data.line_rows && data.line_rows.length) fillMeasureRows('line' + idx, data.line_rows); else addRow('line' + idx);
+    if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
+    if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
+    block.querySelectorAll('input[type=file]').forEach(wireImageInput);
+    return block;
+  }
+  function removeTest(btn){
+    if (document.querySelectorAll('#meas-records .meas-record').length > 1) btn.closest('.meas-record').remove();
+    else showMessage('At least one Test is required.', 'error');
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
     // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
     var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
-    document.querySelectorAll('#ceForm input[type=file]').forEach(function(el){
-      var holder=document.createElement('div'); holder.id='inlinethumb-'+el.name;   // inline preview goes here
-      el.insertAdjacentElement('afterend', holder);
-      el.addEventListener('change', function(){
-        if (el.files && el.files[0]) originalFiles[el.name]=el.files[0]; else delete originalFiles[el.name];
-        renderInlineThumb(el.name);        // show the picked image right under the picker
-      });
-    });
+    document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
+    addTest();   // start with one empty Measurement Data Test
   });
 </script>
 <script>
@@ -795,7 +865,9 @@
   function deriveBasic(ps){
     var MAP=[['en61326','EN 55011:2016+A2:2021'],['iec61326','CISPR 11:2015+A1:2016+A2:2019'],
              ['ices','CISPR 11:2015+A1:2016+A2:2019'],['part15','ANSI C63.4:2024'],
-             ['cfr','ANSI C63.4:2024'],['fcc','ANSI C63.4:2024']];
+             ['cfr','ANSI C63.4:2024'],['fcc','ANSI C63.4:2024'],
+             ['en55011','EN 55011:2016+A2:2021'],['cispr11','CISPR 11:2015+A1:2016+A2:2019'],
+             ['c634','ANSI C63.4:2024']];
     var out=[];
     (ps||'').split(/[;\n]+/).forEach(function(part){
       var k=part.toLowerCase().replace(/[^a-z0-9]/g,'');

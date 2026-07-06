@@ -46,6 +46,15 @@ def insert_paragraph_after(paragraph, text=""):
     return para
 
 
+def insert_paragraph_before(paragraph, text=""):
+    new_p = OxmlElement("w:p")
+    paragraph._p.addprevious(new_p)
+    para = Paragraph(new_p, paragraph._parent)
+    if text:
+        para.add_run(text)
+    return para
+
+
 def clear_rows_after(table, keep_index):
     for row in list(table.rows[keep_index + 1:]):
         row._tr.getparent().remove(row._tr)
@@ -133,6 +142,36 @@ def main(src):
     fc = find_para(doc, "Functional check is conducted")
     if fc:
         fc.text = "Functional check is conducted as per SOP reference number: {{ sop_reference }}."
+        # 1.4 also carries two functional-check plots (Line + Neutral): a bold heading
+        # ABOVE each image. ce_finalize_layout puts them on their own page and keeps
+        # each heading glued to its image.
+        anchor = fc
+        for heading, tag in (("Line:", "{{ func_line }}"), ("Neutral:", "{{ func_neutral }}")):
+            h = insert_paragraph_after(anchor, "")
+            h.add_run(heading).bold = True
+            anchor = insert_paragraph_after(h, tag)
+        # 1.5 AMBIENT: clone the 1.4 heading so it keeps the same numbered/black heading
+        # formatting (auto-numbers as 1.5), retitle it, then add Line/Neutral ambient plots.
+        import copy as _copy
+        fc_head = find_para(doc, "FUNCTIONAL CHECK")
+        if fc_head is not None:
+            amb_p = _copy.deepcopy(fc_head._p)
+            anchor._p.addnext(amb_p)
+            amb = Paragraph(amb_p, anchor._parent)
+            _runs = amb.runs
+            if _runs:
+                _runs[0].text = "AMBIENT"
+                for _r in _runs[1:]:
+                    _r.text = ""
+            else:
+                amb.add_run("AMBIENT")
+        else:
+            amb = insert_paragraph_after(anchor, "AMBIENT")
+        anchor = amb
+        for heading, tag in (("Line:", "{{ ambient_line }}"), ("Neutral:", "{{ ambient_neutral }}")):
+            h = insert_paragraph_after(anchor, "")
+            h.add_run(heading).bold = True
+            anchor = insert_paragraph_after(h, tag)
 
     # Table 3 - Test specification.
     # Most value rows are a single cell spanning columns 1+2 (a horizontal merge);
@@ -207,18 +246,22 @@ def main(src):
             if p:
                 remove_para(p)
 
-    # Measurement data: images + Line/Neutral tables after captions
+    # Measurement data: repeated per Test record. Wrap the per-record label + Line/Neutral
+    # figures & tables in a docxtpl {%p for %} loop over measurement_records. The label is a
+    # bold heading above Figure 1; images sit above their captions (fix_doc reorders them).
     fig1, tab1 = find_para(doc, "Figure 1:"), find_para(doc, "Table 1:")
     fig2, tab2 = find_para(doc, "Figure 2:"), find_para(doc, "Table 2:")
     photo1 = find_para(doc, "Photo 1:")
-    if fig1:
-        insert_paragraph_after(fig1, "{{ plot_line }}")
-    if tab1:
-        insert_measure_table_after(doc, tab1, "r in line_rows", "r")
-    if fig2:
-        insert_paragraph_after(fig2, "{{ plot_neutral }}")
-    if tab2:
-        insert_measure_table_after(doc, tab2, "r in neutral_rows", "r")
+    if fig1 and tab1 and fig2 and tab2:
+        insert_paragraph_before(fig1, "{%p for rec in measurement_records %}")       # loop start
+        insert_paragraph_before(fig1, "").add_run("{{ rec.label }}").bold = True      # label above Figure 1
+        insert_paragraph_after(fig1, "{{ rec.plot_line }}")
+        insert_measure_table_after(doc, tab1, "r in rec.line_rows", "r")
+        insert_paragraph_after(fig2, "{{ rec.plot_neutral }}")
+        tbl2 = insert_measure_table_after(doc, tab2, "r in rec.neutral_rows", "r")
+        endfor = OxmlElement("w:p")                                                   # loop end (after Table 2)
+        tbl2._tbl.addnext(endfor)
+        Paragraph(endfor, tab2._parent).add_run("{%p endfor %}")
     if photo1:
         insert_paragraph_after(photo1, "{{ photo_setup }}")
 

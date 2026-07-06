@@ -330,10 +330,11 @@ def ce_finalize_layout(doc):
                 return k
         return None
 
-    a0 = find(lambda t: t == "test procedure")                       # procedure + fig1/table1
-    b0 = find(lambda t: t.startswith("figure 2"))                    # fig2/table2 (image is b0-1)
-    c0 = find(lambda t: t == "test setup pictures")                  # photo + equipment
-    d0 = find(lambda t: t == "software used")                        # software + result
+    a0 = find(lambda t: t == "test procedure")                       # procedure (2.4)
+    c0 = find(lambda t: t == "test setup pictures")                  # photo (2.6) + equipment (2.7)
+    d0 = find(lambda t: t == "software used")                        # software (2.8) + result (2.9)
+    fig1s = [k for k in range(len(paras)) if texts[k].startswith("figure 1")]
+    fig2s = [k for k in range(len(paras)) if texts[k].startswith("figure 2")]
 
     def glue(start, end):
         """Bind [start, end) into one keep-together block: keep_together stops any
@@ -349,15 +350,59 @@ def ce_finalize_layout(doc):
         for k in range(start, last - 1):
             paras[k].paragraph_format.keep_with_next = True
 
-    fig2_img = (b0 - 1) if b0 else None
-    glue(a0, fig2_img)          # Group A: procedure .. table 1 (+ caption)
-    glue(fig2_img, c0)          # Group B: figure 2 .. table 2 (+ caption)
+    # Measurement records (one per Test), laid out like the reference: the Test Procedure
+    # keeps its own page, then EACH Figure+Table pair gets its own page. Per record the
+    # label sits two paragraphs above its "Figure 1" caption (label, image, caption).
+    m0 = find(lambda t: t == "measurement data")      # 2.5 heading (stays with Figure 1)
+    n = min(len(fig1s), len(fig2s))
+    if a0 is not None and n:
+        glue(a0, m0 if m0 is not None else max(0, fig1s[0] - 2))   # 2.4 Test Procedure: its own page
+    if m0 is not None:
+        paras[m0].paragraph_format.page_break_before = True        # 2.5 + Figure 1 begin a new page
+    for k in range(n):
+        label_k = max(0, fig1s[k] - 2)
+        pn_img = fig2s[k] - 1                         # plot_neutral image (above the Figure 2 caption)
+        nxt = (fig1s[k + 1] - 2) if (k + 1) < n else c0
+        first_with_heading = (k == 0 and m0 is not None)
+        a_start = m0 if first_with_heading else label_k
+        glue(a_start, pn_img)                         # Figure 1 + Table 1 -> its own page
+        glue(pn_img, nxt)                             # Figure 2 + Table 2 -> its own page
+        if not first_with_heading:
+            paras[label_k].paragraph_format.page_break_before = True   # Fig1/Fig3 block -> new page
+        paras[pn_img].paragraph_format.page_break_before = True        # Fig2/Fig4 block -> new page
+
     glue(c0, d0)                # Group C: 2.6 photo + 2.7 equipment
     glue(d0, None)              # Group D: 2.8 software + 2.9 result
+    if c0 is not None:
+        paras[c0].paragraph_format.page_break_before = True   # 2.6 setup + 2.7 equipment on their own page
 
-    # 2.8 Software + 2.9 Result belong together on the final page. Group C
-    # (photo + equipment) leaves the page part-empty, so software would otherwise
-    # flow up onto it; a page break here moves the pair down cleanly (Group C is
-    # not full, so this does not create a blank page).
+    # 2.8 Software + 2.9 Result belong together on the final page. Group C (photo +
+    # equipment) leaves the page part-empty, so software would otherwise flow up onto
+    # it; a page break here moves the pair down cleanly (Group C is not full, so this
+    # does not create a blank page).
     if d0 is not None:
         paras[d0].paragraph_format.page_break_before = True
+
+    # 4) 1.4 Functional Check plots (Line + Neutral): put them on their own page with
+    #    each bold heading directly ABOVE its image, and keep each heading glued to its
+    #    image. Detected as the image paragraphs that appear BEFORE the "Conducted
+    #    Emission Test" section (the 2.5/2.6 plots live after it).
+    sec2 = find(lambda t: t == "conducted emission test")
+    limit = sec2 if sec2 is not None else len(paras)
+    func_imgs = [k for k in range(limit) if _has_image(paras[k])]
+    if func_imgs:
+        def _heading_above(k):
+            j = k - 1
+            while j > 0 and not _text(paras[j]).strip():
+                j -= 1
+            return j
+        paras[_heading_above(func_imgs[0])].paragraph_format.page_break_before = True
+        for k in func_imgs:
+            hk = _heading_above(k)
+            paras[hk].paragraph_format.keep_with_next = True
+            paras[hk].paragraph_format.keep_together = True
+            paras[k].paragraph_format.keep_together = True
+        amb = find(lambda t: t == "ambient")          # 1.5 Ambient -> its own page (after the 1.4 plots)
+        if amb is not None:
+            paras[amb].paragraph_format.page_break_before = True
+            paras[amb].paragraph_format.keep_with_next = True

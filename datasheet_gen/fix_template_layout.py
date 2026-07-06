@@ -30,7 +30,7 @@ CAPTION_RE = re.compile(r"^\s*(Photo|Figure)\s*\d*\s*:", re.I)
 HINT_RE = re.compile(r"^\s*<.*>\s*$")
 # a paragraph whose whole content is a single {{ var }} referencing an image
 IMG_PLACEHOLDER_RE = re.compile(
-    r"^\s*\{\{\s*(img_\w+|plot_\w+|photo_\w+|signature|\w*figure\w*|\w*diagram\w*)\s*\}\}\s*$",
+    r"^\s*\{\{\s*(img_\w+|[\w.]*plot_\w+|photo_\w+|signature|\w*figure\w*|\w*diagram\w*)\s*\}\}\s*$",
     re.I,
 )
 
