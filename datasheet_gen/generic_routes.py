@@ -89,6 +89,12 @@ def g_form(code, assignment_id):
                         rows.append(row)
                 if rows:
                     it["rows"] = rows
+        if code == "RE":
+            from .generic_service import _re_measurement_groups
+            measurement_groups = _re_measurement_groups(draft)
+    else:
+        measurement_groups = []
+
     # Prefill repeating tables (equipment / RE Test Limits / software) from the
     # request + derivations, but only where the engineer has no saved draft rows.
     prefill_tables = gs.collect_prefill_tables(schema, _parent_request(a), a)
@@ -103,6 +109,7 @@ def g_form(code, assignment_id):
         code=code, schema=schema, prefill=pre,
         assignment_id=a.id, tco_id=a.tco_id or "", test_name=a.test_name or code,
         draft_status=draft_status, saved_images=saved_images,
+        measurement_groups=measurement_groups,
         today=datetime.now().strftime("%Y-%m-%d"),
     )
 
@@ -118,7 +125,12 @@ def _save_generic_images(ikeys, assignment_id):
     img_dir = os.path.join(_output_dir(), "images")
     os.makedirs(img_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    for k in ikeys:
+    all_keys = list(ikeys)
+    if request.files:
+        for k in request.files.keys():
+            if k.startswith("meas_img_") and k not in all_keys:
+                all_keys.append(k)
+    for k in all_keys:
         fs = request.files.get(k)
         if fs and (fs.filename or "").strip():
             path = os.path.join(img_dir, f"{assignment_id}_{k}_{ts}_{secure_filename(fs.filename)}")

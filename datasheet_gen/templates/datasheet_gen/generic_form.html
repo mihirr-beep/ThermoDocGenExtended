@@ -5,7 +5,12 @@
   {% if f.input == 'image' %}
     <div class="md:col-span-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }} (image)</label>
-      <input type="file" name="{{ f.key }}" accept="image/*" class="w-full text-sm">
+      <input type="file" name="{{ f.key }}" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      {% if f.caption %}
+        <input type="text" name="{{ f.key }}_caption" value="{{ prefill.get(f.key + '_caption', f.label) }}"
+               placeholder="{{ f.label }}"
+               class="mt-1 w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg">
+      {% endif %}
     </div>
   {% elif f.checkbox or f.options %}
     <div>
@@ -56,6 +61,23 @@
     {% set ns = namespace(n=0) %}
     {% for sec in schema.sections %}
       {% if sec['items'] %}
+      {% if sec.title == 'MEASUREMENT DATA' and code == 'RE' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+          <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="generateREGroupsFromVoltages()"
+                    title="Create one group per value in 'EUT Input Voltage & Frequency' (semicolon-separated). Replaces the current groups."
+                    class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate Groups from Voltages</button>
+            <button type="button" onclick="addREGroup()"
+                    title="Add another measurement group manually. Each group has its own label, plots and table."
+                    class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Group</button>
+          </div>
+        </div>
+        <div id="meas-records"></div>
+      </section>
+      {% else %}
       {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h2 class="text-lg font-bold text-gray-900 mb-4">{{ ns.n }}. {{ sec.title }}</h2>
@@ -64,11 +86,21 @@
 
             {% if it.type == 'fields' %}
               {% for f in it['fields'] %}
-                {{ render_field(f, prefill, today) }}
+                {% if not f.computed %}{{ render_field(f, prefill, today) }}{% endif %}
               {% endfor %}
 
             {% elif it.type == 'field' %}
-              {{ render_field(it, prefill, today) }}
+              {% if not it.computed %}{{ render_field(it, prefill, today) }}{% endif %}
+
+            {% elif it.type == 'textarea' and it.key == 'test_procedure' %}
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
+                <p class="text-xs text-gray-500 mb-1">Standard test procedure; read-only.</p>
+                <input type="hidden" name="{{ it.key }}" id="{{ it.key }}" value="{{ prefill.get(it.key, '') }}">
+                <div id="{{ it.key }}_view"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm leading-relaxed"
+                     style="white-space: pre-line;">{{ prefill.get(it.key, '') }}</div>
+              </div>
 
             {% elif it.type == 'textarea' %}
               <div class="md:col-span-2">
@@ -79,9 +111,12 @@
             {% elif it.type == 'image' %}
               <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
-                <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm">
-                {% if it.caption %}<input type="text" name="{{ it.key }}_caption" value="{{ prefill.get(it.key ~ '_caption', '') }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">{% endif %}
-                <div id="inlinethumb-{{ it.key }}"></div>
+                <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                {% if it.caption %}
+                  <input type="text" name="{{ it.key }}_caption" value="{{ prefill.get(it.key + '_caption', it.label) }}"
+                         placeholder="{{ it.label }}"
+                         class="mt-1 w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg">
+                {% endif %}
               </div>
 
             {% elif it.type == 'table' %}
@@ -89,11 +124,7 @@
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-sm font-semibold text-gray-700">{{ it.label or 'Rows' }}</span>
                   <div class="flex items-center gap-2">
-                    {% if it.import == 're_scan' %}
-                    <button type="button" onclick="importREScan('{{ it.key }}')" title="Import a raw instrument measurement file (.txt/.csv). Columns Freq, Pol, EUT Ang, Twr Ht, EMI, Limit, Margin are mapped automatically." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
-                    {% else %}
-                    <button type="button" onclick="uploadCSV('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
-                    {% endif %}
+                    <button type="button" onclick="importData('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Import CSV / TXT</button>
                     <button type="button" onclick="addRow('{{ it.key }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
                   </div>
                 </div>
@@ -128,16 +159,90 @@
         </div>
       </section>
       {% endif %}
+      {% endif %}
     {% endfor %}
 
-    <div class="flex items-center justify-end gap-3 pb-12">
-      <span id="autoSaveStatus" class="text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
+    <div class="flex justify-end gap-3 pb-12">
+      <span id="autoSaveStatus" class="self-center text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
       <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
       <button type="button" id="draftBtn" class="px-6 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 shadow">Save as Draft</button>
       <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
     </div>
   </form>
 </div>
+
+{% if code == 'RE' %}
+<template id="tpl-meas-record">
+<div class="meas-record bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4" data-idx="%%I%%">
+  <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+    <div class="flex items-center gap-2 w-1/2">
+      <span class="text-xs font-bold text-gray-700">Group Label:</span>
+      <input type="text" name="meas_label_%%I%%" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" placeholder="e.g. ICES, FCC, or 230V/50Hz Mode 1">
+      <input type="hidden" name="meas_index[]" value="%%I%%">
+    </div>
+    <button type="button" onclick="removeREGroup(this)" class="text-xs px-2 py-1 border border-red-200 text-red-600 rounded hover:bg-red-50 font-semibold">Remove Group</button>
+  </div>
+  
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- Vertical Plot -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Vertical Polarisation Plot (156&times;93 mm)</label>
+      <input type="file" name="meas_img_vertical_%%I%%" accept="image/*" class="w-full text-xs">
+      <input type="text" name="meas_img_vertical_caption_%%I%%" placeholder="Vertical plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
+    </div>
+    
+    <!-- Horizontal Plot -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Horizontal Polarisation Plot (156&times;93 mm)</label>
+      <input type="file" name="meas_img_horizontal_%%I%%" accept="image/*" class="w-full text-xs">
+      <input type="text" name="meas_img_horizontal_caption_%%I%%" placeholder="Horizontal plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
+    </div>
+    
+    <!-- Measurement Table -->
+    <div class="md:col-span-2 border border-gray-200 bg-white rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold text-gray-700">Measurement Data (7 Columns)</span>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="importData('meas_table_%%I%%')" class="text-2xs px-2 py-0.5 border border-blue-200 text-blue-600 rounded hover:bg-blue-50">Import CSV / TXT</button>
+          <button type="button" onclick="addRow('meas_table_%%I%%')" class="text-2xs px-2 py-0.5 border rounded hover:bg-gray-50">+ Add Row</button>
+        </div>
+      </div>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs border border-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="p-1 text-left">Frequency (MHz)</th>
+              <th class="p-1 text-left">Polarization</th>
+              <th class="p-1 text-left">EUT Angle (deg)</th>
+              <th class="p-1 text-left">Antenna Height (cm)</th>
+              <th class="p-1 text-left">(QP) EMI (dBuV/m)</th>
+              <th class="p-1 text-left">QP Limit (dBuV/m)</th>
+              <th class="p-1 text-left">(QP) Margin (dB)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows-meas_table_%%I%%"></tbody>
+        </table>
+      </div>
+      
+      <template id="tpl-meas_table_%%I%%">
+        <tr>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c0[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c1[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c2[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c3[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c4[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c5[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5"><input name="meas_table_%%I%%__c6[]" class="w-full px-1 py-0.5 border rounded"></td>
+          <td class="p-0.5 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-bold">&times;</button></td>
+        </tr>
+      </template>
+    </div>
+  </div>
+</div>
+</template>
+{% endif %}
 
 <!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
 <style>
@@ -191,16 +296,22 @@
 
 <!-- (image editing handled by the shared Edit dialog: datasheet_gen/static/ds_image_editor.js) -->
 
+{% endblock %}
+
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
-  /* ---- debounced draft auto-save (same hardening as the CE form) ---- */
+  // Auto-save debounced function
   var autoSaveTimeout = null;
   var suppressAutoSave = true;   // stays on until the form is fully built, so opening a form never auto-saves
+
+  // Cancel a pending auto-save (used before an explicit Save/Generate so a stale
+  // trailing draft-save can't overwrite the record they just submitted).
   function cancelAutoSave() { if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; } }
-  // Auto-save persists scalar/table fields ONLY; file inputs are excluded so
-  // multi-MB images are not re-uploaded on every keystroke (they persist on
-  // explicit Save/Generate).
+
+  // Auto-save persists scalar/table fields ONLY. File inputs are deliberately
+  // excluded: re-uploading multi-MB images on every keystroke-debounce would
+  // pile up orphaned copies server-side. Images persist on explicit Save/Generate.
   function buildDraftFormData(form) {
     var fd = new FormData();
     Array.prototype.forEach.call(form.elements, function(el){
@@ -211,95 +322,174 @@
     });
     return fd;
   }
+
   function triggerAutoSave() {
     if (suppressAutoSave) return;
     if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+
     var statusEl = document.getElementById('autoSaveStatus');
     if (statusEl) {
       statusEl.textContent = 'Saving draft...';
-      statusEl.classList.remove('opacity-0', 'text-green-600', 'text-red-600');
+      statusEl.classList.remove('opacity-0');
       statusEl.classList.add('opacity-100', 'text-gray-500');
+      statusEl.classList.remove('text-green-600', 'text-red-600');
     }
+
     autoSaveTimeout = setTimeout(function() {
       autoSaveTimeout = null;
       var form = document.getElementById('dsForm');
       if (!form) return;
-      fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: buildDraftFormData(form) })
-        .then(function(r){ return r.json(); })
-        .then(function(res){
-          if (!statusEl) return;
-          if (res.success) {
+
+      fetch('/datasheet/g/{{ code }}/save-draft', {
+        method: 'POST',
+        body: buildDraftFormData(form)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res.success) {
+          if (statusEl) {
             statusEl.textContent = 'Draft auto-saved';
-            statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-green-600');
-            setTimeout(function(){ if (statusEl.textContent === 'Draft auto-saved') { statusEl.classList.remove('opacity-100'); statusEl.classList.add('opacity-0'); } }, 2000);
-          } else {
-            statusEl.textContent = 'Failed to auto-save draft';
-            statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-red-600');
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-green-600');
+            setTimeout(function() {
+              if (statusEl.textContent === 'Draft auto-saved') {
+                statusEl.classList.remove('opacity-100');
+                statusEl.classList.add('opacity-0');
+              }
+            }, 2000);
           }
-        })
-        .catch(function(){ if (statusEl) { statusEl.textContent = 'Connection error (auto-save)'; statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-red-600'); } });
+        } else {
+          if (statusEl) {
+            statusEl.textContent = 'Failed to auto-save draft';
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-red-600');
+          }
+        }
+      })
+      .catch(function() {
+        if (statusEl) {
+          statusEl.textContent = 'Connection error (auto-save)';
+          statusEl.classList.remove('text-gray-500');
+          statusEl.classList.add('text-red-600');
+        }
+      });
     }, 1500);
   }
 
   function addRow(key) {
     var tpl = document.getElementById('tpl-' + key);
     document.getElementById('rows-' + key).appendChild(tpl.content.cloneNode(true));
-    triggerAutoSave();
   }
-  function uploadCSV(key) {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-    input.onchange = function(e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      
-      var reader = new FileReader();
-      reader.onload = function(evt) {
-        var text = evt.target.result;
-        var rows = parseCSV(text);
-        if (rows.length === 0) return;
-        
-        var tbody = document.getElementById('rows-' + key);
-        var tpl = document.getElementById('tpl-' + key);
-        if (!tbody || !tpl) return;
-        
-        // Find if first row is header by checking if values match column keys
-        var startIdx = 0;
-        var firstRow = rows[0];
-        var isHeader = firstRow.some(function(val) {
-          var v = val.toLowerCase();
-          return v.includes('freq') || v.includes('state') || v.includes('equipment') || 
-                 v.includes('make') || v.includes('model') || v.includes('serial') || 
-                 v.includes('cal') || v.includes('date') || v.includes('qp') || v.includes('avg');
-        });
-        if (isHeader) {
-          startIdx = 1;
-        }
-        
-        // Clear existing rows
-        tbody.innerHTML = '';
-        
-        for (var i = startIdx; i < rows.length; i++) {
-          var rowData = rows[i];
-          if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
-          
-          var clone = tpl.content.cloneNode(true);
-          var inputs = clone.querySelectorAll('input, select, textarea');
-          
-          for (var j = 0; j < inputs.length; j++) {
-            if (j < rowData.length) {
-              inputs[j].value = rowData[j].trim();
-            }
+  function scanNum(v) {
+    if (v == null) return null;
+    var t = String(v).replace(/−/g, '-').replace(/[^0-9eE.+-]/g, '');
+    if (t === '' || t === '-' || t === '+' || t === '.') return null;
+    var n = parseFloat(t);
+    return isNaN(n) ? null : n;
+  }
+  function scanStr(v) { return (v == null ? '' : String(v)).trim(); }
+
+  function getScanBandsForTable(key) {
+    var bands = null;
+    (DS_SCHEMA.sections || []).forEach(function(sec) {
+      (sec.items || []).forEach(function(it) {
+        if (it.type === 'table' && it.key === key) {
+          if (it.scan_bands) {
+            bands = it.scan_bands;
           }
-          tbody.appendChild(clone);
         }
-        showMessage('CSV imported successfully!', 'success');
-        triggerAutoSave();
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+      });
+    });
+    return bands;
+  }
+
+  function detectScanColumns(rows) {
+    var idx = { freq: 0, qp: 1, qp_limit: 2, qp_margin: 3 };
+    for (var r = 0; r < Math.min(rows.length, 6); r++) {
+      var f = -1, q = -1, ql = -1, qm = -1;
+      for (var i = 0; i < rows[r].length; i++) {
+        var c = String(rows[r][i] || '').toLowerCase();
+        if (f < 0 && c.indexOf('freq') >= 0) f = i;
+        if (q < 0 && (c.indexOf('qpeak') >= 0 || c.indexOf('q-peak') >= 0 || c.indexOf('qp') >= 0 || c.indexOf('quasi') >= 0 || c.indexOf('emi') >= 0 || c.indexOf('result') >= 0)) q = i;
+        if (ql < 0 && c.indexOf('limit') >= 0) ql = i;
+        if (qm < 0 && (c.indexOf('margin') >= 0 || c.indexOf('delta') >= 0)) qm = i;
+      }
+      if (f >= 0 && q >= 0) {
+        idx = {
+          freq: f,
+          qp: q,
+          qp_limit: ql >= 0 ? ql : q + 1,
+          qp_margin: qm >= 0 ? qm : q + 2
+        };
+        break;
+      }
+    }
+    return idx;
+  }
+
+  function reduceRawScan(rows, bands) {
+    if (!rows || !rows.length) throw new Error('The file is empty.');
+    var col = detectScanColumns(rows);
+    var data = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var fN = scanNum(r[col.freq]), qN = scanNum(r[col.qp]);
+      if (fN === null || qN === null) continue;
+      data.push({
+        fN: fN,
+        qN: qN,
+        freq: scanStr(r[col.freq]),
+        qp: scanStr(r[col.qp]),
+        qp_limit: scanStr(r[col.qp_limit]),
+        qp_margin: scanStr(r[col.qp_margin])
+      });
+    }
+    if (!data.length) throw new Error('No numeric measurement rows found.');
+
+    var out = [];
+    for (var b = 0; b < bands.length; b++) {
+      var lo = bands[b][0], hi = bands[b][1], last = (b === bands.length - 1);
+      var qpRow = null;
+      for (var k = 0; k < data.length; k++) {
+        var d = data[k];
+        if (d.fN < lo || (last ? d.fN > hi : d.fN >= hi)) continue;
+        if (qpRow === null || d.qN > qpRow.qN) qpRow = d;
+      }
+      if (qpRow) {
+        out.push([
+          qpRow.freq,
+          '', // Polarization
+          '', // EUT Angle
+          '', // Antenna Height
+          qpRow.qp,
+          qpRow.qp_limit,
+          qpRow.qp_margin
+        ]);
+      } else {
+        out.push([
+          lo + '-' + hi,
+          '',
+          '',
+          '',
+          '',
+          '',
+          ''
+        ]);
+      }
+    }
+    return out;
+  }
+
+  function parseTXT(text) {
+    var lines = String(text).split(/\r\n|\r|\n/);
+    var h = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var lo = lines[i].toLowerCase();
+      if (lo.indexOf('freq') >= 0 && (lo.indexOf('qpeak') >= 0 || lo.indexOf('q-peak') >= 0 || lo.indexOf('mhz') >= 0)) { h = i; break; }
+    }
+    return lines.slice(h).map(function (line) {
+      return (line.indexOf('\t') >= 0) ? line.split('\t') : line.trim().split(/\s+/);
+    });
   }
 
   function parseCSV(text) {
@@ -336,61 +526,118 @@
     return lines;
   }
 
-  /* ---- RE raw-scan import: map an instrument .txt/.csv to the 7-column table.
-     Columns are matched by header name so column order / detector (QP|Peak|Avg)
-     does not matter: Freq -> Frequency, Pol, EUT Ang, Twr Ht, EMI, Limit, Margin. ---- */
-  function parseDelimited(text) {
-    if (String(text).indexOf('\t') >= 0)
-      return String(text).split(/\r\n|\r|\n/).map(function (l) { return l.split('\t'); });
-    return parseCSV(text);
-  }
-  function mapREScanRows(rows) {
-    function num(x){ var v=parseFloat(String(x==null?'':x).replace(/[^0-9eE.+-]/g,'')); return isFinite(v)?v:null; }
-    var hi=-1, cells=null;
-    for (var i=0;i<rows.length;i++){
-      var j=rows[i].join(' ').toLowerCase();
-      if (j.indexOf('freq')>=0 && (j.indexOf('emi')>=0 || j.indexOf('margin')>=0)){ hi=i; cells=rows[i]; break; }
-    }
-    if (hi<0) throw new Error('Could not find the column header row (needs Freq + EMI/Margin).');
-    function find(re, notre){
-      for (var c=0;c<cells.length;c++){ var s=String(cells[c]).toLowerCase(); if (re.test(s) && !(notre && notre.test(s))) return c; }
-      return -1;
-    }
-    var idx={ freq:find(/freq/,/max/), pol:find(/pol/), ang:find(/ang/), ht:find(/height|twr|ht/), emi:find(/emi/), limit:find(/limit/), margin:find(/margin/) };
-    function cell(row,k){ return (k>=0 && row[k]!=null) ? String(row[k]).trim() : ''; }
-    var out=[];
-    for (var r=hi+1;r<rows.length;r++){
-      var row=rows[r]; if(!row) continue;
-      if (idx.freq<0 || num(row[idx.freq])===null) continue;   // skip the units row / blank lines
-      out.push({ c0:cell(row,idx.freq), c1:cell(row,idx.pol), c2:cell(row,idx.ang), c3:cell(row,idx.ht), c4:cell(row,idx.emi), c5:cell(row,idx.limit), c6:cell(row,idx.margin) });
-    }
-    return out;
-  }
-  function fillScanTable(key, mapped) {
-    var tb=document.getElementById('rows-'+key), tpl=document.getElementById('tpl-'+key);
-    if(!tb||!tpl) return;
-    tb.innerHTML='';
-    mapped.forEach(function(m){
-      var clone=tpl.content.cloneNode(true), ins=clone.querySelectorAll('input');
-      ['c0','c1','c2','c3','c4','c5','c6'].forEach(function(ck,j){ if(ins[j]) ins[j].value=m[ck]||''; });
-      tb.appendChild(clone);
-    });
-    if(!tb.querySelectorAll('tr').length) tb.appendChild(tpl.content.cloneNode(true));
-  }
-  function importREScan(key) {
-    var input=document.createElement('input');
-    input.type='file'; input.accept='.txt,.csv,text/plain,text/csv';
-    input.onchange=function(e){
-      var file=e.target.files[0]; if(!file) return;
-      var reader=new FileReader();
-      reader.onload=function(evt){
-        try{
-          var mapped=mapREScanRows(parseDelimited(evt.target.result));
-          if(!mapped.length){ showMessage('No measurement rows found in the file.','error'); return; }
-          fillScanTable(key, mapped);
-          showMessage('Imported '+mapped.length+' measurement row(s).','success');
+  function importData(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var text = evt.target.result;
+          var isTab = /\.txt$/i.test(file.name) || (text.indexOf('\t') >= 0 && text.indexOf(',') < 0);
+          var rows = isTab ? parseTXT(text) : parseCSV(text);
+          if (!rows.length) throw new Error('The file is empty.');
+
+          var tbody = document.getElementById('rows-' + key);
+          var tpl = document.getElementById('tpl-' + key);
+          if (!tbody || !tpl) return;
+
+          // RE measurement tables: straight copy — NO max/band reduction. Map the
+          // TDK "Final Measurement Table" columns (Freq, Freq(Max), Pol, EUT Ang,
+          // Twr Ht, Trace, Cable, Transducer, Preamp, EMI, Limit, Margin) to the 7
+          // RE columns (Freq, Pol, EUT Angle, Antenna Height, QP EMI, QP Limit,
+          // QP Margin). A file already in 7-column form loads verbatim.
+          if (key.indexOf('meas_table_') === 0) {
+            tbody.innerHTML = '';
+            var mn = 0;
+            for (var mi = 0; mi < rows.length; mi++) {
+              var mrow = rows[mi];
+              if (scanNum(mrow[0]) === null) continue;   // skip header / units / blank rows
+              var vals = (mrow.length >= 12)
+                ? [mrow[0], mrow[2], mrow[3], mrow[4], mrow[9], mrow[10], mrow[11]]
+                : [mrow[0], mrow[1], mrow[2], mrow[3], mrow[4], mrow[5], mrow[6]];
+              var mclone = tpl.content.cloneNode(true);
+              var minputs = mclone.querySelectorAll('input, select, textarea');
+              for (var mj = 0; mj < minputs.length && mj < vals.length; mj++) {
+                minputs[mj].value = String(vals[mj] == null ? '' : vals[mj]).trim();
+              }
+              tbody.appendChild(mclone);
+              mn++;
+            }
+            if (!tbody.querySelectorAll('tr').length) tbody.appendChild(tpl.content.cloneNode(true));
+            showMessage('Imported ' + mn + ' measurement row(s).', mn ? 'success' : 'error');
+            if (typeof triggerAutoSave === 'function') triggerAutoSave();
+            return;
+          }
+
+          var scanBands = getScanBandsForTable(key);
+          var col = detectScanColumns(rows);
+          var numeric = 0;
+          for (var i = 0; i < rows.length; i++) {
+            if (scanNum(rows[i][col.freq]) !== null && scanNum(rows[i][col.qp]) !== null) {
+              numeric++;
+            }
+          }
+
+          tbody.innerHTML = '';
+
+          if (numeric > 15 && scanBands) { // raw sweep -> reduce to band rows
+            var reduced = reduceRawScan(rows, scanBands);
+            for (var i = 0; i < reduced.length; i++) {
+              var rowData = reduced[i];
+              var clone = tpl.content.cloneNode(true);
+              var inputs = clone.querySelectorAll('input, select, textarea');
+              for (var j = 0; j < inputs.length; j++) {
+                if (j < rowData.length) {
+                  inputs[j].value = rowData[j];
+                }
+              }
+              tbody.appendChild(clone);
+            }
+            var got = reduced.filter(function (r) { return r[4] !== ''; }).length;
+            showMessage('Imported sweep → ' + got + ' band row(s).', got ? 'success' : 'error');
+          } else { // prepared table -> load verbatim
+            var startIdx = 0;
+            var firstRow = rows[0];
+            var isHeader = firstRow.some(function(val) {
+              var v = val.toLowerCase();
+              return v.includes('freq') || v.includes('state') || v.includes('equipment') || 
+                     v.includes('make') || v.includes('model') || v.includes('serial') || 
+                     v.includes('cal') || v.includes('date') || v.includes('qp') || v.includes('avg');
+            });
+            if (isHeader) {
+              startIdx = 1;
+            }
+
+            var n = 0;
+            for (var i = startIdx; i < rows.length; i++) {
+              var rowData = rows[i];
+              if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
+              var clone = tpl.content.cloneNode(true);
+              var inputs = clone.querySelectorAll('input, select, textarea');
+              for (var j = 0; j < inputs.length; j++) {
+                if (j < rowData.length) {
+                  inputs[j].value = rowData[j].trim();
+                }
+              }
+              tbody.appendChild(clone);
+              n++;
+            }
+            showMessage('Imported ' + n + ' row(s).', n ? 'success' : 'error');
+          }
+          
+          // Ensure at least one empty row if empty
+          if (!tbody.querySelectorAll('tr').length) {
+            tbody.appendChild(tpl.content.cloneNode(true));
+          }
+
           triggerAutoSave();
-        }catch(err){ showMessage(err && err.message ? err.message : 'Could not import the file.','error'); }
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not import the file.', 'error');
+        }
       };
       reader.readAsText(file);
     };
@@ -398,11 +645,11 @@
   }
   function delRow(btn) {
     var tb = btn.closest('tbody');
-    if (tb.querySelectorAll('tr').length > 1) { btn.closest('tr').remove(); triggerAutoSave(); }
+    if (tb.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
   }
   document.getElementById('dsForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    cancelAutoSave();   // a trailing auto-save must not revert the record we're about to Submit
+    cancelAutoSave();
     var btn = document.getElementById('genBtn'); var orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Generating...';
     fetch('/datasheet/g/{{ code }}/generate', { method: 'POST', body: new FormData(this) })
@@ -416,7 +663,7 @@
   });
 
   document.getElementById('draftBtn').addEventListener('click', function () {
-    cancelAutoSave();   // explicit save supersedes any pending debounce
+    cancelAutoSave();
     var btn = this, orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Saving...';
     fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: new FormData(document.getElementById('dsForm')) })
@@ -558,30 +805,7 @@
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
-
-  // Inline thumbnail + Edit/Reset shown right under each image picker (CE-style).
-  function renderInlineThumb(key){
-    var holder=document.getElementById('inlinethumb-'+key);
-    if(!holder) return;
-    holder.innerHTML='';
-    var file=imgFileFor(key);
-    if(!file) return;
-    var box=imageBoxMM(key);
-    var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
-    var frame=document.createElement('div'); frame.style.cssText='display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
-    var img=document.createElement('img'); img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;'; img.src=URL.createObjectURL(file);
-    frame.appendChild(img); wrap.appendChild(frame);
-    var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;'; meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document'; wrap.appendChild(meta);
-    var actions=document.createElement('div'); actions.style.marginTop='5px';
-    var edit=document.createElement('button'); edit.type='button'; edit.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;'; edit.textContent='✎ Edit / Crop'; edit.onclick=function(){ openImageEditor(key); };
-    actions.appendChild(edit);
-    if(originalFiles[key] && originalFiles[key]!==file){
-      var rb=document.createElement('button'); rb.type='button'; rb.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;'; rb.textContent='↺ Reset'; rb.onclick=function(){ resetImage(key); };
-      actions.appendChild(rb);
-    }
-    wrap.appendChild(actions); holder.appendChild(wrap);
-  }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
@@ -592,21 +816,20 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); }
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
     });
   }
 
   // Conform a freshly-picked image to its document-slot ratio immediately, keeping
   // the raw upload (in originalFiles) so Edit can still reframe a different portion.
   function autoFitUpload(key){
-    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; return; }
     var raw=el.files[0]; originalFiles[key]=raw;
     if(window.DSImageEditor && DSImageEditor.autoFit){
       DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
         if(fitted && fitted!==raw) setInputFile(key, fitted);
-        renderInlineThumb(key);
       }});
-    } else { renderInlineThumb(key); }
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -619,147 +842,244 @@
       if (el) el.addEventListener('change', function(){ autoFitUpload(key); });
     });
 
-    // auto-save on any real edit (file inputs excluded from the payload)
+    // Wire up event listeners for input/change for auto-saving
     var formEl = document.getElementById('dsForm');
     if (formEl) {
-      formEl.addEventListener('input', function(e){
-        if (e.target && ['INPUT','TEXTAREA','SELECT'].indexOf(e.target.tagName) >= 0 && e.target.type !== 'file') triggerAutoSave();
+      formEl.addEventListener('input', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          if (e.target.type !== 'file') {
+            triggerAutoSave();
+          }
+        }
       });
-      formEl.addEventListener('change', function(e){
-        if (e.target && ['INPUT','TEXTAREA','SELECT'].indexOf(e.target.tagName) >= 0) triggerAutoSave();
+      formEl.addEventListener('change', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          triggerAutoSave();
+        }
       });
     }
-    // release the guard only after all synchronous load-time setup (incl. the RE
-    // linkage handler) has run, so opening the form never fires a spurious save
+
     setTimeout(function(){ suppressAutoSave = false; }, 0);
   });
 </script>
+
+{% if code == 'RE' %}
 <script>
-/* RE (IEC-FRM-511) live derivations. Mirrors datasheet_gen/re_logic.py and
-   service._BASIC_STANDARD_MAP so the form reflects the same (family x class)
-   Test Limits and Product->Basic Standard the server would prefill. */
-(function(){
-  if (!window.DS_SCHEMA || DS_SCHEMA.code !== 'RE') return;
-
-  // Product Standard -> Basic Standard (first match per ';'-separated standard)
-  var BASIC_MAP = [
-    ['en61326','EN 55011:2016+A2:2021'], ['iec61326','CISPR 11:2015+A1:2016+A2:2019'],
-    ['ices','CISPR 11:2015+A1:2016+A2:2019'], ['part15','ANSI C63.4:2024'],
-    ['cfr','ANSI C63.4:2024'], ['fcc','ANSI C63.4:2024'],
-    ['en55011','EN 55011:2016+A2:2021'], ['cispr11','CISPR 11:2015+A1:2016+A2:2019'],
-    ['c634','ANSI C63.4:2024']
-  ];
-  var FCC_TOKENS = ['part15','cfr','fcc','c634','ansi'];
-  var CISPR_TOKENS = ['cispr','en55011','iec61326','en61326','ices'];
-  // (family|class) -> limit rows. QP: 30M-1G; PA: 1G-6G (Peak, Average).
-  var QP = {
-    'CISPR|A': [['30 to 230','50'],['230 to 1000','57']],
-    'CISPR|B': [['30 to 230','40'],['230 to 1000','47']],
-    'FCC|A': [['30 to 88','49.54'],['88 to 216','53.98'],['216 to 960','56.90'],['960 to 1000','59.54']],
-    'FCC|B': [['30 to 88','39.6'],['88 to 216','43.52'],['216 to 960','46.02'],['960 to 1000','54']]
-  };
-  var PA = {
-    'FCC|A': [['1 to 3 GHz','79.54','59.54'],['3 to 6 GHz','79.54','59.54']],
-    'FCC|B': [['1000 to 6000 MHz','74','54']]
-  };
-
-  function norm(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
-  function parts(s){ return (s||'').split(/[;\n]+/); }
-  function q(name){ return document.querySelector('[name="'+name+'"]'); }
-  function family(ps){
-    var a = parts(ps);
-    for (var i=0;i<a.length;i++){
-      var k = norm(a[i]); if(!k) continue;
-      if (FCC_TOKENS.some(function(t){return k.indexOf(t)>=0;})) return 'FCC';
-      if (CISPR_TOKENS.some(function(t){return k.indexOf(t)>=0;})) return 'CISPR';
+  function deriveBasicStandard(productStandard) {
+    if (!productStandard) return '';
+    var psClean = productStandard.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (psClean.indexOf('en61326') >= 0 || psClean.indexOf('en55011') >= 0) {
+      return 'EN 55011:2016+A2:2021';
+    } else if (psClean.indexOf('iec61326') >= 0 || psClean.indexOf('ices') >= 0 || psClean.indexOf('cispr11') >= 0) {
+      return 'CISPR 11:2015+A1:2016+A2:2019';
+    } else if (psClean.indexOf('part15') >= 0 || psClean.indexOf('cfr') >= 0 || psClean.indexOf('fcc') >= 0 || psClean.indexOf('c634') >= 0) {
+      return 'ANSI C63.4:2024';
     }
     return '';
   }
-  function basicStandard(ps){
-    var out=[];
-    parts(ps).forEach(function(p){
-      var k=norm(p); if(!k) return;
-      for (var i=0;i<BASIC_MAP.length;i++){
-        if (k.indexOf(BASIC_MAP[i][0])>=0){ if(out.indexOf(BASIC_MAP[i][1])<0) out.push(BASIC_MAP[i][1]); break; }
+
+  function updateREBehavior() {
+    var prodStdEl = inputByName('product_standard');
+    var classEl = inputByName('classification_col_2');
+    var basicEl = inputByName('basic_standard');
+    var turnTableEl = inputByName('turn_table_rotation_step_col_1');
+    var resultClassEl = inputByName('result_class');
+
+    if (!prodStdEl || !classEl || !basicEl || !turnTableEl || !resultClassEl) return;
+
+    var productStandard = prodStdEl.value;
+    var classification = classEl.value; // e.g. 'Class A' or 'Class B'
+
+    // 1. Derive and update basic_standard
+    var derivedBasic = deriveBasicStandard(productStandard);
+    if (derivedBasic) {
+      basicEl.value = derivedBasic;
+    }
+    var basicStandard = basicEl.value;
+
+    // 2. Derive turn_table_rotation_step_col_1
+    if (basicStandard === 'ANSI C63.4:2024') {
+      turnTableEl.value = '22.5°';
+    } else {
+      turnTableEl.value = '15°';
+    }
+
+    // 3. Update result_class
+    if (classification === 'Class A') {
+      resultClassEl.value = 'A';
+    } else if (classification === 'Class B') {
+      resultClassEl.value = 'B';
+    } else {
+      resultClassEl.value = '';
+    }
+
+    // 4. Update limits — aligned with re_logic._QP_30M_1G
+    var limits = {};
+    var isFCC = (basicStandard === 'ANSI C63.4:2024');
+
+    // CISPR / ICES QP limits (30 MHz – 1 GHz)
+    if (classification === 'Class A') {
+      limits['f_30_to_230'] = '50';
+      limits['f_230_to_1000'] = '57';
+    } else if (classification === 'Class B') {
+      limits['f_30_to_230'] = '40';
+      limits['f_230_to_1000'] = '47';
+    }
+
+    // FCC QP limits (30 MHz – 1 GHz)
+    if (classification === 'Class A') {
+      limits['f_30_to_88_fcc'] = '49.54';
+      limits['f_88_to_216_fcc'] = '53.98';
+      limits['f_216_to_960_fcc'] = '56.90';
+      limits['f_960_to_1000_fcc'] = '59.54';
+    } else if (classification === 'Class B') {
+      limits['f_30_to_88_fcc'] = '39.60';
+      limits['f_88_to_216_fcc'] = '43.52';
+      limits['f_216_to_960_fcc'] = '46.02';
+      limits['f_960_to_1000_fcc'] = '54.00';
+    }
+
+    for (var key in limits) {
+      var limitEl = inputByName(key);
+      if (limitEl) {
+        limitEl.value = limits[key];
       }
-    });
-    return out.join('; ');
-  }
-  function classLetter(v){
-    v=(v||'').toUpperCase().replace('CLASS','').trim();
-    return (v.charAt(0)==='A'||v.charAt(0)==='B') ? v.charAt(0) : '';
-  }
-  // Rebuild a generic table (tbody rows-<key> + template tpl-<key>) from value-arrays.
-  function setTableRows(key, rows){
-    var tb=document.getElementById('rows-'+key), tpl=document.getElementById('tpl-'+key);
-    if(!tb||!tpl) return;
-    tb.innerHTML='';
-    (rows.length?rows:[null]).forEach(function(r){
-      var clone=tpl.content.cloneNode(true);
-      if(r){ var ins=clone.querySelectorAll('input'); for(var j=0;j<ins.length && j<r.length;j++) ins[j].value=r[j]; }
-      tb.appendChild(clone);
-    });
+    }
   }
 
-  var limitsEdited=false, basicEdited=false;
-  function applyLimits(){
-    var key = family(fieldVal('product_standard')) + '|' + classLetter(fieldVal('classification_col_2'));
-    setTableRows('re_limits_qp_rows', QP[key] || []);
-    setTableRows('re_limits_pa_rows', PA[key] || []);
-    if (window.triggerAutoSave) triggerAutoSave();
+  function getPrefillRowsForTable(tableKey) {
+    var rows = [];
+    (DS_SCHEMA.sections || []).forEach(function(sec) {
+      (sec.items || []).forEach(function(it) {
+        if (it.type === 'table' && it.key === tableKey) {
+          rows = it.rows || [];
+        }
+      });
+    });
+    return rows;
   }
-  function applyBasic(){
-    if (basicEdited) return;
-    var b = basicStandard(fieldVal('product_standard')), el = q('basic_standard');
-    if (el && b) el.value = b;
+
+  // Repeatable groups logic
+  var measSeq = 0;
+  function addREGroup(label, data) {
+    var idx = measSeq++;
+    var tpl = document.getElementById('tpl-meas-record');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML.replace(/%%I%%/g, idx).trim();
+    var block = wrap.firstElementChild;
+    document.getElementById('meas-records').appendChild(block);
+    
+    if (label != null) {
+      var le = block.querySelector('[name="meas_label_' + idx + '"]');
+      if (le) le.value = label;
+    }
+    
+    if (data) {
+      if (data.img_vertical_caption) {
+        var cVert = block.querySelector('[name="meas_img_vertical_caption_' + idx + '"]');
+        if (cVert) cVert.value = data.img_vertical_caption;
+      }
+      if (data.img_horizontal_caption) {
+        var cHoriz = block.querySelector('[name="meas_img_horizontal_caption_' + idx + '"]');
+        if (cHoriz) cHoriz.value = data.img_horizontal_caption;
+      }
+    } else {
+      var groupIdx = document.querySelectorAll('#meas-records .meas-record').length - 1;
+      var figVertNum = 3 + 2 * groupIdx;
+      var figHorizNum = 4 + 2 * groupIdx;
+      
+      var cVert = block.querySelector('[name="meas_img_vertical_caption_' + idx + '"]');
+      if (cVert) cVert.value = "Figure " + figVertNum + ": RE plot_ Vertical_Peak_30MHz - 1GHz";
+      
+      var cHoriz = block.querySelector('[name="meas_img_horizontal_caption_' + idx + '"]');
+      if (cHoriz) cHoriz.value = "Figure " + figHorizNum + ": RE plot_Horizontal_Peak_30MHz - 1GHz";
+    }
+
+    var tbody = document.getElementById('rows-meas_table_' + idx);
+    var tplTable = document.getElementById('tpl-meas_table_' + idx);
+    if (tbody && tplTable) {
+      var rowsToFill = [];
+      if (data && data.table_rows && data.table_rows.length) {
+        rowsToFill = data.table_rows;
+      } else if (!data) {
+        if (label === 'ICES') {
+          rowsToFill = getPrefillRowsForTable('re_table1_rows');
+        } else if (label === 'FCC') {
+          rowsToFill = getPrefillRowsForTable('re_table2_rows');
+        }
+      }
+      
+      if (rowsToFill.length > 0) {
+        rowsToFill.forEach(function(r) {
+          var clone = tplTable.content.cloneNode(true);
+          var inputs = clone.querySelectorAll('input');
+          for (var j = 0; j < 7; j++) {
+            if (inputs[j]) {
+              inputs[j].value = r['c' + j] || '';
+            }
+          }
+          tbody.appendChild(clone);
+        });
+      } else {
+        tbody.appendChild(tplTable.content.cloneNode(true));
+      }
+    }
+    
+    var fileInputs = block.querySelectorAll('input[type=file]');
+    fileInputs.forEach(function(el) {
+      el.addEventListener('change', function() { autoFitUpload(el.name); });
+    });
+    
+    triggerAutoSave();
+    return block;
   }
-  // Result Class (Result section) follows the Classification - Class above,
-  // as on the CE form. 'Class A'/'Class B' -> the 'A'/'B' Result option.
-  function syncResultClass(){
-    var el = q('result_class');
-    if (el) el.value = classLetter(fieldVal('classification_col_2'));
+
+  function removeREGroup(btn) {
+    if (document.querySelectorAll('#meas-records .meas-record').length > 1) {
+      btn.closest('.meas-record').remove();
+      triggerAutoSave();
+    } else {
+      showMessage('At least one measurement group is required.', 'error');
+    }
   }
-  // EUT Modification State (Test Specification) follows the latest non-empty
-  // State in the EUT Modification Record table, as on the CE form.
-  var modStateEdited=false;
-  function syncModState(){
-    if (modStateEdited) return;
-    var last='', els=document.getElementsByName('eut_modification_rec_rows__c0[]');
-    for (var i=0;i<els.length;i++){ var v=(els[i].value||'').trim(); if(v) last=v; }
-    var f=q('eut_modification_state'); if(f) f.value=last;
+
+  function generateREGroupsFromVoltages() {
+    var el = inputByName('eut_voltage_frequency');
+    var parts = (el ? el.value : '').split(/[;\n]/).map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+    if (!parts.length) { showMessage("Fill 'EUT Input Voltage & Frequency' first (separate conditions with ';').", 'error'); return; }
+    var container = document.getElementById('meas-records');
+    if (!container) return;
+    var hasData = Array.prototype.some.call(
+      container.querySelectorAll('input:not([type=file]):not([type=hidden])'),
+      function (x) { return (x.value || '').trim() !== ''; });
+    if (hasData && !confirm('Replace the current measurement groups with ' + parts.length + ' generated from the EUT voltages?')) return;
+    container.innerHTML = '';
+    parts.forEach(function (label) { addREGroup(label); });
+    showMessage('Generated ' + parts.length + ' group(s) from EUT voltages.', 'success');
   }
 
   document.addEventListener('DOMContentLoaded', function(){
-    var ps=q('product_standard'), cls=q('classification_col_2'), basic=q('basic_standard');
-    if (ps) ps.addEventListener('input', function(){ applyBasic(); if(!limitsEdited) applyLimits(); });
-    if (cls) cls.addEventListener('change', function(){ syncResultClass(); if(!limitsEdited) applyLimits(); });
-    if (basic) basic.addEventListener('input', function(){ basicEdited = true; });
-    ['re_limits_qp_rows','re_limits_pa_rows'].forEach(function(k){
-      var tb=document.getElementById('rows-'+k);
-      if (tb) tb.addEventListener('input', function(){ limitsEdited = true; });
-    });
-    // Belt-and-suspenders: also catch the class change via form-level delegation
-    // (in case the direct listener above missed the element), then keep Result
-    // Class consistent on load.
-    var form = document.getElementById('dsForm');
-    if (form) form.addEventListener('change', function(e){
-      if (e.target && e.target.name === 'classification_col_2') { syncResultClass(); if (!limitsEdited) applyLimits(); }
-    });
-    syncResultClass();   // Result Class mirrors the loaded Classification - Class
-
-    // EUT Modification State <- EUT Modification Record (latest state), like CE
-    var modState=q('eut_modification_state');
-    if (modState) modState.addEventListener('input', function(){ modStateEdited = true; });
-    var modBody=document.getElementById('rows-eut_modification_rec_rows');
-    if (modBody){
-      modBody.addEventListener('input', function(e){ if (e.target && e.target.name==='eut_modification_rec_rows__c0[]') syncModState(); });
-      new MutationObserver(syncModState).observe(modBody, { childList: true });
+    var prodStdEl = inputByName('product_standard');
+    var classEl = inputByName('classification_col_2');
+    if (prodStdEl) {
+      prodStdEl.addEventListener('input', updateREBehavior);
+      prodStdEl.addEventListener('change', updateREBehavior);
     }
-    syncModState();
-    // Limits + Basic Standard are prefilled by the server; live rebuilds only run
-    // when Product Standard / Class change (so a loaded draft is never clobbered).
+    if (classEl) {
+      classEl.addEventListener('change', updateREBehavior);
+    }
+    updateREBehavior();
+
+    var DRAFT_RE_GROUPS = {{ measurement_groups|tojson if measurement_groups else '[]' }};
+    if (DRAFT_RE_GROUPS.length > 0) {
+      DRAFT_RE_GROUPS.forEach(function(g) {
+        addREGroup(g.label, g);
+      });
+    } else {
+      addREGroup("ICES");
+      addREGroup("FCC");
+    }
   });
-})();
 </script>
-{% endblock %}
+{% endif %}
 {% endblock %}
