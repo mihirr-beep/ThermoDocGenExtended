@@ -80,6 +80,8 @@
               <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
                 <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm">
+                {% if it.caption %}<input type="text" name="{{ it.key }}_caption" value="{{ prefill.get(it.key ~ '_caption', '') }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">{% endif %}
+                <div id="inlinethumb-{{ it.key }}"></div>
               </div>
 
             {% elif it.type == 'table' %}
@@ -87,7 +89,11 @@
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-sm font-semibold text-gray-700">{{ it.label or 'Rows' }}</span>
                   <div class="flex items-center gap-2">
+                    {% if it.import == 're_scan' %}
+                    <button type="button" onclick="importREScan('{{ it.key }}')" title="Import a raw instrument measurement file (.txt/.csv). Columns Freq, Pol, EUT Ang, Twr Ht, EMI, Limit, Margin are mapped automatically." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
+                    {% else %}
                     <button type="button" onclick="uploadCSV('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+                    {% endif %}
                     <button type="button" onclick="addRow('{{ it.key }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
                   </div>
                 </div>
@@ -124,7 +130,8 @@
       {% endif %}
     {% endfor %}
 
-    <div class="flex justify-end gap-3 pb-12">
+    <div class="flex items-center justify-end gap-3 pb-12">
+      <span id="autoSaveStatus" class="text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
       <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
       <button type="button" id="draftBtn" class="px-6 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 shadow">Save as Draft</button>
       <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
@@ -187,9 +194,57 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
+  /* ---- debounced draft auto-save (same hardening as the CE form) ---- */
+  var autoSaveTimeout = null;
+  var suppressAutoSave = true;   // stays on until the form is fully built, so opening a form never auto-saves
+  function cancelAutoSave() { if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; } }
+  // Auto-save persists scalar/table fields ONLY; file inputs are excluded so
+  // multi-MB images are not re-uploaded on every keystroke (they persist on
+  // explicit Save/Generate).
+  function buildDraftFormData(form) {
+    var fd = new FormData();
+    Array.prototype.forEach.call(form.elements, function(el){
+      if (!el.name || el.disabled) return;
+      if (el.type === 'file') return;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
+      fd.append(el.name, el.value);
+    });
+    return fd;
+  }
+  function triggerAutoSave() {
+    if (suppressAutoSave) return;
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    var statusEl = document.getElementById('autoSaveStatus');
+    if (statusEl) {
+      statusEl.textContent = 'Saving draft...';
+      statusEl.classList.remove('opacity-0', 'text-green-600', 'text-red-600');
+      statusEl.classList.add('opacity-100', 'text-gray-500');
+    }
+    autoSaveTimeout = setTimeout(function() {
+      autoSaveTimeout = null;
+      var form = document.getElementById('dsForm');
+      if (!form) return;
+      fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: buildDraftFormData(form) })
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          if (!statusEl) return;
+          if (res.success) {
+            statusEl.textContent = 'Draft auto-saved';
+            statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-green-600');
+            setTimeout(function(){ if (statusEl.textContent === 'Draft auto-saved') { statusEl.classList.remove('opacity-100'); statusEl.classList.add('opacity-0'); } }, 2000);
+          } else {
+            statusEl.textContent = 'Failed to auto-save draft';
+            statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-red-600');
+          }
+        })
+        .catch(function(){ if (statusEl) { statusEl.textContent = 'Connection error (auto-save)'; statusEl.classList.remove('text-gray-500'); statusEl.classList.add('text-red-600'); } });
+    }, 1500);
+  }
+
   function addRow(key) {
     var tpl = document.getElementById('tpl-' + key);
     document.getElementById('rows-' + key).appendChild(tpl.content.cloneNode(true));
+    triggerAutoSave();
   }
   function uploadCSV(key) {
     var input = document.createElement('input');
@@ -240,6 +295,7 @@
           tbody.appendChild(clone);
         }
         showMessage('CSV imported successfully!', 'success');
+        triggerAutoSave();
       };
       reader.readAsText(file);
     };
@@ -279,12 +335,74 @@
     }
     return lines;
   }
+
+  /* ---- RE raw-scan import: map an instrument .txt/.csv to the 7-column table.
+     Columns are matched by header name so column order / detector (QP|Peak|Avg)
+     does not matter: Freq -> Frequency, Pol, EUT Ang, Twr Ht, EMI, Limit, Margin. ---- */
+  function parseDelimited(text) {
+    if (String(text).indexOf('\t') >= 0)
+      return String(text).split(/\r\n|\r|\n/).map(function (l) { return l.split('\t'); });
+    return parseCSV(text);
+  }
+  function mapREScanRows(rows) {
+    function num(x){ var v=parseFloat(String(x==null?'':x).replace(/[^0-9eE.+-]/g,'')); return isFinite(v)?v:null; }
+    var hi=-1, cells=null;
+    for (var i=0;i<rows.length;i++){
+      var j=rows[i].join(' ').toLowerCase();
+      if (j.indexOf('freq')>=0 && (j.indexOf('emi')>=0 || j.indexOf('margin')>=0)){ hi=i; cells=rows[i]; break; }
+    }
+    if (hi<0) throw new Error('Could not find the column header row (needs Freq + EMI/Margin).');
+    function find(re, notre){
+      for (var c=0;c<cells.length;c++){ var s=String(cells[c]).toLowerCase(); if (re.test(s) && !(notre && notre.test(s))) return c; }
+      return -1;
+    }
+    var idx={ freq:find(/freq/,/max/), pol:find(/pol/), ang:find(/ang/), ht:find(/height|twr|ht/), emi:find(/emi/), limit:find(/limit/), margin:find(/margin/) };
+    function cell(row,k){ return (k>=0 && row[k]!=null) ? String(row[k]).trim() : ''; }
+    var out=[];
+    for (var r=hi+1;r<rows.length;r++){
+      var row=rows[r]; if(!row) continue;
+      if (idx.freq<0 || num(row[idx.freq])===null) continue;   // skip the units row / blank lines
+      out.push({ c0:cell(row,idx.freq), c1:cell(row,idx.pol), c2:cell(row,idx.ang), c3:cell(row,idx.ht), c4:cell(row,idx.emi), c5:cell(row,idx.limit), c6:cell(row,idx.margin) });
+    }
+    return out;
+  }
+  function fillScanTable(key, mapped) {
+    var tb=document.getElementById('rows-'+key), tpl=document.getElementById('tpl-'+key);
+    if(!tb||!tpl) return;
+    tb.innerHTML='';
+    mapped.forEach(function(m){
+      var clone=tpl.content.cloneNode(true), ins=clone.querySelectorAll('input');
+      ['c0','c1','c2','c3','c4','c5','c6'].forEach(function(ck,j){ if(ins[j]) ins[j].value=m[ck]||''; });
+      tb.appendChild(clone);
+    });
+    if(!tb.querySelectorAll('tr').length) tb.appendChild(tpl.content.cloneNode(true));
+  }
+  function importREScan(key) {
+    var input=document.createElement('input');
+    input.type='file'; input.accept='.txt,.csv,text/plain,text/csv';
+    input.onchange=function(e){
+      var file=e.target.files[0]; if(!file) return;
+      var reader=new FileReader();
+      reader.onload=function(evt){
+        try{
+          var mapped=mapREScanRows(parseDelimited(evt.target.result));
+          if(!mapped.length){ showMessage('No measurement rows found in the file.','error'); return; }
+          fillScanTable(key, mapped);
+          showMessage('Imported '+mapped.length+' measurement row(s).','success');
+          triggerAutoSave();
+        }catch(err){ showMessage(err && err.message ? err.message : 'Could not import the file.','error'); }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
   function delRow(btn) {
     var tb = btn.closest('tbody');
-    if (tb.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+    if (tb.querySelectorAll('tr').length > 1) { btn.closest('tr').remove(); triggerAutoSave(); }
   }
   document.getElementById('dsForm').addEventListener('submit', function (e) {
     e.preventDefault();
+    cancelAutoSave();   // a trailing auto-save must not revert the record we're about to Submit
     var btn = document.getElementById('genBtn'); var orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Generating...';
     fetch('/datasheet/g/{{ code }}/generate', { method: 'POST', body: new FormData(this) })
@@ -298,6 +416,7 @@
   });
 
   document.getElementById('draftBtn').addEventListener('click', function () {
+    cancelAutoSave();   // explicit save supersedes any pending debounce
     var btn = this, orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Saving...';
     fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: new FormData(document.getElementById('dsForm')) })
@@ -439,7 +558,30 @@
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
+
+  // Inline thumbnail + Edit/Reset shown right under each image picker (CE-style).
+  function renderInlineThumb(key){
+    var holder=document.getElementById('inlinethumb-'+key);
+    if(!holder) return;
+    holder.innerHTML='';
+    var file=imgFileFor(key);
+    if(!file) return;
+    var box=imageBoxMM(key);
+    var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
+    var frame=document.createElement('div'); frame.style.cssText='display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+    var img=document.createElement('img'); img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;'; img.src=URL.createObjectURL(file);
+    frame.appendChild(img); wrap.appendChild(frame);
+    var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;'; meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document'; wrap.appendChild(meta);
+    var actions=document.createElement('div'); actions.style.marginTop='5px';
+    var edit=document.createElement('button'); edit.type='button'; edit.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;'; edit.textContent='✎ Edit / Crop'; edit.onclick=function(){ openImageEditor(key); };
+    actions.appendChild(edit);
+    if(originalFiles[key] && originalFiles[key]!==file){
+      var rb=document.createElement('button'); rb.type='button'; rb.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;'; rb.textContent='↺ Reset'; rb.onclick=function(){ resetImage(key); };
+      actions.appendChild(rb);
+    }
+    wrap.appendChild(actions); holder.appendChild(wrap);
+  }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
@@ -450,20 +592,21 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); }
     });
   }
 
   // Conform a freshly-picked image to its document-slot ratio immediately, keeping
   // the raw upload (in originalFiles) so Edit can still reframe a different portion.
   function autoFitUpload(key){
-    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; return; }
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
     var raw=el.files[0]; originalFiles[key]=raw;
     if(window.DSImageEditor && DSImageEditor.autoFit){
       DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
         if(fitted && fitted!==raw) setInputFile(key, fitted);
+        renderInlineThumb(key);
       }});
-    }
+    } else { renderInlineThumb(key); }
   }
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -475,7 +618,148 @@
       var el=inputByName(key);
       if (el) el.addEventListener('change', function(){ autoFitUpload(key); });
     });
+
+    // auto-save on any real edit (file inputs excluded from the payload)
+    var formEl = document.getElementById('dsForm');
+    if (formEl) {
+      formEl.addEventListener('input', function(e){
+        if (e.target && ['INPUT','TEXTAREA','SELECT'].indexOf(e.target.tagName) >= 0 && e.target.type !== 'file') triggerAutoSave();
+      });
+      formEl.addEventListener('change', function(e){
+        if (e.target && ['INPUT','TEXTAREA','SELECT'].indexOf(e.target.tagName) >= 0) triggerAutoSave();
+      });
+    }
+    // release the guard only after all synchronous load-time setup (incl. the RE
+    // linkage handler) has run, so opening the form never fires a spurious save
+    setTimeout(function(){ suppressAutoSave = false; }, 0);
   });
+</script>
+<script>
+/* RE (IEC-FRM-511) live derivations. Mirrors datasheet_gen/re_logic.py and
+   service._BASIC_STANDARD_MAP so the form reflects the same (family x class)
+   Test Limits and Product->Basic Standard the server would prefill. */
+(function(){
+  if (!window.DS_SCHEMA || DS_SCHEMA.code !== 'RE') return;
+
+  // Product Standard -> Basic Standard (first match per ';'-separated standard)
+  var BASIC_MAP = [
+    ['en61326','EN 55011:2016+A2:2021'], ['iec61326','CISPR 11:2015+A1:2016+A2:2019'],
+    ['ices','CISPR 11:2015+A1:2016+A2:2019'], ['part15','ANSI C63.4:2024'],
+    ['cfr','ANSI C63.4:2024'], ['fcc','ANSI C63.4:2024'],
+    ['en55011','EN 55011:2016+A2:2021'], ['cispr11','CISPR 11:2015+A1:2016+A2:2019'],
+    ['c634','ANSI C63.4:2024']
+  ];
+  var FCC_TOKENS = ['part15','cfr','fcc','c634','ansi'];
+  var CISPR_TOKENS = ['cispr','en55011','iec61326','en61326','ices'];
+  // (family|class) -> limit rows. QP: 30M-1G; PA: 1G-6G (Peak, Average).
+  var QP = {
+    'CISPR|A': [['30 to 230','50'],['230 to 1000','57']],
+    'CISPR|B': [['30 to 230','40'],['230 to 1000','47']],
+    'FCC|A': [['30 to 88','49.54'],['88 to 216','53.98'],['216 to 960','56.90'],['960 to 1000','59.54']],
+    'FCC|B': [['30 to 88','39.6'],['88 to 216','43.52'],['216 to 960','46.02'],['960 to 1000','54']]
+  };
+  var PA = {
+    'FCC|A': [['1 to 3 GHz','79.54','59.54'],['3 to 6 GHz','79.54','59.54']],
+    'FCC|B': [['1000 to 6000 MHz','74','54']]
+  };
+
+  function norm(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function parts(s){ return (s||'').split(/[;\n]+/); }
+  function q(name){ return document.querySelector('[name="'+name+'"]'); }
+  function family(ps){
+    var a = parts(ps);
+    for (var i=0;i<a.length;i++){
+      var k = norm(a[i]); if(!k) continue;
+      if (FCC_TOKENS.some(function(t){return k.indexOf(t)>=0;})) return 'FCC';
+      if (CISPR_TOKENS.some(function(t){return k.indexOf(t)>=0;})) return 'CISPR';
+    }
+    return '';
+  }
+  function basicStandard(ps){
+    var out=[];
+    parts(ps).forEach(function(p){
+      var k=norm(p); if(!k) return;
+      for (var i=0;i<BASIC_MAP.length;i++){
+        if (k.indexOf(BASIC_MAP[i][0])>=0){ if(out.indexOf(BASIC_MAP[i][1])<0) out.push(BASIC_MAP[i][1]); break; }
+      }
+    });
+    return out.join('; ');
+  }
+  function classLetter(v){
+    v=(v||'').toUpperCase().replace('CLASS','').trim();
+    return (v.charAt(0)==='A'||v.charAt(0)==='B') ? v.charAt(0) : '';
+  }
+  // Rebuild a generic table (tbody rows-<key> + template tpl-<key>) from value-arrays.
+  function setTableRows(key, rows){
+    var tb=document.getElementById('rows-'+key), tpl=document.getElementById('tpl-'+key);
+    if(!tb||!tpl) return;
+    tb.innerHTML='';
+    (rows.length?rows:[null]).forEach(function(r){
+      var clone=tpl.content.cloneNode(true);
+      if(r){ var ins=clone.querySelectorAll('input'); for(var j=0;j<ins.length && j<r.length;j++) ins[j].value=r[j]; }
+      tb.appendChild(clone);
+    });
+  }
+
+  var limitsEdited=false, basicEdited=false;
+  function applyLimits(){
+    var key = family(fieldVal('product_standard')) + '|' + classLetter(fieldVal('classification_col_2'));
+    setTableRows('re_limits_qp_rows', QP[key] || []);
+    setTableRows('re_limits_pa_rows', PA[key] || []);
+    if (window.triggerAutoSave) triggerAutoSave();
+  }
+  function applyBasic(){
+    if (basicEdited) return;
+    var b = basicStandard(fieldVal('product_standard')), el = q('basic_standard');
+    if (el && b) el.value = b;
+  }
+  // Result Class (Result section) follows the Classification - Class above,
+  // as on the CE form. 'Class A'/'Class B' -> the 'A'/'B' Result option.
+  function syncResultClass(){
+    var el = q('result_class');
+    if (el) el.value = classLetter(fieldVal('classification_col_2'));
+  }
+  // EUT Modification State (Test Specification) follows the latest non-empty
+  // State in the EUT Modification Record table, as on the CE form.
+  var modStateEdited=false;
+  function syncModState(){
+    if (modStateEdited) return;
+    var last='', els=document.getElementsByName('eut_modification_rec_rows__c0[]');
+    for (var i=0;i<els.length;i++){ var v=(els[i].value||'').trim(); if(v) last=v; }
+    var f=q('eut_modification_state'); if(f) f.value=last;
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var ps=q('product_standard'), cls=q('classification_col_2'), basic=q('basic_standard');
+    if (ps) ps.addEventListener('input', function(){ applyBasic(); if(!limitsEdited) applyLimits(); });
+    if (cls) cls.addEventListener('change', function(){ syncResultClass(); if(!limitsEdited) applyLimits(); });
+    if (basic) basic.addEventListener('input', function(){ basicEdited = true; });
+    ['re_limits_qp_rows','re_limits_pa_rows'].forEach(function(k){
+      var tb=document.getElementById('rows-'+k);
+      if (tb) tb.addEventListener('input', function(){ limitsEdited = true; });
+    });
+    // Belt-and-suspenders: also catch the class change via form-level delegation
+    // (in case the direct listener above missed the element), then keep Result
+    // Class consistent on load.
+    var form = document.getElementById('dsForm');
+    if (form) form.addEventListener('change', function(e){
+      if (e.target && e.target.name === 'classification_col_2') { syncResultClass(); if (!limitsEdited) applyLimits(); }
+    });
+    syncResultClass();   // Result Class mirrors the loaded Classification - Class
+
+    // EUT Modification State <- EUT Modification Record (latest state), like CE
+    var modState=q('eut_modification_state');
+    if (modState) modState.addEventListener('input', function(){ modStateEdited = true; });
+    var modBody=document.getElementById('rows-eut_modification_rec_rows');
+    if (modBody){
+      modBody.addEventListener('input', function(e){ if (e.target && e.target.name==='eut_modification_rec_rows__c0[]') syncModState(); });
+      new MutationObserver(syncModState).observe(modBody, { childList: true });
+    }
+    syncModState();
+    // Limits + Basic Standard are prefilled by the server; live rebuilds only run
+    // when Product Standard / Class change (so a loaded draft is never clobbered).
+  });
+})();
 </script>
 {% endblock %}
 {% endblock %}

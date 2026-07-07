@@ -89,6 +89,14 @@ def g_form(code, assignment_id):
                         rows.append(row)
                 if rows:
                     it["rows"] = rows
+    # Prefill repeating tables (equipment / RE Test Limits / software) from the
+    # request + derivations, but only where the engineer has no saved draft rows.
+    prefill_tables = gs.collect_prefill_tables(schema, _parent_request(a), a)
+    if prefill_tables:
+        for sec in schema.get("sections", []):
+            for it in sec.get("items", []):
+                if it.get("type") == "table" and not it.get("rows") and prefill_tables.get(it["key"]):
+                    it["rows"] = prefill_tables[it["key"]]
     saved_images = [os.path.basename(p) for p in R.draft_images(a.id).values() if p]
     return render_template(
         "datasheet_gen/generic_form.html",

@@ -88,7 +88,7 @@
               "key": "radiated_emission",
               "label": "Radiated Emission",
               "input": "text",
-              "default": "± 4.190 dB"
+              "default": "± 3.705 dB"
             }
           ]
         }
@@ -101,7 +101,20 @@
           "type": "field",
           "key": "sop_reference",
           "label": "SOP Reference Number",
-          "input": "text"
+          "input": "text",
+          "default": "IEC-SOP-507"
+        },
+        {
+          "type": "image",
+          "key": "func_plot",
+          "label": "Functional Check Plot",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "ambient_plot",
+          "label": "Ambient Plot",
+          "caption": true
         }
       ]
     },
@@ -169,109 +182,109 @@
               "key": "resolution_bandwidth_col_1",
               "label": "Resolution Bandwidth (Hz) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "120k"
             },
             {
               "key": "resolution_bandwidth_col_2",
               "label": "Resolution Bandwidth (Hz) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "1M"
             },
             {
               "key": "video_bandwidth_col_1",
               "label": "Video bandwidth (Hz) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "1M"
             },
             {
               "key": "video_bandwidth_col_2",
               "label": "Video bandwidth (Hz) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "3M"
             },
             {
               "key": "step_size_col_1",
               "label": "Step Size (Hz) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "40k"
             },
             {
               "key": "step_size_col_2",
               "label": "Step Size (Hz) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "400K"
             },
             {
               "key": "turn_table_rotation_step_col_1",
               "label": "Turn table Rotation step (°) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "15° for CISPR11 & EN 55011, 22.5° for Clause 15 of 47 CFR Part 15 Subpart B"
             },
             {
               "key": "turn_table_rotation_step_col_2",
               "label": "Turn table Rotation step (°) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "22.5° for Clause 15 of 47 CFR Part 15 Subpart B"
             },
             {
               "key": "antenna_height_variation_step_for_pre_scan_mea_2",
               "label": "Antenna Height Variation step for Pre-Scan measurement (m) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "1"
             },
             {
               "key": "antenna_height_variation_step_for_pre_scan_mea_3",
               "label": "Antenna Height Variation step for Pre-Scan measurement (m) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "1"
             },
             {
               "key": "antenna_height_variation_for_final_measurement_2",
               "label": "Antenna height variation for final measurement (m) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "1-4"
             },
             {
               "key": "antenna_height_variation_for_final_measurement_3",
               "label": "Antenna height variation for final measurement (m) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "1-4"
             },
             {
               "key": "pre_scan_measurement_time_col_1",
               "label": "Pre-Scan Measurement time (ms) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "20"
             },
             {
               "key": "pre_scan_measurement_time_col_2",
               "label": "Pre-Scan Measurement time (ms) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "20"
             },
             {
               "key": "final_scan_measurement_time_col_1",
               "label": "Final Scan Measurement time (sec) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "1"
             },
             {
               "key": "final_scan_measurement_time_col_2",
               "label": "Final Scan Measurement time (sec) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "1"
             },
             {
               "key": "attenuation_col_1",
               "label": "Attenuation (dB) (Col 2)",
               "input": "text",
-              "default": ""
+              "default": "Auto"
             },
             {
               "key": "attenuation_col_2",
               "label": "Attenuation (dB) (Col 3)",
               "input": "text",
-              "default": ""
+              "default": "Auto"
             },
             {
               "key": "test_distance",
@@ -375,67 +388,22 @@
       "title": "TEST LIMITS",
       "items": [
         {
-          "type": "fields",
-          "fields": [
-            {
-              "key": "frequency",
-              "label": "Frequency (MHz)",
-              "input": "text",
-              "default": "Quasi-peak Limit (dBµV/m)"
-            },
-            {
-              "key": "f_30_to_230",
-              "label": "30 to 230",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_230_to_1000",
-              "label": "230 to 1000",
-              "input": "text",
-              "default": ""
-            }
+          "type": "table",
+          "key": "re_limits_qp_rows",
+          "label": "Radiated Emission limits — 30 MHz to 1 GHz (Quasi-peak). Auto-filled from Product Standard + Class.",
+          "columns": [
+            { "key": "c0", "label": "Frequency (MHz)" },
+            { "key": "c1", "label": "Quasi-peak Limit (dBµV/m)" }
           ]
         },
         {
-          "type": "fields",
-          "fields": [
-            {
-              "key": "frequency_col_1",
-              "label": "Frequency (GHz) (Col 2)",
-              "input": "text",
-              "default": "Peak Limit (dBµV/m)"
-            },
-            {
-              "key": "frequency_col_2",
-              "label": "Frequency (GHz) (Col 3)",
-              "input": "text",
-              "default": "Average Limit (dBµV/m)"
-            },
-            {
-              "key": "f_1_to_3_col_1",
-              "label": "1 to 3 (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1_to_3_col_2",
-              "label": "1 to 3 (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_3_to_6_col_1",
-              "label": "3 to 6 (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_3_to_6_col_2",
-              "label": "3 to 6 (Col 3)",
-              "input": "text",
-              "default": ""
-            }
+          "type": "table",
+          "key": "re_limits_pa_rows",
+          "label": "Radiated Emission limits — 1 GHz to 6 GHz (Peak & Average). Auto-filled from Product Standard + Class.",
+          "columns": [
+            { "key": "c0", "label": "Frequency" },
+            { "key": "c1", "label": "Peak Limit (dBµV/m)" },
+            { "key": "c2", "label": "Average Limit (dBµV/m)" }
           ]
         }
       ]
@@ -457,100 +425,82 @@
         {
           "type": "image",
           "key": "img_figure_1",
-          "label": "Figure 1: RE plot_ Vertical_Peak_30MHz - 1GHz"
+          "label": "Figure 1: RE plot_ Vertical_Peak_30MHz - 1GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_figure_2",
-          "label": "Figure 2: RE plot_Horizontal_Peak_30MHz - 1GHz"
+          "label": "Figure 2: RE plot_Horizontal_Peak_30MHz - 1GHz",
+          "caption": true
         },
         {
           "type": "table",
           "key": "re_table1_rows",
           "label": "Table 1: RE Quasi-peak 30MHz - 1GHz",
+          "import": "re_scan",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Frequency (MHz)"
-            },
-            {
-              "key": "c1",
-              "label": "Quasi-peak (dBµV/m)"
-            },
-            {
-              "key": "c2",
-              "label": "Limit (dBµV/m)"
-            },
-            {
-              "key": "c3",
-              "label": "Margin (dB)"
-            }
+            { "key": "c0", "label": "Frequency (MHz)" },
+            { "key": "c1", "label": "Polarization" },
+            { "key": "c2", "label": "EUT Angle (deg)" },
+            { "key": "c3", "label": "Antenna Height (cm)" },
+            { "key": "c4", "label": "(QP) EMI (dBµV/m)" },
+            { "key": "c5", "label": "QP Limit (dBµV/m)" },
+            { "key": "c6", "label": "(QP) Margin (dB)" }
           ]
         },
         {
           "type": "image",
           "key": "img_figure_3",
-          "label": "Figure 3: RE plot_Vertical_Peak_1GHz - 6GHz"
+          "label": "Figure 3: RE plot_Vertical_Peak_1GHz - 6GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_figure_4",
-          "label": "Figure 4: RE plot_Horizontal_Peak_1GHz - 6GHz"
+          "label": "Figure 4: RE plot_Horizontal_Peak_1GHz - 6GHz",
+          "caption": true
         },
         {
           "type": "table",
           "key": "re_table2_rows",
           "label": "Table 2: RE Peak 1GHz - 6GHz",
+          "import": "re_scan",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Frequency (GHz)"
-            },
-            {
-              "key": "c1",
-              "label": "Peak (dBµV/m)"
-            },
-            {
-              "key": "c2",
-              "label": "Limit (dBµV/m)"
-            },
-            {
-              "key": "c3",
-              "label": "Margin (dB)"
-            }
+            { "key": "c0", "label": "Frequency (MHz)" },
+            { "key": "c1", "label": "Polarization" },
+            { "key": "c2", "label": "EUT Angle (deg)" },
+            { "key": "c3", "label": "Antenna Height (cm)" },
+            { "key": "c4", "label": "(Peak) EMI (dBµV/m)" },
+            { "key": "c5", "label": "Peak Limit (dBµV/m)" },
+            { "key": "c6", "label": "(Peak) Margin (dB)" }
           ]
         },
         {
           "type": "image",
           "key": "img_figure_5",
-          "label": "Figure 5: RE plot_Vertical_Average_1GHz - 6 GHz"
+          "label": "Figure 5: RE plot_Vertical_Average_1GHz - 6 GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_figure_6",
-          "label": "Figure 6: RE plot_Horizontal_Average_1 GHz - 6 GHz"
+          "label": "Figure 6: RE plot_Horizontal_Average_1 GHz - 6 GHz",
+          "caption": true
         },
         {
           "type": "table",
           "key": "re_table3_rows",
           "label": "Table 3: RE Average 1GHz - 6GHz",
+          "import": "re_scan",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Frequency (GHz)"
-            },
-            {
-              "key": "c1",
-              "label": "Average (dBµV/m)"
-            },
-            {
-              "key": "c2",
-              "label": "Limit (dBµV/m)"
-            },
-            {
-              "key": "c3",
-              "label": "Margin (dB)"
-            }
+            { "key": "c0", "label": "Frequency (MHz)" },
+            { "key": "c1", "label": "Polarization" },
+            { "key": "c2", "label": "EUT Angle (deg)" },
+            { "key": "c3", "label": "Antenna Height (cm)" },
+            { "key": "c4", "label": "(Avg) EMI (dBµV/m)" },
+            { "key": "c5", "label": "Avg Limit (dBµV/m)" },
+            { "key": "c6", "label": "(Avg) Margin (dB)" }
           ]
         }
       ]
@@ -561,22 +511,26 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: RE test setup_Vertical_30MHz - 1GHz"
+          "label": "Photo 1: RE test setup_Vertical_30MHz - 1GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_photo_2",
-          "label": "Photo 2: RE test setup_Horizontal_30MHz - 1GHz"
+          "label": "Photo 2: RE test setup_Horizontal_30MHz - 1GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_photo_3",
-          "label": "Photo 3: RE test setup_Vertical_1GHz - 6GHz"
+          "label": "Photo 3: RE test setup_Vertical_1GHz - 6GHz",
+          "caption": true
         },
         {
           "type": "image",
           "key": "img_photo_4",
-          "label": "Photo 4: RE test setup_Horizontal_1GHz - 6GHz"
+          "label": "Photo 4: RE test setup_Horizontal_1GHz - 6GHz",
+          "caption": true
         }
       ]
     },

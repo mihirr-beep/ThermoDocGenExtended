@@ -99,6 +99,16 @@ def build_context(schema, form_data):
             from .layout import human_checkbox
             val = human_checkbox(val, f["checkbox"])
         ctx[f["key"]] = val
+    # optional per-image captions ({key}_caption) for image items flagged caption:true
+    for sec in schema["sections"]:
+        for it in sec["items"]:
+            cap_imgs = []
+            if it["type"] == "fields":
+                cap_imgs = [f for f in it.get("fields", []) if f.get("input") == "image" and f.get("caption")]
+            elif it.get("caption") and (it["type"] == "image" or (it["type"] == "field" and it.get("input") == "image")):
+                cap_imgs = [it]
+            for f in cap_imgs:
+                ctx[f["key"] + "_caption"] = _s(form_data.get(f["key"] + "_caption"))
     # repeating tables
     for sec in schema["sections"]:
         for it in sec["items"]:
@@ -163,7 +173,11 @@ def collect_prefill(schema, request_obj, assignment):
         elif "product_standard" in k:
             pre[f["key"]] = standard
         elif k == "basic_standard":
-            pre[f["key"]] = "Sysmex"          # manager: baseline basic standard
+            if (schema.get("code") or "").upper() == "RE":
+                from .service import basic_standard_for
+                pre[f["key"]] = basic_standard_for(standard) or default   # derived from Product Standard
+            else:
+                pre[f["key"]] = "Sysmex"      # manager: baseline basic standard
         elif "monitoring_parameters" in k:
             pre[f["key"]] = monitoring
         elif "voltage" in k and "frequency" in k:
@@ -211,3 +225,63 @@ def collect_prefill(schema, request_obj, assignment):
         elif k == "deviation":
             pre[f["key"]] = "NA"
     return pre
+
+
+def _equipment_rows_for(code):
+    """Test Equipment Used rows from the Equipment Master tagged for this test
+    code, as generic-table rows ({c0..c4}). Equipment is selected by the
+    Equipment.test_name text column (a comma-separated list of codes, e.g.
+    'RE,CE'); the exact code token must be present (avoids loose substring hits)."""
+    code = (code or "").upper()
+    if not code:
+        return []
+    try:
+        from models import db, Equipment
+        candidates = Equipment.query.filter(
+            Equipment.test_name.isnot(None),
+            Equipment.test_name.ilike(f"%{code}%"),
+        ).order_by(Equipment.sl_no.asc(), Equipment.name.asc()).all()
+    except Exception:
+        return []
+    rows = []
+    for eq in candidates:
+        tokens = [t.strip().upper() for t in (eq.test_name or "").split(",")]
+        if code not in tokens:
+            continue
+        cd = getattr(eq, "calibration_due_date", None)
+        rows.append({
+            "c0": _s(eq.name), "c1": _s(eq.make), "c2": _s(eq.model_no),
+            "c3": _s(eq.serial_no), "c4": cd.isoformat() if cd else "",
+        })
+    return rows
+
+
+def collect_prefill_tables(schema, request_obj, assignment):
+    """Prefill repeating-table rows, returned as {table_key: [row dicts]}. The
+    route injects these into the schema only when the engineer has no saved
+    draft rows for that table.
+
+    Generic: any 'equipment' table is filled from the Equipment Master (matched
+    by the schema's test code). RE-specific: the Test Limits tables are filled
+    from the (standard family x class) combination, and Software Used defaults."""
+    code = (schema.get("code") or "").upper()
+    out = {}
+    for sec in schema["sections"]:
+        for it in sec["items"]:
+            if it.get("type") == "table" and "equipment" in it["key"].lower():
+                rows = _equipment_rows_for(code)
+                if rows:
+                    out[it["key"]] = rows
+    if code == "RE":
+        from . import re_logic
+        ps = _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else ""
+        cls = _ra(request_obj, "class_type")
+        qp, pa = re_logic.limit_rows(ps, cls)
+        if qp:
+            out["re_limits_qp_rows"] = qp
+        if pa:
+            out["re_limits_pa_rows"] = pa
+        out.setdefault("software_used_rows", [{"c0": "TDK Emission Lab", "c1": "14.43"}])
+        # EUT Modification Record defaults to a single 'initial state' row (like CE)
+        out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "", "c3": ""}])
+    return out
