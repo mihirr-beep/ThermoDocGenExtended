@@ -55,3 +55,7 @@ Thumbs.db
 *.tmp
 *.temp
 Dump20260624.sql
+
+# Generated datasheets / uploaded images (never commit runtime artifacts)
+uploads/
+outputs/
