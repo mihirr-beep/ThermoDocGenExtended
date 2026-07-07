@@ -65,7 +65,7 @@ def _match(value, option):
 
 def _box_run(checked, size=22):
     """The checkbox glyph. Uses a single run with ballot box characters."""
-    color = '<w:color w:val="1F3C88"/>' if checked else ""
+    color = '<w:color w:val="000000"/>' if checked else ""
     char = "☒" if checked else "☐"
     return (
         '<w:r><w:rPr>'

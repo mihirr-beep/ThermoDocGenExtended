@@ -116,8 +116,13 @@ def _measurement_records(form_data):
     uses meas_label_i, plot_line_i/plot_neutral_i and line{i}_*[] / neutral{i}_*[] fields."""
     def keys(grp, i):
         return ["%s%s_%s[]" % (grp, i, c) for c in _MEAS_NAMES]
+    def cap(name, i, n, side):
+        # user-entered caption REPLACES the default; blank -> the auto "Figure N: ..." caption
+        default = "Figure %d: CE plot_%s_Quasi-peak & Average_0.15MHz - 30MHz" % (n, side)
+        return _s(form_data.get("%s_caption_%s" % (name, i))) or default
     order = _list(form_data, "meas_index[]")
     records = []
+    fig = 1
     if order:
         for i in order:
             i = _s(i).strip()
@@ -129,14 +134,19 @@ def _measurement_records(form_data):
                 "neutral_rows": _rows(form_data, keys("neutral", i), _MEAS_NAMES),
                 "plot_line_key": "plot_line_" + i,
                 "plot_neutral_key": "plot_neutral_" + i,
+                "line_caption": cap("plot_line", i, fig, "Line"),
+                "neutral_caption": cap("plot_neutral", i, fig + 1, "Neutral"),
             })
+            fig += 2
     else:
         # legacy single-record fallback (un-indexed line_*/neutral_* fields)
         line = _rows(form_data, keys("line", ""), _MEAS_NAMES)
         neutral = _rows(form_data, keys("neutral", ""), _MEAS_NAMES)
         if line or neutral:
             records.append({"label": "", "line_rows": line, "neutral_rows": neutral,
-                            "plot_line_key": "plot_line", "plot_neutral_key": "plot_neutral"})
+                            "plot_line_key": "plot_line", "plot_neutral_key": "plot_neutral",
+                            "line_caption": cap("plot_line", "", 1, "Line"),
+                            "neutral_caption": cap("plot_neutral", "", 2, "Neutral")})
     return records
 
 
@@ -155,6 +165,8 @@ def build_ce_context(form_data):
     )
     # 8-column measurement layout, repeated per Test record (label + Line + Neutral).
     ctx["measurement_records"] = _measurement_records(form_data)
+    # Setup photo caption: user text replaces the default (blank -> default).
+    ctx["photo_caption"] = _s(form_data.get("photo_caption")) or "Photo 1: CE test setup_Power Port"
 
     # Render classification selections as human-ticked checkboxes in the document
     # (the template uses {{r ... }} placeholders for these two fields).
@@ -277,9 +289,9 @@ def procedure_richtext(text):
         if i:
             rt.add("\n")                       # preserve the original line break
         if line.strip() == marker:
-            rt.add(marker, bold=True)          # bold, on its own line (header)
+            rt.add(marker, bold=True, font="Arial", size=22)   # Arial 11pt, bold header
         elif line:
-            rt.add(line)
+            rt.add(line, font="Arial", size=22)                # Arial 11pt (match reference doc)
     return rt
 
 

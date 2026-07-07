@@ -26,7 +26,7 @@ from docx.shared import Pt
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
-CAPTION_RE = re.compile(r"^\s*(Photo|Figure)\s*\d*\s*:", re.I)
+CAPTION_RE = re.compile(r"^\s*((Photo|Figure)\s*\d*\s*:|\{\{\s*[\w.]*caption\s*\}\})", re.I)
 HINT_RE = re.compile(r"^\s*<.*>\s*$")
 # a paragraph whose whole content is a single {{ var }} referencing an image
 IMG_PLACEHOLDER_RE = re.compile(

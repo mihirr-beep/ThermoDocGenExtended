@@ -81,7 +81,7 @@
         <label class="block text-sm font-medium text-gray-700 mb-1">Neutral</label>
         <input type="file" name="func_neutral" accept="image/*" class="w-full text-sm">
       </div>
-      <h3 class="text-sm font-semibold text-gray-700 mt-6 mb-1">Ambient (1.5)</h3>
+      <h3 class="text-base font-bold text-gray-900 mt-6 mb-2">Ambient</h3>
       <div class="mt-2">
         <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
         <input type="file" name="ambient_line" accept="image/*" class="w-full text-sm">
@@ -168,9 +168,14 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-bold text-gray-900">8. Measurement Data</h2>
-        <button type="button" onclick="addTest()"
-                title="Add another measurement Test (e.g. a different frequency range or operating condition). Each Test has its own label, plots and tables."
-                class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Test</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="generateTestsFromVoltages()"
+                  title="Create one Test per value in 'EUT Input Voltage & Frequency' (semicolon-separated), using each as the Test label. Replaces the current Tests."
+                  class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate Tests from Voltages</button>
+          <button type="button" onclick="addTest()"
+                  title="Add another measurement Test manually. Each Test has its own label, plots and tables."
+                  class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Test</button>
+        </div>
       </div>
       <div id="meas-records"></div>
     </section>
@@ -180,6 +185,7 @@
       <h2 class="text-lg font-bold text-gray-900 mb-4">9. Test Setup Pictures</h2>
       <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (9&times;14 cm)</label>
       <input type="file" name="photo_setup" accept="image/*" class="w-full text-sm">
+      <input type="text" name="photo_caption" value="{{ prefill.photo_caption }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </section>
 
     <!-- 10. TEST EQUIPMENT USED -->
@@ -275,12 +281,12 @@
     <div class="mb-3">
       <label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
       <input type="file" name="plot_line_%%I%%" accept="image/*" class="w-full text-sm">
+      <input type="text" name="plot_line_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </div>
     <div class="flex items-center justify-between mb-2">
       <h3 class="text-sm font-semibold text-gray-600">Table 1 - Line (Quasi-peak &amp; Average)</h3>
       <div class="flex items-center gap-2">
-        <button type="button" onclick="buildFromRawScan('line%%I%%')" title="Upload the full instrument sweep CSV (0.15-30 MHz); the worst-case Q-peak and Average per band are extracted." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
-        <button type="button" onclick="uploadCSV('line%%I%%')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+        <button type="button" onclick="importData('line%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
         <button type="button" onclick="addRow('line%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
       </div>
     </div>
@@ -297,12 +303,12 @@
     <div class="mb-3">
       <label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
       <input type="file" name="plot_neutral_%%I%%" accept="image/*" class="w-full text-sm">
+      <input type="text" name="plot_neutral_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </div>
     <div class="flex items-center justify-between mb-2">
       <h3 class="text-sm font-semibold text-gray-600">Table 2 - Neutral (Quasi-peak &amp; Average)</h3>
       <div class="flex items-center gap-2">
-        <button type="button" onclick="buildFromRawScan('neutral%%I%%')" title="Upload the full instrument sweep CSV (0.15-30 MHz); the worst-case Q-peak and Average per band are extracted." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Build from raw scan</button>
-        <button type="button" onclick="uploadCSV('neutral%%I%%')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+        <button type="button" onclick="importData('neutral%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
         <button type="button" onclick="addRow('neutral%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
       </div>
     </div>
@@ -643,6 +649,98 @@
     input.click();
   }
 
+  // Parse a tab-delimited instrument .TXT sweep into rows for reduceRawScan(). The file
+  // has a preamble before the column header (Frequency/QPeak/.../Avg/...), then data rows
+  // with a leading index column. Start at the header line so detectScanColumns finds the
+  // columns by name; split each line on TAB (falling back to whitespace).
+  function parseTXT(text) {
+    var lines = String(text).split(/\r\n|\r|\n/);
+    var h = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var lo = lines[i].toLowerCase();
+      if (lo.indexOf('freq') >= 0 && (lo.indexOf('qpeak') >= 0 || lo.indexOf('q-peak') >= 0 || lo.indexOf('mhz') >= 0)) { h = i; break; }
+    }
+    return lines.slice(h).map(function (line) {
+      return (line.indexOf('\t') >= 0) ? line.split('\t') : line.trim().split(/\s+/);
+    });
+  }
+
+  // Same as "Build from CSV" but for the instrument's raw .TXT export.
+  function buildFromRawTxt(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var reduced = reduceRawScan(parseTXT(evt.target.result));
+          var filled = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+          fillMeasureRows(key, reduced);
+          showMessage('Raw TXT reduced to ' + filled + ' band row(s).', filled ? 'success' : 'error');
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not process the raw TXT.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  // ONE button for all measurement-data imports: accepts CSV or TXT, and auto-detects
+  // whether it is a full instrument sweep (many rows -> reduce to worst-case per band) or
+  // an already-prepared 8-column table (few rows -> load as-is).
+  function importData(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var text = evt.target.result;
+          var isTab = /\.txt$/i.test(file.name) || (text.indexOf('\t') >= 0 && text.indexOf(',') < 0);
+          var rows = isTab ? parseTXT(text) : parseCSV(text);
+          if (!rows.length) throw new Error('The file is empty.');
+          var col = detectScanColumns(rows), numeric = 0;
+          for (var i = 0; i < rows.length; i++) {
+            if (scanNum(rows[i][col.freq]) !== null && (scanNum(rows[i][col.qp]) !== null || scanNum(rows[i][col.avg]) !== null)) numeric++;
+          }
+          if (numeric > 15) {                       // raw sweep -> reduce to 6 band rows
+            var reduced = reduceRawScan(rows);
+            fillMeasureRows(key, reduced);
+            var got = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+            showMessage('Imported sweep → ' + got + ' band row(s).', got ? 'success' : 'error');
+          } else {                                  // prepared 8-column table -> load as-is
+            var tb = document.getElementById('rows-' + key);
+            if (!tb) return;
+            var isHeader = rows[0].some(function (v) { var s = (v || '').toLowerCase(); return s.indexOf('freq') >= 0 || s.indexOf('q-peak') >= 0 || s.indexOf('qp') >= 0 || s.indexOf('avg') >= 0; });
+            tb.innerHTML = '';
+            var n = 0;
+            for (var r = isHeader ? 1 : 0; r < rows.length; r++) {
+              var rd = rows[r];
+              if (!rd.length || (rd.length === 1 && (rd[0] || '') === '')) continue;
+              var vals = {};
+              MEAS_COLS.forEach(function (c, j) { vals[c] = (rd[j] || '').trim(); });
+              tb.appendChild(makeMeasRow(key, vals)); n++;
+            }
+            if (!tb.querySelectorAll('tr').length) tb.appendChild(makeMeasRow(key));
+            showMessage('Imported ' + n + ' row(s).', n ? 'success' : 'error');
+          }
+          triggerAutoSave();
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not import the file.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
   function delRow(btn) {
     const tbody = btn.closest('tbody');
     if (tbody.querySelectorAll('tr').length > 1) {
@@ -887,6 +985,22 @@
     triggerAutoSave();
     return block;
   }
+  // Task: split "EUT Input Voltage & Frequency" (';'-separated conditions) into one
+  // Measurement Test per condition, using each value as that Test's label.
+  function generateTestsFromVoltages(){
+    var el = document.querySelector('[name="eut_voltage_frequency"]');
+    var parts = (el ? el.value : '').split(/[;\n]/).map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+    if (!parts.length) { showMessage("Fill 'EUT Input Voltage & Frequency' first (separate conditions with ';').", 'error'); return; }
+    var container = document.getElementById('meas-records');
+    if (!container) return;
+    var hasData = Array.prototype.some.call(
+      container.querySelectorAll('input:not([type=file]):not([type=hidden])'),
+      function (x) { return (x.value || '').trim() !== ''; });
+    if (hasData && !confirm('Replace the current Measurement Data Tests with ' + parts.length + ' generated from the EUT voltages?')) return;
+    container.innerHTML = '';
+    parts.forEach(function (label) { addTest(label); });
+    showMessage('Generated ' + parts.length + ' Test' + (parts.length > 1 ? 's' : '') + ' from EUT voltages.', 'success');
+  }
   function removeTest(btn){
     if (document.querySelectorAll('#meas-records .meas-record').length > 1) {
       btn.closest('.meas-record').remove();
@@ -914,6 +1028,8 @@
       });
       formEl.addEventListener('change', function(e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          // finished editing EUT Input Voltage & Frequency (value changed + focus left) -> rebuild the Tests from it
+          if (e.target.name === 'eut_voltage_frequency') generateTestsFromVoltages();
           triggerAutoSave();
         }
       });

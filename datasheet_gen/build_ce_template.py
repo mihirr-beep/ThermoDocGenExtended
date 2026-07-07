@@ -11,6 +11,7 @@ import sys
 
 from docx import Document
 from docx.oxml import OxmlElement
+from docx.shared import Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
 DEFAULT_SRC = os.path.join(
@@ -53,6 +54,24 @@ def insert_paragraph_before(paragraph, text=""):
     if text:
         para.add_run(text)
     return para
+
+
+def set_caption_text(paragraph, text):
+    """Replace a caption paragraph's content with `text`, forcing the SAME run
+    formatting the Table captions use (bold, non-italic, Arial 10pt) so the
+    Figure/Photo captions render dark & bold instead of inheriting the grey,
+    italic, 9pt "Caption" style default. docxtpl keeps this run's rPr when it
+    substitutes the {{ ... }} placeholder, so the rendered caption stays bold.
+    """
+    for r in list(paragraph.runs):
+        r._r.getparent().remove(r._r)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.italic = False
+    run.font.name = "Arial"
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(0, 0, 0)   # explicit black (Table captions render black, not slate 44546A)
+    return run
 
 
 def clear_rows_after(table, keep_index):
@@ -253,6 +272,8 @@ def main(src):
     fig2, tab2 = find_para(doc, "Figure 2:"), find_para(doc, "Table 2:")
     photo1 = find_para(doc, "Photo 1:")
     if fig1 and tab1 and fig2 and tab2:
+        set_caption_text(fig1, "{{ rec.line_caption }}")     # user-nameable Figure 1 caption (bold, like Table caption)
+        set_caption_text(fig2, "{{ rec.neutral_caption }}")  # user-nameable Figure 2 caption
         insert_paragraph_before(fig1, "{%p for rec in measurement_records %}")       # loop start
         insert_paragraph_before(fig1, "").add_run("{{ rec.label }}").bold = True      # label above Figure 1
         insert_paragraph_after(fig1, "{{ rec.plot_line }}")
@@ -263,6 +284,7 @@ def main(src):
         tbl2._tbl.addnext(endfor)
         Paragraph(endfor, tab2._parent).add_run("{%p endfor %}")
     if photo1:
+        set_caption_text(photo1, "{{ photo_caption }}")     # user-nameable photo caption (bold, like Table caption)
         insert_paragraph_after(photo1, "{{ photo_setup }}")
 
     # Table 5 - Equipment (loop)
