@@ -24,7 +24,6 @@ except ImportError:
     pass
 
 
-
 def _build_default_secret_key() -> str:
     """Create a stable, app-scoped development secret key.
 

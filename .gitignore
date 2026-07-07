@@ -54,14 +54,4 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-
-# Node / Tailwind build tooling (not needed to run the app)
-node_modules/
-
-# Generated & uploaded documents (real data - never commit)
-uploads/
-outputs/
-
-# Database dumps (real user data / password hashes - never commit)
-*.sql
-Dump*.sql
+Dump20260624.sql

@@ -111,7 +111,7 @@ docker compose exec -T db mysql -uroot -pThermo@123 \
 
 # 3) import (innodb_strict_mode OFF: the wide legacy table iec_emc_test_requests,
 #    170+ columns, otherwise hits MySQL row-size ERROR 1118)
-{ echo "SET SESSION innodb_strict_mode=OFF;"; cat /path/to/dump.sql; } \
+{ echo "SET SESSION innodb_strict_mode=OFF;"; cat ./Dump20260624.sql; } \
   | docker compose exec -T db mysql -uroot -pThermo@123 test_plan_generator
 
 # 4) start the app again
