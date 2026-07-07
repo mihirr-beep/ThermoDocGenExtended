@@ -382,9 +382,30 @@
 <script>
 // Auto-save debounced function
   var autoSaveTimeout = null;
+  var suppressAutoSave = true;   // stays on until the form is fully built, so opening a form never auto-saves
+
+  // Cancel a pending auto-save (used before an explicit Save/Generate so a stale
+  // trailing draft-save can't overwrite the record they just submitted).
+  function cancelAutoSave() { if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; } }
+
+  // Auto-save persists scalar/table fields ONLY. File inputs are deliberately
+  // excluded: re-uploading multi-MB images on every keystroke-debounce would
+  // pile up orphaned copies server-side. Images persist on explicit Save/Generate.
+  function buildDraftFormData(form) {
+    var fd = new FormData();
+    Array.prototype.forEach.call(form.elements, function(el){
+      if (!el.name || el.disabled) return;
+      if (el.type === 'file') return;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
+      fd.append(el.name, el.value);
+    });
+    return fd;
+  }
+
   function triggerAutoSave() {
+    if (suppressAutoSave) return;
     if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
-    
+
     var statusEl = document.getElementById('autoSaveStatus');
     if (statusEl) {
       statusEl.textContent = 'Saving draft...';
@@ -392,14 +413,15 @@
       statusEl.classList.add('opacity-100', 'text-gray-500');
       statusEl.classList.remove('text-green-600', 'text-red-600');
     }
-    
+
     autoSaveTimeout = setTimeout(function() {
+      autoSaveTimeout = null;
       var form = document.getElementById('ceForm');
       if (!form) return;
-      
+
       fetch('/datasheet/ce/save-draft', {
         method: 'POST',
-        body: new FormData(form)
+        body: buildDraftFormData(form)
       })
       .then(function(r) { return r.json(); })
       .then(function(res) {
@@ -750,6 +772,7 @@
   }
   document.getElementById('ceForm').addEventListener('submit', function (e) {
     e.preventDefault();
+    cancelAutoSave();   // a trailing auto-save must not revert the record we're about to Submit
     const btn = document.getElementById('genBtn');
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Generating...';
@@ -768,6 +791,7 @@
   });
 
   document.getElementById('draftBtn').addEventListener('click', function () {
+    cancelAutoSave();   // explicit save supersedes any pending debounce
     const btn = this, orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Saving...';
     fetch('/datasheet/ce/save-draft', { method: 'POST', body: new FormData(document.getElementById('ceForm')) })
@@ -1034,6 +1058,12 @@
         }
       });
     }
+
+    // Release the guard only after all synchronous load-time setup (this handler,
+    // the linkage handler below, prefill/sync) has run, so opening the form and
+    // its auto-population never fire a spurious auto-save. Real edits after load
+    // are what start persisting drafts.
+    setTimeout(function(){ suppressAutoSave = false; }, 0);
   });
 </script>
 <script>

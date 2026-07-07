@@ -11,8 +11,8 @@ Why this exists (all observed on real generated documents):
   * dynamic measurement tables had wildly uneven column widths.
 
 `polish_layout(doc)` fixes those on the rendered python-docx Document, and
-`human_checkbox(...)` renders "ticked by a person" checkboxes (a pen-blue tick
-drawn over the box) for `{{r ... }}` placeholders.
+`human_checkbox(...)` renders checkboxes with a crossed box (☒) on the
+selected option for `{{r ... }}` placeholders.
 """
 import re
 from xml.sax.saxutils import escape
