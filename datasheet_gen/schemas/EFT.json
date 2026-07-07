@@ -20,22 +20,26 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -102,97 +106,134 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "immunity_test_requirement",
               "label": "Immunity test requirement",
-              "input": "text"
+              "input": "text",
+              "default": "Basic   Industrial       Controlled    Custom"
             },
             {
-              "key": "number_of_test_ports",
-              "label": "Number of Test Ports",
-              "input": "text"
+              "key": "number_of_test_ports_col_1",
+              "label": "Number of Test Ports (Col 2)",
+              "input": "text",
+              "default": "Power Line:"
             },
             {
-              "key": "test_voltage",
-              "label": "Test Voltage",
-              "input": "text"
+              "key": "number_of_test_ports_col_2",
+              "label": "Number of Test Ports (Col 3)",
+              "input": "text",
+              "default": "Signal:"
+            },
+            {
+              "key": "test_voltage_col_1",
+              "label": "Test Voltage (Col 2)",
+              "input": "text",
+              "default": "±0.5 kV  ±1 kV\n ±2 kV  ±4 kV"
+            },
+            {
+              "key": "test_voltage_col_2",
+              "label": "Test Voltage (Col 3)",
+              "input": "text",
+              "default": "±0.25 kV  ±0.5 kV \n ±1 kV  ±2 kV"
             },
             {
               "key": "pulse_rise_time",
               "label": "Pulse Rise time (ns)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "pulse_width",
               "label": "Pulse Width(ns)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "burst_duration",
               "label": "Burst Duration(ms)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "burst_period",
               "label": "Burst Period (ms)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "pulse_repetition_frequency",
               "label": "Pulse Repetition frequency(kHz)",
-              "input": "text"
+              "input": "text",
+              "default": "5kHz          100 kHz"
             },
             {
               "key": "test_duration",
               "label": "Test Duration(sec)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
               "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_col_1",
+              "label": "EUT Configuration (Col 2)",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_col_2",
+              "label": "EUT Configuration (Col 3)",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -214,7 +255,8 @@
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was tested at the EFT test site with a ground GRP. The EFT generator was bonded directly to GND. The EUT was placed above 0.1m insulation which is in turn placed on the GRP.\n\nPower Line: The power supply to the EUT was fed through an inbuilt CDN of the EFT generator. EFT generator injects the transients through the CDN which was superimposed on to the power line of the EUT with reference to ground plane. During the test, performance of EUT was monitored as per the criteria specified in standard.\n\nSignal Line: The signal cable between the EUT and auxiliary equipment was routed through the capacitive coupling clamp, and the transients were coupled from the EFT generator through a HV cable connected to capacitive clamp. EFT generator injects the transients through the capacitive coupling clamp which was superimposed on to the signal cables of the EUT with reference to ground plane. During the test, performance of EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
@@ -225,54 +267,431 @@
           "type": "fields",
           "fields": [
             {
-              "key": "coupling_path_line",
-              "label": "Coupling path / line",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_2",
+              "label": "Coupling path / line - +0.5 (Col 3)",
+              "input": "text",
+              "default": "-0.5"
             },
             {
-              "key": "coupling_path_line_2",
-              "label": "Coupling path / line",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_3",
+              "label": "Coupling path / line - +0.5 (Col 4)",
+              "input": "text",
+              "default": "+1"
             },
             {
-              "key": "l1",
-              "label": "L1",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_4",
+              "label": "Coupling path / line - +0.5 (Col 5)",
+              "input": "text",
+              "default": "-1"
             },
             {
-              "key": "n",
-              "label": "N",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_5",
+              "label": "Coupling path / line - +0.5 (Col 6)",
+              "input": "text",
+              "default": "+2"
             },
             {
-              "key": "pe",
-              "label": "PE",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_6",
+              "label": "Coupling path / line - +0.5 (Col 7)",
+              "input": "text",
+              "default": "-2"
             },
             {
-              "key": "l1_n",
-              "label": "L1+N",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_7",
+              "label": "Coupling path / line - +0.5 (Col 8)",
+              "input": "text",
+              "default": "+4"
             },
             {
-              "key": "l1_pe",
-              "label": "L1+PE",
-              "input": "text"
+              "key": "coupling_path_line_0_5_col_8",
+              "label": "Coupling path / line - +0.5 (Col 9)",
+              "input": "text",
+              "default": "-4"
             },
             {
-              "key": "n_pe",
-              "label": "N+PE",
-              "input": "text"
+              "key": "l1_col_1",
+              "label": "L1 (Col 2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "l1_n_pe",
-              "label": "L1+N+PE",
-              "input": "text"
+              "key": "l1_col_2",
+              "label": "L1 (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_3",
+              "label": "L1 (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_4",
+              "label": "L1 (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_5",
+              "label": "L1 (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_6",
+              "label": "L1 (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_7",
+              "label": "L1 (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_col_8",
+              "label": "L1 (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_1",
+              "label": "N (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_2",
+              "label": "N (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_3",
+              "label": "N (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_4",
+              "label": "N (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_5",
+              "label": "N (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_6",
+              "label": "N (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_7",
+              "label": "N (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_col_8",
+              "label": "N (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_1",
+              "label": "PE (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_2",
+              "label": "PE (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_3",
+              "label": "PE (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_4",
+              "label": "PE (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_5",
+              "label": "PE (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_6",
+              "label": "PE (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_7",
+              "label": "PE (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "pe_col_8",
+              "label": "PE (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_1",
+              "label": "L1+N (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_2",
+              "label": "L1+N (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_3",
+              "label": "L1+N (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_4",
+              "label": "L1+N (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_5",
+              "label": "L1+N (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_6",
+              "label": "L1+N (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_7",
+              "label": "L1+N (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_col_8",
+              "label": "L1+N (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_1",
+              "label": "L1+PE (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_2",
+              "label": "L1+PE (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_3",
+              "label": "L1+PE (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_4",
+              "label": "L1+PE (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_5",
+              "label": "L1+PE (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_6",
+              "label": "L1+PE (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_7",
+              "label": "L1+PE (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_pe_col_8",
+              "label": "L1+PE (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_1",
+              "label": "N+PE (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_2",
+              "label": "N+PE (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_3",
+              "label": "N+PE (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_4",
+              "label": "N+PE (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_5",
+              "label": "N+PE (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_6",
+              "label": "N+PE (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_7",
+              "label": "N+PE (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "n_pe_col_8",
+              "label": "N+PE (Col 9)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_1",
+              "label": "L1+N+PE (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_2",
+              "label": "L1+N+PE (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_3",
+              "label": "L1+N+PE (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_4",
+              "label": "L1+N+PE (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_5",
+              "label": "L1+N+PE (Col 6)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_6",
+              "label": "L1+N+PE (Col 7)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_7",
+              "label": "L1+N+PE (Col 8)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "l1_n_pe_col_8",
+              "label": "L1+N+PE (Col 9)",
+              "input": "text",
+              "default": ""
             }
           ]
         },
         {
-          "type": "static_table"
+          "type": "fields",
+          "fields": [
+            {
+              "key": "signal_lines_0_25_col_2",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 3)",
+              "input": "text",
+              "default": "-0.25"
+            },
+            {
+              "key": "signal_lines_0_25_col_3",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 4)",
+              "input": "text",
+              "default": "+0.5"
+            },
+            {
+              "key": "signal_lines_0_25_col_4",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 5)",
+              "input": "text",
+              "default": "-0.5"
+            },
+            {
+              "key": "signal_lines_0_25_col_5",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 6)",
+              "input": "text",
+              "default": "+1"
+            },
+            {
+              "key": "signal_lines_0_25_col_6",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 7)",
+              "input": "text",
+              "default": "-1"
+            },
+            {
+              "key": "signal_lines_0_25_col_7",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 8)",
+              "input": "text",
+              "default": "+2"
+            },
+            {
+              "key": "signal_lines_0_25_col_8",
+              "label": "Signal Lines\n(e.g., RS 232, RJ45) - +0.25 (Col 9)",
+              "input": "text",
+              "default": "-2"
+            }
+          ]
         }
       ]
     },
@@ -350,12 +769,14 @@
             {
               "key": "required_performance_criteria",
               "label": "Required Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "met_performance_criteria",
               "label": "Met Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -363,24 +784,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

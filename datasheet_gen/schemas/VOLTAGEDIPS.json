@@ -20,22 +20,26 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -102,92 +106,62 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
-            },
-            {
-              "key": "immunity_test_requirement",
-              "label": "Immunity test requirement",
-              "input": "text"
-            },
-            {
-              "key": "test_port",
-              "label": "Test Port",
-              "input": "text"
-            },
-            {
-              "key": "test_level",
-              "label": "Test Level",
-              "input": "text"
-            },
-            {
-              "key": "test_level_2",
-              "label": "Test Level",
-              "input": "text"
-            },
-            {
-              "key": "test_level_3",
-              "label": "Test Level",
-              "input": "text"
-            },
-            {
-              "key": "number_of_voltage_dips_interruptions",
-              "label": "Number of Voltage Dips/Interruptions",
-              "input": "text"
-            },
-            {
-              "key": "time_between_dips_interruptions",
-              "label": "Time between Dips/Interruptions",
-              "input": "text"
-            },
-            {
-              "key": "phase_angle",
-              "label": "Phase Angle",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
               "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_tabletop",
+              "label": "EUT Configuration - Tabletop",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -209,7 +183,8 @@
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was placed on a 0.8/0.1m wooden table/insulation support. The power supply to the EUT was fed by a programmable AC power source. The EUT was subjected to voltage dips and short interruptions according to the specification in standard. Each test sequence with the below mentioned test level and duration was repeated 3 times with a minimum interval of 10 seconds. Voltage dips test was done by synchronizing the dips at 0° to 360° phase angles in 45° steps/ 0° & 180°.\n\nDuring the test, performance of EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
@@ -321,24 +296,76 @@
           "type": "fields",
           "fields": [
             {
-              "key": "required_performance_criteria",
-              "label": "Required Performance Criteria",
-              "input": "text"
+              "key": "required_performance_criteria_voltage_dips",
+              "label": "Required Performance Criteria - Voltage Dips",
+              "input": "text",
+              "default": "Interruption"
             },
             {
-              "key": "required_performance_criteria_2",
-              "label": "Required Performance Criteria",
-              "input": "text"
+              "key": "required_performance_criteria_0_col_2",
+              "label": "Required Performance Criteria - 0 % (Col 3)",
+              "input": "text",
+              "default": "0/40 %"
             },
             {
-              "key": "required_performance_criteria_3",
-              "label": "Required Performance Criteria",
-              "input": "text"
+              "key": "required_performance_criteria_0_col_3",
+              "label": "Required Performance Criteria - 0 % (Col 4)",
+              "input": "text",
+              "default": "70%"
             },
             {
-              "key": "met_performance_criteria",
-              "label": "Met Performance Criteria",
-              "input": "text"
+              "key": "required_performance_criteria_0_col_4",
+              "label": "Required Performance Criteria - 0 % (Col 5)",
+              "input": "text",
+              "default": "0 %"
+            },
+            {
+              "key": "required_performance_criteria_col_1",
+              "label": "Required Performance Criteria (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "required_performance_criteria_col_2",
+              "label": "Required Performance Criteria (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "required_performance_criteria_col_3",
+              "label": "Required Performance Criteria (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "required_performance_criteria_col_4",
+              "label": "Required Performance Criteria (Col 5)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "met_performance_criteria_col_1",
+              "label": "Met Performance Criteria (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "met_performance_criteria_col_2",
+              "label": "Met Performance Criteria (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "met_performance_criteria_col_3",
+              "label": "Met Performance Criteria (Col 4)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "met_performance_criteria_col_4",
+              "label": "Met Performance Criteria (Col 5)",
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -346,24 +373,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

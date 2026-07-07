@@ -11,6 +11,7 @@ import sys
 
 from docx import Document
 from docx.oxml import OxmlElement
+from docx.shared import Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
 DEFAULT_SRC = os.path.join(
@@ -46,6 +47,33 @@ def insert_paragraph_after(paragraph, text=""):
     return para
 
 
+def insert_paragraph_before(paragraph, text=""):
+    new_p = OxmlElement("w:p")
+    paragraph._p.addprevious(new_p)
+    para = Paragraph(new_p, paragraph._parent)
+    if text:
+        para.add_run(text)
+    return para
+
+
+def set_caption_text(paragraph, text):
+    """Replace a caption paragraph's content with `text`, forcing the SAME run
+    formatting the Table captions use (bold, non-italic, Arial 10pt) so the
+    Figure/Photo captions render dark & bold instead of inheriting the grey,
+    italic, 9pt "Caption" style default. docxtpl keeps this run's rPr when it
+    substitutes the {{ ... }} placeholder, so the rendered caption stays bold.
+    """
+    for r in list(paragraph.runs):
+        r._r.getparent().remove(r._r)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.italic = False
+    run.font.name = "Arial"
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(0, 0, 0)   # explicit black (Table captions render black, not slate 44546A)
+    return run
+
+
 def clear_rows_after(table, keep_index):
     for row in list(table.rows[keep_index + 1:]):
         row._tr.getparent().remove(row._tr)
@@ -69,9 +97,9 @@ def wrap_loop(table, data_index, loop_var):
 
 
 def insert_measure_table_after(doc, paragraph, loop_var, item):
-    header = ["Frequency (MHz)", "QP (dBuV)", "QP Limit", "QP Margin",
-              "Avg (dBuV)", "Avg Limit", "Avg Margin"]
-    cols = ["freq", "qp", "qp_limit", "qp_margin", "avg", "avg_limit", "avg_margin"]
+    header = ["Frequency (MHz)", "Q-peak (dBµV)", "Limit (dBµV)", "Margin (dB)",
+              "Frequency (MHz)", "Average (dBµV)", "Limit (dBµV)", "Margin (dB)"]
+    cols = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
     tbl = doc.add_table(rows=4, cols=len(header))
     tbl.style = "Table Grid"
     for j, h in enumerate(header):
@@ -87,7 +115,8 @@ def insert_measure_table_after(doc, paragraph, loop_var, item):
 SPEC_MAP = {
     "Product Standard": ("{{ product_standard }}", ""),
     "Basic Standard": ("{{ basic_standard }}", ""),
-    "Classification": ("{{ classification_group }}", "{{ classification_class }}"),
+    # {{r }}: rendered as RichText (human-ticked checkboxes) by the generator
+    "Classification": ("{{r classification_group }}", "{{r classification_class }}"),
     "Test Port": ("{{ test_port }}", ""),
     "Coupling Method": ("{{ coupling_method }}", ""),
     "Frequency Range": ("{{ frequency_range }}", ""),
@@ -97,7 +126,8 @@ SPEC_MAP = {
     "Measurement time": ("{{ measurement_time }}", ""),
     "Test Mode": ("{{ test_mode }}", ""),
     "EUT Modification state": ("{{ eut_modification_state }}", ""),
-    "EUT Configuration": ("{{ eut_configuration }}", ""),
+    # Checkboxes (Tabletop | Floor standing), one per cell, ticked via RichText
+    "EUT Configuration": ("{{r eut_config_tabletop }}", "{{r eut_config_floor }}"),
     "EUT Input Voltage": ("{{ eut_voltage_frequency }}", ""),
     "Ambient Temperature": ("{{ ambient_temperature }}", ""),
     "Relative Humidity": ("{{ relative_humidity }}", ""),
@@ -131,6 +161,36 @@ def main(src):
     fc = find_para(doc, "Functional check is conducted")
     if fc:
         fc.text = "Functional check is conducted as per SOP reference number: {{ sop_reference }}."
+        # 1.4 also carries two functional-check plots (Line + Neutral): a bold heading
+        # ABOVE each image. ce_finalize_layout puts them on their own page and keeps
+        # each heading glued to its image.
+        anchor = fc
+        for heading, tag in (("Line:", "{{ func_line }}"), ("Neutral:", "{{ func_neutral }}")):
+            h = insert_paragraph_after(anchor, "")
+            h.add_run(heading).bold = True
+            anchor = insert_paragraph_after(h, tag)
+        # 1.5 AMBIENT: clone the 1.4 heading so it keeps the same numbered/black heading
+        # formatting (auto-numbers as 1.5), retitle it, then add Line/Neutral ambient plots.
+        import copy as _copy
+        fc_head = find_para(doc, "FUNCTIONAL CHECK")
+        if fc_head is not None:
+            amb_p = _copy.deepcopy(fc_head._p)
+            anchor._p.addnext(amb_p)
+            amb = Paragraph(amb_p, anchor._parent)
+            _runs = amb.runs
+            if _runs:
+                _runs[0].text = "AMBIENT"
+                for _r in _runs[1:]:
+                    _r.text = ""
+            else:
+                amb.add_run("AMBIENT")
+        else:
+            amb = insert_paragraph_after(anchor, "AMBIENT")
+        anchor = amb
+        for heading, tag in (("Line:", "{{ ambient_line }}"), ("Neutral:", "{{ ambient_neutral }}")):
+            h = insert_paragraph_after(anchor, "")
+            h.add_run(heading).bold = True
+            anchor = insert_paragraph_after(h, tag)
 
     # Table 3 - Test specification.
     # Most value rows are a single cell spanning columns 1+2 (a horizontal merge);
@@ -151,46 +211,80 @@ def main(src):
     dev_head = find_para(doc, "DEVIATION FROM THE STANDARD")
     if dev_head:
         na = insert_paragraph_after(dev_head, "{{ deviation }}")
-        # remove the original "NA" paragraph that followed
+        # remove the original "NA" paragraph that followed (it may be separated
+        # from the placeholder by empty spacer paragraphs — skip those)
         nxt = na._p.getnext()
-        if nxt is not None and nxt.tag.endswith('}p'):
+        while nxt is not None and nxt.tag.endswith('}p'):
             np = Paragraph(nxt, na._parent)
-            if np.text.strip().upper() == "NA":
+            txt = np.text.strip()
+            if not txt:
+                nxt = nxt.getnext()
+                continue
+            if txt.upper() == "NA":
                 remove_para(np)
+            break
 
-    # Table 4 - Test limits (2 bands, per the document)
-    for row in t[4].rows:
+    # Table 4 - Test limits (3 bands per the DS504 sheet: 0.15-0.50, 0.50-5, 5-30).
+    # The source doc only ships two rows (0.15-0.50 and 0.50-30); we relabel the
+    # second to 0.50-5 and clone it to add the 5-30 band so regeneration stays in
+    # sync with the form/service (which prefill all three bands from the class).
+    import copy
+    from docx.table import _Row
+    limits_tbl = t[4]
+    row_050 = None
+    for row in limits_tbl.rows:
         lbl = row.cells[0].text.strip()
         if lbl.startswith("0.15"):
+            # Source doc centres this first label; the other rows are left-aligned.
+            # Force left so the whole frequency column matches.
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            for p in row.cells[0].paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             set_cell(row.cells[1], "{{ limit_qp_015_050 }}")
             set_cell(row.cells[2], "{{ limit_avg_015_050 }}")
         elif lbl.startswith("0.50"):
-            set_cell(row.cells[1], "{{ limit_qp_050_30 }}")
-            set_cell(row.cells[2], "{{ limit_avg_050_30 }}")
+            set_cell(row.cells[0], "0.50 to 5")
+            set_cell(row.cells[1], "{{ limit_qp_050_5 }}")
+            set_cell(row.cells[2], "{{ limit_avg_050_5 }}")
+            row_050 = row
+    if row_050 is not None:
+        new_tr = copy.deepcopy(row_050._tr)
+        row_050._tr.addnext(new_tr)
+        nr = _Row(new_tr, limits_tbl)
+        set_cell(nr.cells[0], "5 to 30")
+        set_cell(nr.cells[1], "{{ limit_qp_5_30 }}")
+        set_cell(nr.cells[2], "{{ limit_avg_5_30 }}")
 
     # Test procedure: make the first procedure line editable, drop the boilerplate
     proc = find_para(doc, "The test procedure was in accordance")
     if proc:
-        proc.text = "{{ test_procedure }}"
+        proc.text = "{{r test_procedure }}"   # RichText: bold "LISN (Voltage Method):" header
         for prefix in ("The EUT was placed", "LISN (Voltage Method)",
                        "The conducted emission was measured"):
             p = find_para(doc, prefix)
             if p:
                 remove_para(p)
 
-    # Measurement data: images + Line/Neutral tables after captions
+    # Measurement data: repeated per Test record. Wrap the per-record label + Line/Neutral
+    # figures & tables in a docxtpl {%p for %} loop over measurement_records. The label is a
+    # bold heading above Figure 1; images sit above their captions (fix_doc reorders them).
     fig1, tab1 = find_para(doc, "Figure 1:"), find_para(doc, "Table 1:")
     fig2, tab2 = find_para(doc, "Figure 2:"), find_para(doc, "Table 2:")
     photo1 = find_para(doc, "Photo 1:")
-    if fig1:
-        insert_paragraph_after(fig1, "{{ plot_line }}")
-    if tab1:
-        insert_measure_table_after(doc, tab1, "r in line_rows", "r")
-    if fig2:
-        insert_paragraph_after(fig2, "{{ plot_neutral }}")
-    if tab2:
-        insert_measure_table_after(doc, tab2, "r in neutral_rows", "r")
+    if fig1 and tab1 and fig2 and tab2:
+        set_caption_text(fig1, "{{ rec.line_caption }}")     # user-nameable Figure 1 caption (bold, like Table caption)
+        set_caption_text(fig2, "{{ rec.neutral_caption }}")  # user-nameable Figure 2 caption
+        insert_paragraph_before(fig1, "{%p for rec in measurement_records %}")       # loop start
+        insert_paragraph_before(fig1, "").add_run("{{ rec.label }}").bold = True      # label above Figure 1
+        insert_paragraph_after(fig1, "{{ rec.plot_line }}")
+        insert_measure_table_after(doc, tab1, "r in rec.line_rows", "r")
+        insert_paragraph_after(fig2, "{{ rec.plot_neutral }}")
+        tbl2 = insert_measure_table_after(doc, tab2, "r in rec.neutral_rows", "r")
+        endfor = OxmlElement("w:p")                                                   # loop end (after Table 2)
+        tbl2._tbl.addnext(endfor)
+        Paragraph(endfor, tab2._parent).add_run("{%p endfor %}")
     if photo1:
+        set_caption_text(photo1, "{{ photo_caption }}")     # user-nameable photo caption (bold, like Table caption)
         insert_paragraph_after(photo1, "{{ photo_setup }}")
 
     # Table 5 - Equipment (loop)
@@ -207,8 +301,8 @@ def main(src):
     # Result paragraph + sign-off
     result = find_para(doc, "Conducted Emissions from the EUT as per Class")
     if result:
-        result.text = ("Conducted Emissions from the EUT as per Class "
-                       "{{ result_class }} limit: {{ overall_result }}")
+        result.text = ("Conducted Emissions from the EUT as per "
+                       "{{r result_class_label }} limit: {{r result_checkbox }}")
     signoff = {"Name": "{{ tested_by_name }}", "Signature": "{{ signature }}", "Date": "{{ tested_by_date }}"}
     for row in t[7].rows:
         if row.cells[0].text.strip() in signoff:
@@ -228,6 +322,13 @@ def main(src):
     os.makedirs(OUT_DIR, exist_ok=True)
     doc.save(OUT)
     print(f"Saved template -> {OUT}  (removed {removed} manual page break(s))")
+
+    # Put each measurement image ON TOP with its caption directly BELOW (no
+    # spacing). build_ce_template inserts the image after the caption, so reuse
+    # the shared layout fixer to reorder + tighten. Keeps rebuilds consistent.
+    from fix_template_layout import fix_doc
+    fix_doc(OUT)
+    print("Applied image-above-caption layout fix.")
 
 
 if __name__ == "__main__":

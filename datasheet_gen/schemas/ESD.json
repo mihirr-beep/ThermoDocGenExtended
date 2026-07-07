@@ -20,22 +20,26 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -102,87 +106,110 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "immunity_test_requirement",
               "label": "Immunity test requirement",
-              "input": "text"
+              "input": "text",
+              "default": "Basic   Industrial       Controlled    Custom"
             },
             {
               "key": "test_port",
               "label": "Test Port",
-              "input": "text"
+              "input": "text",
+              "default": "Enclosure"
             },
             {
               "key": "rc_network",
               "label": "RC Network",
-              "input": "text"
+              "input": "text",
+              "default": "150pF, 330Ω"
             },
             {
               "key": "direct_contact_discharge",
               "label": "Direct Contact Discharge",
-              "input": "text"
+              "input": "text",
+              "default": "±2kV     ±4kV    ±8kV      Custom"
             },
             {
               "key": "indirect_contact_discharge_hcp_vcp",
               "label": "Indirect Contact Discharge \nHCP\nVCP",
-              "input": "text"
+              "input": "text",
+              "default": "NA    ±2kV     ±4kV    ±8kV      Custom\n  ±2kV     ±4kV    ±8kV      Custom"
             },
             {
               "key": "air_discharge",
               "label": "Air discharge",
-              "input": "text"
+              "input": "text",
+              "default": "±2kV     ±4kV    ±8kV     ±15kV    Custom"
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
               "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_col_1",
+              "label": "EUT Configuration (Col 2)",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_col_2",
+              "label": "EUT Configuration (Col 3)",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "atmospheric_air_pressure",
               "label": "Atmospheric Air Pressure(mBar)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -204,7 +231,8 @@
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was tested on a test bench/ insulation support which was placed on a GRP (Ground Reference Plane) on the floor. The surface of the table is metallic, providing the required Horizontal Coupling Plane (HCP). The EUT was placed on the HCP above a 0.5 mm insulating sheet. The HCP and the vertical coupling plane (VCP) were grounded to the GRP using two 470 kΩ resistors in series. The ESD generator return cable was bonded directly to the GRP.\n\nThe user accessible points were identified on the EUT and marked as ESD test points. The test was performed by setting a lower level initially and gradually increasing to the specified higher level. In contact discharge 10 positive and 10 negative discharges were applied on each metallic (conductive) test points. In air discharge, 10 positive and 10 negative discharges were applied on each non- metallic (non-conductive) test points.\n\nIndirect discharge consisting of 10 positive and 10 negative discharges was applied on the VCP and HCP by rotating the EUT in 90-degree angle steps, exposing all faces of the EUT to the coupling planes. During the test, performance of EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
@@ -212,13 +240,523 @@
       "title": "TEST OBSERVATION",
       "items": [
         {
-          "type": "static_table"
+          "type": "fields",
+          "fields": [
+            {
+              "key": "hcp_test_level_2",
+              "label": "HCP (0°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_2",
+              "label": "HCP (0°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4",
+              "label": "HCP (0°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_2",
+              "label": "HCP (0°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8",
+              "label": "HCP (0°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_2",
+              "label": "HCP (0°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_3",
+              "label": "HCP (90°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_4",
+              "label": "HCP (90°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_3",
+              "label": "HCP (90°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_4",
+              "label": "HCP (90°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_3",
+              "label": "HCP (90°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_4",
+              "label": "HCP (90°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_5",
+              "label": "HCP (180°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_6",
+              "label": "HCP (180°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_5",
+              "label": "HCP (180°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_6",
+              "label": "HCP (180°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_5",
+              "label": "HCP (180°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_6",
+              "label": "HCP (180°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_7",
+              "label": "HCP (270°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_2_8",
+              "label": "HCP (270°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_7",
+              "label": "HCP (270°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_4_8",
+              "label": "HCP (270°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_7",
+              "label": "HCP (270°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "hcp_test_level_8_8",
+              "label": "HCP (270°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2",
+              "label": "VCP (0°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_2",
+              "label": "VCP (0°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4",
+              "label": "VCP (0°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_2",
+              "label": "VCP (0°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8",
+              "label": "VCP (0°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_2",
+              "label": "VCP (0°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_3",
+              "label": "VCP (90°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_4",
+              "label": "VCP (90°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_3",
+              "label": "VCP (90°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_4",
+              "label": "VCP (90°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_3",
+              "label": "VCP (90°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_4",
+              "label": "VCP (90°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_5",
+              "label": "VCP (180°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_6",
+              "label": "VCP (180°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_5",
+              "label": "VCP (180°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_6",
+              "label": "VCP (180°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_5",
+              "label": "VCP (180°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_6",
+              "label": "VCP (180°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_7",
+              "label": "VCP (270°) - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_2_8",
+              "label": "VCP (270°) - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_7",
+              "label": "VCP (270°) - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_4_8",
+              "label": "VCP (270°) - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_7",
+              "label": "VCP (270°) - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "vcp_test_level_8_8",
+              "label": "VCP (270°) - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            }
+          ]
         },
         {
-          "type": "static_table"
+          "type": "fields",
+          "fields": [
+            {
+              "key": "test_observation_point_1_test_level_2",
+              "label": "test_observation Point 1 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_2_2",
+              "label": "test_observation Point 1 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_4",
+              "label": "test_observation Point 1 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_4_2",
+              "label": "test_observation Point 1 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_8",
+              "label": "test_observation Point 1 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_8_2",
+              "label": "test_observation Point 1 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_2",
+              "label": "test_observation Point 2 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_2_2",
+              "label": "test_observation Point 2 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_4",
+              "label": "test_observation Point 2 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_4_2",
+              "label": "test_observation Point 2 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_8",
+              "label": "test_observation Point 2 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_8_2",
+              "label": "test_observation Point 2 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_2",
+              "label": "test_observation Point 3 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_2_2",
+              "label": "test_observation Point 3 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_4",
+              "label": "test_observation Point 3 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_4_2",
+              "label": "test_observation Point 3 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_8",
+              "label": "test_observation Point 3 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_8_2",
+              "label": "test_observation Point 3 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            }
+          ]
         },
         {
-          "type": "static_table"
+          "type": "fields",
+          "fields": [
+            {
+              "key": "test_observation_point_1_test_level_2_3",
+              "label": "test_observation Point 1 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_2_4",
+              "label": "test_observation Point 1 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_4_3",
+              "label": "test_observation Point 1 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_4_4",
+              "label": "test_observation Point 1 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_8_3",
+              "label": "test_observation Point 1 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_1_test_level_8_4",
+              "label": "test_observation Point 1 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_2_3",
+              "label": "test_observation Point 2 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_2_4",
+              "label": "test_observation Point 2 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_4_3",
+              "label": "test_observation Point 2 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_4_4",
+              "label": "test_observation Point 2 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_8_3",
+              "label": "test_observation Point 2 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_2_test_level_8_4",
+              "label": "test_observation Point 2 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_2_3",
+              "label": "test_observation Point 3 - Test Level (kV) +2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_2_4",
+              "label": "test_observation Point 3 - Test Level (kV) -2",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_4_3",
+              "label": "test_observation Point 3 - Test Level (kV) +4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_4_4",
+              "label": "test_observation Point 3 - Test Level (kV) -4",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_8_3",
+              "label": "test_observation Point 3 - Test Level (kV) +8",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_observation_point_3_test_level_8_4",
+              "label": "test_observation Point 3 - Test Level (kV) -8",
+              "input": "text",
+              "default": ""
+            }
+          ]
         }
       ]
     },
@@ -306,12 +844,14 @@
             {
               "key": "required_performance_criteria",
               "label": "Required Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "met_performance_criteria",
               "label": "Met Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -319,24 +859,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

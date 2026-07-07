@@ -4,6 +4,9 @@ import os
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
+from .generator import strip_trailing_blank_paragraphs
+from .layout import polish_layout
+
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
 
@@ -35,6 +38,8 @@ def render(code, context, img_keys, img_paths, output_path):
         p = img_paths.get(k)
         context[k] = _fit(tpl, p, _box(k)) if (p and os.path.exists(p)) else ""
     tpl.render(context, autoescape=True)
+    polish_layout(tpl.docx)
+    strip_trailing_blank_paragraphs(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

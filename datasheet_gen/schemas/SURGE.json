@@ -20,22 +20,26 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -102,82 +106,122 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "immunity_test_requirement",
               "label": "Immunity test requirement",
-              "input": "text"
+              "input": "text",
+              "default": "Basic   Industrial    Controlled    Custom"
             },
             {
-              "key": "test_port",
-              "label": "Test Port",
-              "input": "text"
+              "key": "test_port_col_2",
+              "label": "Test Port (Col 3)",
+              "input": "text",
+              "default": "Power Line"
             },
             {
-              "key": "test_voltage",
-              "label": "Test Voltage(kV)",
-              "input": "text"
+              "key": "test_port_col_3",
+              "label": "Test Port (Col 4)",
+              "input": "text",
+              "default": "Signal Line"
             },
             {
-              "key": "test_voltage_2",
-              "label": "Test Voltage(kV)",
-              "input": "text"
+              "key": "test_voltage_common_mode_col_2",
+              "label": "Test Voltage(kV) - Common Mode (CM) (Col 3)",
+              "input": "text",
+              "default": "±0.5  ± 1  ±2  ±4"
+            },
+            {
+              "key": "test_voltage_common_mode_col_3",
+              "label": "Test Voltage(kV) - Common Mode (CM) (Col 4)",
+              "input": "text",
+              "default": "±0.5  ± 1  ±2\n  Custom"
+            },
+            {
+              "key": "test_voltage_differential_mode_col_2",
+              "label": "Test Voltage(kV) - Differential Mode (DM) (Col 3)",
+              "input": "text",
+              "default": "±0.5  ± 1  ±2  ±4"
+            },
+            {
+              "key": "test_voltage_differential_mode_col_3",
+              "label": "Test Voltage(kV) - Differential Mode (DM) (Col 4)",
+              "input": "text",
+              "default": "±0.5  ± 1  ±2\n  Custom"
             },
             {
               "key": "coupling_phases",
               "label": "Coupling Phases:",
-              "input": "text"
+              "input": "text",
+              "default": "0°            90°             180°            270°"
             },
             {
               "key": "repetition_rate",
               "label": "Repetition Rate",
-              "input": "text"
+              "input": "text",
+              "default": "60 Sec      Custom"
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
               "label": "EUT Modification state \n(Refer 1.2)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_col_2",
+              "label": "EUT Configuration (Col 3)",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_col_3",
+              "label": "EUT Configuration (Col 4)",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -199,7 +243,8 @@
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was tested in the Surge test site with a GRP. The Surge generator was bonded directly on the GRP. The EUT was placed above 0.1m insulation which is in turn placed on the GRP. The minimum distance between any metallic part and the Surge Generator or the EUT was maintained as 0.5m. The length of the power cable between the EUT and the Surge generator (CDN) was maintained as less than 2m as per the standard.\n\nPower Line:\n\nThe power supply to the EUT was fed through a CDN. The high energy surge was injected through the CDN and superimposed on the power line of the EUT in common mode (Line to Earth/PE) and differential mode (Line to Line). The surge pulse was injected five times with a minimum of 60 seconds interval between each pulse in positive and negative polarity. During the test, performance of EUT was monitored as per the criteria specified in standard.\n\nSignal Line:\n\nThe signal lines to the EUT were fed through CDN. The high energy surge was injected through the CDN and superimposed on the signal line of the EUT in common mode and differential mode. The surge pulse was injected five times with a minimum of 60 seconds interval between each pulse in positive and negative polarity. During the test, performance of EUT was monitored as per the criteria specified in standard."
         }
       ]
     },
@@ -210,59 +255,772 @@
           "type": "fields",
           "fields": [
             {
-              "key": "test_level",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_0",
+              "label": "+0.5 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "test_level_2",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_90",
+              "label": "+0.5 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "test_level_3",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_180",
+              "label": "+0.5 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_0_5",
-              "label": "+0.5",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe",
+              "label": "+0.5 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_0_5_2",
-              "label": "-0.5",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_0",
+              "label": "+0.5 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_1_0",
-              "label": "+1.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_90",
+              "label": "+0.5 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_1_0_2",
-              "label": "-1.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_180",
+              "label": "+0.5 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_2_0",
-              "label": "+2.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_270",
+              "label": "+0.5 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_2_0_2",
-              "label": "-2.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_0",
+              "label": "+0.5 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_4_0",
-              "label": "+4.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_90",
+              "label": "+0.5 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_4_0_2",
-              "label": "-4.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_180",
+              "label": "+0.5 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_270",
+              "label": "+0.5 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_0",
+              "label": "+0.5 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_90",
+              "label": "+0.5 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_180",
+              "label": "+0.5 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_270",
+              "label": "+0.5 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_0_2",
+              "label": "-0.5 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_90_2",
+              "label": "-0.5 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_180_2",
+              "label": "-0.5 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_2",
+              "label": "-0.5 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_0_2",
+              "label": "-0.5 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_90_2",
+              "label": "-0.5 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_180_2",
+              "label": "-0.5 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_270_2",
+              "label": "-0.5 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_0_2",
+              "label": "-0.5 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_90_2",
+              "label": "-0.5 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_180_2",
+              "label": "-0.5 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_270_2",
+              "label": "-0.5 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_0_2",
+              "label": "-0.5 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_90_2",
+              "label": "-0.5 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_180_2",
+              "label": "-0.5 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_270_2",
+              "label": "-0.5 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe",
+              "label": "+1.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_90",
+              "label": "+1.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_180",
+              "label": "+1.0 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_2",
+              "label": "+1.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_0",
+              "label": "+1.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_90",
+              "label": "+1.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_180",
+              "label": "+1.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_270",
+              "label": "+1.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_0",
+              "label": "+1.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_90",
+              "label": "+1.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_180",
+              "label": "+1.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_270",
+              "label": "+1.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_0",
+              "label": "+1.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_90",
+              "label": "+1.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_180",
+              "label": "+1.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_270",
+              "label": "+1.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_0",
+              "label": "-1.0 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_90_2",
+              "label": "-1.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_3",
+              "label": "-1.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_270",
+              "label": "-1.0 - Common Mode L→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_0_2",
+              "label": "-1.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_90_2",
+              "label": "-1.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_180_2",
+              "label": "-1.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_270_2",
+              "label": "-1.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_0_2",
+              "label": "-1.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_90_2",
+              "label": "-1.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_180_2",
+              "label": "-1.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_270_2",
+              "label": "-1.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_0_2",
+              "label": "-1.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_90_2",
+              "label": "-1.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_180_2",
+              "label": "-1.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_270_2",
+              "label": "-1.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_0",
+              "label": "+2.0 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_90",
+              "label": "+2.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_180",
+              "label": "+2.0 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_270",
+              "label": "+2.0 - Common Mode L→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_0",
+              "label": "+2.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_90",
+              "label": "+2.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_180",
+              "label": "+2.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_270",
+              "label": "+2.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_0",
+              "label": "+2.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_90",
+              "label": "+2.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_180",
+              "label": "+2.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_270",
+              "label": "+2.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_0",
+              "label": "+2.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_90",
+              "label": "+2.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_180",
+              "label": "+2.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_270",
+              "label": "+2.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_0_2",
+              "label": "-2.0 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_90_2",
+              "label": "-2.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_180_2",
+              "label": "-2.0 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe",
+              "label": "-2.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_0_2",
+              "label": "-2.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_90_2",
+              "label": "-2.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_180_2",
+              "label": "-2.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_270_2",
+              "label": "-2.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_0_2",
+              "label": "-2.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_90_2",
+              "label": "-2.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_180_2",
+              "label": "-2.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_270_2",
+              "label": "-2.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_0_2",
+              "label": "-2.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_90_2",
+              "label": "-2.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_180_2",
+              "label": "-2.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_270_2",
+              "label": "-2.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_0",
+              "label": "+4.0 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_90",
+              "label": "+4.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_180",
+              "label": "+4.0 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe",
+              "label": "+4.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_0",
+              "label": "+4.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_90",
+              "label": "+4.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_180",
+              "label": "+4.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_270",
+              "label": "+4.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_0",
+              "label": "+4.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_90",
+              "label": "+4.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_180",
+              "label": "+4.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_270",
+              "label": "+4.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_0",
+              "label": "+4.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_90",
+              "label": "+4.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_180",
+              "label": "+4.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_270",
+              "label": "+4.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_0_2",
+              "label": "-4.0 - Common Mode L→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_90_2",
+              "label": "-4.0 - Common Mode L→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_180_2",
+              "label": "-4.0 - Common Mode L→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_2",
+              "label": "-4.0 - Common Mode L→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_0_2",
+              "label": "-4.0 - Common Mode N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_90_2",
+              "label": "-4.0 - Common Mode N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_180_2",
+              "label": "-4.0 - Common Mode N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_270_2",
+              "label": "-4.0 - Common Mode N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_0_2",
+              "label": "-4.0 - Common Mode L+N→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_90_2",
+              "label": "-4.0 - Common Mode L+N→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_180_2",
+              "label": "-4.0 - Common Mode L+N→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_270_2",
+              "label": "-4.0 - Common Mode L+N→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_0_2",
+              "label": "-4.0 - Differential Mode L→N 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_90_2",
+              "label": "-4.0 - Differential Mode L→N 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_180_2",
+              "label": "-4.0 - Differential Mode L→N 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_270_2",
+              "label": "-4.0 - Differential Mode L→N 270°",
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -270,64 +1028,778 @@
           "type": "fields",
           "fields": [
             {
-              "key": "test_level_4",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_0_3",
+              "label": "+0.5 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "test_level_5",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_90_3",
+              "label": "+0.5 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "test_level_6",
-              "label": "Test Level (kV)",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_180_3",
+              "label": "+0.5 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_0_5_3",
-              "label": "+0.5",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_pe_3",
+              "label": "+0.5 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_0_5_4",
-              "label": "-0.5",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_0_3",
+              "label": "+0.5 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_1_0_3",
-              "label": "+1.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_90_3",
+              "label": "+0.5 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_1_0_4",
-              "label": "-1.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_180_3",
+              "label": "+0.5 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_2_0_3",
-              "label": "+2.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_n_pe_270_3",
+              "label": "+0.5 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_2_0_4",
-              "label": "-2.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_0_3",
+              "label": "+0.5 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_4_0_3",
-              "label": "+4.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_90_3",
+              "label": "+0.5 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "f_4_0_4",
-              "label": "-4.0",
-              "input": "text"
+              "key": "f_0_5_common_mode_l_n_pe_180_3",
+              "label": "+0.5 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_270_3",
+              "label": "+0.5 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_0_3",
+              "label": "+0.5 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_90_3",
+              "label": "+0.5 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_180_3",
+              "label": "+0.5 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_270_3",
+              "label": "+0.5 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_0_4",
+              "label": "-0.5 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_90_4",
+              "label": "-0.5 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_180_4",
+              "label": "-0.5 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_pe_4",
+              "label": "-0.5 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_0_4",
+              "label": "-0.5 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_90_4",
+              "label": "-0.5 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_180_4",
+              "label": "-0.5 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_n_pe_270_4",
+              "label": "-0.5 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_0_4",
+              "label": "-0.5 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_90_4",
+              "label": "-0.5 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_180_4",
+              "label": "-0.5 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_common_mode_l_n_pe_270_4",
+              "label": "-0.5 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_0_4",
+              "label": "-0.5 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_90_4",
+              "label": "-0.5 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_180_4",
+              "label": "-0.5 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_0_5_differential_mode_l_n_270_4",
+              "label": "-0.5 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_0_2",
+              "label": "+1.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_90_3",
+              "label": "+1.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_180_2",
+              "label": "+1.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_4",
+              "label": "+1.0 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_0_3",
+              "label": "+1.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_90_3",
+              "label": "+1.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_180_3",
+              "label": "+1.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_270_3",
+              "label": "+1.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_0_3",
+              "label": "+1.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_90_3",
+              "label": "+1.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_180_3",
+              "label": "+1.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_270_3",
+              "label": "+1.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_0_3",
+              "label": "+1.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_90_3",
+              "label": "+1.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_180_3",
+              "label": "+1.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_270_3",
+              "label": "+1.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_0_3",
+              "label": "-1.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_90_4",
+              "label": "-1.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_180_3",
+              "label": "-1.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_pe_5",
+              "label": "-1.0 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_0_4",
+              "label": "-1.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_90_4",
+              "label": "-1.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_180_4",
+              "label": "-1.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_n_pe_270_4",
+              "label": "-1.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_0_4",
+              "label": "-1.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_90_4",
+              "label": "-1.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_180_4",
+              "label": "-1.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_common_mode_l_n_pe_270_4",
+              "label": "-1.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_0_4",
+              "label": "-1.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_90_4",
+              "label": "-1.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_180_4",
+              "label": "-1.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_1_0_differential_mode_l_n_270_4",
+              "label": "-1.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_0_3",
+              "label": "+2.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_90_3",
+              "label": "+2.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_180_3",
+              "label": "+2.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_270_2",
+              "label": "+2.0 - Common Mode L(Pos)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_0_3",
+              "label": "+2.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_90_3",
+              "label": "+2.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_180_3",
+              "label": "+2.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_270_3",
+              "label": "+2.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_0_3",
+              "label": "+2.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_90_3",
+              "label": "+2.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_180_3",
+              "label": "+2.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_270_3",
+              "label": "+2.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_0_3",
+              "label": "+2.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_90_3",
+              "label": "+2.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_180_3",
+              "label": "+2.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_270_3",
+              "label": "+2.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_0_4",
+              "label": "-2.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_90_4",
+              "label": "-2.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_180_4",
+              "label": "-2.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_pe_2",
+              "label": "-2.0 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_0_4",
+              "label": "-2.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_90_4",
+              "label": "-2.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_180_4",
+              "label": "-2.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_n_pe_270_4",
+              "label": "-2.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_0_4",
+              "label": "-2.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_90_4",
+              "label": "-2.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_180_4",
+              "label": "-2.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_common_mode_l_n_pe_270_4",
+              "label": "-2.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_0_4",
+              "label": "-2.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_90_4",
+              "label": "-2.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_180_4",
+              "label": "-2.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_2_0_differential_mode_l_n_270_4",
+              "label": "-2.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_0_3",
+              "label": "+4.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_90_3",
+              "label": "+4.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_180_3",
+              "label": "+4.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_3",
+              "label": "+4.0 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_0_3",
+              "label": "+4.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_90_3",
+              "label": "+4.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_180_3",
+              "label": "+4.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_270_3",
+              "label": "+4.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_0_3",
+              "label": "+4.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_90_3",
+              "label": "+4.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_180_3",
+              "label": "+4.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_270_3",
+              "label": "+4.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_0_3",
+              "label": "+4.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_90_3",
+              "label": "+4.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_180_3",
+              "label": "+4.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_270_3",
+              "label": "+4.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_0_4",
+              "label": "-4.0 - Common Mode L(Pos)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_90_4",
+              "label": "-4.0 - Common Mode L(Pos)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_180_4",
+              "label": "-4.0 - Common Mode L(Pos)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_pe_4",
+              "label": "-4.0 - Common Mode L(Pos)→PE",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_0_4",
+              "label": "-4.0 - Common Mode N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_90_4",
+              "label": "-4.0 - Common Mode N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_180_4",
+              "label": "-4.0 - Common Mode N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_n_pe_270_4",
+              "label": "-4.0 - Common Mode N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_0_4",
+              "label": "-4.0 - Common Mode L(Pos)+N(Neg)→PE 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_90_4",
+              "label": "-4.0 - Common Mode L(Pos)+N(Neg)→PE 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_180_4",
+              "label": "-4.0 - Common Mode L(Pos)+N(Neg)→PE 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_common_mode_l_n_pe_270_4",
+              "label": "-4.0 - Common Mode L(Pos)+N(Neg)→PE 270°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_0_4",
+              "label": "-4.0 - Differential Mode L(Pos)→N(Neg) 0°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_90_4",
+              "label": "-4.0 - Differential Mode L(Pos)→N(Neg) 90°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_180_4",
+              "label": "-4.0 - Differential Mode L(Pos)→N(Neg) 180°",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "f_4_0_differential_mode_l_n_270_4",
+              "label": "-4.0 - Differential Mode L(Pos)→N(Neg) 270°",
+              "input": "text",
+              "default": ""
             }
           ]
         },
         {
-          "type": "static_table"
+          "type": "fields",
+          "fields": []
         }
       ]
     },
@@ -405,12 +1877,14 @@
             {
               "key": "required_performance_criteria",
               "label": "Required Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "met_performance_criteria",
               "label": "Met Performance Criteria",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         },
@@ -418,24 +1892,22 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
-            {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }

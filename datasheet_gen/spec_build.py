@@ -11,6 +11,7 @@ import os
 import re
 
 from docx import Document
+from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 
 from registry import REGISTRY, GENERIC_CODES, source_path
@@ -45,7 +46,43 @@ def set_cell(cell, value):
     cell.paragraphs[0].add_run(value)
 
 
+def is_header_row(r):
+    text = _t(r.cells[0]).lower()
+    return any(x in text for x in [
+        "test level", "name of the signal line", "s. no.", "s.no."
+    ])
+
+
+def is_observation_grid(table):
+    if len(table.rows) < 3:
+        return False
+    # Check if Row 1 has column headers like +2, -2, +4
+    row1_text = "".join([cell.text for cell in table.rows[1].cells]).lower()
+    return any(x in row1_text for x in ["+2", "-2", "+4", "-4", "+8", "-8"])
+
+
+def get_column_header(table, r_idx, c_idx):
+    headers = []
+    seen_cells = set()
+    for r in table.rows[:r_idx]:
+        if not is_header_row(r):
+            continue
+        cell = r.cells[c_idx]
+        if cell._tc is r.cells[0]._tc:
+            continue
+        tc_id = id(cell._tc)
+        if tc_id in seen_cells:
+            continue
+        seen_cells.add(tc_id)
+        text = cell.text.strip()
+        if text:
+            headers.append(re.sub(r'\s+', ' ', text))
+    return " ".join(headers)
+
+
 def _classify(table):
+    if is_observation_grid(table):
+        return "kv"
     rows = table.rows
     if len(rows) < 2:
         return "kv"
@@ -60,17 +97,114 @@ def _process_table(table, used, prefix):
     rows = table.rows
     if _classify(table) == "kv":
         fields = []
-        for r in rows:
-            label = _t(r.cells[0])
-            if not label or ncols < 2:
+        for r_idx, r in enumerate(rows):
+            # Skip rows that act as table headers
+            if is_header_row(r):
                 continue
+            
+            # Identify unique cells in the row to handle merged cells correctly
+            unique_cells = []
+            seen_tc = set()
+            for cell in r.cells:
+                tc_id = id(cell._tc)
+                if tc_id not in seen_tc:
+                    seen_tc.add(tc_id)
+                    unique_cells.append(cell)
+            
+            n_unique = len(unique_cells)
+            if n_unique < 2:
+                continue
+            
+            # Determine label and value start column
+            first_cell_text = _t(r.cells[0])
+            first_cell_clean = first_cell_text.strip(" .")
+            
+            if first_cell_clean.isdigit():
+                # Serial-numbered observation row!
+                second_cell_text = _t(r.cells[1])
+                if second_cell_text:
+                    label = second_cell_text
+                else:
+                    label = f"{prefix} Point {first_cell_clean}"
+                val_start_col = 2
+            elif ncols >= 3 and r.cells[0]._tc is r.cells[1]._tc:
+                label = _t(r.cells[0])
+                val_start_col = 2
+            else:
+                if ncols >= 4:
+                    l0 = _t(r.cells[0])
+                    l1 = _t(r.cells[1])
+                    if not l1:
+                        # Col 1 is empty in original, so it is a value column!
+                        label = l0
+                        val_start_col = 1
+                    else:
+                        # Col 1 contains sub-label
+                        label = f"{l0} - {l1}"
+                        val_start_col = 2
+                else:
+                    label = _t(r.cells[0])
+                    val_start_col = 1
+            
+            if not label:
+                continue
+            
+            # Find unique cells in value columns area
+            val_cells = []
+            seen_val_tc = set()
+            for j in range(val_start_col, ncols):
+                cell = r.cells[j]
+                # Skip if cell is merged with label cells
+                if val_start_col == 2 and (cell._tc is r.cells[0]._tc or cell._tc is r.cells[1]._tc):
+                    continue
+                if val_start_col == 1 and cell._tc is r.cells[0]._tc:
+                    continue
+                tc_id = id(cell._tc)
+                if tc_id not in seen_val_tc:
+                    seen_val_tc.add(tc_id)
+                    val_cells.append((j, cell))
+            
+            base_key = slugify(label, used)
             is_sig = "signature" in label.lower()
-            key = slugify(label, used)
-            set_cell(r.cells[1], "{{ " + key + " }}")
-            for j in range(2, ncols):
-                if r.cells[j]._tc is not r.cells[1]._tc:
-                    set_cell(r.cells[j], "")
-            fields.append({"key": key, "label": label, "input": "image" if is_sig else "text"})
+            
+            if len(val_cells) == 1:
+                col_idx, cell = val_cells[0]
+                key = base_key
+                default_val = cell.text.strip()
+                set_cell(cell, "{{ " + key + " }}")
+                # Clear other cells in same row pointing to different cell in value columns area
+                for j in range(val_start_col, ncols):
+                    if r.cells[j]._tc is not cell._tc:
+                        if val_start_col == 2 and (r.cells[j]._tc is r.cells[0]._tc or r.cells[j]._tc is r.cells[1]._tc):
+                            continue
+                        if val_start_col == 1 and r.cells[j]._tc is r.cells[0]._tc:
+                            continue
+                        set_cell(r.cells[j], "")
+                fields.append({
+                    "key": key,
+                    "label": label,
+                    "input": "image" if is_sig else "text",
+                    "default": default_val
+                })
+            elif len(val_cells) > 1:
+                # Multiple value cells (e.g. Power Line and Signal Line)
+                for col_idx, cell in val_cells:
+                    suffix = get_column_header(table, r_idx, col_idx)
+                    if suffix:
+                        key = slugify(label + " " + suffix, used)
+                        display_label = f"{label} - {suffix}"
+                    else:
+                        key = slugify(label + f" col_{col_idx}", used)
+                        display_label = f"{label} (Col {col_idx + 1})"
+                    
+                    default_val = cell.text.strip()
+                    set_cell(cell, "{{ " + key + " }}")
+                    fields.append({
+                        "key": key,
+                        "label": display_label,
+                        "input": "image" if is_sig else "text",
+                        "default": default_val
+                    })
         return {"type": "fields", "fields": fields}
 
     # Tables with merged header/data cells can't be safely turned into docxtpl
@@ -173,14 +307,17 @@ def build_one(code):
             mode = None
             continue
 
-        # image captions
+        # image captions -> image placeholder ABOVE, caption BELOW, no spacing
         if re.match(r"(Photo|Figure)\s*\d+\s*:", text):
             img_n += 1
             ikey = slugify(text.split(":")[0], used, "img_")
             new = p._p.makeelement(W + "p", {})
-            p._p.addnext(new)
+            p._p.addprevious(new)   # image goes on top; the caption stays underneath it
             np = Paragraph(new, p._parent)
             np.add_run("{{ " + ikey + " }}")
+            for _tight in (np, p):  # tight block: no spacing around image/caption
+                _tight.paragraph_format.space_before = Pt(0)
+                _tight.paragraph_format.space_after = Pt(0)
             section["items"].append({"type": "image", "key": ikey, "label": text[:80]})
             continue
 

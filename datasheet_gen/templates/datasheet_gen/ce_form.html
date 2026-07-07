@@ -20,6 +20,13 @@
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
+    {% if draft_status %}
+    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm">
+      {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
+      {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+    </div>
+    {% endif %}
+
     <!-- 1. EUT & TECHNICAL DETAILS -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">1. EUT &amp; Technical Details</h2>
@@ -33,7 +40,10 @@
 
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold text-gray-600">EUT Modification Record</h3>
-        <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="uploadCSV('mod')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+          <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        </div>
       </div>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr>
@@ -63,6 +73,23 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">3. Functional Check</h2>
       <div><label class="block text-sm font-medium text-gray-700 mb-1">SOP Reference Number</label>{{ field('sop_reference', prefill.sop_reference) }}</div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
+        <input type="file" name="func_line" accept="image/*" class="w-full text-sm">
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Neutral</label>
+        <input type="file" name="func_neutral" accept="image/*" class="w-full text-sm">
+      </div>
+      <h3 class="text-base font-bold text-gray-900 mt-6 mb-2">Ambient</h3>
+      <div class="mt-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
+        <input type="file" name="ambient_line" accept="image/*" class="w-full text-sm">
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Neutral</label>
+        <input type="file" name="ambient_neutral" accept="image/*" class="w-full text-sm">
+      </div>
     </section>
 
     <!-- 4. TEST SPECIFICATION -->
@@ -81,24 +108,18 @@
             <option value="">Select</option>
             {% for o in ['Class A','Class B'] %}<option {{ 'selected' if prefill.classification_class==o }}>{{ o }}</option>{% endfor %}
           </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Port</label>
-          <select name="test_port" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['Power Line','Signal Line','Telecommunication Port'] %}<option {{ 'selected' if prefill.test_port==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Coupling Method</label>
-          <select name="coupling_method" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['LISN','Custom'] %}<option {{ 'selected' if prefill.coupling_method==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Port</label>{{ field('test_port', prefill.test_port) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Coupling Method</label>{{ field('coupling_method', prefill.coupling_method) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Frequency Range</label>{{ field('frequency_range', prefill.frequency_range) }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Resolution Bandwidth (Hz)</label>{{ field('resolution_bandwidth') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>
-          <select name="detector" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            {% for o in ['Quasi-peak & Average','Quasi-peak','Average','Peak'] %}<option {{ 'selected' if prefill.detector==o }}>{{ o }}</option>{% endfor %}
-          </select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>{{ field('eut_modification_state', prefill.eut_modification_state) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Resolution Bandwidth (Hz)</label>{{ field('resolution_bandwidth', prefill.resolution_bandwidth) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Step Size (Hz)</label>{{ field('step_size', prefill.step_size) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Detector</label>{{ field('detector', prefill.detector) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Time (s)</label>{{ field('measurement_time', prefill.measurement_time) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode', prefill.test_mode) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>
+          <input type="text" name="eut_modification_state" id="eut_modification_state" value="{{ prefill.eut_modification_state }}"
+                 title="Current modification level. Defaults to the latest State in the EUT Modification Record above; editable."
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
           <select name="eut_configuration" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
@@ -124,9 +145,11 @@
         <thead class="bg-gray-50"><tr><th class="p-2 text-left">Frequency (MHz)</th><th class="p-2 text-left">Quasi-Peak</th><th class="p-2 text-left">Average</th></tr></thead>
         <tbody>
           <tr><td class="p-2">0.15 to 0.50</td>
-            <td class="p-1">{{ field('limit_qp_015_050') }}</td><td class="p-1">{{ field('limit_avg_015_050') }}</td></tr>
-          <tr><td class="p-2">0.50 to 30</td>
-            <td class="p-1">{{ field('limit_qp_050_30') }}</td><td class="p-1">{{ field('limit_avg_050_30') }}</td></tr>
+            <td class="p-1">{{ field('limit_qp_015_050', prefill.limit_qp_015_050) }}</td><td class="p-1">{{ field('limit_avg_015_050', prefill.limit_avg_015_050) }}</td></tr>
+          <tr><td class="p-2">0.50 to 5</td>
+            <td class="p-1">{{ field('limit_qp_050_5', prefill.limit_qp_050_5) }}</td><td class="p-1">{{ field('limit_avg_050_5', prefill.limit_avg_050_5) }}</td></tr>
+          <tr><td class="p-2">5 to 30</td>
+            <td class="p-1">{{ field('limit_qp_5_30', prefill.limit_qp_5_30) }}</td><td class="p-1">{{ field('limit_avg_5_30', prefill.limit_avg_5_30) }}</td></tr>
         </tbody>
       </table>
     </section>
@@ -134,38 +157,27 @@
     <!-- 7. TEST PROCEDURE -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Procedure</h2>
-      <textarea name="test_procedure" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.test_procedure }}</textarea>
+      <p class="text-xs text-gray-500 mb-1">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only.</p>
+      <input type="hidden" name="test_procedure" id="test_procedure" value="{{ prefill.test_procedure }}">
+      <div id="test_procedure_view"
+           class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm leading-relaxed"
+           style="white-space: pre-line;">{{ prefill.test_procedure }}</div>
     </section>
 
-    <!-- 8. MEASUREMENT DATA -->
+    <!-- 8. MEASUREMENT DATA (one block per Test; add more via "+ Add Test") -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">8. Measurement Data</h2>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
-          <input type="file" name="plot_line" accept="image/*" class="w-full text-sm"></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
-          <input type="file" name="plot_neutral" accept="image/*" class="w-full text-sm"></div>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-gray-900">8. Measurement Data</h2>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="generateTestsFromVoltages()"
+                  title="Create one Test per value in 'EUT Input Voltage & Frequency' (semicolon-separated), using each as the Test label. Replaces the current Tests."
+                  class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate Tests from Voltages</button>
+          <button type="button" onclick="addTest()"
+                  title="Add another measurement Test manually. Each Test has its own label, plots and tables."
+                  class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Test</button>
+        </div>
       </div>
-
-      {% for grp, label in [('line','Table 1 - Line (Quasi-peak &amp; Average)'), ('neutral','Table 2 - Neutral (Quasi-peak &amp; Average)')] %}
-      <div class="flex items-center justify-between mb-2 mt-4">
-        <h3 class="text-sm font-semibold text-gray-600">{{ label|safe }}</h3>
-        <button type="button" onclick="addRow('{{ grp }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
-      </div>
-      <table class="w-full text-xs border border-gray-200">
-        <thead class="bg-gray-50"><tr>
-          <th class="p-1">Freq (MHz)</th><th class="p-1">QP</th><th class="p-1">QP Limit</th><th class="p-1">QP Margin</th>
-          <th class="p-1">Avg</th><th class="p-1">Avg Limit</th><th class="p-1">Avg Margin</th><th></th></tr></thead>
-        <tbody id="rows-{{ grp }}">
-          <tr>
-            {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-            <td class="p-1"><input name="{{ grp }}_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-            <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
-          </tr>
-        </tbody>
-      </table>
-      {% endfor %}
+      <div id="meas-records"></div>
     </section>
 
     <!-- 9. TEST SETUP PICTURES -->
@@ -173,27 +185,33 @@
       <h2 class="text-lg font-bold text-gray-900 mb-4">9. Test Setup Pictures</h2>
       <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (9&times;14 cm)</label>
       <input type="file" name="photo_setup" accept="image/*" class="w-full text-sm">
+      <input type="text" name="photo_caption" value="{{ prefill.photo_caption }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </section>
 
     <!-- 10. TEST EQUIPMENT USED -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-2">
         <h2 class="text-lg font-bold text-gray-900">10. Test Equipment Used</h2>
-        <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="uploadCSV('eq')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
+          <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        </div>
       </div>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr>
           <th class="p-2 text-left">Equipment Name</th><th class="p-2 text-left">Make</th><th class="p-2 text-left">Model No.</th>
           <th class="p-2 text-left">Serial No.</th><th class="p-2 text-left">Calibration Due</th><th></th></tr></thead>
         <tbody id="rows-eq">
+          {% for eq in (prefill.equipment or [None]) %}
           <tr>
-            <td class="p-1"><input name="eq_name[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_make[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_model[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
-            <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_name[]" value="{{ eq.name if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_make[]" value="{{ eq.make if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_model[]" value="{{ eq.model if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input name="eq_serial[]" value="{{ eq.serial if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
+            <td class="p-1"><input type="date" name="eq_cal_due[]" value="{{ eq.cal_due if eq else '' }}" class="w-full px-2 py-1 border rounded"></td>
             <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
           </tr>
+          {% endfor %}
         </tbody>
       </table>
     </section>
@@ -202,8 +220,8 @@
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">11. Software Used</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used', prefill.software_used) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version', prefill.software_version) }}</div>
       </div>
     </section>
 
@@ -213,7 +231,8 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Result Class</label>
           <select name="result_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            <option value="">Select</option><option>A</option><option>B</option></select></div>
+            <option value="">Select</option>
+            {% for o in ['A','B'] %}<option {{ 'selected' if prefill.result_class==o }}>{{ o }}</option>{% endfor %}</select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Overall Result</label>
           <select name="overall_result" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             <option value="">Select</option><option>PASS</option><option>FAIL</option></select></div>
@@ -224,8 +243,10 @@
       </div>
     </section>
 
-    <div class="flex justify-end gap-3 pb-12">
+    <div class="flex items-center justify-end gap-3 pb-12">
+      <span id="autoSaveStatus" class="text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
       <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
+      <button type="button" id="draftBtn" class="px-6 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 shadow">Save as Draft</button>
       <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
     </div>
   </form>
@@ -245,25 +266,487 @@
   <td class="p-1"><input name="eq_serial[]" class="w-full px-2 py-1 border rounded"></td>
   <td class="p-1"><input type="date" name="eq_cal_due[]" class="w-full px-2 py-1 border rounded"></td>
   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
-<template id="tpl-line"><tr>
-  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-  <td class="p-1"><input name="line_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
-<template id="tpl-neutral"><tr>
-  {% for c in ['freq','qp','qp_limit','qp_margin','avg','avg_limit','avg_margin'] %}
-  <td class="p-1"><input name="neutral_{{ c }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-  <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td></tr></template>
+<!-- One Measurement Data record (a "Test"); JS clones it and swaps %%I%% for a unique index -->
+<template id="tpl-meas-record">
+<div class="meas-record border-2 border-gray-300 rounded-xl p-4 mb-5" data-idx="%%I%%">
+  <div class="flex items-start justify-between mb-3">
+    <div class="flex-1 mr-4">
+      <label class="block text-sm font-semibold text-gray-800 mb-1">Test label</label>
+      <input name="meas_label_%%I%%" placeholder="e.g. 230 V / 50 Hz, Normal mode, 0.15-30 MHz" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+      <input type="hidden" name="meas_index[]" value="%%I%%">
+    </div>
+    <button type="button" onclick="removeTest(this)" class="text-xs px-2 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 mt-6">Remove Test</button>
+  </div>
+  <div class="border border-gray-200 rounded-xl p-4 mb-4">
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
+      <input type="file" name="plot_line_%%I%%" accept="image/*" class="w-full text-sm">
+      <input type="text" name="plot_line_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+    </div>
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-gray-600">Table 1 - Line (Quasi-peak &amp; Average)</h3>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="importData('line%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
+        <button type="button" onclick="addRow('line%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border border-gray-200">
+      <thead class="bg-gray-50"><tr>
+        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
+        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
+      <tbody id="rows-line%%I%%"></tbody>
+    </table>
+    </div>
+  </div>
+  <div class="border border-gray-200 rounded-xl p-4">
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
+      <input type="file" name="plot_neutral_%%I%%" accept="image/*" class="w-full text-sm">
+      <input type="text" name="plot_neutral_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+    </div>
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-gray-600">Table 2 - Neutral (Quasi-peak &amp; Average)</h3>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="importData('neutral%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
+        <button type="button" onclick="addRow('neutral%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border border-gray-200">
+      <thead class="bg-gray-50"><tr>
+        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
+        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
+      <tbody id="rows-neutral%%I%%"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
+<style>
+  #previewBtn{position:fixed;right:24px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
+    padding:12px 20px;background:#059669;color:#fff;font-weight:600;border:none;border-radius:9999px;
+    box-shadow:0 10px 20px rgba(0,0,0,.25);cursor:pointer;font-size:15px;}
+  #previewBtn:hover{background:#047857;}
+  .ds-overlay{position:fixed;inset:0;z-index:1000;display:none;}
+  .ds-overlay.open{display:block;}
+  .ds-overlay.ds-cropz{z-index:1001;}
+  .ds-bg{position:absolute;inset:0;background:rgba(0,0,0,.55);}
+  .ds-center{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;}
+  .ds-center.mid{align-items:center;}
+  .ds-panel{position:relative;background:#f3f4f6;border-radius:12px;box-shadow:0 25px 50px rgba(0,0,0,.4);width:100%;max-width:920px;margin:24px 0;}
+  .ds-panel.narrow{max-width:760px;background:#fff;}
+  .ds-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid #e5e7eb;background:#fff;border-radius:12px 12px 0 0;position:sticky;top:0;}
+  .ds-head h3{font-weight:700;color:#111827;margin:0;font-size:16px;}
+  .ds-head p{font-size:11px;color:#6b7280;margin:2px 0 0;max-width:560px;}
+  .ds-doc{background:#fff;margin:0 auto;border:1px solid #e5e7eb;max-width:820px;padding:44px 48px;min-height:200px;}
+  .ds-b{padding:6px 12px;font-size:13px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;}
+  .ds-b.primary{background:#2563eb;color:#fff;border-color:#2563eb;}
+  .ds-b.green{background:#059669;color:#fff;border-color:#059669;}
+  .ds-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid #e5e7eb;}
+</style>
+
+<!-- Floating Preview button -->
+<button type="button" id="previewBtn">
+  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+  Preview
+</button>
+
+<!-- Preview modal -->
+<div id="previewModal" class="ds-overlay">
+  <div class="ds-bg" onclick="closePreview()"></div>
+  <div class="ds-center" onclick="if(event.target===this){closePreview();}">
+    <div class="ds-panel">
+      <div class="ds-head">
+        <div>
+          <h3>Document Preview</h3>
+          <p>Layout preview of the .docx with the data entered so far. Images are shown at their true document size &amp; fit.</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="ds-b primary" onclick="closePreview(); document.getElementById('genBtn').click();">Generate .docx</button>
+          <button type="button" class="ds-b" onclick="closePreview()">Close</button>
+        </div>
+      </div>
+      <div style="padding:20px;"><div id="previewDoc" class="ds-doc"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- (image editing handled by the shared Edit dialog: datasheet_gen/static/ds_image_editor.js) -->
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
-  function addRow(type) {
-    const tpl = document.getElementById('tpl-' + type);
-    document.getElementById('rows-' + type).appendChild(tpl.content.cloneNode(true));
+// Auto-save debounced function
+  var autoSaveTimeout = null;
+  function triggerAutoSave() {
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    
+    var statusEl = document.getElementById('autoSaveStatus');
+    if (statusEl) {
+      statusEl.textContent = 'Saving draft...';
+      statusEl.classList.remove('opacity-0');
+      statusEl.classList.add('opacity-100', 'text-gray-500');
+      statusEl.classList.remove('text-green-600', 'text-red-600');
+    }
+    
+    autoSaveTimeout = setTimeout(function() {
+      var form = document.getElementById('ceForm');
+      if (!form) return;
+      
+      fetch('/datasheet/ce/save-draft', {
+        method: 'POST',
+        body: new FormData(form)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res.success) {
+          if (statusEl) {
+            statusEl.textContent = 'Draft auto-saved';
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-green-600');
+            setTimeout(function() {
+              if (statusEl.textContent === 'Draft auto-saved') {
+                statusEl.classList.remove('opacity-100');
+                statusEl.classList.add('opacity-0');
+              }
+            }, 2000);
+          }
+        } else {
+          if (statusEl) {
+            statusEl.textContent = 'Failed to auto-save draft';
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-red-600');
+          }
+        }
+      })
+      .catch(function() {
+        if (statusEl) {
+          statusEl.textContent = 'Connection error (auto-save)';
+          statusEl.classList.remove('text-gray-500');
+          statusEl.classList.add('text-red-600');
+        }
+      });
+    }, 1500);
   }
+
+  var MEAS_COLS = ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'];
+  function isMeasKey(k){ return /^(line|neutral)/.test(k); }   // measurement group keys are line{i}/neutral{i}
+  // Build one 8-column measurement <tr> for group key (e.g. "line0"); values optional.
+  function makeMeasRow(grpKey, values) {
+    var tr = document.createElement('tr');
+    MEAS_COLS.forEach(function (c) {
+      var td = document.createElement('td');
+      td.className = 'p-1' + (c === 'avg_freq' ? ' border-l-2 border-gray-300' : '');
+      var inp = document.createElement('input');
+      inp.name = grpKey + '_' + c + '[]';
+      inp.className = 'w-full px-1 py-1 border rounded';
+      if (values && values[c] != null) inp.value = values[c];
+      td.appendChild(inp); tr.appendChild(td);
+    });
+    var td = document.createElement('td'); td.className = 'p-1';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'text-red-500'; b.textContent = '×';
+    b.onclick = function () { delRow(b); };
+    td.appendChild(b); tr.appendChild(td);
+    return tr;
+  }
+  function addRow(key) {
+    var tbody = document.getElementById('rows-' + key);
+    if (!tbody) return;
+    if (isMeasKey(key)) { tbody.appendChild(makeMeasRow(key)); triggerAutoSave(); return; }
+    var tpl = document.getElementById('tpl-' + key);          // mod / eq tables still use <template>
+    if (tpl) tbody.appendChild(tpl.content.cloneNode(true));
+    triggerAutoSave();
+  }
+  function uploadCSV(key) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const rows = parseCSV(evt.target.result);
+        if (rows.length === 0) return;
+        const tbody = document.getElementById('rows-' + key);
+        if (!tbody) return;
+        var meas = isMeasKey(key);
+        var tpl = meas ? null : document.getElementById('tpl-' + key);
+        if (!meas && !tpl) return;
+        let startIdx = 0;
+        const isHeader = rows[0].some(function (val) {
+          var v = (val || '').toLowerCase();
+          return v.includes('freq') || v.includes('state') || v.includes('equipment') ||
+                 v.includes('make') || v.includes('model') || v.includes('serial') ||
+                 v.includes('cal') || v.includes('date') || v.includes('qp') || v.includes('avg');
+        });
+        if (isHeader) startIdx = 1;
+        tbody.innerHTML = '';
+        for (let i = startIdx; i < rows.length; i++) {
+          const rowData = rows[i];
+          if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
+          if (meas) {
+            var vals = {};
+            MEAS_COLS.forEach(function (c, j) { vals[c] = (rowData[j] || '').trim(); });
+            tbody.appendChild(makeMeasRow(key, vals));
+          } else {
+            const clone = tpl.content.cloneNode(true);
+            const inputs = clone.querySelectorAll('input, select, textarea');
+            for (let j = 0; j < inputs.length; j++) if (j < rowData.length) inputs[j].value = rowData[j].trim();
+            tbody.appendChild(clone);
+          }
+        }
+        showMessage('CSV imported successfully!', 'success');
+        triggerAutoSave();
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  function parseCSV(text) {
+    const lines = [];
+    let row = [""];
+    let inQuotes = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      const next = text[i+1];
+      
+      if (c === '"') {
+        if (inQuotes && next === '"') {
+          row[row.length - 1] += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (c === ',' && !inQuotes) {
+        row.push("");
+      } else if ((c === '\r' || c === '\n') && !inQuotes) {
+        if (c === '\r' && next === '\n') {
+          i++; // Skip \n
+        }
+        lines.push(row);
+        row = [""];
+      } else {
+        row[row.length - 1] += c;
+      }
+    }
+    if (row.length > 1 || row[0] !== "") {
+      lines.push(row);
+    }
+    return lines;
+  }
+  // ---- Build a measurement table from a RAW instrument sweep (0.15-30 MHz) ----
+  // The uploaded CSV holds one row per measured frequency. For each CISPR sub-band
+  // we keep only the WORST case: the row with the max Q-peak (left half) and the row
+  // with the max Average (right half). 6 bands -> 6 rows. Separate button from the
+  // plain "Upload CSV" (which pastes rows verbatim).
+  const CE_SCAN_BANDS = [[0.15, 0.5], [0.5, 1], [1, 5], [5, 10], [10, 20], [20, 30]];
+
+  function scanNum(v) {
+    if (v == null) return null;
+    var t = String(v).replace(/−/g, '-').replace(/[^0-9eE.+-]/g, '');
+    if (t === '' || t === '-' || t === '+' || t === '.') return null;
+    var n = parseFloat(t);
+    return isNaN(n) ? null : n;
+  }
+  function scanStr(v) { return (v == null ? '' : String(v)).trim(); }
+
+  // Anchor columns Frequency / Q-peak / Average from the header; Limit & Margin are
+  // the two columns immediately after each. Falls back to the fixed instrument order:
+  // Frequency, QPeak, Limit, Delta, Avg, Limit, Delta.
+  function detectScanColumns(rows) {
+    var idx = { freq: 0, qp: 1, qp_limit: 2, qp_margin: 3, avg: 4, avg_limit: 5, avg_margin: 6 };
+    for (var r = 0; r < Math.min(rows.length, 6); r++) {
+      var f = -1, q = -1, a = -1;
+      for (var i = 0; i < rows[r].length; i++) {
+        var c = String(rows[r][i] || '').toLowerCase();
+        if (f < 0 && c.indexOf('freq') >= 0) f = i;
+        if (q < 0 && (c.indexOf('qpeak') >= 0 || c.indexOf('q-peak') >= 0 || c.indexOf('quasi') >= 0)) q = i;
+        if (a < 0 && (c.indexOf('avg') >= 0 || c.indexOf('average') >= 0)) a = i;
+      }
+      if (f >= 0 && q >= 0 && a >= 0) {
+        idx = { freq: f, qp: q, qp_limit: q + 1, qp_margin: q + 2, avg: a, avg_limit: a + 1, avg_margin: a + 2 };
+        break;
+      }
+    }
+    return idx;
+  }
+
+  function reduceRawScan(rows) {
+    if (!rows || !rows.length) throw new Error('The CSV file is empty.');
+    var col = detectScanColumns(rows);
+    // Keep numeric data rows only. Non-numeric frequency cells (the "Frequency",
+    // "55011bqp" and "[MHz]" header/label rows) are skipped automatically.
+    var data = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var fN = scanNum(r[col.freq]), qN = scanNum(r[col.qp]), aN = scanNum(r[col.avg]);
+      if (fN === null || (qN === null && aN === null)) continue;
+      data.push({
+        fN: fN, qN: qN, aN: aN,
+        freq: scanStr(r[col.freq]),
+        qp: scanStr(r[col.qp]), qp_limit: scanStr(r[col.qp_limit]), qp_margin: scanStr(r[col.qp_margin]),
+        avg: scanStr(r[col.avg]), avg_limit: scanStr(r[col.avg_limit]), avg_margin: scanStr(r[col.avg_margin])
+      });
+    }
+    if (!data.length) throw new Error('No numeric measurement rows found - check the CSV columns.');
+
+    var out = [];
+    for (var b = 0; b < CE_SCAN_BANDS.length; b++) {
+      var lo = CE_SCAN_BANDS[b][0], hi = CE_SCAN_BANDS[b][1], last = (b === CE_SCAN_BANDS.length - 1);
+      var qpRow = null, avRow = null;
+      for (var k = 0; k < data.length; k++) {
+        var d = data[k];
+        if (d.fN < lo || (last ? d.fN > hi : d.fN >= hi)) continue;
+        if (d.qN !== null && (qpRow === null || d.qN > qpRow.qN)) qpRow = d;
+        if (d.aN !== null && (avRow === null || d.aN > avRow.aN)) avRow = d;
+      }
+      out.push({
+        qp_freq: qpRow ? qpRow.freq : '', qp: qpRow ? qpRow.qp : '',
+        qp_limit: qpRow ? qpRow.qp_limit : '', qp_margin: qpRow ? qpRow.qp_margin : '',
+        avg_freq: avRow ? avRow.freq : '', avg: avRow ? avRow.avg : '',
+        avg_limit: avRow ? avRow.avg_limit : '', avg_margin: avRow ? avRow.avg_margin : ''
+      });
+    }
+    return out;
+  }
+
+  function fillMeasureRows(key, rows) {
+    var tbody = document.getElementById('rows-' + key);
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    rows.forEach(function (rd) { tbody.appendChild(makeMeasRow(key, rd)); });
+    if (!tbody.querySelectorAll('tr').length) tbody.appendChild(makeMeasRow(key));
+    triggerAutoSave();
+  }
+
+  function buildFromRawScan(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var reduced = reduceRawScan(parseCSV(evt.target.result));
+          var filled = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+          fillMeasureRows(key, reduced);
+          showMessage('Raw scan reduced to ' + filled + ' band row(s).', filled ? 'success' : 'error');
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not process the raw scan CSV.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  // Parse a tab-delimited instrument .TXT sweep into rows for reduceRawScan(). The file
+  // has a preamble before the column header (Frequency/QPeak/.../Avg/...), then data rows
+  // with a leading index column. Start at the header line so detectScanColumns finds the
+  // columns by name; split each line on TAB (falling back to whitespace).
+  function parseTXT(text) {
+    var lines = String(text).split(/\r\n|\r|\n/);
+    var h = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var lo = lines[i].toLowerCase();
+      if (lo.indexOf('freq') >= 0 && (lo.indexOf('qpeak') >= 0 || lo.indexOf('q-peak') >= 0 || lo.indexOf('mhz') >= 0)) { h = i; break; }
+    }
+    return lines.slice(h).map(function (line) {
+      return (line.indexOf('\t') >= 0) ? line.split('\t') : line.trim().split(/\s+/);
+    });
+  }
+
+  // Same as "Build from CSV" but for the instrument's raw .TXT export.
+  function buildFromRawTxt(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var reduced = reduceRawScan(parseTXT(evt.target.result));
+          var filled = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+          fillMeasureRows(key, reduced);
+          showMessage('Raw TXT reduced to ' + filled + ' band row(s).', filled ? 'success' : 'error');
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not process the raw TXT.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  // ONE button for all measurement-data imports: accepts CSV or TXT, and auto-detects
+  // whether it is a full instrument sweep (many rows -> reduce to worst-case per band) or
+  // an already-prepared 8-column table (few rows -> load as-is).
+  function importData(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var text = evt.target.result;
+          var isTab = /\.txt$/i.test(file.name) || (text.indexOf('\t') >= 0 && text.indexOf(',') < 0);
+          var rows = isTab ? parseTXT(text) : parseCSV(text);
+          if (!rows.length) throw new Error('The file is empty.');
+          var col = detectScanColumns(rows), numeric = 0;
+          for (var i = 0; i < rows.length; i++) {
+            if (scanNum(rows[i][col.freq]) !== null && (scanNum(rows[i][col.qp]) !== null || scanNum(rows[i][col.avg]) !== null)) numeric++;
+          }
+          if (numeric > 15) {                       // raw sweep -> reduce to 6 band rows
+            var reduced = reduceRawScan(rows);
+            fillMeasureRows(key, reduced);
+            var got = reduced.filter(function (r) { return r.qp !== '' || r.avg !== ''; }).length;
+            showMessage('Imported sweep → ' + got + ' band row(s).', got ? 'success' : 'error');
+          } else {                                  // prepared 8-column table -> load as-is
+            var tb = document.getElementById('rows-' + key);
+            if (!tb) return;
+            var isHeader = rows[0].some(function (v) { var s = (v || '').toLowerCase(); return s.indexOf('freq') >= 0 || s.indexOf('q-peak') >= 0 || s.indexOf('qp') >= 0 || s.indexOf('avg') >= 0; });
+            tb.innerHTML = '';
+            var n = 0;
+            for (var r = isHeader ? 1 : 0; r < rows.length; r++) {
+              var rd = rows[r];
+              if (!rd.length || (rd.length === 1 && (rd[0] || '') === '')) continue;
+              var vals = {};
+              MEAS_COLS.forEach(function (c, j) { vals[c] = (rd[j] || '').trim(); });
+              tb.appendChild(makeMeasRow(key, vals)); n++;
+            }
+            if (!tb.querySelectorAll('tr').length) tb.appendChild(makeMeasRow(key));
+            showMessage('Imported ' + n + ' row(s).', n ? 'success' : 'error');
+          }
+          triggerAutoSave();
+        } catch (err) {
+          showMessage(err && err.message ? err.message : 'Could not import the file.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
   function delRow(btn) {
     const tbody = btn.closest('tbody');
-    if (tbody.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+    if (tbody.querySelectorAll('tr').length > 1) {
+      btn.closest('tr').remove();
+      triggerAutoSave();
+    }
   }
   document.getElementById('ceForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -283,5 +766,383 @@
       })
       .catch(() => { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
   });
+
+  document.getElementById('draftBtn').addEventListener('click', function () {
+    const btn = this, orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving...';
+    fetch('/datasheet/ce/save-draft', { method: 'POST', body: new FormData(document.getElementById('ceForm')) })
+      .then(r => r.json())
+      .then(res => {
+        btn.disabled = false; btn.textContent = orig;
+        showMessage(res.success ? 'Draft saved — you can continue later.' : (res.message || 'Failed to save draft.'),
+                    res.success ? 'success' : 'error');
+      })
+      .catch(() => { btn.disabled = false; btn.textContent = orig; showMessage('Network error.', 'error'); });
+  });
+
+  /* =========================================================================
+     Document Preview + built-in image cropper (DOM-driven, no dependencies)
+     ========================================================================= */
+  var DS_TCO = {{ tco_id|tojson }};
+  var PXMM = 2.6;
+  var originalFiles = {};
+
+  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':String(s)); return d.innerHTML; }
+  function cssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s; }
+  function pretty(n){ return (n||'').replace(/_/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}); }
+
+  // Mirror datasheet_gen/generator._IMAGE_BOXES (aspect box the .docx fits images into)
+  function imageBoxMM(key){
+    var k=(key||'').toLowerCase();
+    if (k.indexOf('sign')>=0) return [40,20];
+    if (k.indexOf('photo')>=0) return [140,90];
+    return [150,90];                     // plot_line / plot_neutral / default
+  }
+  function inputByName(key){ return document.querySelector('[name="'+cssEsc(key)+'"]'); }
+  function imgFileFor(key){ var el=inputByName(key); return (el && el.files && el.files[0]) ? el.files[0] : null; }
+
+  function kv(label,val,block){
+    var d=document.createElement('div'); d.style.cssText='font-size:12px;margin:3px 0;';
+    d.innerHTML='<span style="font-weight:600;">'+esc(label)+':</span> ';
+    var v=document.createElement('span'); v.style.whiteSpace=block?'pre-wrap':'normal';
+    v.textContent=(val && String(val).trim()!=='') ? val : '—';
+    d.appendChild(v); return d;
+  }
+  function renderPreviewImage(key,label){
+    var box=imageBoxMM(key), w=Math.round(box[0]*PXMM), h=Math.round(box[1]*PXMM);
+    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
+    var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:4px;'; lbl.textContent=label||key; wrap.appendChild(lbl);
+    var frame=document.createElement('div');
+    frame.style.cssText='border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    var file=imgFileFor(key);
+    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); }
+    else { var ph=document.createElement('div'); ph.style.cssText='color:#94a3b8;font-size:11px;'; ph.textContent='(no image uploaded)'; frame.appendChild(ph); }
+    wrap.appendChild(frame);
+    var cap=document.createElement('div'); cap.style.cssText='font-size:10px;color:#64748b;margin-top:2px;'; cap.textContent='Document size: '+box[0]+' × '+box[1]+' mm'; wrap.appendChild(cap);
+    if (file){
+      var actions=document.createElement('div'); actions.style.marginTop='5px';
+      var cropBtn=document.createElement('button'); cropBtn.type='button';
+      cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
+      cropBtn.textContent='✎ Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
+      actions.appendChild(cropBtn);
+      if (originalFiles[key]){
+        var resetBtn=document.createElement('button'); resetBtn.type='button';
+        resetBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
+        resetBtn.textContent='↺ Reset'; resetBtn.onclick=function(){ resetImage(key); };
+        actions.appendChild(resetBtn);
+      }
+      wrap.appendChild(actions);
+    }
+    return wrap;
+  }
+  // Inline thumbnail shown right under each image picker as soon as a file is chosen.
+  function renderInlineThumb(key){
+    var holder=document.getElementById('inlinethumb-'+key);
+    if(!holder) return;
+    holder.innerHTML='';
+    var file=imgFileFor(key);
+    if(!file) return;
+    var box=imageBoxMM(key);
+    var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
+    var frame=document.createElement('div');
+    frame.style.cssText='display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+    var img=document.createElement('img');
+    img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;';
+    img.src=URL.createObjectURL(file);
+    frame.appendChild(img); wrap.appendChild(frame);
+    var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;';
+    meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document';
+    wrap.appendChild(meta);
+    var actions=document.createElement('div'); actions.style.marginTop='5px';
+    var editBtn=document.createElement('button'); editBtn.type='button';
+    editBtn.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
+    editBtn.textContent='✎ Edit / Crop'; editBtn.onclick=function(){ openImageEditor(key); };
+    actions.appendChild(editBtn);
+    if(originalFiles[key] && originalFiles[key]!==file){
+      var rb=document.createElement('button'); rb.type='button';
+      rb.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
+      rb.textContent='↺ Reset'; rb.onclick=function(){ resetImage(key); };
+      actions.appendChild(rb);
+    }
+    wrap.appendChild(actions);
+    holder.appendChild(wrap);
+  }
+  function renderDomTable(t){
+    var ths=Array.prototype.slice.call(t.querySelectorAll('thead th')).map(function(x){return x.textContent.trim();});
+    if (ths.length && ths[ths.length-1]==='') ths.pop();
+    var rows=[];
+    Array.prototype.slice.call(t.querySelectorAll('tbody tr')).forEach(function(tr){
+      var vals=[];
+      Array.prototype.slice.call(tr.children).forEach(function(td){
+        if (td.querySelector('button')) return;               // actions cell
+        var ctrl=td.querySelector('input, select, textarea');
+        vals.push(ctrl ? ctrl.value.trim() : td.textContent.trim());
+      });
+      if (vals.some(function(v){return v!=='';})) rows.push(vals);
+    });
+    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
+    var tb=document.createElement('table'); tb.style.cssText='border-collapse:collapse;width:100%;font-size:11px;';
+    var head='<tr>'+ths.map(function(h){return '<th style="border:1px solid #999;padding:3px;background:#f3f4f6;text-align:left;">'+esc(h)+'</th>';}).join('')+'</tr>';
+    var body=rows.map(function(r){return '<tr>'+r.map(function(v){return '<td style="border:1px solid #999;padding:3px;">'+esc(v)+'</td>';}).join('')+'</tr>';}).join('');
+    if (!rows.length) body='<tr><td colspan="'+Math.max(ths.length,1)+'" style="border:1px solid #999;padding:6px;color:#999;text-align:center;">(no rows entered)</td></tr>';
+    tb.innerHTML=head+body; wrap.appendChild(tb); return wrap;
+  }
+  function buildPreview(){
+    var doc=document.getElementById('previewDoc'); doc.innerHTML='';
+    var head=document.createElement('div');
+    head.innerHTML='<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px;">'
+      +'<div style="font-size:18px;font-weight:700;">CE Test Data Sheet</div>'
+      +'<div style="font-size:12px;color:#555;">IEC-FRM-504 &middot; TCO '+esc(DS_TCO)+'</div></div>';
+    doc.appendChild(head);
+    document.querySelectorAll('#ceForm section').forEach(function(sec){
+      var secEl=document.createElement('div');
+      var h2=sec.querySelector('h2');
+      var title=document.createElement('div'); title.style.cssText='font-weight:700;font-size:14px;margin:14px 0 6px;'; title.textContent=h2?h2.textContent.trim():''; secEl.appendChild(title);
+      // scalar fields: a <label> paired with an input(non-file)/select in the same wrapper, not inside a table
+      sec.querySelectorAll('label').forEach(function(lbl){
+        var ctrl=lbl.parentElement.querySelector('input:not([type=file]), select');
+        if (ctrl && !ctrl.closest('table')) secEl.appendChild(kv(lbl.textContent.trim(), ctrl.value, false));
+      });
+      // textareas (deviation / test procedure have no <label>)
+      sec.querySelectorAll('textarea').forEach(function(ta){
+        var lbl=ta.parentElement.querySelector('label');
+        secEl.appendChild(kv(lbl?lbl.textContent.trim():pretty(ta.name), ta.value, true));
+      });
+      // images
+      sec.querySelectorAll('input[type=file]').forEach(function(f){
+        var lbl=f.parentElement.querySelector('label');
+        secEl.appendChild(renderPreviewImage(f.name, lbl?lbl.textContent.trim():f.name));
+      });
+      // tables
+      sec.querySelectorAll('table').forEach(function(t){ secEl.appendChild(renderDomTable(t)); });
+      doc.appendChild(secEl);
+    });
+  }
+  function openPreview(){ buildPreview(); document.getElementById('previewModal').classList.add('open'); }
+  function closePreview(){ document.getElementById('previewModal').classList.remove('open'); }
+
+  /* ---- set / reset the underlying file input ---- */
+  function setInputFile(key,file){
+    var el=inputByName(key); if(!el) return;
+    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
+    catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
+  }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
+
+  /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
+  // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
+  // can reframe / select a different portion of the full image.
+  function openImageEditor(key){
+    var orig=originalFiles[key]||imgFileFor(key); if(!orig){ showMessage('Upload an image first.','error'); return; }
+    if(!originalFiles[key]) originalFiles[key]=orig;
+    if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
+    DSImageEditor.open({
+      file:orig, boxMM:imageBoxMM(key),
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
+    });
+  }
+
+  // Conform a freshly-picked image to its document-slot ratio immediately, keeping
+  // the raw upload (in originalFiles) so Edit can still reframe a different portion.
+  // Falls back to the raw file if the editor isn't available.
+  function autoFitUpload(key){
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); triggerAutoSave(); return; }
+    var raw=el.files[0]; originalFiles[key]=raw;
+    if(window.DSImageEditor && DSImageEditor.autoFit){
+      DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
+        if(fitted && fitted!==raw) setInputFile(key, fitted);
+        renderInlineThumb(key);
+        triggerAutoSave();
+      }});
+    } else {
+      renderInlineThumb(key);
+      triggerAutoSave();
+    }
+  }
+
+  // Wire an image <input type=file>: inline-preview holder + change handler. Used for the
+  // fixed images (func/photo/signature) on load and for each Test's plots as they're added.
+  function wireImageInput(el){
+    if (el.dataset.wired) return; el.dataset.wired = '1';
+    var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
+    el.insertAdjacentElement('afterend', holder);
+    el.addEventListener('change', function(){ autoFitUpload(el.name); });   // auto-fit to the doc slot on upload
+  }
+
+  // ---- Measurement Data: repeatable Test records (each = label + Line + Neutral) ----
+  var measSeq = 0;   // stable, ever-incrementing record index (survives deletions)
+  function addTest(label, data){
+    var idx = measSeq++;
+    var tpl = document.getElementById('tpl-meas-record');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML.replace(/%%I%%/g, idx).trim();
+    var block = wrap.firstElementChild;
+    document.getElementById('meas-records').appendChild(block);
+    if (data && data.line_rows && data.line_rows.length) fillMeasureRows('line' + idx, data.line_rows); else addRow('line' + idx);
+    if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
+    if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
+    block.querySelectorAll('input[type=file]').forEach(wireImageInput);
+    triggerAutoSave();
+    return block;
+  }
+  // Task: split "EUT Input Voltage & Frequency" (';'-separated conditions) into one
+  // Measurement Test per condition, using each value as that Test's label.
+  function generateTestsFromVoltages(){
+    var el = document.querySelector('[name="eut_voltage_frequency"]');
+    var parts = (el ? el.value : '').split(/[;\n]/).map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+    if (!parts.length) { showMessage("Fill 'EUT Input Voltage & Frequency' first (separate conditions with ';').", 'error'); return; }
+    var container = document.getElementById('meas-records');
+    if (!container) return;
+    var hasData = Array.prototype.some.call(
+      container.querySelectorAll('input:not([type=file]):not([type=hidden])'),
+      function (x) { return (x.value || '').trim() !== ''; });
+    if (hasData && !confirm('Replace the current Measurement Data Tests with ' + parts.length + ' generated from the EUT voltages?')) return;
+    container.innerHTML = '';
+    parts.forEach(function (label) { addTest(label); });
+    showMessage('Generated ' + parts.length + ' Test' + (parts.length > 1 ? 's' : '') + ' from EUT voltages.', 'success');
+  }
+  function removeTest(btn){
+    if (document.querySelectorAll('#meas-records .meas-record').length > 1) {
+      btn.closest('.meas-record').remove();
+      triggerAutoSave();
+    }
+    else showMessage('At least one Test is required.', 'error');
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
+    var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
+    document.getElementById('previewBtn').addEventListener('click', openPreview);
+    document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
+    addTest();   // start with one empty Measurement Data Test
+
+    // Wire up event listeners for input/change for auto-saving
+    var formEl = document.getElementById('ceForm');
+    if (formEl) {
+      formEl.addEventListener('input', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          if (e.target.type !== 'file') {
+            triggerAutoSave();
+          }
+        }
+      });
+      formEl.addEventListener('change', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          // finished editing EUT Input Voltage & Frequency (value changed + focus left) -> rebuild the Tests from it
+          if (e.target.name === 'eut_voltage_frequency') generateTestsFromVoltages();
+          triggerAutoSave();
+        }
+      });
+    }
+  });
+</script>
+<script>
+/* CE field linkages (DS504): live behaviour on top of the server-side prefill. */
+(function(){
+  function q(name){ return document.querySelector('[name="'+name+'"]'); }
+  function val(name){ var e=q(name); return e?e.value:''; }
+  function setVal(name,v){ var e=q(name); if(e) e.value=v; }
+
+  // Section 4 EUT Modification State <- the latest (current) row of the EUT Modification
+  // Record. Auto-fills as a default only; once the user edits the field, their value wins.
+  var modStateEdited = false;
+  function syncModState(){
+    if(modStateEdited) return;                 // user overrode it -> leave their value alone
+    var last='';
+    document.querySelectorAll('input[name="mod_state[]"]').forEach(function(el){
+      var v=(el.value||'').trim();
+      if(v) last=v;                            // keep the last non-empty state = current mod level
+    });
+    setVal('eut_modification_state', last);
+  }
+
+  // Section 6 Test Limits + Section 12 Result Class <- Classification - Class
+  var CE_LIMITS={
+    A:{limit_qp_015_050:'79',   limit_avg_015_050:'66',   limit_qp_050_5:'73', limit_avg_050_5:'60', limit_qp_5_30:'73', limit_avg_5_30:'60'},
+    B:{limit_qp_015_050:'66-56',limit_avg_015_050:'56-46',limit_qp_050_5:'56', limit_avg_050_5:'46', limit_qp_5_30:'60', limit_avg_5_30:'50'}
+  };
+  function classLetter(){
+    var v=(val('classification_class')||'').toUpperCase();
+    if(v.indexOf('B')>=0) return 'B';
+    if(v.indexOf('A')>=0) return 'A';
+    return '';
+  }
+  function applyLimits(){
+    var L=CE_LIMITS[classLetter()]; if(!L) return;
+    Object.keys(L).forEach(function(k){ setVal(k, L[k]); });
+  }
+  function syncResultClass(){ setVal('result_class', classLetter()); }
+
+  // Section 3 Basic Standard <- Section 2 Product Standard (DS504 derivation)
+  // Map EACH product standard (a request may cite several, ';'-joined) to its basic
+  // standard and return the DISTINCT set joined. Mirrors service.basic_standard_for.
+  function deriveBasic(ps){
+    var MAP=[['en61326','EN 55011:2016+A2:2021'],['iec61326','CISPR 11:2015+A1:2016+A2:2019'],
+             ['ices','CISPR 11:2015+A1:2016+A2:2019'],['part15','ANSI C63.4:2024'],
+             ['cfr','ANSI C63.4:2024'],['fcc','ANSI C63.4:2024'],
+             ['en55011','EN 55011:2016+A2:2021'],['cispr11','CISPR 11:2015+A1:2016+A2:2019'],
+             ['c634','ANSI C63.4:2024']];
+    var out=[];
+    (ps||'').split(/[;\n]+/).forEach(function(part){
+      var k=part.toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(!k) return;
+      for(var i=0;i<MAP.length;i++){
+        if(k.indexOf(MAP[i][0])>=0){ if(out.indexOf(MAP[i][1])<0) out.push(MAP[i][1]); break; }
+      }
+    });
+    return out.join('; ');
+  }
+  // Section 7 Test Procedure (read-only): top line names the basic standard;
+  // EUT height is 0.1m (Tabletop) / 0.8m (Floor standing).
+  var PROC="The test procedure was in accordance with {S}.\n\n"+
+    "The EUT was placed on {SURFACE} at {H} height. "+
+    "The EUT was tested at the conducted emissions test site with a horizontal ground reference "+
+    "plane and a vertical ground reference plane bonded together. The power supply to the EUT and "+
+    "auxiliary equipment was fed through LISN.\n\nLISN (Voltage Method):\nThe conducted emission was "+
+    "measured through the 50 Ω RF port of the LISN using an EMI receiver carried out in FFT mode, "+
+    "and conducted emission from the EUT coupled through the Power (mains) port was plotted in the "+
+    "graph. The dominant peaks at various frequencies, closer to and/or above the limit line, were "+
+    "identified and listed. Quasi-peak and Average measured frequencies are compared with the limit "+
+    "specified in the standard.";
+  function setProcedure(){
+    var cfg=(val('eut_configuration')||'').toLowerCase();
+    var basic=(val('basic_standard')||'').trim() || 'the applicable basic standard';
+    var isFloor=cfg.indexOf('floor')>=0;   // Tabletop -> wooden table @0.8m ; Floor -> insulation support @0.1m
+    var txt=PROC.replace('{S}', basic)
+                .replace('{SURFACE}', isFloor ? 'an insulation support' : 'a wooden table')
+                .replace('{H}', isFloor ? '0.1m' : '0.8m');
+    var hid=document.getElementById('test_procedure');       if(hid)  hid.value=txt;          // submitted value (plain)
+    var view=document.getElementById('test_procedure_view');
+    if(view){                                                                                 // read-only display
+      var esc=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      esc=esc.replace('LISN (Voltage Method):','<strong>LISN (Voltage Method):</strong>');    // bold header
+      view.innerHTML=esc;                                                                     // white-space:pre-line keeps breaks
+    }
+  }
+  function syncBasicStandard(){
+    var b=deriveBasic(val('product_standard'));
+    if(b) setVal('basic_standard', b);   // derive when recognised; otherwise leave editable value
+    setProcedure();                      // procedure top line follows the basic standard
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    syncModState();
+    var modBody=document.getElementById('rows-mod');
+    if(modBody){
+      modBody.addEventListener('input', function(e){ if(e.target && e.target.name==='mod_state[]') syncModState(); });
+      new MutationObserver(syncModState).observe(modBody, {childList:true});
+    }
+    var mstate=q('eut_modification_state');
+    if(mstate) mstate.addEventListener('input', function(){ modStateEdited=true; });   // a manual edit takes over
+    var cls=q('classification_class');
+    if(cls) cls.addEventListener('change', function(){ applyLimits(); syncResultClass(); });
+    var cfg=q('eut_configuration');
+    if(cfg) cfg.addEventListener('change', setProcedure);
+    var ps=q('product_standard');
+    if(ps) ps.addEventListener('input', syncBasicStandard);   // Basic Standard + procedure follow Product Standard
+    syncBasicStandard();   // also derive once on load: keeps Basic Standard consistent with Product Standard
+                           // even when a stale saved draft carried an old value (e.g. "Sysmex")
+  });
+})();
 </script>
 {% endblock %}

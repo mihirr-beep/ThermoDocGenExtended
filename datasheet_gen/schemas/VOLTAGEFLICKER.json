@@ -20,22 +20,26 @@
             {
               "key": "job_number",
               "label": "Job Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_name",
               "label": "EUT Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_model_sku_number",
               "label": "EUT Model/SKU Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_serial_number",
               "label": "EUT Serial Number",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -77,12 +81,14 @@
             {
               "key": "name_of_the_test",
               "label": "Name of the Test",
-              "input": "text"
+              "input": "text",
+              "default": "Measurement Uncertainty"
             },
             {
               "key": "voltage_fluctuation_and_flicker_emission",
               "label": "Voltage Fluctuation and Flicker Emission",
-              "input": "text"
+              "input": "text",
+              "default": "± 3.686%"
             }
           ]
         }
@@ -112,62 +118,80 @@
             {
               "key": "product_standard",
               "label": "Product Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "basic_standard",
               "label": "Basic Standard",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "short_term_flicker_measurement_time",
               "label": "Short Term Flicker Measurement Time (Pst)",
-              "input": "text"
+              "input": "text",
+              "default": "10 minutes"
             },
             {
               "key": "long_term_flicker_measurement_time",
               "label": "Long Term Flicker Measurement Time (Plt)",
-              "input": "text"
+              "input": "text",
+              "default": "120 minutes"
             },
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "eut_modification_state",
               "label": "EUT Modification state (Refer 1.2)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "eut_configuration",
-              "label": "EUT Configuration",
-              "input": "text"
+              "key": "eut_configuration_col_1",
+              "label": "EUT Configuration (Col 2)",
+              "input": "text",
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_configuration_col_2",
+              "label": "EUT Configuration (Col 3)",
+              "input": "text",
+              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
               "label": "EUT Input Voltage & Frequency",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "ambient_temperature",
               "label": "Ambient Temperature (°C)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "relative_humidity",
               "label": "Relative Humidity (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "test_date",
               "label": "Test Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tested_by",
               "label": "Tested by",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -192,32 +216,38 @@
             {
               "key": "flicker_measurement",
               "label": "Flicker Measurement",
-              "input": "text"
+              "input": "text",
+              "default": "Limit"
             },
             {
               "key": "pst",
               "label": "Pst",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "plt",
               "label": "Plt",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "tmax",
               "label": "Tmax (s)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "dmax",
               "label": "dmax (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "dc",
               "label": "dc (%)",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -229,7 +259,8 @@
         {
           "type": "textarea",
           "key": "test_procedure",
-          "label": "Test Procedure"
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was placed on a wooden table/insulation support of 0.8/0.1m height. The power supply to the EUT was fed through a clean AС source. The AC power source is in series with reference impedance network as specified in the standard. The software acquires the data from the signal conditioning unit and the voltage fluctuations and flicker emissions has compared with the limit specified in the standard."
         }
       ]
     },
@@ -240,34 +271,76 @@
           "type": "fields",
           "fields": [
             {
-              "key": "flicker_measurement_2",
-              "label": "Flicker Measurement",
-              "input": "text"
+              "key": "flicker_measurement_col_1",
+              "label": "Flicker Measurement (Col 2)",
+              "input": "text",
+              "default": "Measured Value"
             },
             {
-              "key": "pst_2",
-              "label": "Pst",
-              "input": "text"
+              "key": "flicker_measurement_col_2",
+              "label": "Flicker Measurement (Col 3)",
+              "input": "text",
+              "default": "Limit"
             },
             {
-              "key": "plt_2",
-              "label": "Plt",
-              "input": "text"
+              "key": "pst_col_1",
+              "label": "Pst (Col 2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "tmax_2",
-              "label": "Tmax (s)",
-              "input": "text"
+              "key": "pst_col_2",
+              "label": "Pst (Col 3)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "dmax_2",
-              "label": "dmax (%)",
-              "input": "text"
+              "key": "plt_col_1",
+              "label": "Plt (Col 2)",
+              "input": "text",
+              "default": ""
             },
             {
-              "key": "dc_2",
-              "label": "dc (%)",
-              "input": "text"
+              "key": "plt_col_2",
+              "label": "Plt (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "tmax_col_1",
+              "label": "Tmax (s) (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "tmax_col_2",
+              "label": "Tmax (s) (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "dmax_col_1",
+              "label": "dmax (%) (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "dmax_col_2",
+              "label": "dmax (%) (Col 3)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "dc_col_1",
+              "label": "dc (%) (Col 2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "dc_col_2",
+              "label": "dc (%) (Col 3)",
+              "input": "text",
+              "default": ""
             }
           ]
         }
@@ -340,24 +413,37 @@
           "type": "fields",
           "fields": [
             {
-              "key": "tested_by_2",
-              "label": "Tested By",
-              "input": "text"
-            },
+              "key": "overall_result",
+              "label": "Overall Result",
+              "input": "text",
+              "options": [
+                "PASS",
+                "FAIL"
+              ],
+              "default": ""
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
             {
               "key": "name",
               "label": "Name",
-              "input": "text"
+              "input": "text",
+              "default": ""
             },
             {
               "key": "signature",
               "label": "Signature",
-              "input": "image"
+              "input": "image",
+              "default": ""
             },
             {
               "key": "date",
               "label": "Date",
-              "input": "text"
+              "input": "text",
+              "default": ""
             }
           ]
         }
