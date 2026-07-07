@@ -64,23 +64,14 @@ def _match(value, option):
 
 
 def _box_run(checked, size=22):
-    """The checkbox glyph. When checked, negative character spacing pulls the
-    following tick run back over the box so the tick is drawn ON the box."""
-    spacing = '<w:spacing w:val="-185"/>' if checked else ""
+    """The checkbox glyph. Uses a single run with ballot box characters."""
+    color = '<w:color w:val="1F3C88"/>' if checked else ""
+    char = "☒" if checked else "☐"
     return (
         '<w:r><w:rPr>'
         '<w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol" w:cs="Segoe UI Symbol"/>'
-        f'{spacing}<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
-        '</w:rPr><w:t xml:space="preserve">☐</w:t></w:r>'
-    )
-
-
-def _tick_run():
-    """A pen-blue Wingdings tick, slightly larger and raised — looks hand-drawn."""
-    return (
-        '<w:r><w:rPr><w:b/><w:color w:val="1F3C88"/>'
-        '<w:sz w:val="26"/><w:szCs w:val="26"/><w:position w:val="4"/>'
-        '</w:rPr><w:sym w:font="Wingdings" w:char="F0FC"/></w:r>'
+        f'{color}<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+        f'</w:rPr><w:t xml:space="preserve">{char}</w:t></w:r>'
     )
 
 
@@ -92,7 +83,7 @@ def _label_run(text, size=22):
 
 
 def human_checkbox(value, options, size=22):
-    """Render options as checkboxes with a human-looking tick on the selected one.
+    """Render options as checkboxes with a human-looking cross on the selected one.
 
     Returns a RunsXml for a `{{r key }}` placeholder. With no/unknown value all
     boxes stay empty (like the blank paper form).
@@ -101,8 +92,6 @@ def human_checkbox(value, options, size=22):
     for i, opt in enumerate(options):
         checked = _match(value, str(opt))
         rt.add(_box_run(checked, size))
-        if checked:
-            rt.add(_tick_run())
         sep = "    " if i < len(options) - 1 else ""
         rt.add(_label_run(" " + str(opt) + sep, size))
     return rt

@@ -237,7 +237,8 @@
       </div>
     </section>
 
-    <div class="flex justify-end gap-3 pb-12">
+    <div class="flex items-center justify-end gap-3 pb-12">
+      <span id="autoSaveStatus" class="text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
       <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
       <button type="button" id="draftBtn" class="px-6 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 shadow">Save as Draft</button>
       <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Generate Datasheet</button>
@@ -373,6 +374,59 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script>
+// Auto-save debounced function
+  var autoSaveTimeout = null;
+  function triggerAutoSave() {
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    
+    var statusEl = document.getElementById('autoSaveStatus');
+    if (statusEl) {
+      statusEl.textContent = 'Saving draft...';
+      statusEl.classList.remove('opacity-0');
+      statusEl.classList.add('opacity-100', 'text-gray-500');
+      statusEl.classList.remove('text-green-600', 'text-red-600');
+    }
+    
+    autoSaveTimeout = setTimeout(function() {
+      var form = document.getElementById('ceForm');
+      if (!form) return;
+      
+      fetch('/datasheet/ce/save-draft', {
+        method: 'POST',
+        body: new FormData(form)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res.success) {
+          if (statusEl) {
+            statusEl.textContent = 'Draft auto-saved';
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-green-600');
+            setTimeout(function() {
+              if (statusEl.textContent === 'Draft auto-saved') {
+                statusEl.classList.remove('opacity-100');
+                statusEl.classList.add('opacity-0');
+              }
+            }, 2000);
+          }
+        } else {
+          if (statusEl) {
+            statusEl.textContent = 'Failed to auto-save draft';
+            statusEl.classList.remove('text-gray-500');
+            statusEl.classList.add('text-red-600');
+          }
+        }
+      })
+      .catch(function() {
+        if (statusEl) {
+          statusEl.textContent = 'Connection error (auto-save)';
+          statusEl.classList.remove('text-gray-500');
+          statusEl.classList.add('text-red-600');
+        }
+      });
+    }, 1500);
+  }
+
   var MEAS_COLS = ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'];
   function isMeasKey(k){ return /^(line|neutral)/.test(k); }   // measurement group keys are line{i}/neutral{i}
   // Build one 8-column measurement <tr> for group key (e.g. "line0"); values optional.
@@ -396,9 +450,10 @@
   function addRow(key) {
     var tbody = document.getElementById('rows-' + key);
     if (!tbody) return;
-    if (isMeasKey(key)) { tbody.appendChild(makeMeasRow(key)); return; }
+    if (isMeasKey(key)) { tbody.appendChild(makeMeasRow(key)); triggerAutoSave(); return; }
     var tpl = document.getElementById('tpl-' + key);          // mod / eq tables still use <template>
     if (tpl) tbody.appendChild(tpl.content.cloneNode(true));
+    triggerAutoSave();
   }
   function uploadCSV(key) {
     const input = document.createElement('input');
@@ -440,6 +495,7 @@
           }
         }
         showMessage('CSV imported successfully!', 'success');
+        triggerAutoSave();
       };
       reader.readAsText(file);
     };
@@ -561,6 +617,7 @@
     tbody.innerHTML = '';
     rows.forEach(function (rd) { tbody.appendChild(makeMeasRow(key, rd)); });
     if (!tbody.querySelectorAll('tr').length) tbody.appendChild(makeMeasRow(key));
+    triggerAutoSave();
   }
 
   function buildFromRawScan(key) {
@@ -588,7 +645,10 @@
 
   function delRow(btn) {
     const tbody = btn.closest('tbody');
-    if (tbody.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+    if (tbody.querySelectorAll('tr').length > 1) {
+      btn.closest('tr').remove();
+      triggerAutoSave();
+    }
   }
   document.getElementById('ceForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -769,7 +829,7 @@
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
@@ -780,7 +840,7 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); }
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
 
@@ -788,14 +848,18 @@
   // the raw upload (in originalFiles) so Edit can still reframe a different portion.
   // Falls back to the raw file if the editor isn't available.
   function autoFitUpload(key){
-    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); triggerAutoSave(); return; }
     var raw=el.files[0]; originalFiles[key]=raw;
     if(window.DSImageEditor && DSImageEditor.autoFit){
       DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
         if(fitted && fitted!==raw) setInputFile(key, fitted);
         renderInlineThumb(key);
+        triggerAutoSave();
       }});
-    } else { renderInlineThumb(key); }
+    } else {
+      renderInlineThumb(key);
+      triggerAutoSave();
+    }
   }
 
   // Wire an image <input type=file>: inline-preview holder + change handler. Used for the
@@ -820,10 +884,14 @@
     if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
     if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
     block.querySelectorAll('input[type=file]').forEach(wireImageInput);
+    triggerAutoSave();
     return block;
   }
   function removeTest(btn){
-    if (document.querySelectorAll('#meas-records .meas-record').length > 1) btn.closest('.meas-record').remove();
+    if (document.querySelectorAll('#meas-records .meas-record').length > 1) {
+      btn.closest('.meas-record').remove();
+      triggerAutoSave();
+    }
     else showMessage('At least one Test is required.', 'error');
   }
 
@@ -833,6 +901,23 @@
     document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
     addTest();   // start with one empty Measurement Data Test
+
+    // Wire up event listeners for input/change for auto-saving
+    var formEl = document.getElementById('ceForm');
+    if (formEl) {
+      formEl.addEventListener('input', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          if (e.target.type !== 'file') {
+            triggerAutoSave();
+          }
+        }
+      });
+      formEl.addEventListener('change', function(e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+          triggerAutoSave();
+        }
+      });
+    }
   });
 </script>
 <script>
