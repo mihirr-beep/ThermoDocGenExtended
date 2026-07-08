@@ -8,10 +8,10 @@ from models import db, PlannerEntry
 
 app = create_app()
 with app.app_context():
-    # 1. Unsubmit all planner entries for CE and RE
+    # 1. Unsubmit all planner entries for CE, RE, and Harmonic
     try:
         entries = PlannerEntry.query.filter(
-            PlannerEntry.test_name.in_(['CE', 'RE', 'ce', 're'])
+            PlannerEntry.test_name.in_(['CE', 'RE', 'Harmonic', 'ce', 're', 'harmonic', 'HARMONIC'])
         ).all()
         
         unsubmitted_count = 0
@@ -25,30 +25,30 @@ with app.app_context():
                 unsubmitted_count += 1
                 
         db.session.commit()
-        print(f"Successfully reset {unsubmitted_count} submitted CE/RE planner entries back to 'in_progress' status.")
+        print(f"Successfully reset {unsubmitted_count} submitted CE/RE/Harmonic planner entries back to 'in_progress' status.")
     except Exception as e:
         db.session.rollback()
         print(f"Error resetting planner entries: {e}")
 
-    # 2. Delete all CE and RE datasheet records (drafts) and their dependencies
+    # 2. Delete all CE, RE, and HARMONIC datasheet records (drafts) and their dependencies
     try:
         db.session.execute(text(
             "DELETE FROM datasheet_equipment_used WHERE datasheet_record_id IN "
-            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE'))"
+            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE', 'HARMONIC'))"
         ))
         db.session.execute(text(
             "DELETE FROM datasheet_modifications WHERE datasheet_record_id IN "
-            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE'))"
+            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE', 'HARMONIC'))"
         ))
         db.session.execute(text(
             "DELETE FROM datasheet_software_used WHERE datasheet_record_id IN "
-            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE'))"
+            "(SELECT id FROM datasheet_records WHERE test_code IN ('CE', 'RE', 'HARMONIC'))"
         ))
         deleted_rows = db.session.execute(text(
-            "DELETE FROM datasheet_records WHERE test_code IN ('CE', 'RE')"
+            "DELETE FROM datasheet_records WHERE test_code IN ('CE', 'RE', 'HARMONIC')"
         ))
         db.session.commit()
-        print("Successfully deleted all CE and RE draft records and dependencies from database.")
+        print("Successfully deleted all CE, RE, and HARMONIC draft records and dependencies from database.")
     except Exception as e:
         db.session.rollback()
         print(f"Error deleting datasheet records: {e}")

@@ -145,17 +145,19 @@ def render(code, context, img_keys, img_paths, output_path):
                 group[role] = _fit(tpl, p, _box(role, code)) if (p and os.path.exists(p)) else ""
     tpl.render(context, autoescape=True)
     
-    # Strip manual template breaks after rendering content/applying layouts
-    strip_manual_page_breaks(tpl.docx)
-    
     if code == "RE":
+        # Strip manual template breaks after rendering content/applying layouts
+        strip_manual_page_breaks(tpl.docx)
         _prune_empty_limit_tables(tpl.docx)   # drop CISPR/FCC limit tables that don't apply
-    polish_layout(tpl.docx)
-    enforce_arial_fonts(tpl.docx)              # force Arial on all table cell runs (override Calibri)
-    page_break_before_top_sections(tpl.docx)   # each top-level (Heading 1) section on a new page
-    if code == "RE":
+        polish_layout(tpl.docx)
+        enforce_arial_fonts(tpl.docx)              # force Arial on all table cell runs (override Calibri)
+        page_break_before_top_sections(tpl.docx)   # each top-level (Heading 1) section on a new page
         _re_paginate(tpl.docx)                # runs LAST so it wins over polish_layout's keep-with-next
-    strip_trailing_blank_paragraphs(tpl.docx)
+        strip_trailing_blank_paragraphs(tpl.docx)
+    else:
+        # For HARMONIC and other generic templates, preserve the manual layout/breaks of the template
+        enforce_arial_fonts(tpl.docx)
+    
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)

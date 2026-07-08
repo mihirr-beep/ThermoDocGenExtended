@@ -143,25 +143,29 @@
               "key": "frequency_range",
               "label": "Frequency Range",
               "input": "text",
-              "default": "50 Hz to 2 kHz"
+              "default": "50 Hz to 2 kHz",
+              "computed": true
             },
             {
               "key": "maximum_harmonics",
               "label": "Maximum Harmonics",
               "input": "text",
-              "default": "40th Harmonics"
+              "default": "40th Harmonics",
+              "computed": true
             },
             {
               "key": "measurement_time",
               "label": "Measurement Time",
               "input": "text",
-              "default": "10 minutes"
+              "default": "10 minutes",
+              "computed": true
             },
             {
               "key": "test_port",
               "label": "Test Port",
               "input": "text",
-              "default": ""
+              "default": "Power Line",
+              "computed": true
             },
             {
               "key": "test_mode",
@@ -176,16 +180,14 @@
               "default": ""
             },
             {
-              "key": "eut_configuration_col_1",
-              "label": "EUT Configuration (Col 2)",
-              "input": "text",
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": [
+                "Tabletop",
+                "Floor standing"
+              ],
               "default": "Tabletop"
-            },
-            {
-              "key": "eut_configuration_col_2",
-              "label": "EUT Configuration (Col 3)",
-              "input": "text",
-              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
@@ -233,36 +235,7 @@
     },
     {
       "title": "TEST LIMITS",
-      "items": [
-        {
-          "type": "table",
-          "key": "test_limits_rows",
-          "columns": [
-            {
-              "key": "c0",
-              "label": "Harmonic Order (n)"
-            },
-            {
-              "key": "c1",
-              "label": "Maximum permissible harmonic current (A)"
-            }
-          ]
-        },
-        {
-          "type": "table",
-          "key": "test_limits_rows_2",
-          "columns": [
-            {
-              "key": "c0",
-              "label": "Harmonic Order (n)"
-            },
-            {
-              "key": "c1",
-              "label": "Maximum permissible harmonic current (A)"
-            }
-          ]
-        }
-      ]
+      "items": []
     },
     {
       "title": "TEST PROCEDURE",
@@ -279,7 +252,7 @@
       "title": "MEASUREMENT DATA",
       "items": [
         {
-          "type": "static_table"
+          "type": "harmonic_csv"
         }
       ]
     },
@@ -350,6 +323,16 @@
           "type": "fields",
           "fields": [
             {
+              "key": "overall_result",
+              "label": "Overall Result",
+              "input": "text",
+              "options": [
+                "PASS",
+                "FAIL"
+              ],
+              "default": ""
+            },
+            {
               "key": "result_class",
               "label": "Result Class",
               "input": "text",
@@ -358,16 +341,6 @@
                 "B",
                 "C",
                 "D"
-              ],
-              "default": ""
-            },
-            {
-              "key": "overall_result",
-              "label": "Overall Result",
-              "input": "text",
-              "options": [
-                "PASS",
-                "FAIL"
               ],
               "default": ""
             }

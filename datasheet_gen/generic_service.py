@@ -92,13 +92,19 @@ def build_context(schema, form_data):
     for f in iter_scalar_fields(schema):
         if f.get("input") == "image":
             continue
-        val = _s(form_data.get(f["key"]))
+        raw_val = form_data.get(f["key"])
+        if raw_val is None:
+            raw_val = f.get("default") or ""
+            if isinstance(raw_val, str) and "<Standard name>" in raw_val:
+                prod_std = form_data.get("product_standard") or ""
+                raw_val = raw_val.replace("<Standard name>", prod_std)
+        val = _s(raw_val)
         # Fields declared with a "checkbox" option list render as human-ticked
         # checkboxes (their template placeholder is {{r key }}).
         if f.get("checkbox"):
             from .layout import human_checkbox
             val = human_checkbox(val, f["checkbox"])
-        elif (schema.get("code") or "").upper() == "RE" and f["key"] == "eut_configuration":
+        elif (schema.get("code") or "").upper() in ("RE", "HARMONIC") and f["key"] == "eut_configuration":
             from .layout import human_checkbox
             ctx["eut_configuration_col_1"] = human_checkbox(val, ["Tabletop"])
             ctx["eut_configuration_col_2"] = human_checkbox(val, ["Floor standing"])
@@ -143,7 +149,54 @@ def build_context(schema, form_data):
             val = ctx.get(base_key, "")
             ctx[base_key + "_col_1"] = val if s30 else (DASH if s16 else val)
             ctx[base_key + "_col_2"] = val if s16 else (DASH if s30 else val)
+    if schema.get("code") == "HARMONIC":
+        ctx.update(_harmonic_build_context(form_data))
     return ctx
+
+
+def _harmonic_build_context(form_data):
+    """Build HARMONIC-specific context entries from posted form data.
+
+    harmonic_rows : list of dicts {c0..c9} — the 40-row measurement table
+                    submitted as harmonic_row__cN[] hidden arrays from the CSV upload.
+    test_limits_rows / test_limits_rows_2 : Odd/Even harmonic limit rows,
+                    submitted as hidden inputs derived from Classification in JS.
+    """
+    out = {}
+
+    # --- Measurement data rows (4 columns c0..c3) ---
+    cols = ["c" + str(i) for i in range(4)]
+    arrs = {c: _list(form_data, f"harmonic_row__{c}[]") for c in cols}
+    n = max((len(a) for a in arrs.values()), default=0)
+    rows = []
+    for i in range(n):
+        row = {c: (_s(arrs[c][i]) if i < len(arrs[c]) else "") for c in cols}
+        if any(row.values()):
+            rows.append(row)
+    out["harmonic_rows"] = rows
+
+    # --- Test limits (Odd harmonics) ---
+    odd_cols = ["c0", "c1"]
+    odd_arrs = {c: _list(form_data, f"test_limits_rows__{c}[]") for c in odd_cols}
+    n_odd = max((len(a) for a in odd_arrs.values()), default=0)
+    odd_rows = []
+    for i in range(n_odd):
+        row = {c: (_s(odd_arrs[c][i]) if i < len(odd_arrs[c]) else "") for c in odd_cols}
+        if any(row.values()):
+            odd_rows.append(row)
+    out["test_limits_rows"] = odd_rows
+
+    # --- Test limits (Even harmonics) ---
+    even_arrs = {c: _list(form_data, f"test_limits_rows_2__{c}[]") for c in odd_cols}
+    n_even = max((len(a) for a in even_arrs.values()), default=0)
+    even_rows = []
+    for i in range(n_even):
+        row = {c: (_s(even_arrs[c][i]) if i < len(even_arrs[c]) else "") for c in odd_cols}
+        if any(row.values()):
+            even_rows.append(row)
+    out["test_limits_rows_2"] = even_rows
+
+    return out
 
 
 def _re_limit_tables(product_standard, cls, freq):
@@ -274,8 +327,18 @@ def collect_prefill(schema, request_obj, assignment):
             if (schema.get("code") or "").upper() == "RE":
                 from .service import basic_standard_for
                 pre[f["key"]] = basic_standard_for(standard) or default   # derived from Product Standard
+            elif (schema.get("code") or "").upper() == "HARMONIC":
+                # Derive or prefill basic standard for HARMONIC based on standard string (matching frontend JS logic)
+                psClean = (standard or '').lower().replace(' ', '').replace('-', '')
+                if 'en61326' in psClean or 'en55011' in psClean:
+                    pre[f["key"]] = 'EN 61000-3-2:2019+A1:2021'
+                else:
+                    pre[f["key"]] = 'IEC 61000-3-2:2018+A1:2020'
             else:
                 pre[f["key"]] = "Sysmex"      # manager: baseline basic standard
+        elif k == "sop_reference":
+            if (schema.get("code") or "").upper() == "HARMONIC":
+                pre[f["key"]] = "IEC-SOP-509"
         elif "monitoring_parameters" in k:
             pre[f["key"]] = monitoring
         elif "voltage" in k and "frequency" in k:
@@ -285,7 +348,7 @@ def collect_prefill(schema, request_obj, assignment):
         elif "modification_state" in k:
             pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
         elif k.startswith("eut_configuration"):
-            if (schema.get("code") or "").upper() == "RE":
+            if (schema.get("code") or "").upper() in ("RE", "HARMONIC"):
                 if cfg in ("Tabletop", "Floor standing"):
                     pre[f["key"]] = cfg
                 elif cfg and "table" in cfg.lower():
@@ -482,6 +545,8 @@ def _software_rows_for(code):
         })
     if not rows and code.upper() == "RE":
         rows = [{"c0": "TDK Emission Lab", "c1": "14.43"}]
+    elif not rows and code.upper() == "HARMONIC":
+        rows = [{"c0": "Net.Control", "c1": "3.2.6"}]
     return rows
 
 
@@ -522,6 +587,8 @@ def collect_prefill_tables(schema, request_obj, assignment):
         
         # Add starter empty rows for the 7-column measurement tables:
         out.setdefault("re_table1_rows", [{"c0": "", "c1": "", "c2": "", "c3": "", "c4": "", "c5": "", "c6": ""}])
+    elif code == "HARMONIC":
+        out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
     return out
 
 

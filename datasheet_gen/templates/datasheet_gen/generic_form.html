@@ -160,6 +160,49 @@
               <div class="md:col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
                 {% if it.label %}<span class="font-semibold">{{ it.label }}.</span> {% endif %}This is a fixed results grid — it is included (empty) in the generated Word document; fill it directly there.
               </div>
+            {% elif it.type == 'harmonic_csv' %}
+              <div class="md:col-span-2">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-semibold text-gray-700">Harmonic Current Emission Measurement (4 Columns)</span>
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="importHarmonicCSV()" class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Import CSV / TXT</button>
+                    <button type="button" onclick="addHarmonicRow()" class="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold">+ Add row</button>
+                  </div>
+                </div>
+                <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                  <table class="w-full text-xs text-left">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th class="p-2 border-r border-gray-200 text-center w-24">Harmonics</th>
+                        <th class="p-2 border-r border-gray-200 text-center">Ieff (A)</th>
+                        <th class="p-2 border-r border-gray-200 text-center">% of limit</th>
+                        <th class="p-2 border-r border-gray-200 text-center">Limit (A)</th>
+                        <th class="p-2 text-center w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="rows-harmonic_row">
+                      {% for row in prefill.get('harmonic_rows', []) %}
+                      <tr class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c0[]" value="{{ row.c0 }}" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                        <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c1[]" value="{{ row.c1 }}" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                        <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c2[]" value="{{ row.c2 }}" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                        <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c3[]" value="{{ row.c3 }}" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                        <td class="p-1 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-semibold">&times;</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                <template id="tpl-harmonic_row">
+                  <tr class="border-b border-gray-200 hover:bg-gray-50">
+                    <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c0[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c1[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c2[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c3[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    <td class="p-1 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-semibold">&times;</button></td>
+                  </tr>
+                </template>
+              </div>
             {% endif %}
 
           {% endfor %}
@@ -531,6 +574,69 @@
       lines.push(row);
     }
     return lines;
+  }
+
+  function importHarmonicCSV() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var text = evt.target.result;
+          var isTab = /\.txt$/i.test(file.name) || (text.indexOf('\t') >= 0 && text.indexOf(',') < 0);
+          var rows = isTab ? parseTXT(text) : parseCSV(text);
+          if (!rows.length) throw new Error('The file is empty.');
+
+          // Filter rows that have a numeric first column (Hn / order number 1 to 40)
+          var dataRows = [];
+          for (var i = 0; i < rows.length; i++) {
+            var val = scanNum(rows[i][0]);
+            if (val !== null && val >= 1 && val <= 40) {
+              dataRows.push(rows[i]);
+            }
+          }
+
+          if (!dataRows.length) {
+            // Try fallback: look for rows where first column is numeric
+            for (var i = 0; i < rows.length; i++) {
+              if (rows[i].length >= 4 && scanNum(rows[i][0]) !== null) {
+                dataRows.push(rows[i]);
+              }
+            }
+          }
+
+          var tbody = document.getElementById('rows-harmonic_row');
+          var tpl = document.getElementById('tpl-harmonic_row');
+          if (!tbody || !tpl) return;
+
+          tbody.innerHTML = '';
+          var mapped = 0;
+
+          dataRows.forEach(function(drow) {
+            var clone = tpl.content.cloneNode(true);
+            var inputs = clone.querySelectorAll('input');
+            for (var col = 0; col <= 3; col++) {
+              if (inputs[col]) {
+                inputs[col].value = String(drow[col] == null ? '' : drow[col]).trim();
+              }
+            }
+            tbody.appendChild(clone);
+            mapped++;
+          });
+
+          showMessage('Imported ' + mapped + ' harmonic measurement row(s).', mapped ? 'success' : 'error');
+          if (typeof triggerAutoSave === 'function') triggerAutoSave();
+        } catch (err) {
+          showMessage('Failed to import: ' + err.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   }
 
   function importData(key) {
@@ -1188,6 +1294,140 @@
       addREGroup("ICES");
       addREGroup("FCC");
     }
+  });
+</script>
+{% endif %}
+
+{% if code == 'HARMONIC' %}
+<script>
+  function deriveHarmonicBasicStandard(productStandard) {
+    if (!productStandard) return '';
+    var psClean = productStandard.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (psClean.indexOf('en61326') >= 0 || psClean.indexOf('en55011') >= 0) {
+      return 'EN 61000-3-2:2019+A1:2021';
+    }
+    return 'IEC 61000-3-2:2018+A1:2020';
+  }
+
+  var PROC_HARMONIC = "The test procedure was in accordance with {S}.\n\n" +
+    "The EUT was placed on a {SURFACE} at {HEIGHT} height. The power supply to the EUT was fed through a clean AC power source. The AC power source is in series with current transformer. The input voltage and frequency were set in the software as per the EUT specifications. The classification of the EUT and limits were selected as specified in the standard. The harmonic current emissions up to 40th harmonic was measured and compared with the limit specified in the standard.";
+
+  function setHarmonicProcedure() {
+    var basicEl = inputByName('basic_standard');
+    var basic = basicEl ? basicEl.value : '';
+    if (!basic) {
+      var prodStdEl = inputByName('product_standard');
+      basic = deriveHarmonicBasicStandard(prodStdEl ? prodStdEl.value : '') || 'the applicable standard';
+    }
+    
+    var cfgEl = inputByName('eut_configuration');
+    var cfg = cfgEl ? cfgEl.value : 'Tabletop';
+    var isFloor = (cfg || '').toLowerCase().indexOf('floor') >= 0;
+    
+    var txt = PROC_HARMONIC.replace('{S}', basic)
+                           .replace('{SURFACE}', isFloor ? 'insulation support' : 'wooden table')
+                           .replace('{HEIGHT}', isFloor ? '0.1m' : '0.8m');
+                           
+    var pEl = document.getElementById('test_procedure');
+    if (pEl) {
+      pEl.value = txt;
+    }
+    var view = document.getElementById('test_procedure_view');
+    if (view) {
+      var esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      view.innerHTML = esc;
+    }
+  }
+
+  // CISPR/EN/IEC 61000-3-2 limits
+  var ODD_LIMITS = [
+    ['3', '2.30'],
+    ['5', '1.14'],
+    ['7', '0.77'],
+    ['9', '0.40'],
+    ['11', '0.33'],
+    ['13', '0.21'],
+    ['15 \u2264 n \u2264 39', '0.15 * (15/n)']
+  ];
+  var EVEN_LIMITS = [
+    ['2', '1.08'],
+    ['4', '0.43'],
+    ['6', '0.30'],
+    ['8 \u2264 n \u2264 40', '0.23 * (8/n)']
+  ];
+
+  function updateHarmonicBehavior() {
+    var prodStdEl = inputByName('product_standard');
+    var classEl = inputByName('classification');
+    var basicEl = inputByName('basic_standard');
+    var overallEl = inputByName('overall_result');
+    var resultClassEl = inputByName('result_class');
+
+    var productStandard = prodStdEl ? prodStdEl.value : '';
+    var classification = classEl ? classEl.value : '';
+
+    // Auto-derive basic standard
+    var derivedBasic = deriveHarmonicBasicStandard(productStandard);
+    if (basicEl && derivedBasic) {
+      basicEl.value = derivedBasic;
+    }
+
+    // Auto-update result class
+    if (resultClassEl && classification) {
+      var match = classification.match(/Class\s*([A-D])/i);
+      if (match) {
+        resultClassEl.value = match[1].toUpperCase();
+      }
+    }
+
+    // Dynamically insert hidden elements to submit test limits table rows to backend
+    var form = document.getElementById('dsForm');
+    // Clear old hidden inputs for limits
+    var oldHiddens = form.querySelectorAll('input[name^="test_limits_rows__"], input[name^="test_limits_rows_2__"]');
+    oldHiddens.forEach(function(el) { el.remove(); });
+
+    // Append ODD
+    ODD_LIMITS.forEach(function(row) {
+      var h0 = document.createElement('input'); h0.type = 'hidden'; h0.name = 'test_limits_rows__c0[]'; h0.value = row[0];
+      var h1 = document.createElement('input'); h1.type = 'hidden'; h1.name = 'test_limits_rows__c1[]'; h1.value = row[1];
+      form.appendChild(h0); form.appendChild(h1);
+    });
+
+    // Append EVEN
+    EVEN_LIMITS.forEach(function(row) {
+      var h0 = document.createElement('input'); h0.type = 'hidden'; h0.name = 'test_limits_rows_2__c0[]'; h0.value = row[0];
+      var h1 = document.createElement('input'); h1.type = 'hidden'; h1.name = 'test_limits_rows_2__c1[]'; h1.value = row[1];
+      form.appendChild(h0); form.appendChild(h1);
+    });
+
+    setHarmonicProcedure();
+  }
+
+  function addHarmonicRow() {
+    var tbody = document.getElementById('rows-harmonic_row');
+    var tpl = document.getElementById('tpl-harmonic_row');
+    if (tbody && tpl) {
+      tbody.appendChild(tpl.content.cloneNode(true));
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var prodStdEl = inputByName('product_standard');
+    var classEl = inputByName('classification');
+    var cfgEl = inputByName('eut_configuration');
+
+    if (prodStdEl) {
+      prodStdEl.addEventListener('input', updateHarmonicBehavior);
+      prodStdEl.addEventListener('change', updateHarmonicBehavior);
+    }
+    if (classEl) {
+      classEl.addEventListener('change', updateHarmonicBehavior);
+    }
+    if (cfgEl) {
+      cfgEl.addEventListener('change', updateHarmonicBehavior);
+    }
+    updateHarmonicBehavior();
   });
 </script>
 {% endif %}

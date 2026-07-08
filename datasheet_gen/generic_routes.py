@@ -68,6 +68,7 @@ def g_form(code, assignment_id):
     # table rows are injected back into the schema so the grids render as left.
     draft = R.draft_form(a.id)
     draft_status = ""
+    measurement_groups = []
     if draft:
         rec = R.get_record_for_assignment(a.id)
         draft_status = (rec or {}).get("status", "")
@@ -92,8 +93,12 @@ def g_form(code, assignment_id):
         if code == "RE":
             from .generic_service import _re_measurement_groups
             measurement_groups = _re_measurement_groups(draft)
-    else:
-        measurement_groups = []
+        elif code == "HARMONIC":
+            from .generic_service import _harmonic_build_context
+            pre.update(_harmonic_build_context(draft))
+            measurement_groups = []
+        else:
+            measurement_groups = []
 
     # Prefill repeating tables (equipment / RE Test Limits / software) from the
     # request + derivations, but only where the engineer has no saved draft rows.
