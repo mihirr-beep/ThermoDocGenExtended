@@ -77,6 +77,13 @@
         </div>
         <div id="meas-records"></div>
       </section>
+      {% elif sec.title == 'TEST LIMITS' and code == 'RE' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-lg font-bold text-gray-900 mb-1">{{ ns.n }}. {{ sec.title }}</h2>
+        <p class="text-xs text-gray-500 mb-3">Auto-generated from <strong>Product Standard</strong>, <strong>Classification&nbsp;&ndash;&nbsp;Class</strong> and <strong>Frequency Range</strong> (section {{ ns.n - 1 }}); read-only. This is exactly how the limit table(s) print in the document.</p>
+        <div id="re-limit-preview" class="space-y-4"></div>
+      </section>
       {% else %}
       {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -882,35 +889,32 @@
     var prodStdEl = inputByName('product_standard');
     var classEl = inputByName('classification_col_2');
     var basicEl = inputByName('basic_standard');
-    var turnTableEl = inputByName('turn_table_rotation_step_col_1');
+    var turnTableEl = inputByName('turn_table_rotation_step_col_1');   // hidden (computed) — may be absent
     var resultClassEl = inputByName('result_class');
 
-    if (!prodStdEl || !classEl || !basicEl || !turnTableEl || !resultClassEl) return;
+    // Only Product Standard + Class are required; the rest are optional/hidden.
+    if (!prodStdEl || !classEl) { renderLimitPreview(); return; }
 
     var productStandard = prodStdEl.value;
     var classification = classEl.value; // e.g. 'Class A' or 'Class B'
 
     // 1. Derive and update basic_standard
     var derivedBasic = deriveBasicStandard(productStandard);
-    if (derivedBasic) {
+    if (basicEl && derivedBasic) {
       basicEl.value = derivedBasic;
     }
-    var basicStandard = basicEl.value;
+    var basicStandard = basicEl ? basicEl.value : '';
 
-    // 2. Derive turn_table_rotation_step_col_1
-    if (basicStandard === 'ANSI C63.4:2024') {
-      turnTableEl.value = '22.5°';
-    } else {
-      turnTableEl.value = '15°';
+    // 2. Derive turn_table_rotation_step_col_1 (only if that field is present)
+    if (turnTableEl) {
+      turnTableEl.value = (basicStandard === 'ANSI C63.4:2024') ? '22.5°' : '15°';
     }
 
     // 3. Update result_class
-    if (classification === 'Class A') {
-      resultClassEl.value = 'A';
-    } else if (classification === 'Class B') {
-      resultClassEl.value = 'B';
-    } else {
-      resultClassEl.value = '';
+    if (resultClassEl) {
+      if (classification === 'Class A') resultClassEl.value = 'A';
+      else if (classification === 'Class B') resultClassEl.value = 'B';
+      else resultClassEl.value = '';
     }
 
     // 4. Update limits — aligned with re_logic._QP_30M_1G
@@ -945,6 +949,55 @@
         limitEl.value = limits[key];
       }
     }
+    renderLimitPreview();
+  }
+
+  // ---- Test Limits read-only preview (mirrors re_logic; the doc uses the same data) ----
+  var RE_QP_LIMITS = {
+    'CISPR|A': [['30 to 230','50'],['230 to 1000','57']],
+    'CISPR|B': [['30 to 230','40'],['230 to 1000','47']],
+    'FCC|A': [['30 to 88','49.54'],['88 to 216','53.98'],['216 to 960','56.90'],['960 to 1000','59.54']],
+    'FCC|B': [['30 to 88','39.60'],['88 to 216','43.52'],['216 to 960','46.02'],['960 to 1000','54.00']]
+  };
+  var RE_PA_LIMITS = {
+    'FCC|A': [['1 to 3 GHz','79.54','59.54'],['3 to 6 GHz','79.54','59.54']],
+    'FCC|B': [['1000 to 6000 MHz','74','54']]
+  };
+  function reFamiliesOf(ps) {
+    var k = (ps || '').toLowerCase().replace(/[^a-z0-9]/g, ''), f = [];
+    if (/part15|cfr|fcc|c634|ansi/.test(k)) f.push('FCC');
+    if (/cispr|en55011|iec61326|en61326|ices/.test(k)) f.push('CISPR');
+    return f;
+  }
+  function reClassLetter(c) {
+    c = (c || '').toUpperCase().replace('CLASS', '').trim();
+    return (c.charAt(0) === 'A' || c.charAt(0) === 'B') ? c.charAt(0) : '';
+  }
+  function reLimTable(title, cols, rows) {
+    if (!rows || !rows.length) return '';
+    var h = '<div><div class="text-xs font-semibold text-gray-700 mb-1">' + title + '</div>';
+    h += '<table class="w-full text-xs border border-gray-200"><thead class="bg-gray-50"><tr>';
+    cols.forEach(function (c) { h += '<th class="p-1 text-left border border-gray-200">' + c + '</th>'; });
+    h += '</tr></thead><tbody>';
+    rows.forEach(function (r) { h += '<tr>' + r.map(function (v) { return '<td class="p-1 border border-gray-200">' + v + '</td>'; }).join('') + '</tr>'; });
+    h += '</tbody></table></div>';
+    return h;
+  }
+  function renderLimitPreview() {
+    var host = document.getElementById('re-limit-preview');
+    if (!host) return;
+    var ps = (inputByName('product_standard') || {}).value || '';
+    var cls = reClassLetter((inputByName('classification_col_2') || {}).value || '');
+    var freq = (inputByName('frequency_range') || {}).value || '';
+    var fams = reFamiliesOf(ps), html = '';
+    if (freq === '30MHz-1GHz') {
+      if (cls && fams.indexOf('CISPR') >= 0) html += reLimTable('CISPR / ICES — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['CISPR|' + cls]);
+      if (cls && fams.indexOf('FCC') >= 0) html += reLimTable('FCC — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['FCC|' + cls]);
+    } else if (freq === '1GHz-6GHz') {
+      if (cls && fams.indexOf('FCC') >= 0) html += reLimTable('FCC — Peak & Average (1 GHz – 6 GHz), Class ' + cls, ['Frequency', 'Peak Limit (dBµV/m)', 'Average Limit (dBµV/m)'], RE_PA_LIMITS['FCC|' + cls]);
+    }
+    if (!html) html = '<p class="text-xs text-gray-500">Select Product Standard, Class and Frequency Range above to preview the applicable limit table(s).</p>';
+    host.innerHTML = html;
   }
 
   function getPrefillRowsForTable(tableKey) {
@@ -1068,7 +1121,12 @@
     if (classEl) {
       classEl.addEventListener('change', updateREBehavior);
     }
+    var freqEl = inputByName('frequency_range');
+    if (freqEl) {
+      freqEl.addEventListener('change', renderLimitPreview);
+    }
     updateREBehavior();
+    renderLimitPreview();   // render the Test-Limit preview on load regardless
 
     var DRAFT_RE_GROUPS = {{ measurement_groups|tojson if measurement_groups else '[]' }};
     if (DRAFT_RE_GROUPS.length > 0) {

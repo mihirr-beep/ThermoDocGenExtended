@@ -427,19 +427,22 @@
               "key": "frequency",
               "label": "Frequency (MHz)",
               "input": "text",
-              "default": "Quasi-peak Limit (dBµV/m)"
+              "default": "Quasi-peak Limit (dBµV/m)",
+              "computed": true
             },
             {
               "key": "f_30_to_230",
               "label": "30 to 230",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             },
             {
               "key": "f_230_to_1000",
               "label": "230 to 1000",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             }
           ]
         },
@@ -450,25 +453,29 @@
               "key": "f_30_to_88_fcc",
               "label": "30 to 88 MHz",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             },
             {
               "key": "f_88_to_216_fcc",
               "label": "88 to 216 MHz",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             },
             {
               "key": "f_216_to_960_fcc",
               "label": "216 to 960 MHz",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             },
             {
               "key": "f_960_to_1000_fcc",
               "label": "960 to 1000 MHz",
               "input": "text",
-              "default": ""
+              "default": "",
+              "computed": true
             }
           ]
         }
@@ -618,13 +625,13 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: RE test setup_Vertical_30MHz - 1GHz",
+          "label": "Photo 1: Test Setup Image",
           "caption": true
         },
         {
           "type": "image",
           "key": "img_photo_2",
-          "label": "Photo 2: RE test setup_Horizontal_30MHz - 1GHz",
+          "label": "Photo 2: Test Setup Image",
           "caption": true
         }
       ]

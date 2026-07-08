@@ -165,6 +165,7 @@ def _re_test_spec_columns(freq):
     Detector and Polarization are definitional and shown for both bands. The
     Frequency Range row itself renders as a ticked/unticked checkbox per band.
     """
+    from .layout import human_checkbox
     s30 = (freq == "30MHz-1GHz")
     s16 = (freq == "1GHz-6GHz")
     DASH = "-"
@@ -173,8 +174,9 @@ def _re_test_spec_columns(freq):
         return (v30 if s30 else DASH), (v16 if s16 else DASH)
 
     cols = {}
-    cols["frequency_range_col_1"] = ("☒ " if s30 else "☐ ") + "30MHz-1GHz"
-    cols["frequency_range_col_2"] = ("☒ " if s16 else "☐ ") + "1GHz-6GHz"
+    # real ticked/unticked checkboxes (RunsXml -> {{r ... }}), same rendering as Classification
+    cols["frequency_range_col_1"] = human_checkbox("30MHz-1GHz" if s30 else "", ["30MHz-1GHz"])
+    cols["frequency_range_col_2"] = human_checkbox("1GHz-6GHz" if s16 else "", ["1GHz-6GHz"])
     cols["resolution_bandwidth_col_1"], cols["resolution_bandwidth_col_2"] = band("120k", "1M")
     cols["video_bandwidth_col_1"], cols["video_bandwidth_col_2"] = band("1M", "3M")
     cols["step_size_col_1"], cols["step_size_col_2"] = band("40k", "400k")
