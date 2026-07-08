@@ -5,7 +5,7 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
-from .layout import polish_layout, page_break_before_top_sections
+from .layout import polish_layout, page_break_before_top_sections, enforce_arial_fonts
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
@@ -15,10 +15,9 @@ def _box(key, code=None):
     if "sign" in k:
         return (40, 20)
     if (code or "").upper() == "RE":
-        # Sized so TWO images (plus captions + a section/group label) fit on one page.
         if "photo" in k:
-            return (140, 80)
-        return (160, 80)
+            return (140, 90)
+        return (160, 90)
     if "photo" in k:
         return (140, 90)
     return (150, 90)
@@ -77,22 +76,28 @@ def _re_clearprop(p, tag):
 _RE_CAPTION_PREFIX = ("FIGURE", "PHOTO", "TABLE")
 
 
+def strip_manual_page_breaks(doc):
+    """Remove manual run-level page breaks (<w:br w:type="page"/>) from the template.
+    This prevents double page breaks when heading page-break properties are added."""
+    from docx.oxml.ns import qn
+    for br in list(doc.element.body.iter(qn("w:br"))):
+        if br.get(qn("w:type")) == "page":
+            br.getparent().remove(br)
+
+
 def _re_paginate(doc):
     """Lay the RE datasheet out page-by-page like the intended structure:
       * page break before 1.4 FUNCTIONAL CHECK, 2.2 DEVIATION (so 2.1 TEST
         SPECIFICATION sits alone), 2.5 MEASUREMENT DATA, 2.6 TEST SETUP PICTURES,
         and 2.7 TEST EQUIPMENT USED (so 2.7/2.8/2.9 share the last page);
-      * inside 2.5, a page break before every group after the first, so each
-        group's two plots share a page and its table follows;
       * keep every image with its caption so a page break never orphans a label.
-    Two 85 mm plots + captions + a heading fit one page, giving 2 images/page."""
+    Two 90 mm plots + captions + a heading fit one page naturally."""
     from docx.oxml.ns import qn
     BREAK_HEADINGS = ("FUNCTIONAL CHECK", "DEVIATION FROM THE STANDARD",
                       "MEASUREMENT DATA", "TEST SETUP PICTURES", "TEST EQUIPMENT USED")
     pm = {p._p: p for p in doc.paragraphs}
     tm = {t._tbl: t for t in doc.tables}
     in_meas = False
-    after_meas_table = False
     for ch in doc.element.body.iterchildren():
         if ch.tag == qn("w:p"):
             p = pm.get(ch)
@@ -102,7 +107,6 @@ def _re_paginate(doc):
             if p.style.name.startswith("Heading"):
                 up = t.upper()
                 in_meas = ("MEASUREMENT DATA" in up)
-                after_meas_table = False
                 if any(b in up for b in BREAK_HEADINGS):
                     _re_pageprop(p, "w:pageBreakBefore")
                 continue
@@ -114,23 +118,13 @@ def _re_paginate(doc):
                 # NOT be glued to whatever follows (polish_layout glues pre-table
                 # paras), or the caption+table block gets pushed to the next page.
                 _re_clearprop(p, "w:keepNext")
-            if in_meas and after_meas_table and t and not is_caption:
-                # the paragraph right after a measurement table is that table's own
-                # caption; the NEXT non-caption line is the next group's label — break
-                # there so each group's plots start a fresh page.
-                _re_pageprop(p, "w:pageBreakBefore")
-                after_meas_table = False
         elif ch.tag == qn("w:tbl"):
             tb = tm.get(ch)
             if tb is not None and in_meas:
                 hdr = " ".join(c.text for c in tb.rows[0].cells).lower()
                 if "polarization" in hdr and "eut angle" in hdr:
-                    after_meas_table = True
-                    # Keep the whole data table together so it moves to a fresh page
-                    # as a unit (the two plots fill the previous page) instead of
-                    # squeezing its header onto the images page. keep_with_next on
-                    # every row but the last chains them; for a table too big for one
-                    # page Word relaxes this and splits normally.
+                    # Keep the whole data table together so it moves as a unit
+                    # instead of splitting across pages.
                     rows = tb.rows
                     for r in rows[:-1]:
                         for cell in r.cells:
@@ -150,9 +144,14 @@ def render(code, context, img_keys, img_paths, output_path):
                 p = img_paths.get(key)
                 group[role] = _fit(tpl, p, _box(role, code)) if (p and os.path.exists(p)) else ""
     tpl.render(context, autoescape=True)
+    
+    # Strip manual template breaks after rendering content/applying layouts
+    strip_manual_page_breaks(tpl.docx)
+    
     if code == "RE":
         _prune_empty_limit_tables(tpl.docx)   # drop CISPR/FCC limit tables that don't apply
     polish_layout(tpl.docx)
+    enforce_arial_fonts(tpl.docx)              # force Arial on all table cell runs (override Calibri)
     page_break_before_top_sections(tpl.docx)   # each top-level (Heading 1) section on a new page
     if code == "RE":
         _re_paginate(tpl.docx)                # runs LAST so it wins over polish_layout's keep-with-next

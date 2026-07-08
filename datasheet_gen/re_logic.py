@@ -26,7 +26,7 @@ def families(product_standard):
     {'CISPR', 'FCC'}. A multi-standard EUT (e.g. IEC 61326-1 + FCC Part 15)
     returns both, so both limit tables get printed."""
     fams = set()
-    for part in _re.split(r"[;\n]+", _s(product_standard)):
+    for part in _re.split(r"[;\n/&,]+", _s(product_standard)):
         key = _re.sub(r"[^a-z0-9]", "", part.lower())
         if not key:
             continue
@@ -41,7 +41,7 @@ def standard_family(product_standard):
     """'FCC' for 47 CFR Part 15 / ANSI C63.4; 'CISPR' for CISPR 11 / EN 55011 /
     IEC 61326 / EN 61326 / ICES-001. '' when unknown. Evaluated per ';'-joined
     product standard, first decisive match wins (FCC checked first)."""
-    for part in _re.split(r"[;\n]+", _s(product_standard)):
+    for part in _re.split(r"[;\n/&,]+", _s(product_standard)):
         key = _re.sub(r"[^a-z0-9]", "", part.lower())
         if not key:
             continue

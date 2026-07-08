@@ -362,16 +362,11 @@
               "default": ""
             },
             {
-              "key": "eut_configuration_col_1",
-              "label": "EUT Configuration (30MHz-1GHz)",
-              "input": "text",
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": ["Tabletop", "Floor standing"],
               "default": "Tabletop"
-            },
-            {
-              "key": "eut_configuration_col_2",
-              "label": "EUT Configuration (1GHz-6GHz)",
-              "input": "text",
-              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",

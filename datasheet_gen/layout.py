@@ -395,3 +395,53 @@ def ce_finalize_layout(doc):
         if amb is not None:
             paras[amb].paragraph_format.page_break_before = True
             paras[amb].paragraph_format.keep_with_next = True
+
+
+# --------------------------------------------------------------------------
+# Font enforcement — force Arial on every table cell run
+# --------------------------------------------------------------------------
+
+def enforce_arial_fonts(doc):
+    """Walk every paragraph in every table cell and force the font to Arial.
+
+    This overrides any Calibri runs that come from:
+      * docxtpl Jinja-rendered measurement-data rows (inherit Normal/Calibri style)
+      * any cell whose run-level rFonts was left unset (Word defaults to Calibri)
+
+    Body paragraphs (headings, procedure text) are left untouched because
+    they already carry explicit Arial formatting via the template styles.
+    The checkbox runs (Segoe UI Symbol) are skipped so ballot boxes render
+    correctly.
+    """
+    SKIP_FONTS = {"Segoe UI Symbol", "Symbol", "Wingdings"}
+    ARIAL = "Arial"
+
+    for tbl in doc.tables:
+        for row in tbl.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        rPr = run._r.get_or_add_rPr()
+                        # Skip special symbol runs (checkboxes)
+                        rFonts = rPr.find(qn("w:rFonts"))
+                        if rFonts is not None:
+                            current = (
+                                rFonts.get(qn("w:ascii")) or
+                                rFonts.get(qn("w:hAnsi")) or ""
+                            )
+                            if current in SKIP_FONTS:
+                                continue
+                            # Update existing rFonts element
+                            rFonts.set(qn("w:ascii"), ARIAL)
+                            rFonts.set(qn("w:hAnsi"), ARIAL)
+                            rFonts.set(qn("w:cs"), ARIAL)
+                        else:
+                            # Create new rFonts element
+                            from docx.oxml import OxmlElement
+                            rf = OxmlElement("w:rFonts")
+                            rf.set(qn("w:ascii"), ARIAL)
+                            rf.set(qn("w:hAnsi"), ARIAL)
+                            rf.set(qn("w:cs"), ARIAL)
+                            rPr.insert(0, rf)
+                        # Also set run.font.name so python-docx's own cache is consistent
+                        run.font.name = ARIAL

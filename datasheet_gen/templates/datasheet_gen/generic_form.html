@@ -885,6 +885,42 @@
     return '';
   }
 
+  var PROC_RE = "The test procedure was in accordance with {S}.\n\n" +
+    "For 30MHz to 1GHz, the EUT was tested in a Semi-Anechoic chamber, The EUT was placed on {SURFACE_30M} of {H_30M} height which was in turn placed on a turn table to enable 0° to 360° rotation as per standard. The distance between the edge of the EUT and receiving antenna was 3m. The receiving antenna was mounted on antenna mast to enable height variation from 1m to 4m above the ground plane.\n\n" +
+    "Pre-scan (Peak) was measured by varying the azimuth angle in 15°/22.5° steps and antenna height from 1m to 4m in 1m steps in both horizontal and vertical polarization of the antenna. The measurement was carried out in max-hold mode and maximum amplitude of radiated emissions from the EUT was plotted in the graph. The dominant peaks at various frequencies, closer to and above the limit line were identified using peak search option and listed Quasi-peak measurement was carried out for the listed frequencies to get the maximized readings by rotating the turntable from 0° to 360° degree and varying the antenna height from 1m to 4m. The maximized reading was compared with the limit specified in the standard.\n\n" +
+    "For 1GHz to 6GHz, the equipment was tested in a Semi-Anechoic chamber. The EUT was placed on {SURFACE_1G} of {H_1G} height which was in turn placed on a turn table to enable 0° to 360° rotation as per standard. The distance between the edge of the EUT and receiving antenna was 3m. The receiving antenna was mounted on antenna mast to enable height variation from 1 to 2m above the ground plane.\n\n" +
+    "Pre-scan (Peak & Average) was measured by varying the azimuth angle in 15°/22.5° steps and antenna height fixed at 1m, in both horizontal and vertical polarization of the antenna. The measurement was carried out in max-hold mode and maximum amplitude of radiated emissions from the EUT was plotted in the graph The dominant peaks at various frequencies, closer to and above the limit line were identified using peak search option and listed. Peak and Average measurement was carried out for the listed frequencies to get the maximized readings by rotating the turntable from 0° to 360° degree and varying the antenna height from 1m to 2m. The maximized reading was compared with the limit specified in the standard.";
+
+  function setProcedure() {
+    var basicEl = inputByName('basic_standard');
+    var basic = basicEl ? basicEl.value : '';
+    if (!basic) {
+      var prodStdEl = inputByName('product_standard');
+      basic = deriveBasicStandard(prodStdEl ? prodStdEl.value : '') || 'the applicable standard';
+    }
+    
+    var cfgEl = inputByName('eut_configuration');
+    var cfg = cfgEl ? cfgEl.value : 'Tabletop';
+    
+    var isFloor = (cfg || '').toLowerCase().indexOf('floor') >= 0;
+    
+    var txt = PROC_RE.replace('{S}', basic)
+                     .replace('{SURFACE_30M}', isFloor ? 'insulation support' : 'non-conductive table')
+                     .replace('{H_30M}', isFloor ? '0.1m' : '0.8m')
+                     .replace('{SURFACE_1G}', isFloor ? 'insulation support' : 'non-conductive table')
+                     .replace('{H_1G}', isFloor ? '0.1m' : '0.8m');
+                     
+    var pEl = document.getElementById('test_procedure');
+    if (pEl) {
+      pEl.value = txt;
+    }
+    var view = document.getElementById('test_procedure_view');
+    if (view) {
+      var esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      view.innerHTML = esc;
+    }
+  }
+
   function updateREBehavior() {
     var prodStdEl = inputByName('product_standard');
     var classEl = inputByName('classification_col_2');
@@ -949,6 +985,8 @@
         limitEl.value = limits[key];
       }
     }
+    
+    setProcedure();
     renderLimitPreview();
   }
 
@@ -964,9 +1002,18 @@
     'FCC|B': [['1000 to 6000 MHz','74','54']]
   };
   function reFamiliesOf(ps) {
-    var k = (ps || '').toLowerCase().replace(/[^a-z0-9]/g, ''), f = [];
-    if (/part15|cfr|fcc|c634|ansi/.test(k)) f.push('FCC');
-    if (/cispr|en55011|iec61326|en61326|ices/.test(k)) f.push('CISPR');
+    var parts = (ps || '').split(/[;\n/&,]+/);
+    var f = [];
+    parts.forEach(function(part) {
+      var k = part.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!k) return;
+      if (/part15|cfr|fcc|c634|ansi/.test(k)) {
+        if (f.indexOf('FCC') < 0) f.push('FCC');
+      }
+      if (/cispr|en55011|iec61326|en61326|ices/.test(k)) {
+        if (f.indexOf('CISPR') < 0) f.push('CISPR');
+      }
+    });
     return f;
   }
   function reClassLetter(c) {
@@ -994,7 +1041,7 @@
       if (cls && fams.indexOf('CISPR') >= 0) html += reLimTable('CISPR / ICES — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['CISPR|' + cls]);
       if (cls && fams.indexOf('FCC') >= 0) html += reLimTable('FCC — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['FCC|' + cls]);
     } else if (freq === '1GHz-6GHz') {
-      if (cls && fams.indexOf('FCC') >= 0) html += reLimTable('FCC — Peak & Average (1 GHz – 6 GHz), Class ' + cls, ['Frequency', 'Peak Limit (dBµV/m)', 'Average Limit (dBµV/m)'], RE_PA_LIMITS['FCC|' + cls]);
+      if (cls) html += reLimTable('FCC — Peak & Average (1 GHz – 6 GHz), Class ' + cls, ['Frequency', 'Peak Limit (dBµV/m)', 'Average Limit (dBµV/m)'], RE_PA_LIMITS['FCC|' + cls]);
     }
     if (!html) html = '<p class="text-xs text-gray-500">Select Product Standard, Class and Frequency Range above to preview the applicable limit table(s).</p>';
     host.innerHTML = html;
@@ -1123,7 +1170,11 @@
     }
     var freqEl = inputByName('frequency_range');
     if (freqEl) {
-      freqEl.addEventListener('change', renderLimitPreview);
+      freqEl.addEventListener('change', updateREBehavior);
+    }
+    var cfgEl = inputByName('eut_configuration');
+    if (cfgEl) {
+      cfgEl.addEventListener('change', updateREBehavior);
     }
     updateREBehavior();
     renderLimitPreview();   // render the Test-Limit preview on load regardless

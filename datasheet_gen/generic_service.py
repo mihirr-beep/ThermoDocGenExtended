@@ -98,6 +98,10 @@ def build_context(schema, form_data):
         if f.get("checkbox"):
             from .layout import human_checkbox
             val = human_checkbox(val, f["checkbox"])
+        elif (schema.get("code") or "").upper() == "RE" and f["key"] == "eut_configuration":
+            from .layout import human_checkbox
+            ctx["eut_configuration_col_1"] = human_checkbox(val, ["Tabletop"])
+            ctx["eut_configuration_col_2"] = human_checkbox(val, ["Floor standing"])
         ctx[f["key"]] = val
     # optional per-image captions ({key}_caption) for image items flagged caption:true
     for sec in schema["sections"]:
@@ -125,10 +129,20 @@ def build_context(schema, form_data):
             ctx[it["key"]] = rows
     if schema.get("code") == "RE":
         ctx["measurement_groups"] = _re_measurement_groups(form_data)
-        ctx.update(_re_test_spec_columns(_s(form_data.get("frequency_range"))))
+        freq = _s(form_data.get("frequency_range"))
+        ctx.update(_re_test_spec_columns(freq))
         ctx.update(_re_limit_tables(_s(form_data.get("product_standard")),
                                     _s(form_data.get("classification_col_2")),
-                                    _s(form_data.get("frequency_range"))))
+                                    freq))
+        # EUT Input Voltage, Ambient Temp, Relative Humidity:
+        # Single user value goes into the SELECTED frequency column; the other gets "-"
+        s30 = (freq == "30MHz-1GHz")
+        s16 = (freq == "1GHz-6GHz")
+        DASH = "-"
+        for base_key in ("eut_input_voltage_frequency", "ambient_temperature", "relative_humidity"):
+            val = ctx.get(base_key, "")
+            ctx[base_key + "_col_1"] = val if s30 else (DASH if s16 else val)
+            ctx[base_key + "_col_2"] = val if s16 else (DASH if s30 else val)
     return ctx
 
 
@@ -151,7 +165,7 @@ def _re_limit_tables(product_standard, cls, freq):
         out["re_limit_cispr_qp"] = [{"c0": b, "c1": v} for b, v in re_logic._QP_30M_1G.get(("CISPR", c), [])]
     if is30 and "FCC" in fams:
         out["re_limit_fcc_qp"] = [{"c0": b, "c1": v} for b, v in re_logic._QP_30M_1G.get(("FCC", c), [])]
-    if is16 and "FCC" in fams:
+    if is16:
         out["re_limit_fcc_pa"] = [{"c0": b, "c1": p, "c2": a} for b, p, a in re_logic._PA_1G_6G.get(("FCC", c), [])]
     return out
 
@@ -203,6 +217,7 @@ def collect_prefill(schema, request_obj, assignment):
     request was captured.
     """
     job = name = model = serial = standard = vf = monitoring = test_mode = cfg = ""
+    vf_rows = []   # individual supply rows for RE col_1 / col_2 split
     if request_obj is not None:
         job = _ra(request_obj, "job_number", "tco_id")
         name = _ra(request_obj, "product_name")
@@ -210,7 +225,8 @@ def collect_prefill(schema, request_obj, assignment):
         model = _ra(request_obj, "model_number") or _join(getattr(request_obj, "additional_models", []), "model_number")
         serial = _ra(request_obj, "serial_number") or _join(getattr(request_obj, "serial_numbers", []), "serial_number")
         standard = _join(getattr(request_obj, "product_standards", []), "standard_value")
-        vf = _fmt_supply(getattr(request_obj, "supply_vf_values", []))
+        vf_rows = getattr(request_obj, "supply_vf_values", []) or []
+        vf = _fmt_supply(vf_rows)
         monitoring = _ra(request_obj, "monitoring_parameters")
         test_mode = _ra(request_obj, "test_configuration", "operation_modes")
         cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
@@ -269,14 +285,24 @@ def collect_prefill(schema, request_obj, assignment):
         elif "modification_state" in k:
             pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
         elif k.startswith("eut_configuration"):
-            # The doc prints Tabletop / Floor standing in adjacent cells; keep the
-            # cell matching the request's form factor, blank the other one.
-            if cfg:
-                d = default.lower()
-                if "tabletop" in d:
-                    pre[f["key"]] = "Tabletop" if cfg == "Tabletop" else ""
-                elif "floor" in d:
-                    pre[f["key"]] = "Floor standing" if cfg == "Floor standing" else ""
+            if (schema.get("code") or "").upper() == "RE":
+                if cfg in ("Tabletop", "Floor standing"):
+                    pre[f["key"]] = cfg
+                elif cfg and "table" in cfg.lower():
+                    pre[f["key"]] = "Tabletop"
+                elif cfg and "floor" in cfg.lower():
+                    pre[f["key"]] = "Floor standing"
+                else:
+                    pre[f["key"]] = default
+            else:
+                # The doc prints Tabletop / Floor standing in adjacent cells; keep the
+                # cell matching the request's form factor, blank the other one.
+                if cfg:
+                    d = default.lower()
+                    if "tabletop" in d:
+                        pre[f["key"]] = "Tabletop" if cfg == "Tabletop" else ""
+                    elif "floor" in d:
+                        pre[f["key"]] = "Floor standing" if cfg == "Floor standing" else ""
         elif f.get("checkbox") and k.startswith("classification"):
             # tick Group from TR product_group, Class from TR class (or the
             # harmonics equipment class for the HARMONIC datasheet)
