@@ -102,6 +102,9 @@
           "key": "sop_reference",
           "label": "SOP Reference Number",
           "input": "text"
+        },
+        {
+          "type": "harmonic_avgmax"
         }
       ]
     },
@@ -262,7 +265,8 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: Harmonic Current Emission test setup_Power Port"
+          "label": "Photo 1: Harmonic Current Emission test setup_Power Port",
+          "caption": true
         }
       ]
     },
@@ -303,6 +307,7 @@
         {
           "type": "table",
           "key": "software_used_rows",
+          "fixed": true,
           "columns": [
             {
               "key": "c0",

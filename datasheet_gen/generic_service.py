@@ -196,6 +196,18 @@ def _harmonic_build_context(form_data):
             even_rows.append(row)
     out["test_limits_rows_2"] = even_rows
 
+    # --- Average & Maximum harmonic current results (10 cols c0..c9) ---
+    # Imported from the instrument RTF via the Functional Check 'Import TXT' button.
+    amx_cols = ["c" + str(i) for i in range(10)]
+    amx_arrs = {c: _list(form_data, f"avgmax_row__{c}[]") for c in amx_cols}
+    n_amx = max((len(a) for a in amx_arrs.values()), default=0)
+    amx_rows = []
+    for i in range(n_amx):
+        row = {c: (_s(amx_arrs[c][i]) if i < len(amx_arrs[c]) else "") for c in amx_cols}
+        if any(row.values()):
+            amx_rows.append(row)
+    out["avgmax_rows"] = amx_rows
+
     return out
 
 
@@ -589,6 +601,7 @@ def collect_prefill_tables(schema, request_obj, assignment):
         out.setdefault("re_table1_rows", [{"c0": "", "c1": "", "c2": "", "c3": "", "c4": "", "c5": "", "c6": ""}])
     elif code == "HARMONIC":
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
+        out.setdefault("software_used_rows", [{"c0": "Net.Control", "c1": "3.2.6"}])
     return out
 
 

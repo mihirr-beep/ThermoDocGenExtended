@@ -145,6 +145,27 @@ def _save_generic_images(ikeys, assignment_id):
     return out
 
 
+@datasheet_generic_bp.route("/datasheet/g/harmonic/parse-avgmax", methods=["POST"])
+@login_required
+def g_parse_avgmax():
+    """Parse an uploaded IEC 61000-3-2 instrument RTF and return the 'Average and
+    Maximum harmonic current results' table as JSON rows (c0..c9). Used by the
+    Harmonic form's Functional Check 'Import TXT' button."""
+    fs = request.files.get("file")
+    if fs is None or not (fs.filename or "").strip():
+        return jsonify(success=False, message="No file uploaded"), 400
+    try:
+        from . import rtf_import
+        rows = rtf_import.parse_avgmax_table(fs.read())
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.error("Avg/Max RTF parse failed: %s", exc)
+        return jsonify(success=False, message="Could not read the RTF file"), 500
+    if not rows:
+        return jsonify(success=False,
+                       message="No 'Average and Maximum harmonic current results' table found in that file"), 422
+    return jsonify(success=True, rows=rows, count=len(rows))
+
+
 @datasheet_generic_bp.route("/datasheet/g/<code>/save-draft", methods=["POST"])
 @login_required
 def g_save_draft(code):

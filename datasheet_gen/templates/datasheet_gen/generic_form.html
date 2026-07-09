@@ -130,30 +130,34 @@
               <div class="md:col-span-2">
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-sm font-semibold text-gray-700">{{ it.label or 'Rows' }}</span>
+                  {% if not it.fixed %}
                   <div class="flex items-center gap-2">
                     <button type="button" onclick="importData('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Import CSV / TXT</button>
                     <button type="button" onclick="addRow('{{ it.key }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
                   </div>
+                  {% endif %}
                 </div>
                 <div class="overflow-x-auto">
                 <table class="w-full text-xs border border-gray-200">
                   <thead class="bg-gray-50"><tr>
-                    {% for col in it['columns'] %}<th class="p-1 text-left">{{ col.label }}</th>{% endfor %}<th></th>
+                    {% for col in it['columns'] %}<th class="p-1 text-left">{{ col.label }}</th>{% endfor %}{% if not it.fixed %}<th></th>{% endif %}
                   </tr></thead>
                   <tbody id="rows-{{ it.key }}">
                     {% for row in (it['rows'] or [None]) %}
                     <tr>
                       {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
-                      <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
+                      {% if not it.fixed %}<td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>{% endif %}
                     </tr>
                     {% endfor %}
                   </tbody>
                 </table>
                 </div>
+                {% if not it.fixed %}
                 <template id="tpl-{{ it.key }}"><tr>
                   {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
                   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
                 </tr></template>
+                {% endif %}
               </div>
 
             {% elif it.type == 'static_table' %}
@@ -165,7 +169,7 @@
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-sm font-semibold text-gray-700">Harmonic Current Emission Measurement (4 Columns)</span>
                   <div class="flex items-center gap-2">
-                    <button type="button" onclick="importHarmonicCSV()" class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Import CSV / TXT</button>
+                    <button type="button" onclick="importHarmonicRTF()" title="Import the instrument RTF/TXT verification file; the Average section (Hn, Ieff, % of limit, Limit) is extracted into this table." class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import TXT</button>
                     <button type="button" onclick="addHarmonicRow()" class="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold">+ Add row</button>
                   </div>
                 </div>
@@ -199,6 +203,59 @@
                     <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c1[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
                     <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c2[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
                     <td class="p-1 border-r border-gray-200"><input name="harmonic_row__c3[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    <td class="p-1 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-semibold">&times;</button></td>
+                  </tr>
+                </template>
+              </div>
+
+            {% elif it.type == 'harmonic_avgmax' %}
+              <div class="md:col-span-2">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-semibold text-gray-700">Average and Maximum harmonic current results</span>
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="importAvgMaxRTF()" class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Import TXT</button>
+                    <button type="button" onclick="addAvgMaxRow()" class="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold">+ Add row</button>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500 mb-2">Import the instrument's IEC 61000-3-2 verification file (RTF/TXT) — the &ldquo;Average and Maximum harmonic current results&rdquo; table is extracted and inserted below.</p>
+                <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                  <table class="w-full text-xs text-center">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th rowspan="2" class="p-2 border-r border-gray-200">Hn</th>
+                        <th colspan="4" class="p-2 border-r border-gray-200">Average</th>
+                        <th colspan="4" class="p-2 border-r border-gray-200">Maximum</th>
+                        <th rowspan="2" class="p-2 border-r border-gray-200">Harmonic Result</th>
+                        <th rowspan="2" class="p-2 w-8"></th>
+                      </tr>
+                      <tr>
+                        <th class="p-1 border-r border-gray-200">Ieff [A]</th>
+                        <th class="p-1 border-r border-gray-200">of Limit [%]</th>
+                        <th class="p-1 border-r border-gray-200">Limit [A]</th>
+                        <th class="p-1 border-r border-gray-200">Result</th>
+                        <th class="p-1 border-r border-gray-200">Ieff [A]</th>
+                        <th class="p-1 border-r border-gray-200">of Limit [%]</th>
+                        <th class="p-1 border-r border-gray-200">Limit [A]</th>
+                        <th class="p-1 border-r border-gray-200">Result</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rows-avgmax_row">
+                      {% for row in prefill.get('avgmax_rows', []) %}
+                      <tr class="border-b border-gray-200">
+                        {% for i in range(10) %}
+                        <td class="p-1 border-r border-gray-200"><input name="avgmax_row__c{{ i }}[]" value="{{ row.get('c' ~ i, '') }}" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                        {% endfor %}
+                        <td class="p-1 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-semibold">&times;</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                <template id="tpl-avgmax_row">
+                  <tr class="border-b border-gray-200">
+                    {% for i in range(10) %}
+                    <td class="p-1 border-r border-gray-200"><input name="avgmax_row__c{{ i }}[]" class="w-full p-1 border border-gray-300 rounded text-center"></td>
+                    {% endfor %}
                     <td class="p-1 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-semibold">&times;</button></td>
                   </tr>
                 </template>
@@ -1410,6 +1467,90 @@
       tbody.appendChild(tpl.content.cloneNode(true));
       if (typeof triggerAutoSave === 'function') triggerAutoSave();
     }
+  }
+
+  // --- Measurement Data: import the AVERAGE section of the instrument RTF ---
+  // Same RTF as the Functional Check import, but only the Average columns are
+  // taken: Hn, Average Ieff [A], Average of Limit [%], Average Limit [A] ->
+  // the 4-column Harmonic Current Emission Measurement table.
+  function importHarmonicRTF() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.rtf,.txt';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var fd = new FormData();
+      fd.append('file', file);
+      showMessage('Parsing ' + file.name + ' …', 'success');
+      fetch('/datasheet/g/harmonic/parse-avgmax', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.success) { showMessage(res.message || 'Could not parse the file.', 'error'); return; }
+          var tbody = document.getElementById('rows-harmonic_row');
+          var tpl = document.getElementById('tpl-harmonic_row');
+          if (!tbody || !tpl) return;
+          tbody.innerHTML = '';
+          (res.rows || []).forEach(function (row) {
+            // Average section -> c0 Hn, c1 Ieff, c2 % of limit, c3 Limit.
+            // Blank limit cells (e.g. the fundamental) show as "-", per the reference doc.
+            var vals = [row.c0 || '', row.c1 || '', row.c2 || '-', row.c3 || '-'];
+            var clone = tpl.content.cloneNode(true);
+            var ins = clone.querySelectorAll('input');
+            for (var i = 0; i < ins.length && i < vals.length; i++) { ins[i].value = vals[i]; }
+            tbody.appendChild(clone);
+          });
+          showMessage('Imported ' + res.count + ' harmonic row(s) (Average) from ' + file.name + '.', 'success');
+          if (typeof triggerAutoSave === 'function') triggerAutoSave();
+        })
+        .catch(function () { showMessage('Network error while parsing the file.', 'error'); });
+    };
+    input.click();
+  }
+
+  // --- Functional Check: 'Average and Maximum harmonic current results' (10 cols) ---
+  function addAvgMaxRow() {
+    var tbody = document.getElementById('rows-avgmax_row');
+    var tpl = document.getElementById('tpl-avgmax_row');
+    if (tbody && tpl) {
+      tbody.appendChild(tpl.content.cloneNode(true));
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+  // Upload the instrument RTF/TXT; the server extracts the Avg/Max table and
+  // returns rows (c0..c9), which we insert into the editable table below.
+  function importAvgMaxRTF() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.rtf,.txt';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var fd = new FormData();
+      fd.append('file', file);
+      showMessage('Parsing ' + file.name + ' …', 'success');
+      fetch('/datasheet/g/harmonic/parse-avgmax', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.success) { showMessage(res.message || 'Could not parse the file.', 'error'); return; }
+          var tbody = document.getElementById('rows-avgmax_row');
+          var tpl = document.getElementById('tpl-avgmax_row');
+          if (!tbody || !tpl) return;
+          tbody.innerHTML = '';
+          (res.rows || []).forEach(function (row) {
+            var clone = tpl.content.cloneNode(true);
+            var ins = clone.querySelectorAll('input');
+            for (var i = 0; i < ins.length; i++) {
+              ins[i].value = (row['c' + i] != null) ? row['c' + i] : '';
+            }
+            tbody.appendChild(clone);
+          });
+          showMessage('Imported ' + res.count + ' harmonic row(s) from ' + file.name + '.', 'success');
+          if (typeof triggerAutoSave === 'function') triggerAutoSave();
+        })
+        .catch(function () { showMessage('Network error while parsing the file.', 'error'); });
+    };
+    input.click();
   }
 
   document.addEventListener('DOMContentLoaded', function(){
