@@ -166,6 +166,27 @@ def g_parse_avgmax():
     return jsonify(success=True, rows=rows, count=len(rows))
 
 
+@datasheet_generic_bp.route("/datasheet/g/flicker/parse-fc", methods=["POST"])
+@login_required
+def g_parse_flicker_fc():
+    """Parse an uploaded IEC 61000-3-3 instrument RTF and return the Functional
+    Check 'Flicker Measurements' rows (Line 1 / Limits / Results) as JSON. Used
+    by the Flicker form's Functional Check 'Import TXT' button."""
+    fs = request.files.get("file")
+    if fs is None or not (fs.filename or "").strip():
+        return jsonify(success=False, message="No file uploaded"), 400
+    try:
+        from . import rtf_import
+        rows = rtf_import.parse_flicker_fc(fs.read())
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.error("Flicker RTF parse failed: %s", exc)
+        return jsonify(success=False, message="Could not read the RTF file"), 500
+    if not rows:
+        return jsonify(success=False,
+                       message="No 'Flicker Measurements' data found in that file"), 422
+    return jsonify(success=True, rows=rows, count=len(rows))
+
+
 @datasheet_generic_bp.route("/datasheet/g/<code>/save-draft", methods=["POST"])
 @login_required
 def g_save_draft(code):

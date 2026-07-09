@@ -88,7 +88,7 @@
               "key": "voltage_fluctuation_and_flicker_emission",
               "label": "Voltage Fluctuation and Flicker Emission",
               "input": "text",
-              "default": "± 3.686%"
+              "default": "± 3.69%"
             }
           ]
         }
@@ -101,7 +101,22 @@
           "type": "field",
           "key": "sop_reference",
           "label": "SOP Reference Number",
-          "input": "text"
+          "input": "text",
+          "default": "IEC-SOP-510"
+        },
+        {
+          "type": "table",
+          "key": "flicker_fc_rows",
+          "label": "Flicker Measurements",
+          "import": "flicker_rtf",
+          "columns": [
+            { "key": "c0", "label": "" },
+            { "key": "c1", "label": "Plt" },
+            { "key": "c2", "label": "Max Pst" },
+            { "key": "c3", "label": "Max dc" },
+            { "key": "c4", "label": "Max dmax" },
+            { "key": "c5", "label": "Max Tmax" }
+          ]
         }
       ]
     },
@@ -142,7 +157,7 @@
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "text",
+              "input": "textarea",
               "default": ""
             },
             {
@@ -152,16 +167,14 @@
               "default": ""
             },
             {
-              "key": "eut_configuration_col_1",
-              "label": "EUT Configuration (Col 2)",
-              "input": "text",
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": [
+                "Tabletop",
+                "Floor standing"
+              ],
               "default": "Tabletop"
-            },
-            {
-              "key": "eut_configuration_col_2",
-              "label": "EUT Configuration (Col 3)",
-              "input": "text",
-              "default": "Floor standing"
             },
             {
               "key": "eut_input_voltage_frequency",
@@ -211,44 +224,12 @@
       "title": "TEST LIMITS",
       "items": [
         {
-          "type": "fields",
-          "fields": [
-            {
-              "key": "flicker_measurement",
-              "label": "Flicker Measurement",
-              "input": "text",
-              "default": "Limit"
-            },
-            {
-              "key": "pst",
-              "label": "Pst",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "plt",
-              "label": "Plt",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "tmax",
-              "label": "Tmax (s)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dmax",
-              "label": "dmax (%)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dc",
-              "label": "dc (%)",
-              "input": "text",
-              "default": ""
-            }
+          "type": "table",
+          "key": "flicker_limits_rows",
+          "fixed": true,
+          "columns": [
+            { "key": "c0", "label": "Flicker Measurement" },
+            { "key": "c1", "label": "Limit" }
           ]
         }
       ]
@@ -268,80 +249,13 @@
       "title": "MEASUREMENT DATA",
       "items": [
         {
-          "type": "fields",
-          "fields": [
-            {
-              "key": "flicker_measurement_col_1",
-              "label": "Flicker Measurement (Col 2)",
-              "input": "text",
-              "default": "Measured Value"
-            },
-            {
-              "key": "flicker_measurement_col_2",
-              "label": "Flicker Measurement (Col 3)",
-              "input": "text",
-              "default": "Limit"
-            },
-            {
-              "key": "pst_col_1",
-              "label": "Pst (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "pst_col_2",
-              "label": "Pst (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "plt_col_1",
-              "label": "Plt (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "plt_col_2",
-              "label": "Plt (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "tmax_col_1",
-              "label": "Tmax (s) (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "tmax_col_2",
-              "label": "Tmax (s) (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dmax_col_1",
-              "label": "dmax (%) (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dmax_col_2",
-              "label": "dmax (%) (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dc_col_1",
-              "label": "dc (%) (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "dc_col_2",
-              "label": "dc (%) (Col 3)",
-              "input": "text",
-              "default": ""
-            }
+          "type": "table",
+          "key": "flicker_meas_rows",
+          "fixed": true,
+          "columns": [
+            { "key": "c0", "label": "Flicker Measurement" },
+            { "key": "c1", "label": "Measured Value" },
+            { "key": "c2", "label": "Limit" }
           ]
         }
       ]
@@ -352,7 +266,8 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: Voltage fluctuations & flicker emissions test setup_Power Port"
+          "label": "Photo 1: Voltage fluctuations & flicker emissions test setup_Power Port",
+          "caption": true
         }
       ]
     },
@@ -393,6 +308,7 @@
         {
           "type": "table",
           "key": "software_used_rows",
+          "fixed": true,
           "columns": [
             {
               "key": "c0",

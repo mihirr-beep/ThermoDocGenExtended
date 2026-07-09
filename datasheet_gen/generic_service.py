@@ -1,5 +1,17 @@
 """Schema-driven context building + prefill for the generic datasheet engine."""
+import re
+
 from .service import _join, _fmt_supply, _ra, _eut_config, as_checkbox_line  # reuse CE helpers
+
+
+def _normalize_numbered(text):
+    """Put each numbered point ('1.', '2.', ...) of a multi-point value on its own
+    left-aligned line. Tabs become single spaces; decimals like '3.3' are left
+    alone (only 'N.' followed by whitespace starts a new line)."""
+    t = (text or "").replace("\t", " ").replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"[ ]{2,}", " ", t)
+    t = re.sub(r"\s*(\d{1,2})\.\s+", lambda m: "\n" + m.group(1) + ". ", t)
+    return t.strip()
 
 # registry code -> (EMCRequestTest.test_code, detail relationship attribute)
 _DETAIL_ATTR = {
@@ -104,7 +116,7 @@ def build_context(schema, form_data):
         if f.get("checkbox"):
             from .layout import human_checkbox
             val = human_checkbox(val, f["checkbox"])
-        elif (schema.get("code") or "").upper() in ("RE", "HARMONIC") and f["key"] == "eut_configuration":
+        elif (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER") and f["key"] == "eut_configuration":
             from .layout import human_checkbox
             ctx["eut_configuration_col_1"] = human_checkbox(val, ["Tabletop"])
             ctx["eut_configuration_col_2"] = human_checkbox(val, ["Floor standing"])
@@ -293,7 +305,7 @@ def collect_prefill(schema, request_obj, assignment):
         vf_rows = getattr(request_obj, "supply_vf_values", []) or []
         vf = _fmt_supply(vf_rows)
         monitoring = _ra(request_obj, "monitoring_parameters")
-        test_mode = _ra(request_obj, "test_configuration", "operation_modes")
+        test_mode = _normalize_numbered(_ra(request_obj, "test_configuration", "operation_modes"))
         cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
     eng = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     detail = _test_detail(request_obj, schema.get("code"))
@@ -346,6 +358,13 @@ def collect_prefill(schema, request_obj, assignment):
                     pre[f["key"]] = 'EN 61000-3-2:2019+A1:2021'
                 else:
                     pre[f["key"]] = 'IEC 61000-3-2:2018+A1:2020'
+            elif (schema.get("code") or "").upper() == "VOLTAGEFLICKER":
+                # Flicker basic standard = IEC/EN 61000-3-3 (matching frontend JS logic)
+                psClean = (standard or '').lower().replace(' ', '').replace('-', '')
+                if 'en61326' in psClean or 'en60601' in psClean:
+                    pre[f["key"]] = 'EN 61000-3-3:2013+A2:2021'
+                else:
+                    pre[f["key"]] = 'IEC 61000-3-3:2013+A2:2021'
             else:
                 pre[f["key"]] = "Sysmex"      # manager: baseline basic standard
         elif k == "sop_reference":
@@ -360,7 +379,7 @@ def collect_prefill(schema, request_obj, assignment):
         elif "modification_state" in k:
             pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
         elif k.startswith("eut_configuration"):
-            if (schema.get("code") or "").upper() in ("RE", "HARMONIC"):
+            if (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER"):
                 if cfg in ("Tabletop", "Floor standing"):
                     pre[f["key"]] = cfg
                 elif cfg and "table" in cfg.lower():
@@ -557,7 +576,7 @@ def _software_rows_for(code):
         })
     if not rows and code.upper() == "RE":
         rows = [{"c0": "TDK Emission Lab", "c1": "14.43"}]
-    elif not rows and code.upper() == "HARMONIC":
+    elif not rows and code.upper() in ("HARMONIC", "VOLTAGEFLICKER"):
         rows = [{"c0": "Net.Control", "c1": "3.2.6"}]
     return rows
 
@@ -602,6 +621,32 @@ def collect_prefill_tables(schema, request_obj, assignment):
     elif code == "HARMONIC":
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
         out.setdefault("software_used_rows", [{"c0": "Net.Control", "c1": "3.2.6"}])
+    elif code == "VOLTAGEFLICKER":
+        out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
+        out.setdefault("software_used_rows", [{"c0": "Net.Control", "c1": "3.2.6"}])
+        # Functional Check 'Flicker Measurements' (cols: Plt, Max Pst, Max dc, Max dmax, Max Tmax).
+        # Line 1 measured + Results are filled by the RTF import; Limits are fixed.
+        out.setdefault("flicker_fc_rows", [
+            {"c0": "Line 1:", "c1": "", "c2": "", "c3": "", "c4": "", "c5": ""},
+            {"c0": "Limits:", "c1": "0.65", "c2": "1", "c3": "3.3", "c4": "4", "c5": "0.5"},
+            {"c0": "Results:", "c1": "", "c2": "", "c3": "", "c4": "", "c5": ""},
+        ])
+        # Test Limits (fixed IEC 61000-3-3 limits)
+        out.setdefault("flicker_limits_rows", [
+            {"c0": "Pst", "c1": "1"},
+            {"c0": "Plt", "c1": "0.65"},
+            {"c0": "Tmax (s)", "c1": "0.5"},
+            {"c0": "dmax (%)", "c1": "4"},
+            {"c0": "dc (%)", "c1": "3.3"},
+        ])
+        # Measurement Data (Measured Value entered by engineer; Limit fixed)
+        out.setdefault("flicker_meas_rows", [
+            {"c0": "Pst", "c1": "", "c2": "1"},
+            {"c0": "Plt", "c1": "", "c2": "0.65"},
+            {"c0": "Tmax (s)", "c1": "", "c2": "0.5"},
+            {"c0": "dmax (%)", "c1": "", "c2": "4"},
+            {"c0": "dc (%)", "c1": "", "c2": "3.3"},
+        ])
     return out
 
 

@@ -57,3 +57,35 @@ def parse_avgmax_table(data):
         rows.append({f"c{j}": cells[j] for j in range(_COLS)})
         last_hn = hn
     return rows
+
+
+# --------------------------------------------------------------------------
+# Flicker (IEC 61000-3-3) Functional Check "Flicker Measurements" table.
+# The instrument RTF has three labelled rows (Line 1 / Limits / Results), each
+# with five values in the column order: Plt, Max Pst, Max dc, Max dmax, Max Tmax.
+# Returned as generic-table rows {c0..c5}: c0 = row label, c1..c5 = the values.
+# --------------------------------------------------------------------------
+_FC_LABELS = {"line 1": "Line 1:", "limits": "Limits:", "results": "Results:"}
+_FC_COLS = 6  # c0 label + 5 parameter values
+
+
+def parse_flicker_fc(data):
+    """Return the Flicker Functional-Check rows [Line 1, Limits, Results] as a
+    list of {c0..c5} dicts. Empty list if not found."""
+    text = data.decode("latin-1", "replace") if isinstance(data, (bytes, bytearray)) else str(data)
+    anchor = text.find("Line 1:")
+    if anchor < 0:
+        return []
+    region = text[anchor - 200: anchor + 5200]
+    found = {}
+    for row_chunk in region.split(r"\nestrow"):
+        cells = [_cell_text(c) for c in row_chunk.split(r"\nestcell")]
+        cells = [c for c in cells if c != ""]
+        if not cells:
+            continue
+        label = cells[0].rstrip(":").strip().lower()
+        if label in _FC_LABELS and label not in found:
+            vals = (cells + [""] * _FC_COLS)[:_FC_COLS]
+            vals[0] = _FC_LABELS[label]
+            found[label] = {f"c{j}": vals[j] for j in range(_FC_COLS)}
+    return [found[k] for k in ("line 1", "limits", "results") if k in found]
