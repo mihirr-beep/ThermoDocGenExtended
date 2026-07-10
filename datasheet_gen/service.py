@@ -265,17 +265,10 @@ def basic_standard_for(product_standard):
     e.g. all four -> "CISPR 11:2015+A1:2016+A2:2019; EN 55011:2016+A2:2021; ANSI C63.4:2024".
     Unknown standards are skipped; returns '' if none match.
     """
-    out = []
-    for part in re.split(r"[;\n]+", _s(product_standard)):
-        key = re.sub(r"[^a-z0-9]", "", part.lower())
-        if not key:
-            continue
-        for token, basic in _BASIC_STANDARD_MAP:
-            if token in key:
-                if basic not in out:
-                    out.append(basic)
-                break                        # first (most specific) match per product standard
-    return "; ".join(out)
+    # Data now lives in the admin-editable basic_standard_map table (shared emission
+    # mapping = test_code NULL). _BASIC_STANDARD_MAP above is the seed / fallback.
+    from .fixed_store import basic_standard as _bs
+    return _bs(product_standard, None)
 
 
 def procedure_richtext(text):
@@ -336,8 +329,13 @@ def class_letter(class_value):
 
 
 def ce_limits_for_class(class_value):
+    """CE Test-Limit numbers for a class, from the admin-editable fixed-values
+    table (CE.test_limits.by_class); _CE_CLASS_LIMITS is the seed/fallback."""
     letter = class_letter(class_value)
-    return dict(_CE_CLASS_LIMITS.get(letter, {k: "" for k in _CE_LIMIT_KEYS}))
+    from .fixed_store import get_fixed_values
+    by_class = ((get_fixed_values("CE") or {}).get("test_limits", {}) or {}).get("by_class", {})
+    limits = by_class.get(letter) or _CE_CLASS_LIMITS.get(letter, {})
+    return {k: limits.get(k, "") for k in _CE_LIMIT_KEYS}
 
 
 def collect_ce_equipment_rows():
@@ -395,6 +393,9 @@ def collect_ce_prefill(request_obj, assignment=None):
     config = _eut_config(request_obj)
     product_standard = _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else ""
     basic_standard = basic_standard_for(product_standard)   # derived from product standard (DS504)
+    from .fixed_store import get_fixed_values
+    _cefv = get_fixed_values("CE")          # admin-editable constants (uncertainty/sop/software)
+    _ce_software = (_cefv.get("software") or [{}])[0]
     data = {
         # auto from request
         "job_number": _ra(request_obj, "job_number", "tco_id"),
@@ -410,10 +411,10 @@ def collect_ce_prefill(request_obj, assignment=None):
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,
-        # sensible defaults from the form/document (DS504 + Krishna feedback)
-        "measurement_uncertainty": "± 3.368 dB",
+        # fixed constants now come from the admin-editable datasheet_fixed_values table
+        "measurement_uncertainty": _cefv.get("measurement_uncertainty", "± 3.368 dB"),
         "basic_standard": basic_standard,
-        "sop_reference": "IEC-SOP-505",
+        "sop_reference": _cefv.get("sop_reference", "IEC-SOP-505"),
         "test_port": "Power Line",            # editable
         "coupling_method": "LISN",            # editable
         "frequency_range": _s(getattr(ce, "freq_range", "")) if ce and getattr(ce, "freq_range", "") else "150 kHz - 30 MHz",
@@ -426,9 +427,9 @@ def collect_ce_prefill(request_obj, assignment=None):
         "test_procedure": procedure_for_config(config, basic_standard),
         # section 4: linked to the Modification Record (initial state = 0)
         "eut_modification_state": "0",
-        # section 11: fixed software defaults
-        "software_used": "PMM Suite",
-        "software_version": "2.54",
+        # section 11: fixed software defaults (from the DB fixed-values table)
+        "software_used": _ce_software.get("c0", "PMM Suite"),
+        "software_version": _ce_software.get("c1", "2.54"),
         # section 12: Result Class follows Classification - Class
         "result_class": class_letter(class_value),
     }

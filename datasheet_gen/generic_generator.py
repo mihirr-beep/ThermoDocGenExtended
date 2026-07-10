@@ -5,7 +5,7 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
-from .layout import polish_layout, page_break_before_top_sections, enforce_arial_fonts
+from .layout import polish_layout, page_break_before_top_sections, enforce_arial_fonts, enforce_arial_procedure
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
@@ -151,12 +151,14 @@ def render(code, context, img_keys, img_paths, output_path):
         _prune_empty_limit_tables(tpl.docx)   # drop CISPR/FCC limit tables that don't apply
         polish_layout(tpl.docx)
         enforce_arial_fonts(tpl.docx)              # force Arial on all table cell runs (override Calibri)
+        enforce_arial_procedure(tpl.docx)          # force Arial on the Test Procedure body text
         page_break_before_top_sections(tpl.docx)   # each top-level (Heading 1) section on a new page
         _re_paginate(tpl.docx)                # runs LAST so it wins over polish_layout's keep-with-next
         strip_trailing_blank_paragraphs(tpl.docx)
     else:
         # For HARMONIC and other generic templates, preserve the manual layout/breaks of the template
         enforce_arial_fonts(tpl.docx)
+        enforce_arial_procedure(tpl.docx)          # force Arial on the Test Procedure body text
     
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

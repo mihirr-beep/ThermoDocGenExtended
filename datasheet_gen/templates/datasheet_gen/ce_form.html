@@ -995,6 +995,25 @@
 
   // ---- Measurement Data: repeatable Test records (each = label + Line + Neutral) ----
   var measSeq = 0;   // stable, ever-incrementing record index (survives deletions)
+  // Default figure caption shown (pre-filled) in the plot caption box — the same
+  // name the document uses when the box is left blank. Position-based so the figure
+  // numbers stay correct as Tests are added/removed.
+  function ceCaptionDefault(side, n){
+    return "Figure " + n + ": CE plot_" + side + "_Quasi-peak & Average_0.15MHz - 30MHz";
+  }
+  var CE_CAP_RE = /^Figure \d+: CE plot_(Line|Neutral)_Quasi-peak & Average_0\.15MHz - 30MHz$/;
+  // Re-number the plot caption boxes to match each Test's position. Only boxes that
+  // are empty or still hold a default caption are touched — user-typed names are kept.
+  function renumberCaptions(){
+    var recs = document.querySelectorAll('#meas-records .meas-record');
+    recs.forEach(function (rec, p) {
+      var lc = rec.querySelector('input[name^="plot_line_caption_"]');
+      var nc = rec.querySelector('input[name^="plot_neutral_caption_"]');
+      if (lc && (lc.value.trim() === '' || CE_CAP_RE.test(lc.value.trim()))) lc.value = ceCaptionDefault('Line', 2 * p + 1);
+      if (nc && (nc.value.trim() === '' || CE_CAP_RE.test(nc.value.trim()))) nc.value = ceCaptionDefault('Neutral', 2 * p + 2);
+    });
+  }
+
   function addTest(label, data){
     var idx = measSeq++;
     var tpl = document.getElementById('tpl-meas-record');
@@ -1005,7 +1024,11 @@
     if (data && data.line_rows && data.line_rows.length) fillMeasureRows('line' + idx, data.line_rows); else addRow('line' + idx);
     if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
     if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
+    // pre-fill any user-supplied captions (draft restore), else the position default
+    if (data && data.line_caption) { var lc = block.querySelector('[name="plot_line_caption_' + idx + '"]'); if (lc) lc.value = data.line_caption; }
+    if (data && data.neutral_caption) { var nc = block.querySelector('[name="plot_neutral_caption_' + idx + '"]'); if (nc) nc.value = data.neutral_caption; }
     block.querySelectorAll('input[type=file]').forEach(wireImageInput);
+    renumberCaptions();
     triggerAutoSave();
     return block;
   }
@@ -1028,6 +1051,7 @@
   function removeTest(btn){
     if (document.querySelectorAll('#meas-records .meas-record').length > 1) {
       btn.closest('.meas-record').remove();
+      renumberCaptions();
       triggerAutoSave();
     }
     else showMessage('At least one Test is required.', 'error');

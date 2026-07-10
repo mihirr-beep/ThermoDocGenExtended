@@ -233,17 +233,27 @@ def _re_limit_tables(product_standard, cls, freq):
     apply. 30 MHz-1 GHz -> the QP tables for whichever families the standard names;
     1 GHz-6 GHz -> the FCC Peak/Average table (CISPR has no 1-6 GHz RE limit)."""
     from . import re_logic
+    # Selection LOGIC stays here; the limit NUMBERS come from the admin-editable
+    # datasheet_fixed_values table (RE.test_limits). re_logic stays as fallback.
+    from .fixed_store import get_fixed_values
+    tl = (get_fixed_values("RE") or {}).get("test_limits", {})
+    qp = tl.get("qp_30m_1g", {})
+    pa = tl.get("pa_1g_6g", {})
     fams = re_logic.families(product_standard)
     c = re_logic._norm_class(cls) or "B"
     is30 = (freq == "30MHz-1GHz")
     is16 = (freq == "1GHz-6GHz")
     out = {"re_limit_cispr_qp": [], "re_limit_fcc_qp": [], "re_limit_fcc_pa": []}
-    if is30 and "CISPR" in fams:
-        out["re_limit_cispr_qp"] = [{"c0": b, "c1": v} for b, v in re_logic._QP_30M_1G.get(("CISPR", c), [])]
-    if is30 and "FCC" in fams:
-        out["re_limit_fcc_qp"] = [{"c0": b, "c1": v} for b, v in re_logic._QP_30M_1G.get(("FCC", c), [])]
-    if is16:
-        out["re_limit_fcc_pa"] = [{"c0": b, "c1": p, "c2": a} for b, p, a in re_logic._PA_1G_6G.get(("FCC", c), [])]
+    # CISPR/ICES have no separate 1-6 GHz radiated-emission limit — their only RE
+    # limit is the 30 MHz-1 GHz Quasi-peak table, so it always applies when a CISPR
+    # standard is named (regardless of the band toggle). FCC's QP (30M-1G) and
+    # Peak/Average (1-6G) tables stay gated by the selected frequency range.
+    if "CISPR" in fams:
+        out["re_limit_cispr_qp"] = [{"c0": r[0], "c1": r[1]} for r in qp.get("CISPR", {}).get(c, [])]
+    if "FCC" in fams and (is30 or not is16):
+        out["re_limit_fcc_qp"] = [{"c0": r[0], "c1": r[1]} for r in qp.get("FCC", {}).get(c, [])]
+    if "FCC" in fams and is16:
+        out["re_limit_fcc_pa"] = [{"c0": r[0], "c1": r[1], "c2": r[2]} for r in pa.get("FCC", {}).get(c, [])]
     return out
 
 
@@ -257,30 +267,33 @@ def _re_test_spec_columns(freq):
     Frequency Range row itself renders as a ticked/unticked checkbox per band.
     """
     from .layout import human_checkbox
+    from .fixed_store import get_fixed_values
+    sd = (get_fixed_values("RE") or {}).get("spec_defaults", {})   # fixed values from DB
     s30 = (freq == "30MHz-1GHz")
     s16 = (freq == "1GHz-6GHz")
     DASH = "-"
 
-    def band(v30, v16):
+    def band(k1, k2, d1="", d2=""):
+        v30, v16 = sd.get(k1, d1), sd.get(k2, d2)
         return (v30 if s30 else DASH), (v16 if s16 else DASH)
 
     cols = {}
     # real ticked/unticked checkboxes (RunsXml -> {{r ... }}), same rendering as Classification
     cols["frequency_range_col_1"] = human_checkbox("30MHz-1GHz" if s30 else "", ["30MHz-1GHz"])
     cols["frequency_range_col_2"] = human_checkbox("1GHz-6GHz" if s16 else "", ["1GHz-6GHz"])
-    cols["resolution_bandwidth_col_1"], cols["resolution_bandwidth_col_2"] = band("120k", "1M")
-    cols["video_bandwidth_col_1"], cols["video_bandwidth_col_2"] = band("1M", "3M")
-    cols["step_size_col_1"], cols["step_size_col_2"] = band("40k", "400k")
-    cols["turn_table_rotation_step_col_1"], cols["turn_table_rotation_step_col_2"] = band("15°", "22.5°")
-    cols["antenna_height_variation_step_for_pre_scan_mea_2"], cols["antenna_height_variation_step_for_pre_scan_mea_3"] = band("1", "1")
-    cols["antenna_height_variation_for_final_measurement_2"], cols["antenna_height_variation_for_final_measurement_3"] = band("1-4", "1-2")
-    cols["pre_scan_measurement_time_col_1"], cols["pre_scan_measurement_time_col_2"] = band("20", "20")
-    cols["final_scan_measurement_time_col_1"], cols["final_scan_measurement_time_col_2"] = band("1", "1")
-    cols["attenuation_col_1"], cols["attenuation_col_2"] = band("Auto", "Auto")
+    cols["resolution_bandwidth_col_1"], cols["resolution_bandwidth_col_2"] = band("resolution_bandwidth_col_1", "resolution_bandwidth_col_2", "120k", "1M")
+    cols["video_bandwidth_col_1"], cols["video_bandwidth_col_2"] = band("video_bandwidth_col_1", "video_bandwidth_col_2", "1M", "3M")
+    cols["step_size_col_1"], cols["step_size_col_2"] = band("step_size_col_1", "step_size_col_2", "40k", "400k")
+    cols["turn_table_rotation_step_col_1"], cols["turn_table_rotation_step_col_2"] = band("turn_table_rotation_step_col_1", "turn_table_rotation_step_col_2", "15°", "22.5°")
+    cols["antenna_height_variation_step_for_pre_scan_mea_2"], cols["antenna_height_variation_step_for_pre_scan_mea_3"] = band("antenna_height_variation_step_for_pre_scan_mea_2", "antenna_height_variation_step_for_pre_scan_mea_3", "1", "1")
+    cols["antenna_height_variation_for_final_measurement_2"], cols["antenna_height_variation_for_final_measurement_3"] = band("antenna_height_variation_for_final_measurement_2", "antenna_height_variation_for_final_measurement_3", "1-4", "1-2")
+    cols["pre_scan_measurement_time_col_1"], cols["pre_scan_measurement_time_col_2"] = band("pre_scan_measurement_time_col_1", "pre_scan_measurement_time_col_2", "20", "20")
+    cols["final_scan_measurement_time_col_1"], cols["final_scan_measurement_time_col_2"] = band("final_scan_measurement_time_col_1", "final_scan_measurement_time_col_2", "1", "1")
+    cols["attenuation_col_1"], cols["attenuation_col_2"] = band("attenuation_col_1", "attenuation_col_2", "Auto", "Auto")
     # definitional — shown for both bands
-    cols["polarization_col_1"] = cols["polarization_col_2"] = "Horizontal and Vertical"
-    cols["detector_col_1"] = "Peak and Quasi-peak"
-    cols["detector_col_2"] = "Peak and Average"
+    cols["polarization_col_1"] = cols["polarization_col_2"] = sd.get("polarization_col_1", "Horizontal and Vertical")
+    cols["detector_col_1"] = sd.get("detector_col_1", "Peak and Quasi-peak")
+    cols["detector_col_2"] = sd.get("detector_col_2", "Peak and Average")
     return cols
 
 
@@ -348,28 +361,14 @@ def collect_prefill(schema, request_obj, assignment):
         elif "product_standard" in k:
             pre[f["key"]] = standard
         elif k == "basic_standard":
-            if (schema.get("code") or "").upper() == "RE":
-                from .service import basic_standard_for
-                pre[f["key"]] = basic_standard_for(standard) or default   # derived from Product Standard
-            elif (schema.get("code") or "").upper() == "HARMONIC":
-                # Derive or prefill basic standard for HARMONIC based on standard string (matching frontend JS logic)
-                psClean = (standard or '').lower().replace(' ', '').replace('-', '')
-                if 'en61326' in psClean or 'en55011' in psClean:
-                    pre[f["key"]] = 'EN 61000-3-2:2019+A1:2021'
-                else:
-                    pre[f["key"]] = 'IEC 61000-3-2:2018+A1:2020'
-            elif (schema.get("code") or "").upper() == "VOLTAGEFLICKER":
-                # Flicker basic standard = IEC/EN 61000-3-3 (matching frontend JS logic)
-                psClean = (standard or '').lower().replace(' ', '').replace('-', '')
-                if 'en61326' in psClean or 'en60601' in psClean:
-                    pre[f["key"]] = 'EN 61000-3-3:2013+A2:2021'
-                else:
-                    pre[f["key"]] = 'IEC 61000-3-3:2013+A2:2021'
+            # Product -> Basic standard now comes from the admin-editable
+            # basic_standard_map table (per test_code; emission is shared/global).
+            _bcode = (schema.get("code") or "").upper()
+            if _bcode in ("RE", "HARMONIC", "VOLTAGEFLICKER", "CE"):
+                from .fixed_store import basic_standard as _bs
+                pre[f["key"]] = _bs(standard, _bcode) or default
             else:
                 pre[f["key"]] = "Sysmex"      # manager: baseline basic standard
-        elif k == "sop_reference":
-            if (schema.get("code") or "").upper() == "HARMONIC":
-                pre[f["key"]] = "IEC-SOP-509"
         elif "monitoring_parameters" in k:
             pre[f["key"]] = monitoring
         elif "voltage" in k and "frequency" in k:
@@ -499,7 +498,37 @@ def collect_prefill(schema, request_obj, assignment):
         pre["f_216_to_960_fcc"] = fcc_qp.get("216 to 960", "")
         pre["f_960_to_1000_fcc"] = fcc_qp.get("960 to 1000", "")
 
+    _apply_db_fixed_scalars(pre, schema)
     return pre
+
+
+def _apply_db_fixed_scalars(pre, schema):
+    """Override the scalar fixed values (Measurement Uncertainty, Functional-Check
+    SOP reference, and the fixed Test-Specification parameters) from the admin-
+    editable datasheet_fixed_values table, so the DB is the single source of truth.
+    Falls back silently to the schema defaults already in `pre` when a value is
+    absent from the DB."""
+    from .fixed_store import get_fixed_values
+    fv = get_fixed_values(schema.get("code"))
+    if not fv:
+        return
+    # Measurement Uncertainty -> the value field of the MEASUREMENT UNCERTAINTY section
+    unc = fv.get("measurement_uncertainty")
+    if unc:
+        for sec in schema.get("sections", []):
+            if "UNCERTAIN" in (sec.get("title") or "").upper():
+                for it in sec.get("items", []):
+                    for f in (it.get("fields", []) if it.get("type") == "fields" else []):
+                        if f.get("key") != "name_of_the_test":
+                            pre[f["key"]] = unc
+    # SOP reference -> the Functional-Check SOP field
+    if fv.get("sop_reference") is not None:
+        for f in iter_scalar_fields(schema):
+            if "sop" in f["key"].lower():
+                pre[f["key"]] = fv["sop_reference"]
+    # Fixed Test-Specification parameters -> their fields directly (by key)
+    for key, val in (fv.get("spec_defaults") or {}).items():
+        pre[key] = val
 
 
 def _equipment_rows_for(code):
@@ -603,6 +632,19 @@ def collect_prefill_tables(schema, request_obj, assignment):
                     rows = _software_rows_for(code)
                     if rows:
                         out[key] = rows
+    # Software Used is a fixed constant per datasheet — take it from the DB
+    # (datasheet_fixed_values.software), overriding the Equipment-Master lookup.
+    from .fixed_store import get_fixed_values
+    fv = get_fixed_values(code)
+    if fv.get("software"):
+        for sec in schema["sections"]:
+            for it in sec["items"]:
+                if it.get("type") == "table" and "software" in (it.get("key", "").lower()):
+                    out[it["key"]] = [dict(r) for r in fv["software"]]
+
+    def _rowN(r, n):
+        return {"c%d" % i: (r[i] if i < len(r) else "") for i in range(n)}
+
     if code == "RE":
         from . import re_logic
         ps = _join(getattr(request_obj, "product_standards", []), "standard_value") if request_obj else ""
@@ -612,41 +654,19 @@ def collect_prefill_tables(schema, request_obj, assignment):
             out["re_limits_qp_rows"] = qp
         if pa:
             out["re_limits_pa_rows"] = pa
-        out.setdefault("software_used_rows", [{"c0": "TDK Emission Lab", "c1": "14.43"}])
-        # EUT Modification Record defaults to a single 'initial state' row (like CE)
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "", "c3": ""}])
-        
-        # Add starter empty rows for the 7-column measurement tables:
         out.setdefault("re_table1_rows", [{"c0": "", "c1": "", "c2": "", "c3": "", "c4": "", "c5": "", "c6": ""}])
     elif code == "HARMONIC":
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
-        out.setdefault("software_used_rows", [{"c0": "Net.Control", "c1": "3.2.6"}])
     elif code == "VOLTAGEFLICKER":
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
-        out.setdefault("software_used_rows", [{"c0": "Net.Control", "c1": "3.2.6"}])
-        # Functional Check 'Flicker Measurements' (cols: Plt, Max Pst, Max dc, Max dmax, Max Tmax).
-        # Line 1 measured + Results are filled by the RTF import; Limits are fixed.
-        out.setdefault("flicker_fc_rows", [
-            {"c0": "Line 1:", "c1": "", "c2": "", "c3": "", "c4": "", "c5": ""},
-            {"c0": "Limits:", "c1": "0.65", "c2": "1", "c3": "3.3", "c4": "4", "c5": "0.5"},
-            {"c0": "Results:", "c1": "", "c2": "", "c3": "", "c4": "", "c5": ""},
-        ])
-        # Test Limits (fixed IEC 61000-3-3 limits)
-        out.setdefault("flicker_limits_rows", [
-            {"c0": "Pst", "c1": "1"},
-            {"c0": "Plt", "c1": "0.65"},
-            {"c0": "Tmax (s)", "c1": "0.5"},
-            {"c0": "dmax (%)", "c1": "4"},
-            {"c0": "dc (%)", "c1": "3.3"},
-        ])
-        # Measurement Data (Measured Value entered by engineer; Limit fixed)
-        out.setdefault("flicker_meas_rows", [
-            {"c0": "Pst", "c1": "", "c2": "1"},
-            {"c0": "Plt", "c1": "", "c2": "0.65"},
-            {"c0": "Tmax (s)", "c1": "", "c2": "0.5"},
-            {"c0": "dmax (%)", "c1": "", "c2": "4"},
-            {"c0": "dc (%)", "c1": "", "c2": "3.3"},
-        ])
+        tl = fv.get("test_limits", {})
+        if tl.get("fc_rows"):
+            out.setdefault("flicker_fc_rows", [_rowN(r, 6) for r in tl["fc_rows"]])
+        if tl.get("limits_rows"):
+            out.setdefault("flicker_limits_rows", [_rowN(r, 2) for r in tl["limits_rows"]])
+        if tl.get("meas_rows"):
+            out.setdefault("flicker_meas_rows", [_rowN(r, 3) for r in tl["meas_rows"]])
     return out
 
 

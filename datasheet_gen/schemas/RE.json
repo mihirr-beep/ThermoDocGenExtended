@@ -101,7 +101,8 @@
           "type": "field",
           "key": "sop_reference",
           "label": "SOP Reference Number",
-          "input": "text"
+          "input": "text",
+          "default": "IEC-SOP-507"
         },
         {
           "type": "image",

@@ -139,9 +139,15 @@
                   <div class="flex items-center gap-2">
                     <button type="button" onclick="importFlickerRTF('{{ it.key }}')" title="Import the instrument RTF/TXT verification file; the Flicker Measurements (Line 1 / Limits / Results) are extracted into this table." class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import TXT</button>
                   </div>
+                  {% elif it.import == 'flicker_meas' %}
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="importFlickerMeas('{{ it.key }}')" title="Import the instrument RTF/TXT verification file; the measured Pst / Plt / Tmax / dmax / dc values are filled into this table." class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import TXT</button>
+                  </div>
                   {% elif not it.fixed %}
                   <div class="flex items-center gap-2">
+                    {% if it.key != 'eut_modification_rec_rows' %}
                     <button type="button" onclick="importData('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Import CSV / TXT</button>
+                    {% endif %}
                     <button type="button" onclick="addRow('{{ it.key }}')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
                   </div>
                   {% endif %}
@@ -1210,11 +1216,12 @@
     var cls = reClassLetter((inputByName('classification_col_2') || {}).value || '');
     var freq = (inputByName('frequency_range') || {}).value || '';
     var fams = reFamiliesOf(ps), html = '';
-    if (freq === '30MHz-1GHz') {
-      if (cls && fams.indexOf('CISPR') >= 0) html += reLimTable('CISPR / ICES — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['CISPR|' + cls]);
-      if (cls && fams.indexOf('FCC') >= 0) html += reLimTable('FCC — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['FCC|' + cls]);
-    } else if (freq === '1GHz-6GHz') {
-      if (cls) html += reLimTable('FCC — Peak & Average (1 GHz – 6 GHz), Class ' + cls, ['Frequency', 'Peak Limit (dBµV/m)', 'Average Limit (dBµV/m)'], RE_PA_LIMITS['FCC|' + cls]);
+    // CISPR/ICES: only a 30 MHz-1 GHz QP limit, always shown when named.
+    if (cls && fams.indexOf('CISPR') >= 0) html += reLimTable('CISPR / ICES — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['CISPR|' + cls]);
+    // FCC: QP for 30 MHz-1 GHz, Peak/Average for 1 GHz-6 GHz.
+    if (cls && fams.indexOf('FCC') >= 0) {
+      if (freq === '1GHz-6GHz') html += reLimTable('FCC — Peak & Average (1 GHz – 6 GHz), Class ' + cls, ['Frequency', 'Peak Limit (dBµV/m)', 'Average Limit (dBµV/m)'], RE_PA_LIMITS['FCC|' + cls]);
+      else html += reLimTable('FCC — Quasi-peak (30 MHz – 1 GHz), Class ' + cls, ['Frequency (MHz)', 'Quasi-peak Limit (dBµV/m)'], RE_QP_LIMITS['FCC|' + cls]);
     }
     if (!html) html = '<p class="text-xs text-gray-500">Select Product Standard, Class and Frequency Range above to preview the applicable limit table(s).</p>';
     host.innerHTML = html;
@@ -1350,7 +1357,29 @@
       cfgEl.addEventListener('change', updateREBehavior);
     }
     updateREBehavior();
-    renderLimitPreview();   // render the Test-Limit preview on load regardless
+    // Pull the RE limit numbers from the admin-editable DB table (so the preview
+    // matches the generated doc); fall back to the built-in tables on failure.
+    fetch('/datasheet/g/RE/fixed-values')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var tl = res && res.success && res.values ? res.values.test_limits : null;
+        if (tl && tl.qp_30m_1g) {
+          ['CISPR', 'FCC'].forEach(function (fam) {
+            ['A', 'B'].forEach(function (cls) {
+              var rows = (tl.qp_30m_1g[fam] || {})[cls];
+              if (rows) RE_QP_LIMITS[fam + '|' + cls] = rows;
+            });
+          });
+        }
+        if (tl && tl.pa_1g_6g && tl.pa_1g_6g.FCC) {
+          ['A', 'B'].forEach(function (cls) {
+            var rows = tl.pa_1g_6g.FCC[cls];
+            if (rows) RE_PA_LIMITS['FCC|' + cls] = rows;
+          });
+        }
+      })
+      .catch(function () {})
+      .then(function () { renderLimitPreview(); });
 
     var DRAFT_RE_GROUPS = {{ measurement_groups|tojson if measurement_groups else '[]' }};
     if (DRAFT_RE_GROUPS.length > 0) {
@@ -1578,7 +1607,19 @@
     if (cfgEl) {
       cfgEl.addEventListener('change', updateHarmonicBehavior);
     }
-    updateHarmonicBehavior();
+    // Pull the Odd/Even harmonic limit numbers from the admin-editable DB table
+    // (falls back to the built-in arrays if the request fails).
+    fetch('/datasheet/g/HARMONIC/fixed-values')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var tl = res && res.success && res.values ? res.values.test_limits : null;
+        if (tl) {
+          if (Array.isArray(tl.odd)) ODD_LIMITS = tl.odd;
+          if (Array.isArray(tl.even)) EVEN_LIMITS = tl.even;
+        }
+      })
+      .catch(function () {})
+      .then(function () { updateHarmonicBehavior(); });
   });
 </script>
 {% endif %}
@@ -1665,6 +1706,57 @@
             });
           });
           showMessage('Imported Flicker Measurements from ' + file.name + '.', 'success');
+          if (typeof triggerAutoSave === 'function') triggerAutoSave();
+        })
+        .catch(function () { showMessage('Network error while parsing the file.', 'error'); });
+    };
+    input.click();
+  }
+
+  // Import the same instrument RTF/TXT for MEASUREMENT DATA. The server returns the
+  // 'Line 1' row (columns: Plt, Max Pst, Max dc, Max dmax, Max Tmax); we fill each
+  // measurement row's 'Measured Value' (c1) from the matching parameter.
+  function importFlickerMeas(key) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.rtf,.txt';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var fd = new FormData();
+      fd.append('file', file);
+      showMessage('Parsing ' + file.name + ' …', 'success');
+      fetch('/datasheet/g/flicker/parse-fc', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.success) { showMessage(res.message || 'Could not parse the file.', 'error'); return; }
+          var line1 = null;
+          (res.rows || []).forEach(function (row) {
+            if ((row.c0 || '').trim().toLowerCase().indexOf('line 1') === 0) line1 = row;
+          });
+          if (!line1) { showMessage('No "Line 1" measurement row found in that file.', 'error'); return; }
+          // Line 1 cols -> measurement-row labels (measured value goes in column c1)
+          var MEASURED = {
+            'pst': line1.c2,          // Max Pst
+            'plt': line1.c1,          // Plt
+            'tmax (s)': line1.c5,     // Max Tmax
+            'dmax (%)': line1.c4,     // Max dmax
+            'dc (%)': line1.c3        // Max dc
+          };
+          var tbody = document.getElementById('rows-' + key);
+          if (!tbody) return;
+          var trs = tbody.querySelectorAll('tr');
+          var filled = 0;
+          trs.forEach(function (tr) {
+            var c0 = tr.querySelector('input[name="' + key + '__c0[]"]');
+            if (!c0) return;
+            var lbl = c0.value.trim().toLowerCase();
+            if (MEASURED.hasOwnProperty(lbl) && MEASURED[lbl] != null && MEASURED[lbl] !== '') {
+              var mv = tr.querySelector('input[name="' + key + '__c1[]"]');
+              if (mv) { mv.value = MEASURED[lbl]; filled++; }
+            }
+          });
+          showMessage('Imported ' + filled + ' measured value(s) from ' + file.name + '.', filled ? 'success' : 'error');
           if (typeof triggerAutoSave === 'function') triggerAutoSave();
         })
         .catch(function () { showMessage('Network error while parsing the file.', 'error'); });

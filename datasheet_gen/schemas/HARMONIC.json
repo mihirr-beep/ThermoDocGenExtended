@@ -88,7 +88,7 @@
               "key": "harmonic_current_emission",
               "label": "Harmonic Current Emission",
               "input": "text",
-              "default": "± 5.807%"
+              "default": "± 5.94%"
             }
           ]
         }

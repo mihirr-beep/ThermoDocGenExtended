@@ -157,7 +157,7 @@
             {
               "key": "test_mode",
               "label": "Test Mode",
-              "input": "textarea",
+              "input": "text",
               "default": ""
             },
             {
@@ -252,6 +252,7 @@
           "type": "table",
           "key": "flicker_meas_rows",
           "fixed": true,
+          "import": "flicker_meas",
           "columns": [
             { "key": "c0", "label": "Flicker Measurement" },
             { "key": "c1", "label": "Measured Value" },

@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from docx.shared import Pt
 
 CAPTION_RE = re.compile(r"^\s*(Photo|Figure)\s*\d*\s*:", re.I)
 
@@ -401,6 +402,44 @@ def ce_finalize_layout(doc):
 # Font enforcement — force Arial on every table cell run
 # --------------------------------------------------------------------------
 
+def enforce_arial_procedure(doc):
+    """Force Arial on the TEST PROCEDURE body text.
+
+    The procedure text is entered/edited on the web form and rendered into a
+    template paragraph whose style is 'Normal (Web)' (Times New Roman) or the
+    document default — so the run inherits Times New Roman. This walks the body
+    paragraphs between the 'TEST PROCEDURE' heading and the next heading and sets
+    every run's font to Arial (symbol/checkbox runs are skipped)."""
+    from docx.oxml import OxmlElement
+    ARIAL = "Arial"
+    SKIP_FONTS = {"Segoe UI Symbol", "Symbol", "Wingdings"}
+    in_proc = False
+    for p in doc.paragraphs:
+        name = (p.style.name if p.style is not None else "") or ""
+        if name.strip().lower().startswith("heading"):
+            in_proc = "test procedure" in (p.text or "").strip().lower()
+            continue
+        if not in_proc or not (p.text or "").strip():
+            continue
+        for run in p.runs:
+            rPr = run._r.get_or_add_rPr()
+            rFonts = rPr.find(qn("w:rFonts"))
+            if rFonts is not None:
+                current = rFonts.get(qn("w:ascii")) or rFonts.get(qn("w:hAnsi")) or ""
+                if current in SKIP_FONTS:
+                    continue
+                rFonts.set(qn("w:ascii"), ARIAL)
+                rFonts.set(qn("w:hAnsi"), ARIAL)
+                rFonts.set(qn("w:cs"), ARIAL)
+            else:
+                rf = OxmlElement("w:rFonts")
+                rf.set(qn("w:ascii"), ARIAL)
+                rf.set(qn("w:hAnsi"), ARIAL)
+                rf.set(qn("w:cs"), ARIAL)
+                rPr.insert(0, rf)
+            run.font.name = ARIAL
+
+
 def enforce_arial_fonts(doc):
     """Walk every paragraph in every table cell and force the font to Arial.
 
@@ -421,6 +460,7 @@ def enforce_arial_fonts(doc):
             for cell in row.cells:
                 for para in cell.paragraphs:
                     for run in para.runs:
+                        run.font.size = Pt(11)
                         rPr = run._r.get_or_add_rPr()
                         # Skip special symbol runs (checkboxes)
                         rFonts = rPr.find(qn("w:rFonts"))

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Datasheet Config &mdash; Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-6">
+  <h1 class="text-2xl font-bold text-gray-900">Datasheet Configuration</h1>
+  <p class="text-sm text-gray-500 mb-6">Manage the values that print on every datasheet. Changes take effect on the next generation &mdash; no code change needed.</p>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+      <div class="mb-4 rounded-lg px-4 py-2 text-sm {{ 'bg-green-50 text-green-800 border border-green-200' if cat == 'success' else 'bg-red-50 text-red-800 border border-red-200' }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- ============ Section 1: Fixed Values ============ -->
+  <section class="mb-10">
+    <div class="flex items-center gap-2 border-b border-gray-200 pb-2 mb-4">
+      <span class="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">1</span>
+      <div>
+        <h2 class="text-lg font-bold text-gray-900">Fixed Values</h2>
+        <p class="text-xs text-gray-500">Measurement Uncertainty, SOP Reference, Software Used, Test Limits &amp; fixed Test-Specification parameters &mdash; per datasheet.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for c in cards %}
+      <a href="{{ url_for('datasheet_admin.config_datasheet', code=c.code) }}"
+         class="block bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-300 transition p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">{{ c.code }}</span>
+          {% if c.updated_at %}<span class="text-[10px] text-gray-400">{{ c.updated_at }}</span>{% endif %}
+        </div>
+        <div class="mt-3 text-base font-bold text-gray-900">{{ c.name }}</div>
+        <div class="text-xs text-gray-500 mt-1">Edit this datasheet's constant values &rarr;</div>
+      </a>
+      {% endfor %}
+      {% if not cards %}<p class="text-sm text-gray-500">No datasheet rows yet (they seed on next app start).</p>{% endif %}
+    </div>
+  </section>
+
+  <!-- ============ Section 2: Product -> Basic Standard Mapping ============ -->
+  <section>
+    <div class="flex items-center gap-2 border-b border-gray-200 pb-2 mb-4">
+      <span class="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-bold text-sm">2</span>
+      <div>
+        <h2 class="text-lg font-bold text-gray-900">Product Standard &rarr; Basic Standard</h2>
+        <p class="text-xs text-gray-500">How each Product Standard maps to its Basic (measurement) Standard, per test. Add a new standard by adding a row.</p>
+      </div>
+    </div>
+    <a href="{{ url_for('datasheet_admin.standard_map_page') }}"
+       class="block bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-emerald-300 transition p-5 sm:max-w-md">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">MAPPING</span>
+        <span class="text-[10px] text-gray-400">{{ map_count }} row(s)</span>
+      </div>
+      <div class="mt-3 text-base font-bold text-gray-900">Open standard mapping &rarr;</div>
+      <div class="text-xs text-gray-500 mt-1">View, edit, add or remove Product&nbsp;&rarr;&nbsp;Basic standard rows.</div>
+    </a>
+  </section>
+</div>
+{% endblock %}
