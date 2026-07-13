@@ -504,7 +504,9 @@ def collect_prefill(schema, request_obj, assignment):
                 }
                 pre[f["key"]] = _basic_map.get(_bcode, "Sysmex")
         elif "monitoring_parameters" in k:
-            pre[f["key"]] = monitoring
+            # Pull from the Test Request; if the TR has nothing, fall back to the
+            # schema's constant default so the field is never blank on the datasheet.
+            pre[f["key"]] = monitoring or default
         elif "voltage" in k and "frequency" in k:
             pre[f["key"]] = vf
         elif k == "test_mode":

@@ -49,7 +49,10 @@
           "label": "SOP Reference Number",
           "input": "text",
           "default": "IEC-SOP-504"
-        }
+        },
+        { "type": "image", "key": "img_fc_1", "label": "Functional Check – Pulse Verification 1" },
+        { "type": "image", "key": "img_fc_2", "label": "Functional Check – Pulse Verification 2" },
+        { "type": "image", "key": "img_fc_3", "label": "Functional Check – Pulse Verification 3" }
       ]
     },
     {
@@ -58,7 +61,8 @@
         {
           "type": "textarea",
           "key": "monitoring_parameters",
-          "label": "Monitoring Parameters"
+          "label": "Monitoring Parameters",
+          "default": "No Error Message"
         }
       ]
     },

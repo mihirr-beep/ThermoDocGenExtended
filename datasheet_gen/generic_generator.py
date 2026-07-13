@@ -207,6 +207,13 @@ def render(code, context, img_keys, img_paths, output_path):
     if code == "EFT":
         _eft_insert_observation(tpl.docx, context.get("eft_obs_power"), context.get("eft_obs_signal"))
 
+    # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
+    # their templates): rows never split across a page, small tables stay whole,
+    # long tables repeat their header, and section headings never dangle at a page
+    # bottom. Runs after EFT's observation table is inserted so it's covered too.
+    if code in ("EFT", "VOLTAGEDIPS", "SURGE"):
+        polish_layout(tpl.docx)
+
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
