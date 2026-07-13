@@ -217,6 +217,16 @@ def _eft_build_context(form_data):
     # dynamic observation tables — consumed by the generator after render (not in the template)
     ctx["eft_obs_power"] = _eft_obs(form_data, "power")
     ctx["eft_obs_signal"] = _eft_obs(form_data, "signal")
+    # observation legend: one {code, desc} per unique observation code entered
+    codes = _list(form_data, "eft_obs_legend_code[]")
+    descs = _list(form_data, "eft_obs_legend_desc[]")
+    legend, seen = [], set()
+    for i, code in enumerate(codes):
+        code = _s(code)
+        if code and code not in seen:
+            seen.add(code)
+            legend.append({"code": code, "desc": _s(descs[i]) if i < len(descs) else ""})
+    ctx["eft_obs_legend"] = legend
     return ctx
 
 

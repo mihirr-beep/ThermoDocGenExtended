@@ -176,6 +176,29 @@ def _eft_insert_observation(doc, power, signal):
             marker._p.getparent().remove(marker._p)   # port not tested -> drop the dangling heading
 
 
+def _eft_insert_legend(doc, legend):
+    """Replace the template's static 'A: ... / B: ...' observation legend with one
+    '<code>: <description>' paragraph per unique code the engineer entered. The
+    static legend paragraphs are short 'code:' lines (A:/B:/C:/D:); if the user
+    entered no codes, the static legend is left as-is."""
+    import re
+    if not legend:
+        return
+    statics = [p for p in doc.paragraphs
+               if re.match(r"^\s*[A-Za-z0-9]{1,3}\s*:\s", p.text or "")
+               and not p.text.strip().lower().startswith(("power line", "signal line"))]
+    if not statics:
+        return
+    anchor = statics[0]
+    style = anchor.style
+    for entry in legend:
+        code = (entry.get("code") or "").strip()
+        desc = (entry.get("desc") or "").strip()
+        anchor.insert_paragraph_before(("%s: %s" % (code, desc)).rstrip(), style=style)
+    for p in statics:
+        p._p.getparent().remove(p._p)
+
+
 def render(code, context, img_keys, img_paths, output_path):
     tpl = DocxTemplate(os.path.join(TPL_DIR, f"{code}.docx"))
     for k in img_keys:
@@ -206,6 +229,7 @@ def render(code, context, img_keys, img_paths, output_path):
 
     if code == "EFT":
         _eft_insert_observation(tpl.docx, context.get("eft_obs_power"), context.get("eft_obs_signal"))
+        _eft_insert_legend(tpl.docx, context.get("eft_obs_legend"))
 
     # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
     # their templates): rows never split across a page, small tables stay whole,
