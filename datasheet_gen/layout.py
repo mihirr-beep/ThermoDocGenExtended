@@ -263,8 +263,14 @@ def polish_layout(doc):
 
     for tbl in doc.tables:
         rows = tbl.rows
+        has_image = bool(tbl._tbl.findall(".//" + qn("w:drawing")) or
+                         tbl._tbl.findall(".//" + qn("w:pict")))
         for tr in rows:
             _row_cant_split(tr)          # never split a row across pages
+        if has_image:
+            # image tables (e.g. Functional-Check plots) are tall; keeping them
+            # together shoves them onto blank pages, so let their rows flow.
+            continue
         if len(rows) <= 6:
             # small block tables (sign-off, limits, software...) stay on one page
             for tr in rows[:-1]:

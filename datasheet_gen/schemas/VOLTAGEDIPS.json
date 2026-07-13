@@ -89,6 +89,7 @@
               "options": ["3 times", "Custom"],
               "default": "3 times"
             },
+            { "key": "number_of_dips_custom", "label": "Number of Dips/Interruptions — Custom value", "input": "text", "default": "" },
             {
               "key": "time_between_dips_interruptions",
               "label": "Time Between Dips/Interruptions",
@@ -96,6 +97,7 @@
               "options": ["10 sec", "Custom"],
               "default": "10 sec"
             },
+            { "key": "time_between_custom", "label": "Time Between — Custom value", "input": "text", "default": "" },
             {
               "key": "phase_angle",
               "label": "Phase Angle",

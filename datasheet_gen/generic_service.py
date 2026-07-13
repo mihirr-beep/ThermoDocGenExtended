@@ -149,10 +149,16 @@ def _vdips_build_context(form_data):
     ctx["immunity_test_requirement"] = human_checkbox(
         _s(form_data.get("immunity_test_requirement")), ["Basic", "Industrial", "Controlled", "Custom"])
     ctx["test_port"] = human_checkbox(_s(form_data.get("test_port")) or "Power Line", ["Power Line"])
-    ctx["number_of_dips_interruptions"] = human_checkbox(
-        _s(form_data.get("number_of_dips_interruptions")), ["3 times", "Custom"])
-    ctx["time_between_dips_interruptions"] = human_checkbox(
-        _s(form_data.get("time_between_dips_interruptions")), ["10 sec", "Custom"])
+    # Number/Time: when "Custom" is chosen, show the user's entered value beside it
+    def _custom_cb(sel_key, custom_key, fixed_label):
+        sel = _s(form_data.get(sel_key))
+        cv = _s(form_data.get(custom_key))
+        custom_label = ("Custom  " + cv) if (sel == "Custom" and cv) else "Custom"
+        return human_checkbox(sel, [fixed_label, custom_label])
+    ctx["number_of_dips_interruptions"] = _custom_cb(
+        "number_of_dips_interruptions", "number_of_dips_custom", "3 times")
+    ctx["time_between_dips_interruptions"] = _custom_cb(
+        "time_between_dips_interruptions", "time_between_custom", "10 sec")
     ctx["phase_angle"] = human_checkbox(
         _s(form_data.get("phase_angle")), ["0° & 180°", "0° – 360° in 45° steps"])
     ctx["eut_configuration"] = human_checkbox(

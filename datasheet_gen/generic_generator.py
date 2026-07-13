@@ -3,6 +3,8 @@ import os
 
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
+from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
 from .layout import polish_layout, page_break_before_top_sections, enforce_arial_fonts, enforce_arial_procedure
@@ -14,6 +16,8 @@ def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
         return (40, 20)
+    if "img_fc" in k:
+        return (140, 68)   # functional-check scope plots: keep short so 3 fit on a page
     if (code or "").upper() == "RE":
         if "photo" in k:
             return (140, 90)
@@ -132,6 +136,27 @@ def _re_paginate(doc):
                                 cp.paragraph_format.keep_with_next = True
 
 
+def _collapse_blank_runs(doc):
+    """Reduce runs of consecutive empty spacer paragraphs to a single one (one is
+    kept for spacing). Never removes a paragraph that carries an image or a page
+    break, so section-break markers and figures are preserved."""
+    body = doc.element.body
+    prev_blank = False
+    for child in list(body.iterchildren()):
+        if not child.tag.endswith("}p"):
+            prev_blank = False
+            continue
+        p = Paragraph(child, doc)
+        has_img = bool(p._p.findall(".//" + qn("w:drawing")) or p._p.findall(".//" + qn("w:pict")))
+        has_break = bool(p.paragraph_format.page_break_before) or any(
+            b.get(qn("w:type")) == "page" for b in p._p.findall(".//" + qn("w:br")))
+        is_blank = not p.text.strip() and not has_img and not has_break
+        if is_blank and prev_blank:
+            body.remove(child)
+        else:
+            prev_blank = is_blank
+
+
 def _eft_insert_observation(doc, power, signal):
     """Insert the EFT dynamic observation table(s) right after the 'Power Line:' /
     'Signal Line:' heading paragraphs. Columns are variable (built from the selected
@@ -236,7 +261,10 @@ def render(code, context, img_keys, img_paths, output_path):
     # long tables repeat their header, and section headings never dangle at a page
     # bottom. Runs after EFT's observation table is inserted so it's covered too.
     if code in ("EFT", "VOLTAGEDIPS", "SURGE"):
+        _collapse_blank_runs(tpl.docx)               # drop runs of empty spacer paragraphs
         polish_layout(tpl.docx)
+        page_break_before_top_sections(tpl.docx)     # each major (Heading 1) section starts on a new page
+        strip_trailing_blank_paragraphs(tpl.docx)
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

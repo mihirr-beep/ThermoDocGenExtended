@@ -1612,6 +1612,20 @@
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
 
+  // Show a Custom-value text box only when its dropdown is set to "Custom".
+  function toggleVdipsCustom(selName, customName) {
+    var sel = inputByName(selName), cust = inputByName(customName);
+    if (!sel || !cust) return;
+    var wrap = cust.closest('div');
+    var show = (sel.value === 'Custom');
+    if (wrap) wrap.style.display = show ? '' : 'none';
+    if (!show) cust.value = '';
+  }
+  var VDIPS_CUSTOM_PAIRS = [
+    ['number_of_dips_interruptions', 'number_of_dips_custom'],
+    ['time_between_dips_interruptions', 'time_between_custom']
+  ];
+
   document.addEventListener('DOMContentLoaded', function () {
     var imm = inputByName('immunity_test_requirement');
     if (imm) imm.addEventListener('change', function () { renderVdipsTestLevel(); renderVdipsResult(); generateVdipsObservation(true); });
@@ -1619,6 +1633,11 @@
     if (vf) vf.addEventListener('change', function () { generateVdipsObservation(true); });
     var ps = inputByName('product_standard');
     if (ps) { ps.addEventListener('input', derivePhaseAngle); ps.addEventListener('change', derivePhaseAngle); }
+    VDIPS_CUSTOM_PAIRS.forEach(function (pair) {
+      var sel = inputByName(pair[0]);
+      if (sel) sel.addEventListener('change', function () { toggleVdipsCustom(pair[0], pair[1]); });
+      toggleVdipsCustom(pair[0], pair[1]);   // set initial visibility
+    });
     derivePhaseAngle();
     renderVdipsTestLevel();
     renderVdipsResult();

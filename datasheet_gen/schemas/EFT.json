@@ -259,7 +259,7 @@
           "type": "fields",
           "fields": [
             { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "B" },
-            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
+            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["Yes", "No"], "default": "" }
           ]
         },
         {
