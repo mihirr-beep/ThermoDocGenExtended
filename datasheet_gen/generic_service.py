@@ -97,6 +97,129 @@ def image_keys(schema):
     return keys
 
 
+# Voltage-Dips derived Test Level sets. MUST stay in sync with VDIPS_LEVELS in
+# generic_form.html (the form preview); durations follow the reference document
+# (25 / 250 for every frequency). Can move to the DB fixed-values table later.
+VDIPS_LEVELS = {
+    "Basic": {
+        "dips": [
+            {"pct": "0", "spec": "0.5 cycle", "dur": "0.5", "crit": "B"},
+            {"pct": "0", "spec": "1 cycle", "dur": "1", "crit": "B"},
+            {"pct": "70", "spec": "25/30 cycles", "dur": "25", "crit": "C"},
+        ],
+        "intr": [{"pct": "0", "spec": "250/300 cycles", "dur": "250", "crit": "C"}],
+    },
+    "Industrial": {
+        "dips": [
+            {"pct": "0", "spec": "1 cycle", "dur": "1", "crit": "B"},
+            {"pct": "40", "spec": "10/12 cycles", "dur": "10", "crit": "C"},
+            {"pct": "70", "spec": "25/30 cycles", "dur": "25", "crit": "C"},
+        ],
+        "intr": [{"pct": "0", "spec": "250/300 cycles", "dur": "250", "crit": "C"}],
+    },
+}
+
+
+def _vdips_groups(form_data, kind):
+    """Rebuild the per-combo observation groups the form posted (kind='dips'|'intr').
+    Reads vdips_<kind>_combo_<ci> + vdips_<kind>_<ci>__{pct,dur,obs}[]."""
+    groups = []
+    ci = 0
+    while form_data.get("vdips_%s_combo_%d" % (kind, ci)) is not None:
+        pcts = _list(form_data, "vdips_%s_%d__pct[]" % (kind, ci))
+        durs = _list(form_data, "vdips_%s_%d__dur[]" % (kind, ci))
+        obs = _list(form_data, "vdips_%s_%d__obs[]" % (kind, ci))
+        n = max(len(pcts), len(durs), len(obs), 0)
+        rows = [{
+            "pct": _s(pcts[i]) if i < len(pcts) else "",
+            "dur": _s(durs[i]) if i < len(durs) else "",
+            "obs": _s(obs[i]) if i < len(obs) else "",
+        } for i in range(n)]
+        groups.append({"combo": _s(form_data.get("vdips_%s_combo_%d" % (kind, ci))), "rows": rows})
+        ci += 1
+    return groups
+
+
+def _vdips_build_context(form_data):
+    """VOLTAGEDIPS docx context: ticked checkboxes, derived Test Level, per-combo
+    observation groups, and the derived Required + user-chosen Met criteria."""
+    from .layout import human_checkbox
+    ctx = {}
+    # checkbox cells (tick the selected option) -> {{r key }} placeholders
+    ctx["immunity_test_requirement"] = human_checkbox(
+        _s(form_data.get("immunity_test_requirement")), ["Basic", "Industrial", "Controlled", "Custom"])
+    ctx["test_port"] = human_checkbox(_s(form_data.get("test_port")) or "Power Line", ["Power Line"])
+    ctx["number_of_dips_interruptions"] = human_checkbox(
+        _s(form_data.get("number_of_dips_interruptions")), ["3 times", "Custom"])
+    ctx["time_between_dips_interruptions"] = human_checkbox(
+        _s(form_data.get("time_between_dips_interruptions")), ["10 sec", "Custom"])
+    ctx["phase_angle"] = human_checkbox(
+        _s(form_data.get("phase_angle")), ["0° & 180°", "0° – 360° in 45° steps"])
+    ctx["eut_configuration"] = human_checkbox(
+        _s(form_data.get("eut_configuration")), ["Tabletop", "Floor standing"])
+
+    # Derived Test Level columns (3 dips + 1 interruption); the 3rd dip is shown
+    # twice in the doc's merged spec table, so the template repeats tl_d2_*.
+    lv = VDIPS_LEVELS.get(_s(form_data.get("immunity_test_requirement"))) or {}
+    d, it = lv.get("dips", []), lv.get("intr", [])
+    def _pct(lst, i): return (lst[i]["pct"] + " %") if i < len(lst) else ""
+    def _dur(lst, i): return lst[i]["spec"] if i < len(lst) else ""
+    ctx.update({
+        "tl_d0_pct": _pct(d, 0), "tl_d1_pct": _pct(d, 1), "tl_d2_pct": _pct(d, 2), "tl_i_pct": _pct(it, 0),
+        "tl_d0_dur": _dur(d, 0), "tl_d1_dur": _dur(d, 1), "tl_d2_dur": _dur(d, 2), "tl_i_dur": _dur(it, 0),
+    })
+
+    # per-combo observation tables
+    ctx["vdips_dips_groups"] = _vdips_groups(form_data, "dips")
+    ctx["vdips_intr_groups"] = _vdips_groups(form_data, "intr")
+
+    # RESULT: % + Required criteria are derived (posted as hidden); Met is user-chosen.
+    ctx["res_pct"] = [(_s(x) + " %") for x in _list(form_data, "vdips_result_pct[]")]
+    ctx["res_crit"] = [_s(x) for x in _list(form_data, "vdips_req_criteria[]")]
+    ctx["res_met"] = [_s(x) for x in _list(form_data, "vdips_met_criteria[]")]
+    return ctx
+
+
+def _eft_obs(form_data, kind):
+    """Rebuild an EFT observation table the form posted (kind='power'|'signal').
+    Columns from eft_obs_<kind>_cols; rows from eft_obs_<kind>_row_<ri> +
+    eft_obs_<kind>_<ri>__c<ci>. Returns {'cols', 'rows':[{label, cells}]} or None."""
+    cols = [c for c in _s(form_data.get("eft_obs_%s_cols" % kind)).split(",") if c]
+    if not cols:
+        return None
+    rows = []
+    ri = 0
+    while form_data.get("eft_obs_%s_row_%d" % (kind, ri)) is not None:
+        cells = [_s(form_data.get("eft_obs_%s_%d__c%d" % (kind, ri, ci))) for ci in range(len(cols))]
+        rows.append({"label": _s(form_data.get("eft_obs_%s_row_%d" % (kind, ri))), "cells": cells})
+        ri += 1
+    return {"cols": cols, "rows": rows}
+
+
+def _eft_build_context(form_data):
+    """EFT/BURST docx context: ticked checkboxes, cumulative test voltages, single
+    PRF, and the dynamic observation tables (inserted post-render by the generator)."""
+    from .layout import human_checkbox, cumulative_checkbox
+    ctx = {}
+    ctx["immunity_test_requirement"] = human_checkbox(
+        _s(form_data.get("immunity_test_requirement")), ["Basic", "Industrial", "Controlled", "Custom"])
+    tp = _s(form_data.get("test_port"))
+    ctx["test_port_power"] = human_checkbox("Power Line" if tp in ("Power Line", "Both") else "", ["Power Line"])
+    ctx["test_port_signal"] = human_checkbox("Signal Line" if tp in ("Signal Line", "Both") else "", ["Signal Line"])
+    ctx["test_voltage_power_line"] = cumulative_checkbox(
+        _s(form_data.get("test_voltage_power_line")), ["±0.5 kV", "±1 kV", "±2 kV", "±4 kV"])
+    ctx["test_voltage_signal_line"] = cumulative_checkbox(
+        _s(form_data.get("test_voltage_signal_line")), ["±0.25 kV", "±0.5 kV", "±1 kV", "±2 kV"])
+    ctx["pulse_repetition_frequency"] = human_checkbox(
+        _s(form_data.get("pulse_repetition_frequency")), ["5 kHz", "100 kHz"])
+    ctx["eut_configuration"] = human_checkbox(
+        _s(form_data.get("eut_configuration")), ["Tabletop", "Floor standing"])
+    # dynamic observation tables — consumed by the generator after render (not in the template)
+    ctx["eft_obs_power"] = _eft_obs(form_data, "power")
+    ctx["eft_obs_signal"] = _eft_obs(form_data, "signal")
+    return ctx
+
+
 def build_context(schema, form_data):
     """Map the posted form into the docxtpl context for this schema."""
     ctx = {}
@@ -163,6 +286,10 @@ def build_context(schema, form_data):
             ctx[base_key + "_col_2"] = val if s16 else (DASH if s30 else val)
     if schema.get("code") == "HARMONIC":
         ctx.update(_harmonic_build_context(form_data))
+    if schema.get("code") == "VOLTAGEDIPS":
+        ctx.update(_vdips_build_context(form_data))
+    if schema.get("code") == "EFT":
+        ctx.update(_eft_build_context(form_data))
     return ctx
 
 
@@ -368,7 +495,14 @@ def collect_prefill(schema, request_obj, assignment):
                 from .fixed_store import basic_standard as _bs
                 pre[f["key"]] = _bs(standard, _bcode) or default
             else:
-                pre[f["key"]] = "Sysmex"      # manager: baseline basic standard
+                # Derived basic standard per test (kept in code for now; can move to
+                # the basic_standard_map table later, like the DB-backed datasheets).
+                _basic_map = {
+                    "VOLTAGEDIPS": "IEC 61000-4-11:2020 & EN 61000-4-11:2020",
+                    "EFT": "IEC 61000-4-4:2012 & EN 61000-4-4:2012",
+                    "SURGE": "IEC 61000-4-5:2014+A1:2017 & EN 61000-4-5:2014+A1:2017",
+                }
+                pre[f["key"]] = _basic_map.get(_bcode, "Sysmex")
         elif "monitoring_parameters" in k:
             pre[f["key"]] = monitoring
         elif "voltage" in k and "frequency" in k:
@@ -607,6 +741,8 @@ def _software_rows_for(code):
         rows = [{"c0": "TDK Emission Lab", "c1": "14.43"}]
     elif not rows and code.upper() in ("HARMONIC", "VOLTAGEFLICKER"):
         rows = [{"c0": "Net.Control", "c1": "3.2.6"}]
+    elif not rows and code.upper() in ("VOLTAGEDIPS", "EFT", "SURGE"):
+        rows = [{"c0": "iec.control", "c1": "10.3.2"}]
     return rows
 
 
@@ -657,6 +793,8 @@ def collect_prefill_tables(schema, request_obj, assignment):
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "", "c3": ""}])
         out.setdefault("re_table1_rows", [{"c0": "", "c1": "", "c2": "", "c3": "", "c4": "", "c5": "", "c6": ""}])
     elif code == "HARMONIC":
+        out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
+    elif code in ("VOLTAGEDIPS", "EFT", "SURGE"):
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])
     elif code == "VOLTAGEFLICKER":
         out.setdefault("eut_modification_rec_rows", [{"c0": "0", "c1": "Initial state", "c2": "-", "c3": "-"}])

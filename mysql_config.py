@@ -2,19 +2,33 @@ import hashlib
 import os
 from datetime import timedelta
 
-# Load .env file if it exists in the app directory
-_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
-if os.path.exists(_env_path):
-    with open(_env_path, 'r', encoding='utf-8') as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if not _line or _line.startswith('#') or '=' not in _line:
-                continue
-            _key, _val = _line.split('=', 1)
-            _key = _key.strip()
-            _val = _val.strip().strip("'\"")
-            if _key:
-                os.environ[_key] = _val
+# Load DB / app settings from a .env file (falls back to the committed
+# .env.example) so connection details live in CONFIG, not in this Python code.
+# A new machine just edits .env (or uses the committed .env.example) and runs —
+# no code change needed. Precedence: real environment variables > .env > .env.example.
+def _load_env_files():
+    # Use YOUR .env if present; otherwise fall back to the committed .env.example.
+    # Only ONE file is loaded (no mixing), so your local .env fully defines your
+    # connection and never inherits the example's values.
+    _here = os.path.dirname(os.path.abspath(__file__))
+    for _name in ('.env', '.env.example'):
+        _path = os.path.join(_here, _name)
+        if not os.path.exists(_path):
+            continue
+        with open(_path, 'r', encoding='utf-8') as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith('#') or '=' not in _line:
+                    continue
+                _key, _val = _line.split('=', 1)
+                _key = _key.strip()
+                _val = _val.strip().strip("'\"")
+                if _key:
+                    os.environ.setdefault(_key, _val)   # a real env var still wins
+        break   # first existing file only (.env wins; .env.example is the fallback)
+
+
+_load_env_files()
 
 # Register PyMySQL as MySQLdb shim (works without PYTHONPATH)
 try:

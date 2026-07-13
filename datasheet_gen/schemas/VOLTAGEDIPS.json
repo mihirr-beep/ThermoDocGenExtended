@@ -17,30 +17,10 @@
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "job_number",
-              "label": "Job Number",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_name",
-              "label": "EUT Name",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_model_sku_number",
-              "label": "EUT Model/SKU Number",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_serial_number",
-              "label": "EUT Serial Number",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "job_number", "label": "Job Number", "input": "text", "default": "" },
+            { "key": "eut_name", "label": "EUT Name", "input": "text", "default": "" },
+            { "key": "eut_model_sku_number", "label": "EUT Model/SKU Number", "input": "text", "default": "" },
+            { "key": "eut_serial_number", "label": "EUT Serial Number", "input": "text", "default": "" }
           ]
         }
       ]
@@ -52,22 +32,10 @@
           "type": "table",
           "key": "eut_modification_rec_rows",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Modification state"
-            },
-            {
-              "key": "c1",
-              "label": "Description of Modification still fitted to EUT"
-            },
-            {
-              "key": "c2",
-              "label": "Modification fitted by"
-            },
-            {
-              "key": "c3",
-              "label": "Date modification fitted"
-            }
+            { "key": "c0", "label": "Modification state" },
+            { "key": "c1", "label": "Description of Modification still fitted to EUT" },
+            { "key": "c2", "label": "Modification fitted by" },
+            { "key": "c3", "label": "Date modification fitted" }
           ]
         }
       ]
@@ -79,7 +47,8 @@
           "type": "field",
           "key": "sop_reference",
           "label": "SOP Reference Number",
-          "input": "text"
+          "input": "text",
+          "default": "IEC-SOP-502"
         }
       ]
     },
@@ -103,66 +72,51 @@
         {
           "type": "fields",
           "fields": [
+            { "key": "product_standard", "label": "Product Standard", "input": "text", "default": "" },
+            { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
             {
-              "key": "product_standard",
-              "label": "Product Standard",
+              "key": "immunity_test_requirement",
+              "label": "Immunity Test Requirement",
               "input": "text",
+              "options": ["Basic", "Industrial", "Custom"],
               "default": ""
             },
+            { "key": "test_port", "label": "Test Port", "input": "text", "default": "Power Line" },
             {
-              "key": "basic_standard",
-              "label": "Basic Standard",
+              "key": "number_of_dips_interruptions",
+              "label": "Number of Voltage Dips/Interruptions",
               "input": "text",
-              "default": ""
+              "options": ["3 times", "Custom"],
+              "default": "3 times"
             },
             {
-              "key": "test_mode",
-              "label": "Test Mode",
+              "key": "time_between_dips_interruptions",
+              "label": "Time Between Dips/Interruptions",
               "input": "text",
-              "default": ""
+              "options": ["10 sec", "Custom"],
+              "default": "10 sec"
             },
             {
-              "key": "eut_modification_state",
-              "label": "EUT Modification state (Refer 1.2)",
+              "key": "phase_angle",
+              "label": "Phase Angle",
               "input": "text",
+              "options": ["0° & 180°", "0° – 360° in 45° steps"],
               "default": ""
             },
+            { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
+            { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
             {
-              "key": "eut_configuration_tabletop",
-              "label": "EUT Configuration - Tabletop",
-              "input": "text",
-              "default": "Floor standing"
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": ["Tabletop", "Floor standing"],
+              "default": "Tabletop"
             },
-            {
-              "key": "eut_input_voltage_frequency",
-              "label": "EUT Input Voltage & Frequency",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ambient_temperature",
-              "label": "Ambient Temperature (°C)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "relative_humidity",
-              "label": "Relative Humidity (%)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "test_date",
-              "label": "Test Date",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "tested_by",
-              "label": "Tested by",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
+            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "" },
+            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "" },
+            { "key": "test_date", "label": "Test Date", "input": "text", "default": "" },
+            { "key": "tested_by", "label": "Tested By", "input": "text", "default": "" }
           ]
         }
       ]
@@ -194,37 +148,17 @@
         {
           "type": "table",
           "key": "test_observation_rows",
+          "label": "Test Observation",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Test Level % Ut"
-            },
-            {
-              "key": "c1",
-              "label": "Duration (cycles/periods)"
-            },
-            {
-              "key": "c2",
-              "label": "Observation"
-            }
-          ]
-        },
-        {
-          "type": "table",
-          "key": "test_observation_rows_2",
-          "columns": [
-            {
-              "key": "c0",
-              "label": "Test Level % Ut"
-            },
-            {
-              "key": "c1",
-              "label": "Duration (cycles/periods)"
-            },
-            {
-              "key": "c2",
-              "label": "Observation"
-            }
+            { "key": "c0", "label": "Test Level (% Ut)" },
+            { "key": "c1", "label": "Duration (cycles / periods)" },
+            { "key": "c2", "label": "Observation (A / B / C / D)" }
+          ],
+          "rows": [
+            { "c0": "0% Ut" },
+            { "c0": "0/40% Ut" },
+            { "c0": "70% Ut" },
+            { "c0": "Interruption 0% Ut" }
           ]
         }
       ]
@@ -235,7 +169,8 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: Voltage Dips and short Interruptions test setup"
+          "label": "Photo 1: Voltage Dips and short Interruptions test setup",
+          "caption": true
         }
       ]
     },
@@ -246,26 +181,11 @@
           "type": "table",
           "key": "test_equipment_used_rows",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Equipment Name"
-            },
-            {
-              "key": "c1",
-              "label": "Make"
-            },
-            {
-              "key": "c2",
-              "label": "Model No."
-            },
-            {
-              "key": "c3",
-              "label": "Serial No."
-            },
-            {
-              "key": "c4",
-              "label": "Calibration Due"
-            }
+            { "key": "c0", "label": "Equipment Name" },
+            { "key": "c1", "label": "Make" },
+            { "key": "c2", "label": "Model No." },
+            { "key": "c3", "label": "Serial No." },
+            { "key": "c4", "label": "Calibration Due" }
           ]
         }
       ]
@@ -277,14 +197,8 @@
           "type": "table",
           "key": "software_used_rows",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Software Name"
-            },
-            {
-              "key": "c1",
-              "label": "Software Version"
-            }
+            { "key": "c0", "label": "Software Name" },
+            { "key": "c1", "label": "Software Version" }
           ]
         }
       ]
@@ -295,101 +209,9 @@
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "required_performance_criteria_voltage_dips",
-              "label": "Required Performance Criteria - Voltage Dips",
-              "input": "text",
-              "default": "Interruption"
-            },
-            {
-              "key": "required_performance_criteria_0_col_2",
-              "label": "Required Performance Criteria - 0 % (Col 3)",
-              "input": "text",
-              "default": "0/40 %"
-            },
-            {
-              "key": "required_performance_criteria_0_col_3",
-              "label": "Required Performance Criteria - 0 % (Col 4)",
-              "input": "text",
-              "default": "70%"
-            },
-            {
-              "key": "required_performance_criteria_0_col_4",
-              "label": "Required Performance Criteria - 0 % (Col 5)",
-              "input": "text",
-              "default": "0 %"
-            },
-            {
-              "key": "required_performance_criteria_col_1",
-              "label": "Required Performance Criteria (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "required_performance_criteria_col_2",
-              "label": "Required Performance Criteria (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "required_performance_criteria_col_3",
-              "label": "Required Performance Criteria (Col 4)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "required_performance_criteria_col_4",
-              "label": "Required Performance Criteria (Col 5)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "met_performance_criteria_col_1",
-              "label": "Met Performance Criteria (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "met_performance_criteria_col_2",
-              "label": "Met Performance Criteria (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "met_performance_criteria_col_3",
-              "label": "Met Performance Criteria (Col 4)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "met_performance_criteria_col_4",
-              "label": "Met Performance Criteria (Col 5)",
-              "input": "text",
-              "default": ""
-            }
-          ]
-        },
-        {
-          "type": "fields",
-          "fields": [
-            {
-              "key": "name",
-              "label": "Name",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "signature",
-              "label": "Signature",
-              "input": "image",
-              "default": ""
-            },
-            {
-              "key": "date",
-              "label": "Date",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "name", "label": "Name", "input": "text", "default": "" },
+            { "key": "signature", "label": "Signature", "input": "image", "default": "" },
+            { "key": "date", "label": "Date", "input": "text", "default": "" }
           ]
         }
       ]

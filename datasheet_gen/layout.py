@@ -98,6 +98,32 @@ def human_checkbox(value, options, size=22):
     return rt
 
 
+def cumulative_checkbox(level, options, size=22):
+    """Tick every option up to and including `level` (options given in ascending
+    order). Used for Surge / EFT test-voltage rows where the level is DERIVED from
+    the standard and selecting e.g. ±1 kV implies ±0.5 kV was also applied — so both
+    boxes are ticked. A 'Custom' level ticks only the Custom box; a blank/unknown
+    level ticks nothing. Returns a RunsXml for a `{{r key }}` placeholder.
+    """
+    rt = RunsXml()
+    sel = -1
+    for i, opt in enumerate(options):
+        if _match(level, str(opt)):
+            sel = i
+            break
+    sel_is_custom = sel >= 0 and "custom" in str(options[sel]).strip().lower()
+    for i, opt in enumerate(options):
+        opt_is_custom = "custom" in str(opt).strip().lower()
+        if sel_is_custom:
+            checked = (i == sel)                      # only the Custom box
+        else:
+            checked = (sel >= 0 and i <= sel and not opt_is_custom)
+        rt.add(_box_run(checked, size))
+        sep = "    " if i < len(options) - 1 else ""
+        rt.add(_label_run(" " + str(opt) + sep, size))
+    return rt
+
+
 # --------------------------------------------------------------------------
 # Post-render layout polish
 # --------------------------------------------------------------------------

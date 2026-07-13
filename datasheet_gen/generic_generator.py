@@ -132,6 +132,50 @@ def _re_paginate(doc):
                                 cp.paragraph_format.keep_with_next = True
 
 
+def _eft_insert_observation(doc, power, signal):
+    """Insert the EFT dynamic observation table(s) right after the 'Power Line:' /
+    'Signal Line:' heading paragraphs. Columns are variable (built from the selected
+    test voltage), so the table is created here rather than templated."""
+    def _find(text):
+        for p in doc.paragraphs:
+            if p.text.strip() == text:
+                return p
+        return None
+
+    def _build(data):
+        if not data or not data.get("cols"):
+            return None
+        cols, rows = data["cols"], data.get("rows", [])
+        t = doc.add_table(rows=1 + len(rows), cols=1 + len(cols))
+        try:
+            t.style = "Table Grid"
+        except Exception:
+            pass
+        hdr = t.rows[0].cells
+        hdr[0].text = "Coupling path / line"
+        for j, c in enumerate(cols):
+            hdr[1 + j].text = c
+        for i, row in enumerate(rows):
+            cs = t.rows[1 + i].cells
+            cs[0].text = row.get("label", "")
+            for j, v in enumerate(row.get("cells", [])):
+                if 1 + j < len(cs):
+                    cs[1 + j].text = v
+        el = t._tbl
+        el.getparent().remove(el)          # detach from the end; re-inserted at the marker
+        return el
+
+    for text, data in (("Power Line:", power), ("Signal Line:", signal)):
+        marker = _find(text)
+        if marker is None:
+            continue
+        el = _build(data)
+        if el is not None:
+            marker._p.addnext(el)
+        else:
+            marker._p.getparent().remove(marker._p)   # port not tested -> drop the dangling heading
+
+
 def render(code, context, img_keys, img_paths, output_path):
     tpl = DocxTemplate(os.path.join(TPL_DIR, f"{code}.docx"))
     for k in img_keys:
@@ -159,7 +203,10 @@ def render(code, context, img_keys, img_paths, output_path):
         # For HARMONIC and other generic templates, preserve the manual layout/breaks of the template
         enforce_arial_fonts(tpl.docx)
         enforce_arial_procedure(tpl.docx)          # force Arial on the Test Procedure body text
-    
+
+    if code == "EFT":
+        _eft_insert_observation(tpl.docx, context.get("eft_obs_power"), context.get("eft_obs_signal"))
+
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)

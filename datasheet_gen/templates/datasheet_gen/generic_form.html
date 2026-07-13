@@ -89,6 +89,46 @@
         <p class="text-xs text-gray-500 mb-3">Auto-generated from <strong>Product Standard</strong>, <strong>Classification&nbsp;&ndash;&nbsp;Class</strong> and <strong>Frequency Range</strong> (section {{ ns.n - 1 }}); read-only. This is exactly how the limit table(s) print in the document.</p>
         <div id="re-limit-preview" class="space-y-4"></div>
       </section>
+      {% elif sec.title == 'TEST OBSERVATION' and code == 'VOLTAGEDIPS' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-2 border-b border-gray-200 pb-2">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
+            <p class="text-xs text-gray-500 mt-1">One Voltage-Dips + one Interruption table per combo in <strong>EUT Input Voltage &amp; Frequency</strong> (separate combos with &ldquo;/&rdquo;). Level&nbsp;% and Duration are auto-filled from the derived Test Level; choose the Observation (A/B/C/D).</p>
+          </div>
+          <button type="button" onclick="generateVdipsObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from EUT Voltages</button>
+        </div>
+        <div id="vdips-obs-records" class="mt-3"></div>
+      </section>
+      {% elif sec.title == 'RESULT' and code == 'VOLTAGEDIPS' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-lg font-bold text-gray-900 mb-3">{{ ns.n }}. {{ sec.title }}</h2>
+        <div class="mb-5">
+          <div class="text-sm font-semibold text-gray-700 mb-1">Performance Criteria <span class="text-xs font-normal text-gray-400">&mdash; Required is derived from the Test Level; Met is chosen (A/B/C/D)</span></div>
+          <div id="vdips-result-preview" class="overflow-x-auto"></div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {% for it in sec['items'] %}
+            {% if it.type == 'fields' %}
+              {% for f in it['fields'] %}{% if not f.computed %}{{ render_field(f, prefill, today) }}{% endif %}{% endfor %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+      {% elif sec.title == 'TEST OBSERVATION' and code == 'EFT' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-2 border-b border-gray-200 pb-2">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
+            <p class="text-xs text-gray-500 mt-1">Columns are built from the selected <strong>Test Voltage</strong> (each level as +/&minus; a column, positive&nbsp;&rarr;&nbsp;negative). Rows are the coupling paths (Power Line) / signal lines. Fill each cell (A/B/C/D).</p>
+          </div>
+          <button type="button" onclick="generateEftObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from Test Voltage</button>
+        </div>
+        <div id="eft-obs-records" class="mt-3"></div>
+      </section>
       {% else %}
       {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -98,7 +138,13 @@
 
             {% if it.type == 'fields' %}
               {% for f in it['fields'] %}
-                {% if not f.computed %}{{ render_field(f, prefill, today) }}{% endif %}
+                {% if f.derived %}
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }} <span class="text-[10px] font-normal text-gray-400">(auto)</span></label>
+                    <div id="derived-{{ f.key }}" class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 text-sm">&mdash;</div>
+                    <input type="hidden" name="{{ f.key }}">
+                  </div>
+                {% elif not f.computed %}{{ render_field(f, prefill, today) }}{% endif %}
               {% endfor %}
 
             {% elif it.type == 'field' %}
@@ -280,6 +326,18 @@
 
           {% endfor %}
         </div>
+        {% if code == 'VOLTAGEDIPS' and sec.title == 'TEST SPECIFICATION' %}
+        <div class="mt-5">
+          <div class="text-sm font-semibold text-gray-700 mb-1">Test Level <span class="text-xs font-normal text-gray-400">&mdash; derived from Immunity Test Requirement; read-only</span></div>
+          <div id="vdips-testlevel-preview" class="overflow-x-auto"></div>
+        </div>
+        {% endif %}
+        {% if code == 'SURGE' and sec.title == 'TEST SPECIFICATION' %}
+        <div class="mt-5">
+          <div class="text-sm font-semibold text-gray-700 mb-1">Test Voltage (kV) <span class="text-xs font-normal text-gray-400">&mdash; derived from Product Standard &amp; Immunity (cumulative &le; level); fills the tested port only; read-only</span></div>
+          <div id="surge-tv-preview" class="overflow-x-auto"></div>
+        </div>
+        {% endif %}
       </section>
       {% endif %}
       {% endif %}
@@ -1390,6 +1448,367 @@
       addREGroup("ICES");
       addREGroup("FCC");
     }
+  });
+</script>
+{% endif %}
+
+{% if code == 'VOLTAGEDIPS' %}
+<script>
+  /* =========================================================================
+     Voltage Dips & Interruptions — derived Test Level + dynamic Test Observation
+     Numbers are kept here for the form preview; durations follow the reference
+     document (25 / 250 for every frequency). pct = % Ut, spec = duration text
+     shown in the Test-Level block, dur = numeric duration used in the
+     observation tables, crit = required performance criterion.
+     ========================================================================= */
+  var VDIPS_LEVELS = {
+    'Basic': {
+      dips: [
+        { pct: '0',  spec: '0.5 cycle',      dur: '0.5', crit: 'B' },
+        { pct: '0',  spec: '1 cycle',        dur: '1',   crit: 'B' },
+        { pct: '70', spec: '25/30 cycles',   dur: '25',  crit: 'C' }
+      ],
+      intr: [ { pct: '0', spec: '250/300 cycles', dur: '250', crit: 'C' } ]
+    },
+    'Industrial': {
+      dips: [
+        { pct: '0',  spec: '1 cycle',        dur: '1',  crit: 'B' },
+        { pct: '40', spec: '10/12 cycles',   dur: '10', crit: 'C' },
+        { pct: '70', spec: '25/30 cycles',   dur: '25', crit: 'C' }
+      ],
+      intr: [ { pct: '0', spec: '250/300 cycles', dur: '250', crit: 'C' } ]
+    }
+  };
+  var VDIPS_OBS_OPTS = ['A', 'B', 'C', 'D'];
+
+  function vdipsLevelSet() {
+    var el = inputByName('immunity_test_requirement');
+    var key = el ? (el.value || '').trim() : '';
+    return VDIPS_LEVELS[key] || null;
+  }
+
+  // Phase Angle is derived from the Product Standard:
+  //   IEC/EN 61326-1   -> 0° & 180°
+  //   IEC/EN 60601-1-2 -> 0° – 360° in 45° steps (medical)
+  // Match the target <option> by its 180 / 360 content so the en-dash can't break it.
+  function derivePhaseAngle() {
+    var ps = inputByName('product_standard');
+    var pa = inputByName('phase_angle');
+    if (!ps || !pa || !pa.options) return;
+    var s = (ps.value || '').replace(/\s+/g, '').toLowerCase();
+    var want = s.indexOf('60601-1-2') >= 0 ? '360' : (s.indexOf('61326-1') >= 0 ? '180' : '');
+    if (!want) return;   // unknown standard -> leave the current selection untouched
+    for (var i = 0; i < pa.options.length; i++) {
+      var t = pa.options[i].value || pa.options[i].text;
+      if (t.indexOf(want) >= 0) { pa.value = pa.options[i].value; break; }
+    }
+  }
+
+  // ---- read-only derived Test Level table (rendered inside Test Specification) ----
+  function renderVdipsTestLevel() {
+    var host = document.getElementById('vdips-testlevel-preview');
+    if (!host) return;
+    var set = vdipsLevelSet();
+    if (!set) {
+      host.innerHTML = '<p class="text-xs text-amber-600">Select an <strong>Immunity Test Requirement</strong> of <strong>Basic</strong> or <strong>Industrial</strong> to derive the Test Level. (Controlled / Custom values to be provided.)</p>';
+      return;
+    }
+    var cells = set.dips.concat(set.intr);
+    var th = 'style="border:1px solid #d1d5db;padding:5px 10px;background:#f9fafb;font-weight:600;text-align:center;font-size:12px;"';
+    var td = 'style="border:1px solid #d1d5db;padding:5px 10px;text-align:center;font-size:12px;"';
+    var html = '<table style="border-collapse:collapse;">';
+    html += '<tr><td ' + th + '></td><td ' + th + ' colspan="' + set.dips.length + '">Voltage Dips</td><td ' + th + ' colspan="' + set.intr.length + '">Interruption</td></tr>';
+    html += '<tr><td ' + th + '>Test Level % Ut</td>';
+    cells.forEach(function (x) { html += '<td ' + td + '>' + esc(x.pct) + ' %</td>'; });
+    html += '</tr><tr><td ' + th + '>Duration</td>';
+    cells.forEach(function (x) { html += '<td ' + td + '>' + esc(x.spec) + '</td>'; });
+    html += '</tr></table>';
+    host.innerHTML = html;
+  }
+
+  // ---- RESULT: derived Required Performance Criteria + Met (dropdown + confirm) ----
+  function renderVdipsResult() {
+    var host = document.getElementById('vdips-result-preview');
+    if (!host) return;
+    var set = vdipsLevelSet();
+    if (!set) {
+      host.innerHTML = '<p class="text-xs text-amber-600">Select an <strong>Immunity Test Requirement</strong> (Basic / Industrial) to derive the Required Performance Criteria.</p>';
+      return;
+    }
+    var cells = set.dips.concat(set.intr);
+    var th = 'style="border:1px solid #d1d5db;padding:5px 10px;background:#f9fafb;font-weight:600;text-align:center;font-size:12px;"';
+    var td = 'style="border:1px solid #d1d5db;padding:5px 10px;text-align:center;font-size:12px;"';
+    var tdsel = 'style="border:1px solid #d1d5db;padding:3px;text-align:center;font-size:12px;min-width:74px;"';
+    var html = '<table style="border-collapse:collapse;">';
+    html += '<tr><td ' + th + '></td><td ' + th + ' colspan="' + set.dips.length + '">Voltage Dips</td><td ' + th + ' colspan="' + set.intr.length + '">Interruption</td></tr>';
+    html += '<tr><td ' + th + ' rowspan="2">Required Performance Criteria</td>';
+    cells.forEach(function (x) { html += '<td ' + td + '>' + esc(x.pct) + ' %<input type="hidden" name="vdips_result_pct[]" value="' + esc(x.pct) + '"></td>'; });
+    html += '</tr><tr>';
+    cells.forEach(function (x) { html += '<td ' + td + '>' + esc(x.crit) + '<input type="hidden" name="vdips_req_criteria[]" value="' + esc(x.crit) + '"></td>'; });
+    html += '</tr><tr><td ' + th + '>Met Performance Criteria</td>';
+    cells.forEach(function () { html += '<td ' + tdsel + '>' + vdipsObsSelect('vdips_met_criteria[]') + '</td>'; });
+    html += '</tr></table>';
+    host.innerHTML = html;
+  }
+
+  // ---- Observation dropdown (A/B/C/D) with a confirm popup on change ----
+  function vdipsObsConfirm(sel) {
+    var v = sel.value;
+    if (!v) { sel.setAttribute('data-prev', ''); if (typeof triggerAutoSave === 'function') triggerAutoSave(); return; }
+    if (!confirm('Are you sure you want to choose Observation "' + v + '" ?')) {
+      sel.value = sel.getAttribute('data-prev') || '';
+    } else {
+      sel.setAttribute('data-prev', v);
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+  function vdipsObsSelect(name) {
+    var s = '<select name="' + name + '" data-prev="" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center">';
+    s += '<option value="">Select</option>';
+    VDIPS_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
+    return s + '</select>';
+  }
+
+  // ---- one observation table (kind = 'dips' | 'intr') ----
+  function vdipsObsTable(kind, ci, combo, rows) {
+    var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3">';
+    html += '<div class="text-xs font-bold text-gray-700 mb-2">' + esc(combo) + '</div>';
+    html += '<input type="hidden" name="vdips_' + kind + '_combo_' + ci + '" value="' + esc(combo) + '">';
+    html += '<div class="overflow-x-auto"><table class="w-full text-xs border border-gray-200"><thead><tr>';
+    html += '<th class="' + thc + '">Test Level % Ut</th><th class="' + thc + '">Duration (cycles/periods)</th><th class="' + thc + '">Observation</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr>'
+        + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.pct) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__pct[]" value="' + esc(r.pct) + '"></td>'
+        + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.dur) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__dur[]" value="' + esc(r.dur) + '"></td>'
+        + '<td class="p-1 border border-gray-200">' + vdipsObsSelect('vdips_' + kind + '_' + ci + '__obs[]') + '</td>'
+        + '</tr>';
+    });
+    return html + '</tbody></table></div></div>';
+  }
+
+  function vdipsSplitCombos(str) {
+    return (str || '').split(/[\/;\n]/).map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+  }
+
+  function generateVdipsObservation(silent) {
+    var set = vdipsLevelSet();
+    var host = document.getElementById('vdips-obs-records');
+    if (!host) return;
+    if (!set) { if (!silent) showMessage('Select an Immunity Test Requirement (Basic / Industrial) first.', 'error'); return; }
+    var vf = inputByName('eut_input_voltage_frequency');
+    var combos = vdipsSplitCombos(vf ? vf.value : '');
+    if (!combos.length) { if (!silent) showMessage("Fill 'EUT Input Voltage & Frequency' first (separate combos with '/').", 'error'); return; }
+    if (!silent && host.querySelector('select') &&
+        !confirm('Replace the current observation tables with ' + combos.length + ' combo(s) generated from the EUT voltages?')) return;
+
+    var html = '<div class="text-sm font-bold text-gray-800 mb-2">Voltage Dips:</div>';
+    combos.forEach(function (combo, ci) { html += vdipsObsTable('dips', ci, combo, set.dips); });
+    html += '<div class="text-sm font-bold text-gray-800 mb-2 mt-4">Interruptions:</div>';
+    combos.forEach(function (combo, ci) { html += vdipsObsTable('intr', ci, combo, set.intr); });
+    host.innerHTML = html;
+    if (!silent) showMessage('Generated observation tables for ' + combos.length + ' combo(s).', 'success');
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var imm = inputByName('immunity_test_requirement');
+    if (imm) imm.addEventListener('change', function () { renderVdipsTestLevel(); renderVdipsResult(); generateVdipsObservation(true); });
+    var vf = inputByName('eut_input_voltage_frequency');
+    if (vf) vf.addEventListener('change', function () { generateVdipsObservation(true); });
+    var ps = inputByName('product_standard');
+    if (ps) { ps.addEventListener('input', derivePhaseAngle); ps.addEventListener('change', derivePhaseAngle); }
+    derivePhaseAngle();
+    renderVdipsTestLevel();
+    renderVdipsResult();
+    // Auto-build the observation tables on load when the inputs are already present.
+    generateVdipsObservation(true);
+  });
+</script>
+{% endif %}
+
+{% if code == 'SURGE' %}
+<script>
+  /* Surge — derived Test Voltage (Common Mode / Differential Mode) with the
+     cumulative-checkbox rule: tick every level <= the mapped one. CM/DM levels are
+     looked up from Product Standard + Immunity Test Requirement and shown for the
+     tested port only. Mirrors layout.cumulative_checkbox + the Python SURGE map. */
+  var SURGE_TV = {
+    'Basic':      { CM: '±1 kV', DM: '±0.5 kV' },
+    'Industrial': { CM: '±2 kV', DM: '±1 kV' },
+    'Controlled': { CM: '±1 kV', DM: '±0.5 kV' }
+  };
+  var SURGE_TV_MEDICAL = { CM: '±2 kV', DM: '±1 kV' };   // IEC/EN 60601-1-2
+  var SURGE_OPTS_POWER  = ['±0.5 kV', '±1 kV', '±2 kV', '±4 kV'];
+  var SURGE_OPTS_SIGNAL = ['±0.5 kV', '±1 kV', '±2 kV', 'Custom'];
+
+  function surgeTVLevels() {
+    var ps = ((inputByName('product_standard') || {}).value || '').replace(/\s+/g, '').toLowerCase();
+    if (ps.indexOf('60601-1-2') >= 0) return SURGE_TV_MEDICAL;
+    if (ps.indexOf('61326-1') >= 0) {
+      var imm = ((inputByName('immunity_test_requirement') || {}).value || '').trim();
+      return SURGE_TV[imm] || null;
+    }
+    return null;
+  }
+  function surgeMatch(v, o) { v = (v || '').trim().toLowerCase(); o = (o || '').trim().toLowerCase(); return !!v && (v === o || o.indexOf(v) >= 0 || v.indexOf(o) >= 0); }
+  function surgeCumulative(level, opts) {
+    var sel = -1, i;
+    for (i = 0; i < opts.length; i++) { if (surgeMatch(level, opts[i])) { sel = i; break; } }
+    var selCustom = sel >= 0 && /custom/i.test(opts[sel]);
+    return opts.map(function (o, idx) {
+      var isC = /custom/i.test(o);
+      var checked = selCustom ? (idx === sel) : (sel >= 0 && idx <= sel && !isC);
+      return (checked ? '☒' : '☐') + ' ' + o;
+    }).join('   ');
+  }
+  function surgePortTested(name) { var el = inputByName(name); return !!(el && /^appl/i.test((el.value || '').trim())); }
+
+  function deriveSurgeTV() {
+    var host = document.getElementById('surge-tv-preview'); if (!host) return;
+    var lv = surgeTVLevels();
+    if (!lv) { host.innerHTML = '<p class="text-xs text-amber-600">Select <strong>Product Standard</strong> and <strong>Immunity Test Requirement</strong> to derive the Test Voltage.</p>'; return; }
+    var pPow = surgePortTested('test_port_power'), pSig = surgePortTested('test_port_signal');
+    var th = 'style="border:1px solid #d1d5db;padding:5px 9px;background:#f9fafb;font-weight:600;text-align:center;font-size:12px;"';
+    var td = 'style="border:1px solid #d1d5db;padding:5px 9px;font-size:12px;"';
+    function cell(mode, port, opts, tested) {
+      if (!tested) return '<td style="border:1px solid #d1d5db;padding:5px 9px;font-size:12px;color:#9ca3af;">— (port not tested)</td>';
+      return '<td ' + td + '>' + esc(surgeCumulative(lv[mode], opts)) +
+        '<input type="hidden" name="surge_tv_' + mode.toLowerCase() + '_' + port + '" value="' + esc(lv[mode]) + '"></td>';
+    }
+    var html = '<table style="border-collapse:collapse;">';
+    html += '<tr><td ' + th + '>Test Voltage (kV)</td><td ' + th + '>Power Line</td><td ' + th + '>Signal Line</td></tr>';
+    html += '<tr><td ' + th + '>Common Mode (CM)</td>' + cell('CM', 'power', SURGE_OPTS_POWER, pPow) + cell('CM', 'signal', SURGE_OPTS_SIGNAL, pSig) + '</tr>';
+    html += '<tr><td ' + th + '>Differential Mode (DM)</td>' + cell('DM', 'power', SURGE_OPTS_POWER, pPow) + cell('DM', 'signal', SURGE_OPTS_SIGNAL, pSig) + '</tr>';
+    html += '</table>';
+    host.innerHTML = html;
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    ['product_standard', 'immunity_test_requirement', 'test_port_power', 'test_port_signal'].forEach(function (n) {
+      var el = inputByName(n);
+      if (el) { el.addEventListener('change', deriveSurgeTV); el.addEventListener('input', deriveSurgeTV); }
+    });
+    deriveSurgeTV();
+  });
+</script>
+{% endif %}
+
+{% if code == 'EFT' %}
+<script>
+  /* EFT/BURST — derived Test Voltage (per port) + Pulse Repetition Frequency.
+     Test voltages use the cumulative rule (tick every level <= mapped); PRF is a
+     single-select. Levels come from Product Standard + Immunity Test Requirement;
+     the Signal-line voltage shows only when the Signal Line port is tested. */
+  var EFT_TV_POWER  = { 'Basic': '±1 kV', 'Industrial': '±2 kV', 'Controlled': '±1 kV' };
+  var EFT_TV_SIGNAL = { 'Basic': '±0.5 kV', 'Industrial': '±1 kV', 'Controlled': '±0.5 kV' };
+  var EFT_MED_POWER = '±2 kV', EFT_MED_SIGNAL = '±1 kV';   // IEC/EN 60601-1-2
+  var EFT_OPTS_POWER  = ['±0.5 kV', '±1 kV', '±2 kV', '±4 kV'];
+  var EFT_OPTS_SIGNAL = ['±0.25 kV', '±0.5 kV', '±1 kV', '±2 kV'];
+  var EFT_OPTS_PRF    = ['5 kHz', '100 kHz'];
+
+  function eftKind() {
+    var ps = ((inputByName('product_standard') || {}).value || '').replace(/\s+/g, '').toLowerCase();
+    if (ps.indexOf('60601-1-2') >= 0) return 'medical';
+    if (ps.indexOf('61326-1') >= 0) return '61326';
+    return '';
+  }
+  function eftImm() { return ((inputByName('immunity_test_requirement') || {}).value || '').trim(); }
+  function eftPowerLevel() { var k = eftKind(); return k === 'medical' ? EFT_MED_POWER : (k === '61326' ? (EFT_TV_POWER[eftImm()] || null) : null); }
+  function eftSignalLevel() { var k = eftKind(); return k === 'medical' ? EFT_MED_SIGNAL : (k === '61326' ? (EFT_TV_SIGNAL[eftImm()] || null) : null); }
+  function eftPRF() { var k = eftKind(); return k === 'medical' ? '100 kHz' : (k === '61326' ? '5 kHz' : ''); }
+  function eftMatch(v, o) { v = (v || '').trim().toLowerCase(); o = (o || '').trim().toLowerCase(); return !!v && (v === o || o.indexOf(v) >= 0 || v.indexOf(o) >= 0); }
+  // Test Port dropdown (Power Line / Signal Line / Both) -> which port(s) tested
+  function eftPortTested(which) {
+    var v = ((inputByName('test_port') || {}).value || '').toLowerCase();
+    return which === 'power' ? (v.indexOf('power') >= 0 || v === 'both')
+                             : (v.indexOf('signal') >= 0 || v === 'both');
+  }
+  // fill an in-place derived read-only field: its display box + its hidden posted value
+  function eftSetDerived(key, displayText, hiddenVal) {
+    var box = document.getElementById('derived-' + key);
+    if (box) box.textContent = displayText;
+    var h = document.querySelector('input[type=hidden][name="' + key + '"]');
+    if (h) h.value = (hiddenVal == null ? '' : hiddenVal);
+  }
+  function deriveEFT() {
+    var pPow = eftPortTested('power'), pSig = eftPortTested('signal');
+    var prf = eftPRF();
+    var bd = prf === '5 kHz' ? '15' : (prf === '100 kHz' ? '0.75' : '');   // Burst Duration fixed by PRF
+    function levelsText(level, opts) { var l = eftCumLevels(level, opts); return l.length ? l.join(', ') : ''; }
+    if (!eftKind()) {
+      ['test_voltage_power_line', 'test_voltage_signal_line', 'pulse_repetition_frequency', 'burst_duration'].forEach(function (k) { eftSetDerived(k, '—', ''); });
+      return;
+    }
+    eftSetDerived('test_voltage_power_line', pPow ? (levelsText(eftPowerLevel(), EFT_OPTS_POWER) || '—') : '— (port not tested)', pPow ? (eftPowerLevel() || '') : '');
+    eftSetDerived('test_voltage_signal_line', pSig ? (levelsText(eftSignalLevel(), EFT_OPTS_SIGNAL) || '—') : '— (port not tested)', pSig ? (eftSignalLevel() || '') : '');
+    eftSetDerived('pulse_repetition_frequency', prf || '—', prf);
+    eftSetDerived('burst_duration', bd || '—', bd);
+  }
+
+  /* ---- dynamic Test Observation: columns built from the selected Test Voltage
+     (each level as +/- a column, positive -> negative); cells filled by the user. ---- */
+  var EFT_COUPLING_PATHS = ['L1', 'N', 'PE', 'L1+N', 'L1+PE', 'N+PE', 'L1+N+PE'];
+  var EFT_OBS_OPTS = ['A', 'B', 'C', 'D'];
+  function eftCumLevels(level, opts) {
+    var sel = -1, i;
+    for (i = 0; i < opts.length; i++) { if (eftMatch(level, opts[i])) { sel = i; break; } }
+    var out = []; if (sel < 0) return out;
+    for (i = 0; i <= sel; i++) { if (!/custom/i.test(opts[i])) out.push(opts[i]); }
+    return out;
+  }
+  function eftLevelCols(levels) {
+    var cols = [];
+    levels.forEach(function (l) { var n = l.replace(/[±\s]/g, '').replace(/kv/i, ''); cols.push('+' + n); cols.push('-' + n); });
+    return cols;
+  }
+  function eftObsSelect(name) {
+    var s = '<select name="' + name + '" class="w-full px-1 py-1 border rounded text-center"><option value="">Select</option>';
+    EFT_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
+    return s + '</select>';
+  }
+  function eftObsTable(kind, cols, rowLabels, editableRows) {
+    var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3">';
+    html += '<div class="text-xs font-bold text-gray-700 mb-2">' + (kind === 'power' ? 'Power Line' : 'Signal Line') + '</div>';
+    html += '<input type="hidden" name="eft_obs_' + kind + '_cols" value="' + esc(cols.join(',')) + '">';
+    html += '<div class="overflow-x-auto"><table class="w-full text-xs border border-gray-200"><thead><tr>';
+    html += '<th class="' + thc + '">Coupling path / line</th>';
+    cols.forEach(function (c) { html += '<th class="' + thc + '">' + esc(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rowLabels.forEach(function (rl, ri) {
+      html += '<tr>';
+      if (editableRows) html += '<td class="p-1 border border-gray-200"><input name="eft_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '" placeholder="signal line name" class="w-full px-1 py-1 border rounded"></td>';
+      else html += '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(rl) + '<input type="hidden" name="eft_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '"></td>';
+      cols.forEach(function (c, ci) { html += '<td class="p-1 border border-gray-200">' + eftObsSelect('eft_obs_' + kind + '_' + ri + '__c' + ci) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+    return html;
+  }
+  function generateEftObservation(silent) {
+    var host = document.getElementById('eft-obs-records'); if (!host) return;
+    var pPow = eftPortTested('power'), pSig = eftPortTested('signal');
+    if (!eftKind() || (!pPow && !pSig)) { if (!silent) showMessage('Select Product Standard + Immunity and a Test Port first.', 'error'); return; }
+    if (!silent && host.querySelector('select') && !confirm('Rebuild the observation tables from the current Test Voltage? Any filled observations will be cleared.')) return;
+    var html = '';
+    if (pPow) html += eftObsTable('power', eftLevelCols(eftCumLevels(eftPowerLevel(), EFT_OPTS_POWER)), EFT_COUPLING_PATHS, false);
+    if (pSig) html += eftObsTable('signal', eftLevelCols(eftCumLevels(eftSignalLevel(), EFT_OPTS_SIGNAL)), ['', '', ''], true);
+    host.innerHTML = html;
+    if (!silent) showMessage('Observation tables built from the selected Test Voltage.', 'success');
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    ['product_standard', 'immunity_test_requirement', 'test_port'].forEach(function (n) {
+      var el = inputByName(n);
+      if (el) {
+        el.addEventListener('change', function () { deriveEFT(); generateEftObservation(true); });
+        el.addEventListener('input', function () { deriveEFT(); generateEftObservation(true); });
+      }
+    });
+    deriveEFT();
+    generateEftObservation(true);
   });
 </script>
 {% endif %}
