@@ -5,7 +5,8 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
-from .layout import polish_layout, page_break_before_top_sections, enforce_arial_fonts, enforce_arial_procedure
+from .layout import (polish_layout, page_break_before_top_sections, enforce_arial_fonts,
+                     enforce_arial_procedure, enforce_body_arial)
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
@@ -219,6 +220,7 @@ def render(code, context, img_keys, img_paths, output_path):
         polish_layout(tpl.docx)
         enforce_arial_fonts(tpl.docx)              # force Arial on all table cell runs (override Calibri)
         enforce_arial_procedure(tpl.docx)          # force Arial on the Test Procedure body text
+        enforce_body_arial(tpl.docx)               # body paragraphs + Normal style -> Arial 11
         page_break_before_top_sections(tpl.docx)   # each top-level (Heading 1) section on a new page
         _re_paginate(tpl.docx)                # runs LAST so it wins over polish_layout's keep-with-next
         strip_trailing_blank_paragraphs(tpl.docx)
@@ -226,6 +228,7 @@ def render(code, context, img_keys, img_paths, output_path):
         # For HARMONIC and other generic templates, preserve the manual layout/breaks of the template
         enforce_arial_fonts(tpl.docx)
         enforce_arial_procedure(tpl.docx)          # force Arial on the Test Procedure body text
+        enforce_body_arial(tpl.docx)               # body paragraphs + Normal style -> Arial 11
 
     if code == "EFT":
         _eft_insert_observation(tpl.docx, context.get("eft_obs_power"), context.get("eft_obs_signal"))

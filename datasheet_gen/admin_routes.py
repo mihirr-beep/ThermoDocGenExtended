@@ -224,8 +224,11 @@ def save_datasheet(code):
 @login_required
 def standard_map_page():
     _require_admin()
-    maps = BasicStandardMap.query.all()
-    maps_sorted = sorted(maps, key=lambda m: ((m.test_code or ""), m.sort_order or 0, m.id))
+    # This page edits the shared emission Product -> Basic mapping (test_code IS NULL).
+    # Per-test overrides (HARMONIC / VOLTAGEFLICKER) keep their own rows and still drive
+    # derivation, but are not shown here so the admin view stays simple.
+    maps = BasicStandardMap.query.filter(BasicStandardMap.test_code.is_(None)).all()
+    maps_sorted = sorted(maps, key=lambda m: (m.sort_order or 0, m.id))
     return render_template("datasheet_gen/admin_standard_map.html",
                            mappings=[m.to_dict() for m in maps_sorted])
 
@@ -234,21 +237,26 @@ def standard_map_page():
 @login_required
 def add_map():
     _require_admin()
+    label = (request.form.get("product_label") or "").strip()
     basic = (request.form.get("basic_standard") or "").strip()
-    if not basic:
-        flash("Basic Standard is required.", "error")
+    if not label or not basic:
+        flash("Product Standard and Basic Standard are required.", "error")
         return redirect(url_for("datasheet_admin.standard_map_page"))
+    # Shared emission row. The Product Standard itself is the match key (normalized);
+    # test_code / is_default / sort_order are managed internally, not shown to the admin.
+    max_order = (db.session.query(db.func.max(BasicStandardMap.sort_order))
+                 .filter(BasicStandardMap.test_code.is_(None)).scalar()) or 0
     db.session.add(BasicStandardMap(
-        test_code=((request.form.get("test_code") or "").strip().upper() or None),
-        product_token=_norm(request.form.get("product_token", "")),
-        product_label=(request.form.get("product_label") or "").strip(),
+        test_code=None,
+        product_token=_norm(label),
+        product_label=label,
         basic_standard=basic,
-        is_default=bool(request.form.get("is_default")),
-        sort_order=int(request.form.get("sort_order") or 0),
+        is_default=False,
+        sort_order=int(max_order) + 10,
         active=True,
     ))
     db.session.commit()
-    flash("Mapping row added.", "success")
+    flash("Mapping added.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))
 
 
@@ -259,15 +267,14 @@ def update_map(mid):
     m = db.session.get(BasicStandardMap, mid)
     if m is None:
         abort(404)
-    m.test_code = (request.form.get("test_code") or "").strip().upper() or None
-    m.product_token = _norm(request.form.get("product_token", ""))
-    m.product_label = (request.form.get("product_label") or "").strip()
+    label = (request.form.get("product_label") or "").strip()
+    m.product_label = label
+    m.product_token = _norm(label)          # the Product Standard is what gets matched
     m.basic_standard = (request.form.get("basic_standard") or "").strip()
-    m.is_default = bool(request.form.get("is_default"))
-    m.sort_order = int(request.form.get("sort_order") or 0)
     m.active = bool(request.form.get("active"))
+    # test_code / is_default / sort_order are managed internally — left unchanged
     db.session.commit()
-    flash("Mapping row updated.", "success")
+    flash("Mapping updated.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))
 
 

@@ -511,3 +511,44 @@ def enforce_arial_fonts(doc):
                             rPr.insert(0, rf)
                         # Also set run.font.name so python-docx's own cache is consistent
                         run.font.name = ARIAL
+
+
+def enforce_body_arial(doc, size=11):
+    """Force Arial on every body (non-table) paragraph and set <size>pt on every
+    non-heading paragraph (Heading/Title styles keep their heading size). Also pins
+    the Normal / Normal (Web) styles to Arial <size> so any run that merely INHERITS
+    comes out Arial instead of Word's Calibri fallback (the root cause of the stray
+    Calibri: those base styles carry no explicit font). Symbol/checkbox runs keep
+    their font. Companion to enforce_arial_fonts (which covers table cells)."""
+    from docx.oxml import OxmlElement
+    SKIP_FONTS = {"Segoe UI Symbol", "Symbol", "Wingdings"}
+    ARIAL = "Arial"
+    for style_name in ("Normal", "Normal (Web)"):
+        try:
+            stl = doc.styles[style_name]
+            stl.font.name = ARIAL
+            stl.font.size = Pt(size)
+        except KeyError:
+            pass
+    for para in doc.paragraphs:
+        nm = (para.style.name if para.style is not None else "") or ""
+        is_heading = nm.strip().lower().startswith(("heading", "title"))
+        for run in para.runs:
+            rPr = run._r.get_or_add_rPr()
+            rFonts = rPr.find(qn("w:rFonts"))
+            if rFonts is not None:
+                current = rFonts.get(qn("w:ascii")) or rFonts.get(qn("w:hAnsi")) or ""
+                if current not in SKIP_FONTS:
+                    rFonts.set(qn("w:ascii"), ARIAL)
+                    rFonts.set(qn("w:hAnsi"), ARIAL)
+                    rFonts.set(qn("w:cs"), ARIAL)
+                    run.font.name = ARIAL
+            else:
+                rf = OxmlElement("w:rFonts")
+                rf.set(qn("w:ascii"), ARIAL)
+                rf.set(qn("w:hAnsi"), ARIAL)
+                rf.set(qn("w:cs"), ARIAL)
+                rPr.insert(0, rf)
+                run.font.name = ARIAL
+            if not is_heading:
+                run.font.size = Pt(size)

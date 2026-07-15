@@ -380,6 +380,29 @@ def _first_config_line(text):
     return first.strip()
 
 
+def _functional_modes_text(request_obj):
+    """Authoritative Test Mode source: the request's Functional Modes
+    (iec_emc_request_functional_modes.mode_value), ordered by sort_order — NOT the
+    free-text EUT Test Configuration. One mode is returned as-is; multiple modes are
+    numbered on their own lines. Returns '' when the request has no functional modes
+    (callers fall back to the old test_configuration text so the field is never blank)."""
+    rows = getattr(request_obj, "functional_modes", None) or []
+    try:
+        rows = sorted(rows, key=lambda m: getattr(m, "sort_order", 0) or 0)
+    except Exception:
+        pass
+    modes = []
+    for m in rows:
+        v = _s(getattr(m, "mode_value", ""))
+        if v:
+            modes.append(v)
+    if not modes:
+        return ""
+    if len(modes) == 1:
+        return modes[0]
+    return "\n".join("%d. %s" % (i + 1, v) for i, v in enumerate(modes))
+
+
 def collect_ce_prefill(request_obj, assignment=None):
     ce = _ce_detail(request_obj) if request_obj is not None else None
     # EUT model/serial come from the primary Product Identity columns (Model
@@ -407,7 +430,7 @@ def collect_ce_prefill(request_obj, assignment=None):
         "classification_class": class_value,
         "classification_group": _ra(request_obj, "product_group"),
         "eut_configuration": config,
-        "test_mode": _first_config_line(_ra(request_obj, "test_configuration", "operation_modes")),
+        "test_mode": _first_config_line(_functional_modes_text(request_obj) or _ra(request_obj, "test_configuration", "operation_modes")),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,

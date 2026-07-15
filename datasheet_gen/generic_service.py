@@ -1,7 +1,7 @@
 """Schema-driven context building + prefill for the generic datasheet engine."""
 import re
 
-from .service import _join, _fmt_supply, _ra, _eut_config, as_checkbox_line  # reuse CE helpers
+from .service import _join, _fmt_supply, _ra, _eut_config, as_checkbox_line, _functional_modes_text  # reuse CE helpers
 
 
 def _normalize_numbered(text):
@@ -455,7 +455,7 @@ def collect_prefill(schema, request_obj, assignment):
         vf_rows = getattr(request_obj, "supply_vf_values", []) or []
         vf = _fmt_supply(vf_rows)
         monitoring = _ra(request_obj, "monitoring_parameters")
-        test_mode = _normalize_numbered(_ra(request_obj, "test_configuration", "operation_modes"))
+        test_mode = _normalize_numbered(_functional_modes_text(request_obj) or _ra(request_obj, "test_configuration", "operation_modes"))
         cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
     eng = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     detail = _test_detail(request_obj, schema.get("code"))

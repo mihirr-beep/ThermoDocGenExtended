@@ -10,7 +10,8 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm
 from docx.oxml.ns import qn
 
-from .layout import polish_layout, page_break_before_top_sections, ce_finalize_layout
+from .layout import (polish_layout, page_break_before_top_sections, ce_finalize_layout,
+                     enforce_arial_fonts, enforce_body_arial, enforce_arial_procedure)
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "word_templates", "IEC-FRM-504_CE.docx")
 
@@ -97,6 +98,11 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
     page_break_before_top_sections(tpl.docx)   # each top-level section (2, 3, ...) on a new page
     ce_finalize_layout(tpl.docx)               # CE pagination: measurement blocks, captions, 2.6+2.7 / 2.8+2.9
     strip_trailing_blank_paragraphs(tpl.docx)
+    # Uniform Arial 11: table cells + body paragraphs + Normal style (headings keep
+    # their heading size). Fixes Calibri leaking into form-rendered body/table runs.
+    enforce_arial_fonts(tpl.docx)              # table cells -> Arial 11
+    enforce_arial_procedure(tpl.docx)          # Test Procedure body -> Arial
+    enforce_body_arial(tpl.docx)               # body paragraphs + Normal style -> Arial 11
     _add_image_borders(tpl.docx)               # box every plot/photo image (reference layout)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
