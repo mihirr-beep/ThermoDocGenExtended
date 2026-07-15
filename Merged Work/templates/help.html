@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Help | Test Request Generator{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-blue-50">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-lg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8.228 9A3.5 3.5 0 0111.5 7h1a3.5 3.5 0 010 7h-1v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                        </path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Help & Guidelines</h1>
+                    <p class="text-sm text-gray-600 mt-1">Quick guidance for using the Test Request Generator application.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <section class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <h2 class="text-lg font-semibold text-blue-900 mb-2">What This Test Request Generator Does</h2>
+                <p class="text-sm text-blue-800 leading-relaxed">
+                    The Test Request Generator is used to create, track, review, and complete EMC test requests in a
+                    structured workflow. It helps requesters submit complete test details, enables admins to assign
+                    TCO and govern approvals, allows lab engineers to plan and execute tests with datasheet uploads,
+                    and supports report review, download, and final admin sign-off.
+                </p>
+            </section>
+
+            <section>
+                <h2 class="text-lg font-semibold text-gray-900 mb-2">1. Getting Started</h2>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+                    <li>Use <strong>Test Request</strong> to create and submit a new EMC test request.</li>
+                    <li>Fill all required fields marked with a red asterisk (<span class="text-red-500">*</span>).</li>
+                    <li>Save as Draft if data is incomplete, then edit and resubmit later.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2 class="text-lg font-semibold text-gray-900 mb-2">2. Request Queue</h2>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+                    <li>Users can see all of their submitted requests in their queue.</li>
+                    <li>Use status, search, and comments indicators to quickly track request progress.</li>
+                    <li>Use comments to communicate with reviewer/lab engineer throughout the workflow.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2 class="text-lg font-semibold text-gray-900 mb-2">3. TCO, Planning, and Execution Workflow</h2>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+                    <li>Admin assigns the <strong>TCO</strong> and moves the request into the lab workflow.</li>
+                    <li>Lab engineers plan tests under the assigned TCO and execute scheduled activities.</li>
+                    <li>Lab engineers upload datasheets for completed test activities.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2 class="text-lg font-semibold text-gray-900 mb-2">4. Report Review, Generation, and Sign-Off</h2>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+                    <li>After datasheets are uploaded, the report is uploaded for review.</li>
+                    <li>Requester reviews the report and provides feedback/comments when needed.</li>
+                    <li>After review, the report is finalized and can be downloaded from the application.</li>
+                    <li>Admin performs final sign-off to complete and close the request.</li>
+                </ul>
+            </section>
+
+            <section class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <h2 class="text-base font-semibold text-amber-900 mb-1">Good Practice</h2>
+                <p class="text-sm text-amber-800">Keep comments clear and actionable so requesters and reviewers can resolve issues in fewer cycles.</p>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}

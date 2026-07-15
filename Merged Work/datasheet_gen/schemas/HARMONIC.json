@@ -1,0 +1,380 @@
+{
+  "code": "HARMONIC",
+  "name": "Harmonics",
+  "form": "IEC-FRM-507",
+  "sections": [
+    {
+      "title": "Harmonics",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
+    {
+      "title": "EUT DETAILS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "job_number",
+              "label": "Job Number",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_name",
+              "label": "EUT Name",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_model_sku_number",
+              "label": "EUT Model/SKU Number",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_serial_number",
+              "label": "EUT Serial Number",
+              "input": "text",
+              "default": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EUT MODIFICATION RECORD",
+      "items": [
+        {
+          "type": "table",
+          "key": "eut_modification_rec_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Modification state"
+            },
+            {
+              "key": "c1",
+              "label": "Description of Modification still fitted to EUT"
+            },
+            {
+              "key": "c2",
+              "label": "Modification fitted by"
+            },
+            {
+              "key": "c3",
+              "label": "Date modification fitted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MEASUREMENT UNCERTAINITY",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "name_of_the_test",
+              "label": "Name of the Test",
+              "input": "text",
+              "default": "Measurement Uncertainty"
+            },
+            {
+              "key": "harmonic_current_emission",
+              "label": "Harmonic Current Emission",
+              "input": "text",
+              "default": "± 5.94%"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FUNCTIONAL CHECK",
+      "items": [
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text"
+        },
+        {
+          "type": "harmonic_avgmax"
+        }
+      ]
+    },
+    {
+      "title": "HARMONIC CURRENT EMISSION TEST",
+      "items": []
+    },
+    {
+      "title": "TEST SPECIFICATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "product_standard",
+              "label": "Product Standard",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "basic_standard",
+              "label": "Basic Standard",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "classification",
+              "label": "Classification",
+              "input": "text",
+              "checkbox": [
+                "Class A",
+                "Class B",
+                "Class C",
+                "Class D"
+              ],
+              "default": ""
+            },
+            {
+              "key": "frequency_range",
+              "label": "Frequency Range",
+              "input": "text",
+              "default": "50 Hz to 2 kHz",
+              "computed": true
+            },
+            {
+              "key": "maximum_harmonics",
+              "label": "Maximum Harmonics",
+              "input": "text",
+              "default": "40th Harmonics",
+              "computed": true
+            },
+            {
+              "key": "measurement_time",
+              "label": "Measurement Time",
+              "input": "text",
+              "default": "10 minutes",
+              "computed": true
+            },
+            {
+              "key": "test_port",
+              "label": "Test Port",
+              "input": "text",
+              "default": "Power Line",
+              "computed": true
+            },
+            {
+              "key": "test_mode",
+              "label": "Test Mode",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_modification_state",
+              "label": "EUT Modification state \n(Refer 1.2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": [
+                "Tabletop",
+                "Floor standing"
+              ],
+              "default": "Tabletop"
+            },
+            {
+              "key": "eut_input_voltage_frequency",
+              "label": "EUT Input Voltage & Frequency",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "ambient_temperature",
+              "label": "Ambient Temperature (°C)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "relative_humidity",
+              "label": "Relative Humidity (%)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_date",
+              "label": "Test Date",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "tested_by",
+              "label": "Tested by",
+              "input": "text",
+              "default": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DEVIATION FROM THE STANDARD",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
+      ]
+    },
+    {
+      "title": "TEST LIMITS",
+      "items": []
+    },
+    {
+      "title": "TEST PROCEDURE",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "test_procedure",
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was placed on a wooden table/insulation support at 0.8/0.1m height. The power supply to the EUT was fed through a clean AC power source. The AC power source is in series with current transformer. The input voltage and frequency were set in the software as per the EUT specifications. The classification of the EUT and limits were selected as specified in the standard. The harmonic current emissions up to 40th harmonic was measured and compared with the limit specified in the standard."
+        }
+      ]
+    },
+    {
+      "title": "MEASUREMENT DATA",
+      "items": [
+        {
+          "type": "harmonic_csv"
+        }
+      ]
+    },
+    {
+      "title": "TEST SETUP PICTURES",
+      "items": [
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: Harmonic Current Emission test setup_Power Port",
+          "caption": true
+        }
+      ]
+    },
+    {
+      "title": "TEST EQUIPMENT USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_equipment_used_rows",
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Equipment Name"
+            },
+            {
+              "key": "c1",
+              "label": "Make"
+            },
+            {
+              "key": "c2",
+              "label": "Model No."
+            },
+            {
+              "key": "c3",
+              "label": "Serial No."
+            },
+            {
+              "key": "c4",
+              "label": "Calibration Due"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SOFTWARE USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "software_used_rows",
+          "fixed": true,
+          "columns": [
+            {
+              "key": "c0",
+              "label": "Software Name"
+            },
+            {
+              "key": "c1",
+              "label": "Software Version"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RESULT",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "overall_result",
+              "label": "Overall Result",
+              "input": "text",
+              "options": [
+                "PASS",
+                "FAIL"
+              ],
+              "default": ""
+            },
+            {
+              "key": "result_class",
+              "label": "Result Class",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "default": ""
+            }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
+            {
+              "key": "name",
+              "label": "Name",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "signature",
+              "label": "Signature",
+              "input": "image",
+              "default": ""
+            },
+            {
+              "key": "date",
+              "label": "Date",
+              "input": "text",
+              "default": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

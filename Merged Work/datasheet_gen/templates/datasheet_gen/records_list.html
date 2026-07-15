@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Saved Datasheets{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Saved Datasheets</h1>
+      <p class="text-sm text-gray-500">Filled test datasheets — drafts and submitted records.</p>
+    </div>
+    <a href="{{ url_for('assigned_test') }}" class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">&larr; Assigned Tests</a>
+  </div>
+
+  {% if records %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="p-3 text-left">TCO</th>
+          <th class="p-3 text-left">Test</th>
+          <th class="p-3 text-left">EUT</th>
+          <th class="p-3 text-left">Tested By</th>
+          <th class="p-3 text-left">Test Date</th>
+          <th class="p-3 text-left">Status</th>
+          <th class="p-3 text-left">Updated</th>
+          <th class="p-3 text-left"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr class="border-t border-gray-100 hover:bg-gray-50">
+          <td class="p-3 font-medium">{{ r.tco_id or '—' }}</td>
+          <td class="p-3">{{ r.test_code or r.test_name or '—' }}</td>
+          <td class="p-3">{{ r.eut_name or '—' }}</td>
+          <td class="p-3">{{ r.tested_by_name or '—' }}</td>
+          <td class="p-3">{{ r.test_date or '—' }}</td>
+          <td class="p-3">
+            {% if r.status == 'Submitted' %}
+              <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">Submitted</span>
+            {% else %}
+              <span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">Not Submitted</span>
+            {% endif %}
+          </td>
+          <td class="p-3 text-gray-500">{{ r.updated_at or '' }}</td>
+          <td class="p-3">
+            <a href="{{ url_for('datasheet_records.record_detail', record_id=r.id) }}"
+               class="text-blue-600 hover:underline">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-10 text-center text-gray-500">
+    No saved datasheets yet. Fill a test form and use <strong>Save as Draft</strong> or <strong>Generate Datasheet</strong>.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

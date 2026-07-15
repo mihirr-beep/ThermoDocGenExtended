@@ -1,0 +1,216 @@
+{
+  "code": "SURGE",
+  "name": "Surge",
+  "form": "IEC-FRM-510",
+  "sections": [
+    {
+      "title": "Surge",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
+    {
+      "title": "EUT DETAILS",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            { "key": "job_number", "label": "Job Number", "input": "text", "default": "" },
+            { "key": "eut_name", "label": "EUT Name", "input": "text", "default": "" },
+            { "key": "eut_model_sku_number", "label": "EUT Model/SKU Number", "input": "text", "default": "" },
+            { "key": "eut_serial_number", "label": "EUT Serial Number", "input": "text", "default": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EUT MODIFICATION RECORD",
+      "items": [
+        {
+          "type": "table",
+          "key": "eut_modification_rec_rows",
+          "columns": [
+            { "key": "c0", "label": "Modification state" },
+            { "key": "c1", "label": "Description of Modification still fitted to EUT" },
+            { "key": "c2", "label": "Modification fitted by" },
+            { "key": "c3", "label": "Date modification fitted" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FUNCTIONAL CHECK",
+      "items": [
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text",
+          "default": "IEC-SOP-505"
+        }
+      ]
+    },
+    {
+      "title": "MONITORING PARAMETERS:",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "monitoring_parameters",
+          "label": "Monitoring Parameters"
+        }
+      ]
+    },
+    {
+      "title": "SURGE IMMUNITY TEST",
+      "items": []
+    },
+    {
+      "title": "TEST SPECIFICATION",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            { "key": "product_standard", "label": "Product Standard", "input": "text", "default": "" },
+            { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
+            {
+              "key": "immunity_test_requirement",
+              "label": "Immunity Test Requirement",
+              "input": "text",
+              "options": ["Basic", "Industrial", "Controlled", "Custom"],
+              "default": ""
+            },
+            {
+              "key": "test_port_power",
+              "label": "Test Port – Power Line",
+              "input": "text",
+              "options": ["Applicable", "Not Applicable"],
+              "default": "Applicable"
+            },
+            {
+              "key": "test_port_signal",
+              "label": "Test Port – Signal Line",
+              "input": "text",
+              "options": ["Applicable", "Not Applicable"],
+              "default": "Not Applicable"
+            },
+            { "key": "coupling_phases", "label": "Coupling Phases", "input": "text", "default": "0°, 90°, 180°, 270°" },
+            {
+              "key": "repetition_rate",
+              "label": "Repetition Rate",
+              "input": "text",
+              "options": ["60 Sec", "Custom"],
+              "default": "60 Sec"
+            },
+            { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
+            { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "select",
+              "options": ["Tabletop", "Floor standing"],
+              "default": "Tabletop"
+            },
+            { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
+            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "" },
+            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "" },
+            { "key": "test_date", "label": "Test Date", "input": "text", "default": "" },
+            { "key": "tested_by", "label": "Tested By", "input": "text", "default": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DEVIATION FROM THE STANDARD",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
+      ]
+    },
+    {
+      "title": "TEST PROCEDURE",
+      "items": [
+        {
+          "type": "textarea",
+          "key": "test_procedure",
+          "label": "Test Procedure",
+          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was tested in the Surge test site with a GRP. The Surge generator was bonded directly on the GRP. The EUT was placed above 0.1m insulation which is in turn placed on the GRP. The minimum distance between any metallic part and the Surge Generator or the EUT was maintained as 0.5m. The length of the power cable between the EUT and the Surge generator (CDN) was maintained as less than 2m as per the standard.\n\nPower Line:\n\nThe power supply to the EUT was fed through a CDN. The high energy surge was injected through the CDN and superimposed on the power line of the EUT in common mode (Line to Earth/PE) and differential mode (Line to Line). The surge pulse was injected five times with a minimum of 60 seconds interval between each pulse in positive and negative polarity. During the test, performance of EUT was monitored as per the criteria specified in standard.\n\nSignal Line:\n\nThe signal lines to the EUT were fed through CDN. The high energy surge was injected through the CDN and superimposed on the signal line of the EUT in common mode and differential mode. The surge pulse was injected five times with a minimum of 60 seconds interval between each pulse in positive and negative polarity. During the test, performance of EUT was monitored as per the criteria specified in standard."
+        }
+      ]
+    },
+    {
+      "title": "TEST OBSERVATION",
+      "items": []
+    },
+    {
+      "title": "TEST SETUP PICTURES",
+      "items": [
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: Surge test setup - Power Line",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "img_photo_2",
+          "label": "Photo 2: Surge test setup - Signal Line",
+          "caption": true
+        }
+      ]
+    },
+    {
+      "title": "TEST EQUIPMENT USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "test_equipment_used_rows",
+          "columns": [
+            { "key": "c0", "label": "Equipment Name" },
+            { "key": "c1", "label": "Make" },
+            { "key": "c2", "label": "Model No." },
+            { "key": "c3", "label": "Serial No." },
+            { "key": "c4", "label": "Calibration Due" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SOFTWARE USED",
+      "items": [
+        {
+          "type": "table",
+          "key": "software_used_rows",
+          "columns": [
+            { "key": "c0", "label": "Software Name" },
+            { "key": "c1", "label": "Software Version" }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RESULT",
+      "items": [
+        {
+          "type": "fields",
+          "fields": [
+            { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
+          ]
+        },
+        {
+          "type": "fields",
+          "fields": [
+            { "key": "name", "label": "Name", "input": "text", "default": "" },
+            { "key": "signature", "label": "Signature", "input": "image", "default": "" },
+            { "key": "date", "label": "Date", "input": "text", "default": "" }
+          ]
+        }
+      ]
+    }
+  ]
+}
