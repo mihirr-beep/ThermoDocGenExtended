@@ -396,18 +396,6 @@ def collect_ce_prefill(request_obj, assignment=None):
     from .fixed_store import get_fixed_values
     _cefv = get_fixed_values("CE")          # admin-editable constants (uncertainty/sop/software)
     _ce_software = (_cefv.get("software") or [{}])[0]
-    
-    # Get test_mode from functional_modes table (iec_emc_request_functional_modes)
-    test_mode = ""
-    if request_obj is not None:
-        modes = getattr(request_obj, "functional_modes", None)
-        if modes:
-            mode_values = [m.mode_value for m in modes if m.mode_value]
-            if mode_values:
-                test_mode = "; ".join(mode_values)
-    if not test_mode:
-        test_mode = _first_config_line(_ra(request_obj, "test_configuration", "operation_modes"))
-
     data = {
         # auto from request
         "job_number": _ra(request_obj, "job_number", "tco_id"),
@@ -419,7 +407,7 @@ def collect_ce_prefill(request_obj, assignment=None):
         "classification_class": class_value,
         "classification_group": _ra(request_obj, "product_group"),
         "eut_configuration": config,
-        "test_mode": test_mode,
+        "test_mode": _first_config_line(_ra(request_obj, "test_configuration", "operation_modes")),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,

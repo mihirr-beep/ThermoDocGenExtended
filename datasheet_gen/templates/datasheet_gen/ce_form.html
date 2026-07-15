@@ -1,46 +1,13 @@
 {% extends "base.html" %}
 {% block title %}CE Datasheet - {{ tco_id }}{% endblock %}
 
-{% macro is_fixed_field(name) %}
-  {{ name in ['measurement_uncertainty', 'sop_reference', 'software_used', 'software_version',
-              'limit_qp_015_050', 'limit_avg_015_050', 'limit_qp_050_5', 'limit_avg_050_5',
-              'limit_qp_5_30', 'limit_avg_5_30', 'basic_standard'] }}
-{% endmacro %}
-
+{# Fields the engineer always fills by hand: never locked, even when pre-filled. #}
 {% macro field(name, value='', placeholder='') %}
-  {% set is_fixed = is_fixed_field(name) %}
-  <div class="relative">
-    <input type="text" name="{{ name }}" value="{{ value }}" placeholder="{{ placeholder }}"
-           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                  {% if is_fixed %}bg-blue-50 border-blue-200{% else %}border-gray-300{% endif %}"
-           {% if is_fixed %}data-fixed="true"{% endif %}>
-    {% if is_fixed %}
-    <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 transition-colors"
-            onclick="toggleFixedField(this)" title="Edit fixed value">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-      </svg>
-    </button>
-    {% endif %}
-  </div>
-  {% if is_fixed %}
-    <input type="hidden" name="{{ name }}_fixed" value="{{ value }}">
-  {% endif %}
-{% endmacro %}
-
-{% macro section_header(number, title, has_fixed=false) %}
-  <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
-    <h2 class="text-lg font-bold text-gray-900">{{ number }}. {{ title }}</h2>
-    {% if has_fixed %}
-    <button type="button" class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold"
-            onclick="toggleSectionFixedFields(this)">
-      <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-      </svg>
-      Edit Fixed Values
-    </button>
-    {% endif %}
-  </div>
+{% set _val = (value if value is not none else '')|string %}
+{% set _lock = _val|trim != '' and name not in ['eut_voltage_frequency', 'ambient_temperature', 'relative_humidity', 'tested_by', 'tested_by_name'] %}
+<input type="text" name="{{ name }}" value="{{ value }}" placeholder="{{ placeholder }}"
+       {% if _lock %}data-lock="1" readonly{% endif %}
+       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500{% if _lock %} ds-locked{% endif %}">
 {% endmacro %}
 
 {% block content %}
@@ -100,7 +67,7 @@
 
     <!-- 2. MEASUREMENT UNCERTAINTY -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      {{ section_header(2, 'Measurement Uncertainty', true) }}
+      <h2 class="text-lg font-bold text-gray-900 mb-4">2. Measurement Uncertainty</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Uncertainty - CE</label>{{ field('measurement_uncertainty', prefill.measurement_uncertainty) }}</div>
       </div>
@@ -108,7 +75,7 @@
 
     <!-- 3. FUNCTIONAL CHECK -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      {{ section_header(3, 'Functional Check', true) }}
+      <h2 class="text-lg font-bold text-gray-900 mb-4">3. Functional Check</h2>
       <div><label class="block text-sm font-medium text-gray-700 mb-1">SOP Reference Number</label>{{ field('sop_reference', prefill.sop_reference) }}</div>
       <div class="mt-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
@@ -131,20 +98,17 @@
 
     <!-- 4. TEST SPECIFICATION -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900">4. Test Specification</h2>
-        <button type="button" onclick="toggleFixedFields(this, 'basic_standard')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50" title="Edit fixed values">✎ Edit Fixed</button>
-      </div>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">4. Test Specification</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Product Standard</label>{{ field('product_standard', prefill.product_standard) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Basic Standard</label>{{ field('basic_standard', prefill.basic_standard) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Classification - Group</label>
-          <select name="classification_group" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+          <select name="classification_group" {% if prefill.classification_group %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if prefill.classification_group %} ds-locked{% endif %}">
             <option value="">Select</option>
             {% for o in ['Group 1','Group 2'] %}<option {{ 'selected' if prefill.classification_group==o }}>{{ o }}</option>{% endfor %}
           </select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Classification - Class</label>
-          <select name="classification_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+          <select name="classification_class" {% if prefill.classification_class %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if prefill.classification_class %} ds-locked{% endif %}">
             <option value="">Select</option>
             {% for o in ['Class A','Class B'] %}<option {{ 'selected' if prefill.classification_class==o }}>{{ o }}</option>{% endfor %}
           </select></div>
@@ -161,7 +125,7 @@
                  title="Current modification level. Defaults to the latest State in the EUT Modification Record above; editable."
                  class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
-          <select name="eut_configuration" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+          <select name="eut_configuration" {% if prefill.eut_configuration %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if prefill.eut_configuration %} ds-locked{% endif %}">
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
           </select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Input Voltage &amp; Frequency</label>{{ field('eut_voltage_frequency', prefill.eut_voltage_frequency) }}</div>
@@ -180,10 +144,7 @@
 
     <!-- 6. TEST LIMITS -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900">6. Test Limits (dB&micro;V)</h2>
-        <button type="button" onclick="toggleFixedFields(this, 'limit_qp_015_050,limit_avg_015_050,limit_qp_050_5,limit_avg_050_5,limit_qp_5_30,limit_avg_5_30')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50" title="Edit fixed limits">✎ Edit Limits</button>
-      </div>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">6. Test Limits (dB&micro;V)</h2>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr><th class="p-2 text-left">Frequency (MHz)</th><th class="p-2 text-left">Quasi-Peak</th><th class="p-2 text-left">Average</th></tr></thead>
         <tbody>
@@ -261,10 +222,7 @@
 
     <!-- 11. SOFTWARE USED -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900">11. Software Used</h2>
-        <button type="button" onclick="toggleFixedFields(this, 'software_used,software_version')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50" title="Edit fixed software">✎ Edit Software</button>
-      </div>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">11. Software Used</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used', prefill.software_used) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version', prefill.software_version) }}</div>
@@ -449,6 +407,7 @@
 
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
+<script src="{{ url_for('datasheet_gen.static', filename='ds_section_lock.js') }}"></script>
 <script>
 // Auto-save debounced function
   var autoSaveTimeout = null;
@@ -1264,87 +1223,6 @@
     var b=deriveBasic(val('product_standard'));
     if(b) setVal('basic_standard', b);   // derive when recognised; otherwise leave editable value
     setProcedure();                      // procedure top line follows the basic standard
-  }
-
-  // Toggle fixed fields functionality
-  function toggleFixedFields(btn, fieldNames) {
-    var fields = fieldNames.split(',');
-    var section = btn.closest('section');
-    var isEditing = btn.dataset.editing === 'true';
-    
-    fields.forEach(function(name) {
-      var input = section.querySelector('[name="' + name + '"]');
-      var hiddenInput = section.querySelector('[name="' + name + '_fixed"]');
-      if (input) {
-        if (isEditing) {
-          // Save the edited value and restore readonly appearance
-          if (hiddenInput) hiddenInput.value = input.value;
-          input.removeAttribute('data-fixed');
-          input.classList.remove('bg-blue-50', 'border-blue-200');
-          input.classList.add('border-gray-300');
-          input.removeAttribute('readonly');
-        } else {
-          // Enable editing
-          input.setAttribute('data-fixed', 'true');
-          input.classList.add('bg-blue-50', 'border-blue-200');
-          input.classList.remove('border-gray-300');
-          input.removeAttribute('readonly');
-        }
-      }
-    });
-    
-    btn.dataset.editing = !isEditing;
-    btn.innerHTML = isEditing 
-      ? '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Save Fixed'
-      : '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Edit Fixed';
-  }
-
-  function toggleSectionFixedFields(btn) {
-    var section = btn.closest('section');
-    var isEditing = btn.dataset.editing === 'true';
-    
-    var inputs = section.querySelectorAll('[data-fixed="true"]');
-    inputs.forEach(function(input) {
-      if (isEditing) {
-        input.removeAttribute('data-fixed');
-        input.classList.remove('bg-blue-50', 'border-blue-200');
-        input.classList.add('border-gray-300');
-        input.removeAttribute('readonly');
-      } else {
-        input.setAttribute('data-fixed', 'true');
-        input.classList.add('bg-blue-50', 'border-blue-200');
-        input.classList.remove('border-gray-300');
-        input.removeAttribute('readonly');
-      }
-    });
-    
-    btn.dataset.editing = !isEditing;
-    btn.innerHTML = isEditing
-      ? '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Save All'
-      : '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Edit Fixed Values';
-  }
-
-  function toggleFixedField(btn) {
-    var wrapper = btn.closest('.relative');
-    var input = wrapper.querySelector('input[data-fixed="true"]');
-    if (!input) return;
-    
-    var isEditing = btn.dataset.editing === 'true';
-    
-    if (isEditing) {
-      input.removeAttribute('data-fixed');
-      input.classList.remove('bg-blue-50', 'border-blue-200');
-      input.classList.add('border-gray-300');
-      input.removeAttribute('readonly');
-    } else {
-      input.setAttribute('data-fixed', 'true');
-      input.classList.add('bg-blue-50', 'border-blue-200');
-      input.classList.remove('border-gray-300');
-      input.removeAttribute('readonly');
-    }
-    
-    btn.dataset.editing = !isEditing;
-    btn.querySelector('svg').style.stroke = isEditing ? '#10b981' : '#60a5fa';
   }
 
   document.addEventListener('DOMContentLoaded', function(){

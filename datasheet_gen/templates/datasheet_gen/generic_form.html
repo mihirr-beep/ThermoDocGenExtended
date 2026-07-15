@@ -1,29 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ schema.name }} Datasheet - {{ tco_id }}{% endblock %}
 
-{% macro is_fixed_re_field(key) %}
-  {{ key in ['radiated_emission', 'sop_reference',
-              'resolution_bandwidth_col_1', 'resolution_bandwidth_col_2',
-              'video_bandwidth_col_1', 'video_bandwidth_col_2',
-              'step_size_col_1', 'step_size_col_2',
-              'turn_table_rotation_step_col_1', 'turn_table_rotation_step_col_2',
-              'antenna_height_variation_step_for_pre_scan_mea_2', 'antenna_height_variation_step_for_pre_scan_mea_3',
-              'antenna_height_variation_for_final_measurement_2', 'antenna_height_variation_for_final_measurement_3',
-              'pre_scan_measurement_time_col_1', 'pre_scan_measurement_time_col_2',
-              'final_scan_measurement_time_col_1', 'final_scan_measurement_time_col_2',
-              'attenuation_col_1', 'attenuation_col_2',
-              'test_distance',
-              'polarization_col_1', 'polarization_col_2',
-              'detector_col_1', 'detector_col_2',
-              'basic_standard',
-              'software_used_rows',
-              'f_30_to_230', 'f_230_to_1000', 'f_30_to_88_fcc', 'f_88_to_216_fcc',
-              'f_216_to_960_fcc', 'f_960_to_1000_fcc'] }}
-{% endmacro %}
-
+{# Fields the engineer always fills by hand: never locked, even when pre-filled. #}
 {% macro render_field(f, prefill, today) %}
-  {% set is_fixed = code == 'RE' and is_fixed_re_field(f.key) %}
-  
+  {% set _always = ['eut_input_voltage_frequency', 'eut_voltage_frequency', 'ambient_temperature', 'relative_humidity', 'tested_by', 'tested_by_name', 'test_date'] %}
+  {% set _pv = (prefill.get(f.key, '') if prefill else '')|string %}
+  {% set _lock = _pv|trim != '' and f.key not in _always %}
   {% if f.input == 'image' %}
     <div class="md:col-span-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }} (image)</label>
@@ -37,45 +19,15 @@
   {% elif f.checkbox or f.options %}
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
-      <div class="relative">
-        <select name="{{ f.key }}" class="w-full px-3 py-2 border rounded-lg
-                       {% if is_fixed %}bg-blue-50 border-blue-200{% else %}border-gray-300{% endif %}"
-               {% if is_fixed %}data-fixed="true"{% endif %}>
-          <option value="">Select</option>
-          {% for o in (f.checkbox or f.options) %}<option {{ 'selected' if prefill.get(f.key, '') == o }}>{{ o }}</option>{% endfor %}
-        </select>
-        {% if is_fixed %}
-        <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 transition-colors"
-                onclick="toggleFixedField(this)" title="Edit fixed value">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-          </svg>
-        </button>
-        {% endif %}
-      </div>
-      {% if is_fixed %}
-        <input type="hidden" name="{{ f.key }}_fixed" value="{{ prefill.get(f.key, '') }}">
-      {% endif %}
+      <select name="{{ f.key }}" {% if _lock %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if _lock %} ds-locked{% endif %}">
+        <option value="">Select</option>
+        {% for o in (f.checkbox or f.options) %}<option {{ 'selected' if prefill.get(f.key, '') == o }}>{{ o }}</option>{% endfor %}
+      </select>
     </div>
   {% elif f.input == 'textarea' %}
     <div class="md:col-span-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
-      <div class="relative">
-        <textarea name="{{ f.key }}" rows="6" class="w-full px-3 py-2 border rounded-lg text-left text-sm leading-relaxed
-                       {% if is_fixed %}bg-blue-50 border-blue-200{% else %}border-gray-300{% endif %}"
-                       {% if is_fixed %}data-fixed="true"{% endif %}>{{ prefill.get(f.key, '') }}</textarea>
-        {% if is_fixed %}
-        <button type="button" class="absolute right-3 top-3 text-gray-400 hover:text-blue-600 transition-colors"
-                onclick="toggleFixedField(this)" title="Edit fixed value">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-          </svg>
-        </button>
-        {% endif %}
-      </div>
-      {% if is_fixed %}
-        <input type="hidden" name="{{ f.key }}_fixed" value="{{ prefill.get(f.key, '') }}">
-      {% endif %}
+      <textarea name="{{ f.key }}" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-left text-sm leading-relaxed">{{ prefill.get(f.key, '') }}</textarea>
     </div>
   {% else %}
     {% set isdate = 'date' in f.key|lower %}
@@ -85,20 +37,11 @@
       {% if isdate %}
         <input type="date" name="{{ f.key }}" {% if not isdue %}max="{{ today }}"{% endif %}
                value="{{ prefill.get(f.key, '') }}"
-               class="w-full px-3 py-2 border rounded-lg
-                      {% if is_fixed %}bg-blue-50 border-blue-200{% else %}border-gray-300{% endif %}"
-               {% if is_fixed %}data-fixed="true"{% endif %}>
-        {% if is_fixed %}
-          <input type="hidden" name="{{ f.key }}_fixed" value="{{ prefill.get(f.key, '') }}">
-        {% endif %}
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg">
       {% else %}
         <input type="text" name="{{ f.key }}" value="{{ prefill.get(f.key, '') }}"
-               class="w-full px-3 py-2 border rounded-lg
-                      {% if is_fixed %}bg-blue-50 border-blue-200{% else %}border-gray-300{% endif %}"
-               {% if is_fixed %}data-fixed="true"{% endif %}>
-        {% if is_fixed %}
-          <input type="hidden" name="{{ f.key }}_fixed" value="{{ prefill.get(f.key, '') }}">
-        {% endif %}
+               {% if _lock %}data-lock="1" readonly{% endif %}
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if _lock %} ds-locked{% endif %}">
       {% endif %}
     </div>
   {% endif %}
@@ -568,6 +511,7 @@
 
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
+<script src="{{ url_for('datasheet_gen.static', filename='ds_section_lock.js') }}"></script>
 <script>
   // Auto-save debounced function
   var autoSaveTimeout = null;

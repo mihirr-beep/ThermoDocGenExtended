@@ -20,7 +20,7 @@ from . import generic_generator as gg
 from . import records as R
 from .routes import _can_access, _parent_request, _compress_image, _output_dir
 
-datasheet_generic_bp = Blueprint("datasheet_generic", __name__, template_folder="templates")
+datasheet_generic_bp = Blueprint("datasheet_generic", __name__)
 
 
 def _valid(code):

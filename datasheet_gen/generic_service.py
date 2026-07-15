@@ -455,15 +455,7 @@ def collect_prefill(schema, request_obj, assignment):
         vf_rows = getattr(request_obj, "supply_vf_values", []) or []
         vf = _fmt_supply(vf_rows)
         monitoring = _ra(request_obj, "monitoring_parameters")
-        # Get test_mode from functional_modes table (iec_emc_request_functional_modes)
-        test_mode = ""
-        modes = getattr(request_obj, "functional_modes", None)
-        if modes:
-            mode_values = [m.mode_value for m in modes if m.mode_value]
-            if mode_values:
-                test_mode = "; ".join(mode_values)
-        if not test_mode:
-            test_mode = _normalize_numbered(_ra(request_obj, "test_configuration", "operation_modes"))
+        test_mode = _normalize_numbered(_ra(request_obj, "test_configuration", "operation_modes"))
         cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
     eng = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     detail = _test_detail(request_obj, schema.get("code"))
