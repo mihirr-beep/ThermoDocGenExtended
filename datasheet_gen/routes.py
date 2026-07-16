@@ -65,19 +65,22 @@ def _future_dates(form_data):
     return seen
 
 
-def _compress_image(path, max_side=1600):
-    """Downscale large uploads (e.g. 4K photos) so the .docx doesn't balloon."""
+def _compress_image(path, max_side=2400):
+    """Downscale only very large uploads so the .docx doesn't balloon, while keeping
+    enough resolution + JPEG quality that datasheet plots/line-art/text stay crisp.
+    (max_side 2400 ~= 400 DPI in a 150 mm slot; JPEG at q95 with no chroma
+    subsampling avoids the ringing that q85/4:2:0 produced on thin lines & text.)"""
     try:
         from PIL import Image
         img = Image.open(path)
         fmt = (img.format or "").upper()
         if max(img.size) > max_side:
-            img.thumbnail((max_side, max_side))
+            img.thumbnail((max_side, max_side), Image.LANCZOS)
         kwargs = {}
         if fmt in ("JPEG", "JPG"):
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
-            kwargs = {"quality": 85, "optimize": True}
+            kwargs = {"quality": 95, "optimize": True, "subsampling": 0}
         elif fmt == "PNG":
             kwargs = {"optimize": True}
         img.save(path, format=fmt or None, **kwargs)

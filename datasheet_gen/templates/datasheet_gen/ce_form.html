@@ -893,7 +893,7 @@
       var actions=document.createElement('div'); actions.style.marginTop='5px';
       var cropBtn=document.createElement('button'); cropBtn.type='button';
       cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
-      cropBtn.textContent='✎ Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
+      cropBtn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">✎</span> Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
       actions.appendChild(cropBtn);
       if (originalFiles[key]){
         var resetBtn=document.createElement('button'); resetBtn.type='button';
@@ -926,7 +926,7 @@
     var actions=document.createElement('div'); actions.style.marginTop='5px';
     var editBtn=document.createElement('button'); editBtn.type='button';
     editBtn.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
-    editBtn.textContent='✎ Edit / Crop'; editBtn.onclick=function(){ openImageEditor(key); };
+    editBtn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">✎</span> Edit / Crop'; editBtn.onclick=function(){ openImageEditor(key); };
     actions.appendChild(editBtn);
     if(originalFiles[key] && originalFiles[key]!==file){
       var rb=document.createElement('button'); rb.type='button';
