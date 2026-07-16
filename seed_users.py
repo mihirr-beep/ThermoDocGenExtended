@@ -1,6 +1,6 @@
 """Backward-compatible alias. The canonical seed is now `seed.py`.
 
-    docker compose exec web python seed.py
+    .\.venv\Scripts\python.exe seed.py
 """
 from seed import main
 

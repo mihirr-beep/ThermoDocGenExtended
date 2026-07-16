@@ -4,9 +4,9 @@ The imported dump's passwords are one-way scrypt hashes and can't be recovered,
 so this resets every account to a shared, known password using the app's own
 hashing (so login's check_password matches).
 
-Usage:
-    docker compose exec web python set_test_passwords.py            # uses Password@123
-    docker compose exec web python set_test_passwords.py MyPass123  # custom password
+Usage (from the project root, using the venv interpreter):
+    .\.venv\Scripts\python.exe set_test_passwords.py            # uses Password@123
+    .\.venv\Scripts\python.exe set_test_passwords.py MyPass123  # custom password
 """
 import sys
 
