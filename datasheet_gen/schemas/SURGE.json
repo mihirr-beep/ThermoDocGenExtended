@@ -49,7 +49,10 @@
           "label": "SOP Reference Number",
           "input": "text",
           "default": "IEC-SOP-505"
-        }
+        },
+        { "type": "image", "key": "img_fc_1", "label": "Functional Check – Surge Verification 1" },
+        { "type": "image", "key": "img_fc_2", "label": "Functional Check – Surge Verification 2" },
+        { "type": "image", "key": "img_fc_3", "label": "Functional Check – Surge Verification 3" }
       ]
     },
     {
@@ -58,7 +61,8 @@
         {
           "type": "textarea",
           "key": "monitoring_parameters",
-          "label": "Monitoring Parameters"
+          "label": "Monitoring Parameters",
+          "default": "No Error Message"
         }
       ]
     },

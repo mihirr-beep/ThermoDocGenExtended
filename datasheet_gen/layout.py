@@ -552,3 +552,23 @@ def enforce_body_arial(doc, size=11):
                 run.font.name = ARIAL
             if not is_heading:
                 run.font.size = Pt(size)
+
+
+def shrink_wide_obs_tables(doc, size=8):
+    """Re-shrink the wide Surge observation matrices (17 columns) after the global
+    Arial pass — 11pt cannot fit 17 columns on a portrait page. Keeps the (already
+    Arial) font, only reduces the point size and centres each cell. Matched by the
+    header (Common/Differential Mode) or the Signal-line label."""
+    for t in doc.tables:
+        try:
+            hdr = " ".join(c.text for c in t.rows[0].cells)
+            first = t.rows[0].cells[0].text.strip()
+        except Exception:
+            continue
+        if ("Common Mode" in hdr and "Differential Mode" in hdr) or first.startswith("Name of the signal"):
+            for row in t.rows:
+                for c in row.cells:
+                    for p in c.paragraphs:
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for r in p.runs:
+                            r.font.size = Pt(size)

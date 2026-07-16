@@ -230,6 +230,20 @@
                 linear-gradient(180deg, rgba(255, 251, 235, 0.75) 0%, rgba(249, 250, 251, 0) 220px),
                 #f9fafb;
         }
+
+        /* Native <select> dropdowns: pin light color-scheme + explicit option colors
+           so the option list always renders dark-on-light. Without this, when the OS
+           / browser is in dark mode the native option popup shows white text on a
+           light panel (options look blank), even though the closed value is visible. */
+        select {
+            color-scheme: light;
+        }
+
+        select option,
+        select optgroup {
+            color: #111827;
+            background-color: #ffffff;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}

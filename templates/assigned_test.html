@@ -3811,19 +3811,28 @@
             const comment = commentInput ? commentInput.value.trim() : '';
 
             if (!plannerId) return;
-            if (action === 'reject' && !comment) {
-                if (typeof showUploadNotification === 'function') {
-                    showUploadNotification('Comments are required to reject a datasheet.', 'error');
-                } else {
-                    window.alert('Comments are required to reject a datasheet.');
+            // Reject and Comment both need a note (Approve does not). Instead of a
+            // generic error, guide the user straight to the comment box.
+            if ((action === 'reject' || action === 'comment') && !comment) {
+                if (commentInput) {
+                    commentInput.classList.add('border-red-500', 'bg-red-50');
+                    commentInput.setAttribute('placeholder',
+                        action === 'reject'
+                            ? 'A rejection reason is required — type it here, then click Reject.'
+                            : 'Type your comment here, then click Add Comment.');
+                    try { commentInput.focus(); commentInput.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { }
+                    commentInput.addEventListener('input', function clearHint() {
+                        commentInput.classList.remove('border-red-500', 'bg-red-50');
+                        commentInput.removeEventListener('input', clearHint);
+                    });
                 }
-                return;
-            }
-            if (action === 'comment' && !comment) {
+                var needMsg = action === 'reject'
+                    ? 'Please enter a rejection reason in the comment box before rejecting.'
+                    : 'Please type a comment before adding it.';
                 if (typeof showUploadNotification === 'function') {
-                    showUploadNotification('Enter a comment before saving.', 'error');
+                    showUploadNotification(needMsg, 'error');
                 } else {
-                    window.alert('Enter a comment before saving.');
+                    window.alert(needMsg);
                 }
                 return;
             }

@@ -135,6 +135,19 @@
         <div id="eft-obs-records" class="mt-3"></div>
         <div id="eft-obs-legend" class="mt-1"></div>
       </section>
+      {% elif sec.title == 'TEST OBSERVATION' and code == 'SURGE' %}
+      {% set ns.n = ns.n + 1 %}
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-2 border-b border-gray-200 pb-2">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
+            <p class="text-xs text-gray-500 mt-1">AC &amp; DC Power-Line matrices + a Signal-Line table, built from the selected <strong>Test Voltage</strong> (rows are the level &plusmn; pairs). Type an observation code in each cell; every unique code appears below with a box to describe it.</p>
+          </div>
+          <button type="button" onclick="generateSurgeObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from Test Voltage</button>
+        </div>
+        <div id="surge-obs-records" class="mt-3"></div>
+        <div id="surge-obs-legend" class="mt-1"></div>
+      </section>
       {% else %}
       {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -1736,12 +1749,133 @@
     host.innerHTML = html;
   }
 
+  /* ---- Test Observation: AC/DC Power-Line 16-col matrices + Signal table.
+     Rows = selected Test-Voltage levels as +/- pairs; cells are free text; each
+     unique code entered is listed in a legend below (same pattern as EFT). ---- */
+  var SURGE_CM_LINES = ['L→PE', 'N→PE', 'L+N→PE'];
+  var SURGE_DM_LINES = ['L→N'];
+  var SURGE_PHASES = ['0°', '90°', '180°', '270°'];
+  function surgeCumLevels(level, opts) {
+    var sel = -1, i;
+    for (i = 0; i < opts.length; i++) { if (surgeMatch(level, opts[i])) { sel = i; break; } }
+    var out = []; if (sel < 0) return out;
+    for (i = 0; i <= sel; i++) { if (!/custom/i.test(opts[i])) out.push(opts[i]); }
+    return out;
+  }
+  function surgePowerRowLevels() {
+    var lv = surgeTVLevels(); if (!lv) return [];
+    var set = {};
+    surgeCumLevels(lv.CM, SURGE_OPTS_POWER).forEach(function (l) { set[l] = true; });
+    surgeCumLevels(lv.DM, SURGE_OPTS_POWER).forEach(function (l) { set[l] = true; });
+    var rows = [];
+    SURGE_OPTS_POWER.forEach(function (l) {
+      if (set[l]) { var n = l.replace(/[±\s]/g, '').replace(/kv/i, ''); rows.push('+' + n); rows.push('-' + n); }
+    });
+    return rows;
+  }
+  function surgeObsCell(name) {
+    return '<input type="text" name="' + name + '" maxlength="12" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:44px">';
+  }
+  function surgePowerMatrix(kind, title, rows) {
+    var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
+    var lines = SURGE_CM_LINES.concat(SURGE_DM_LINES);
+    var ncol = lines.length * SURGE_PHASES.length;
+    var colMeta = [];
+    SURGE_CM_LINES.forEach(function (ln) { SURGE_PHASES.forEach(function (ph) { colMeta.push('CM ' + ln + ' ' + ph); }); });
+    SURGE_DM_LINES.forEach(function (ln) { SURGE_PHASES.forEach(function (ph) { colMeta.push('DM ' + ln + ' ' + ph); }); });
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3">';
+    html += '<div class="text-xs font-bold text-gray-700 mb-2">' + esc(title) + '</div>';
+    html += '<input type="hidden" name="surge_obs_' + kind + '_cols" value="' + esc(colMeta.join('|')) + '">';
+    html += '<div class="overflow-x-auto"><table class="text-xs border border-gray-200" style="border-collapse:collapse"><thead>';
+    html += '<tr><th class="' + thc + '" rowspan="3">Test Level (kV)</th><th class="' + thc + '" colspan="' + (SURGE_CM_LINES.length * SURGE_PHASES.length) + '">Common Mode</th><th class="' + thc + '" colspan="' + (SURGE_DM_LINES.length * SURGE_PHASES.length) + '">Differential Mode</th></tr>';
+    html += '<tr>';
+    lines.forEach(function (ln) { html += '<th class="' + thc + '" colspan="' + SURGE_PHASES.length + '">' + esc(ln) + '</th>'; });
+    html += '</tr><tr>';
+    lines.forEach(function () { SURGE_PHASES.forEach(function (ph) { html += '<th class="' + thc + '">' + esc(ph) + '</th>'; }); });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (rl, ri) {
+      html += '<tr><td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(rl) + '<input type="hidden" name="surge_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '"></td>';
+      for (var ci = 0; ci < ncol; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_' + kind + '_' + ri + '__c' + ci) + '</td>'; }
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+    return html;
+  }
+  function surgeSignalTable() {
+    var lv = surgeTVLevels(); if (!lv) return '';
+    var cols = [];
+    surgeCumLevels(lv.CM, SURGE_OPTS_SIGNAL).forEach(function (l) { var n = l.replace(/[±\s]/g, '').replace(/kv/i, ''); cols.push('CM +' + n); cols.push('CM -' + n); });
+    surgeCumLevels(lv.DM, SURGE_OPTS_SIGNAL).forEach(function (l) { var n = l.replace(/[±\s]/g, '').replace(/kv/i, ''); cols.push('DM +' + n); cols.push('DM -' + n); });
+    var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3"><div class="text-xs font-bold text-gray-700 mb-2">Signal Line</div>';
+    html += '<input type="hidden" name="surge_obs_signal_cols" value="' + esc(cols.join('|')) + '">';
+    html += '<div class="overflow-x-auto"><table class="text-xs border border-gray-200" style="border-collapse:collapse"><thead><tr><th class="' + thc + '">Signal line</th>';
+    cols.forEach(function (c) { html += '<th class="' + thc + '">' + esc(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    for (var ri = 0; ri < 3; ri++) {
+      html += '<tr><td class="p-1 border border-gray-200"><input name="surge_obs_signal_row_' + ri + '" placeholder="signal line name" class="px-1 py-0.5 border rounded" style="width:120px"></td>';
+      for (var ci = 0; ci < cols.length; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_signal_' + ri + '__c' + ci) + '</td>'; }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div></div>';
+    return html;
+  }
+  function generateSurgeObservation(silent) {
+    var host = document.getElementById('surge-obs-records'); if (!host) return;
+    var lv = surgeTVLevels(), pPow = surgePortTested('test_port_power'), pSig = surgePortTested('test_port_signal');
+    if (!lv || (!pPow && !pSig)) { if (!silent && typeof showMessage === 'function') showMessage('Select Product Standard + Immunity and a Test Port first.', 'error'); return; }
+    if (!silent && host.querySelector('.surge-obs-cell') && !confirm('Rebuild the observation tables from the current Test Voltage? Any filled observations will be cleared.')) return;
+    var html = '';
+    if (pPow) {
+      var rows = surgePowerRowLevels();
+      html += surgePowerMatrix('ac', 'AC Power Line', rows);
+      html += surgePowerMatrix('dc', 'DC Power Line', rows);
+    }
+    if (pSig) html += surgeSignalTable();
+    host.innerHTML = html;
+    rebuildSurgeLegend();
+    if (!silent && typeof showMessage === 'function') showMessage('Observation tables built from the selected Test Voltage.', 'success');
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+  var surgeLegendComments = {};
+  function surgeUniqueObsCodes() {
+    var host = document.getElementById('surge-obs-records'); if (!host) return [];
+    var seen = {};
+    host.querySelectorAll('input.surge-obs-cell').forEach(function (inp) { var v = (inp.value || '').trim(); if (v) seen[v] = true; });
+    return Object.keys(seen).sort();
+  }
+  function rebuildSurgeLegend() {
+    var box = document.getElementById('surge-obs-legend'); if (!box) return;
+    var codes = surgeUniqueObsCodes();
+    if (!codes.length) { box.innerHTML = ''; return; }
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3"><div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div><p class="text-xs text-gray-500 mb-2">Describe what each observation code entered above stands for.</p>';
+    codes.forEach(function (c) {
+      var desc = surgeLegendComments[c] || '';
+      html += '<div class="flex items-start gap-2 mb-2"><span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
+        '<input type="hidden" name="surge_obs_legend_code[]" value="' + esc(c) + '">' +
+        '<textarea name="surge_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" class="surge-legend-desc w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea></div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+    box.querySelectorAll('textarea.surge-legend-desc').forEach(function (ta) {
+      ta.addEventListener('input', function () { surgeLegendComments[ta.getAttribute('data-code')] = ta.value; });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     ['product_standard', 'immunity_test_requirement', 'test_port_power', 'test_port_signal'].forEach(function (n) {
       var el = inputByName(n);
-      if (el) { el.addEventListener('change', deriveSurgeTV); el.addEventListener('input', deriveSurgeTV); }
+      if (el) {
+        el.addEventListener('change', function () { deriveSurgeTV(); generateSurgeObservation(true); });
+        el.addEventListener('input', function () { deriveSurgeTV(); generateSurgeObservation(true); });
+      }
+    });
+    var obsHost = document.getElementById('surge-obs-records');
+    if (obsHost) obsHost.addEventListener('change', function (e) {
+      if (e.target && e.target.classList && e.target.classList.contains('surge-obs-cell')) rebuildSurgeLegend();
     });
     deriveSurgeTV();
+    generateSurgeObservation(true);
   });
 </script>
 {% endif %}

@@ -2,11 +2,12 @@
 import os
 
 from docxtpl import DocxTemplate, InlineImage
-from docx.shared import Mm
+from docx.shared import Mm, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
 from .layout import (polish_layout, page_break_before_top_sections, enforce_arial_fonts,
-                     enforce_arial_procedure, enforce_body_arial)
+                     enforce_arial_procedure, enforce_body_arial, shrink_wide_obs_tables)
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
@@ -15,6 +16,8 @@ def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
         return (40, 20)
+    if "img_fc" in k:
+        return (140, 52)   # functional-check captures: short so all 3 fit on one page
     if (code or "").upper() == "RE":
         if "photo" in k:
             return (140, 90)
@@ -200,6 +203,112 @@ def _eft_insert_legend(doc, legend):
         p._p.getparent().remove(p._p)
 
 
+def _surge_power_matrix(doc, data):
+    """Build one AC/DC Power-Line observation table. Columns = a fixed CM/DM x line x
+    phase grid parsed from the 'CM L→PE 0°'-style meta; rows = the selected test-voltage
+    +/- pairs. A 3-row merged header mirrors the reference (Common/Differential Mode ->
+    coupling line -> phase). Returns the detached <w:tbl> element, or None if no data."""
+    if not data or not data.get("cols"):
+        return None
+    cols, rows = data["cols"], data.get("rows", [])
+    ncol = len(cols)
+    parsed = []                                   # [(mode, line, phase), ...]
+    for c in cols:
+        parts = c.split(" ")
+        mode = parts[0] if parts else ""
+        phase = parts[-1] if len(parts) >= 2 else ""
+        line = " ".join(parts[1:-1]) if len(parts) >= 3 else (parts[1] if len(parts) == 2 else "")
+        parsed.append((mode, line, phase))
+
+    def _groups(depth):                            # consecutive cols equal on parsed[:depth]
+        out, start = [], 0
+        for i in range(1, ncol + 1):
+            if i == ncol or parsed[i][:depth] != parsed[start][:depth]:
+                out.append((start, i - 1))
+                start = i
+        return out
+
+    t = doc.add_table(rows=3 + len(rows), cols=1 + ncol)
+    try:
+        t.style = "Table Grid"
+    except Exception:
+        pass
+    lbl = t.cell(0, 0).merge(t.cell(2, 0))         # "Test Level (kV)" spans the 3 header rows
+    lbl.text = "Test Level (kV)"
+    MODE = {"CM": "Common Mode", "DM": "Differential Mode"}
+    for a, b in _groups(1):                         # row 0: mode bands
+        cell = t.cell(0, 1 + a).merge(t.cell(0, 1 + b)) if b > a else t.cell(0, 1 + a)
+        cell.text = MODE.get(parsed[a][0], parsed[a][0])
+    for a, b in _groups(2):                         # row 1: coupling lines
+        cell = t.cell(1, 1 + a).merge(t.cell(1, 1 + b)) if b > a else t.cell(1, 1 + a)
+        cell.text = parsed[a][1]
+    for i in range(ncol):                           # row 2: phases
+        t.cell(2, 1 + i).text = parsed[i][2]
+    for r, row in enumerate(rows):                  # data rows
+        t.cell(3 + r, 0).text = row.get("label", "")
+        for j, v in enumerate(row.get("cells", [])):
+            if 1 + j <= ncol:
+                t.cell(3 + r, 1 + j).text = v
+    el = t._tbl
+    el.getparent().remove(el)
+    return el
+
+
+def _surge_signal_table(doc, data):
+    """Build the Signal-Line observation table (row per signal line, columns from the
+    posted CM/DM +/- meta). Empty rows are dropped; if the port was tested but nothing
+    entered the blank body is kept. Returns the detached element or None."""
+    if not data or not data.get("cols"):
+        return None
+    cols, rows = data["cols"], data.get("rows", [])
+    kept = [r for r in rows
+            if (r.get("label") or "").strip() or any((c or "").strip() for c in r.get("cells", []))]
+    if not kept:
+        kept = rows
+    ncol = len(cols)
+    t = doc.add_table(rows=1 + len(kept), cols=1 + ncol)
+    try:
+        t.style = "Table Grid"
+    except Exception:
+        pass
+    hdr = t.rows[0].cells
+    hdr[0].text = "Name of the signal Line"
+    for j, c in enumerate(cols):
+        hdr[1 + j].text = c
+    for r, row in enumerate(kept):
+        t.cell(1 + r, 0).text = row.get("label", "")
+        for j, v in enumerate(row.get("cells", [])):
+            if 1 + j <= ncol:
+                t.cell(1 + r, 1 + j).text = v
+    el = t._tbl
+    el.getparent().remove(el)
+    return el
+
+
+def _surge_insert_observation(doc, ac, dc, signal):
+    """Insert the Surge dynamic observation tables after the 'AC Power Line:' /
+    'DC Power Line:' / 'Signal Line:' markers. A marker whose port was not tested
+    (no data) is removed so no empty heading dangles."""
+    def _find(text):
+        for p in doc.paragraphs:
+            if p.text.strip() == text:
+                return p
+        return None
+
+    plan = (("AC Power Line:", ac, "power"),
+            ("DC Power Line:", dc, "power"),
+            ("Signal Line:", signal, "signal"))
+    for text, data, kind in plan:
+        marker = _find(text)
+        if marker is None:
+            continue
+        el = _surge_power_matrix(doc, data) if kind == "power" else _surge_signal_table(doc, data)
+        if el is not None:
+            marker._p.addnext(el)
+        else:
+            marker._p.getparent().remove(marker._p)
+
+
 def render(code, context, img_keys, img_paths, output_path):
     tpl = DocxTemplate(os.path.join(TPL_DIR, f"{code}.docx"))
     for k in img_keys:
@@ -234,12 +343,21 @@ def render(code, context, img_keys, img_paths, output_path):
         _eft_insert_observation(tpl.docx, context.get("eft_obs_power"), context.get("eft_obs_signal"))
         _eft_insert_legend(tpl.docx, context.get("eft_obs_legend"))
 
+    if code == "SURGE":
+        _surge_insert_observation(tpl.docx, context.get("surge_obs_ac"),
+                                  context.get("surge_obs_dc"), context.get("surge_obs_signal"))
+        _eft_insert_legend(tpl.docx, context.get("surge_obs_legend"))
+
     # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
     # their templates): rows never split across a page, small tables stay whole,
     # long tables repeat their header, and section headings never dangle at a page
     # bottom. Runs after EFT's observation table is inserted so it's covered too.
     if code in ("EFT", "VOLTAGEDIPS", "SURGE"):
         polish_layout(tpl.docx)
+
+    if code == "SURGE":
+        enforce_arial_fonts(tpl.docx)                # Arial on the freshly-inserted observation cells
+        shrink_wide_obs_tables(tpl.docx)             # 17-col matrices can't be 11pt on a portrait page
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

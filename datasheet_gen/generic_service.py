@@ -230,6 +230,75 @@ def _eft_build_context(form_data):
     return ctx
 
 
+def _surge_obs(form_data, kind):
+    """Rebuild a Surge observation matrix the form posted (kind='ac'|'dc'|'signal').
+    Columns come from surge_obs_<kind>_cols (pipe-joined, e.g. 'CM L→PE 0°|...'),
+    rows from surge_obs_<kind>_row_<ri> + cells surge_obs_<kind>_<ri>__c<ci>.
+    Returns {'cols':[...], 'rows':[{label, cells}]} or None when nothing was posted."""
+    cols = [c for c in _s(form_data.get("surge_obs_%s_cols" % kind)).split("|") if c]
+    if not cols:
+        return None
+    rows = []
+    ri = 0
+    while form_data.get("surge_obs_%s_row_%d" % (kind, ri)) is not None:
+        cells = [_s(form_data.get("surge_obs_%s_%d__c%d" % (kind, ri, ci))) for ci in range(len(cols))]
+        rows.append({"label": _s(form_data.get("surge_obs_%s_row_%d" % (kind, ri))), "cells": cells})
+        ri += 1
+    return {"cols": cols, "rows": rows}
+
+
+def _surge_build_context(form_data):
+    """SURGE docx context: ticked checkboxes, cumulative test voltages (Power/Signal
+    x CM/DM), fixed Coupling Phases + Repetition Rate, a never-blank Monitoring value,
+    and the dynamic observation matrices (inserted post-render by the generator)."""
+    from .layout import human_checkbox, cumulative_checkbox, RunsXml, _label_run
+    ctx = {}
+    POWER = ["±0.5 kV", "±1 kV", "±2 kV", "±4 kV"]
+    SIGNAL = ["±0.5 kV", "±1 kV", "±2 kV", "Custom"]
+
+    def _plain(text):
+        return RunsXml(_label_run(text))
+
+    ctx["immunity_test_requirement"] = human_checkbox(
+        _s(form_data.get("immunity_test_requirement")), ["Basic", "Industrial", "Controlled", "Custom"])
+
+    p_appl = _s(form_data.get("test_port_power")).strip().lower().startswith("appl")
+    s_appl = _s(form_data.get("test_port_signal")).strip().lower().startswith("appl")
+    ctx["test_port_power"] = human_checkbox("Power Line" if p_appl else "", ["Power Line"])
+    ctx["test_port_signal"] = human_checkbox("Signal Line" if s_appl else "", ["Signal Line"])
+
+    # Test Voltage (kV): cumulative checkboxes for tested ports; "Not Applicable" otherwise.
+    ctx["tv_cm_power"] = cumulative_checkbox(_s(form_data.get("surge_tv_cm_power")), POWER) if p_appl else _plain("Not Applicable")
+    ctx["tv_dm_power"] = cumulative_checkbox(_s(form_data.get("surge_tv_dm_power")), POWER) if p_appl else _plain("Not Applicable")
+    ctx["tv_cm_signal"] = cumulative_checkbox(_s(form_data.get("surge_tv_cm_signal")), SIGNAL) if s_appl else _plain("Not Applicable")
+    ctx["tv_dm_signal"] = cumulative_checkbox(_s(form_data.get("surge_tv_dm_signal")), SIGNAL) if s_appl else _plain("Not Applicable")
+
+    ctx["coupling_phases"] = human_checkbox(
+        _s(form_data.get("coupling_phases")) or "0°, 90°, 180°, 270°", ["0°", "90°", "180°", "270°"])
+    ctx["repetition_rate"] = human_checkbox(
+        _s(form_data.get("repetition_rate")) or "60 Sec", ["60 Sec", "Custom"])
+
+    ctx["eut_configuration_col_2"] = human_checkbox(_s(form_data.get("eut_configuration")), ["Tabletop"])
+    ctx["eut_configuration_col_3"] = human_checkbox(_s(form_data.get("eut_configuration")), ["Floor standing"])
+
+    ctx["monitoring_parameters"] = _s(form_data.get("monitoring_parameters")) or "No Error Message"
+
+    # dynamic observation matrices — consumed by the generator after render
+    ctx["surge_obs_ac"] = _surge_obs(form_data, "ac")
+    ctx["surge_obs_dc"] = _surge_obs(form_data, "dc")
+    ctx["surge_obs_signal"] = _surge_obs(form_data, "signal")
+    codes = _list(form_data, "surge_obs_legend_code[]")
+    descs = _list(form_data, "surge_obs_legend_desc[]")
+    legend, seen = [], set()
+    for i, code in enumerate(codes):
+        code = _s(code)
+        if code and code not in seen:
+            seen.add(code)
+            legend.append({"code": code, "desc": _s(descs[i]) if i < len(descs) else ""})
+    ctx["surge_obs_legend"] = legend
+    return ctx
+
+
 def build_context(schema, form_data):
     """Map the posted form into the docxtpl context for this schema."""
     ctx = {}
@@ -300,6 +369,8 @@ def build_context(schema, form_data):
         ctx.update(_vdips_build_context(form_data))
     if schema.get("code") == "EFT":
         ctx.update(_eft_build_context(form_data))
+    if schema.get("code") == "SURGE":
+        ctx.update(_surge_build_context(form_data))
     return ctx
 
 

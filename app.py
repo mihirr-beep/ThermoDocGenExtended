@@ -1209,18 +1209,29 @@ def _grant_report_access(request_id, planner_entry):
 
 
 def _get_assignment_status_filter_options(test_plans):
-    """Extract unique assignment statuses from test plans for filtering UI."""
+    """Unique assignment statuses from the test plans, as {value, label} dicts for the
+    status-filter dropdown. `value` is the raw status (the client-side filter matches it
+    case-insensitively against each row's data-status); `label` is display-friendly.
+
+    NOTE: the template renders `status_option.value` / `status_option.label`, so this
+    MUST return dicts — returning bare strings makes every <option> render blank.
+    """
     if not test_plans:
         return []
-    
+
     unique_statuses = set()
     for plan in test_plans:
         if plan and isinstance(plan, dict):
-            status = plan.get('status', '')
+            status = str(plan.get('status', '') or '').strip()
             if status:
-                unique_statuses.add(str(status).strip())
-    
-    return sorted(list(unique_statuses))
+                unique_statuses.add(status)
+
+    def _label(s):
+        # 'in_progress' -> 'In Progress'; 'Peer Review' -> 'Peer Review'
+        return s.replace('_', ' ').strip().title() if s else s
+
+    return [{'value': s, 'label': _label(s)}
+            for s in sorted(unique_statuses, key=str.lower)]
 
 
 def _parse_comment_timestamp(value) -> datetime:
