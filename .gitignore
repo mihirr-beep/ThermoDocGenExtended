@@ -59,3 +59,4 @@ Dump20260624.sql
 # Generated datasheets / uploaded images (never commit runtime artifacts)
 uploads/
 outputs/
+new_ouput_files/

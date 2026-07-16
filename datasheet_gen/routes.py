@@ -224,6 +224,29 @@ def _merge_draft_images(assignment_id, images):
     return merged
 
 
+def _save_ce_data_files(files, assignment_id):
+    """Persist raw measurement data files (csv/txt/rtf) the engineer imported on the
+    CE form. They arrive as ``data_file[]`` on the send-to-review submission and are
+    filed into the job folder's 'Test data' area. Returns saved absolute paths."""
+    saved = []
+    items = files.getlist("data_file[]") if files else []
+    if not items:
+        return saved
+    data_dir = os.path.join(_output_dir(), "data", str(assignment_id))
+    os.makedirs(data_dir, exist_ok=True)
+    for fs in items:
+        name = (fs.filename or "").strip()
+        if not name or os.path.splitext(name)[1].lower() not in (".csv", ".txt", ".rtf"):
+            continue
+        path = os.path.join(data_dir, secure_filename(name))
+        try:
+            fs.save(path)
+            saved.append(path)
+        except OSError:
+            pass
+    return saved
+
+
 @datasheet_gen_bp.route("/datasheet/ce/save-draft", methods=["POST"])
 @login_required
 def save_draft_ce():
@@ -257,6 +280,7 @@ def _render_ce_docx(assignment, form_data, tco_id, files):
     parent = _parent_request(assignment)
     context = build_ce_context(form_data)
     images = _merge_draft_images(assignment.id, _save_images(files, assignment.id))
+    data_files = _save_ce_data_files(files, assignment.id)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_tco = secure_filename(str(tco_id or (parent.tco_id if parent else "") or "TCO"))
     filename = f"{safe_tco}_CE_{ts}.docx"
@@ -267,6 +291,13 @@ def _render_ce_docx(assignment, form_data, tco_id, files):
             json.dump(form_data, fh, ensure_ascii=False, indent=2)
     except OSError:
         pass
+    # Mirror the generated datasheet + images into the job-folder tree (best-effort).
+    try:
+        from . import output_store
+        output_store.store_datasheet(parent, "CE", docx_path=output_path, images=images,
+                                     data_files=data_files, logger=current_app.logger)
+    except Exception as exc:  # never break generation
+        current_app.logger.error("output_store hook (CE) failed: %s", exc)
     return output_path, images, filename
 
 

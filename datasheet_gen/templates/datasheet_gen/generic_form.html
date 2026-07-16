@@ -534,6 +534,21 @@
   // trailing draft-save can't overwrite the record they just submitted).
   function cancelAutoSave() { if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; } }
 
+  // Raw measurement data files (csv/txt/rtf) the engineer imports are parsed in the
+  // browser and normally discarded. We keep the original files here (deduped by
+  // name, latest wins) and attach them to the send-to-review submission so they
+  // get archived alongside the datasheet in the job folder's 'Test data' area.
+  window.__dataFiles = window.__dataFiles || {};
+  function stashDataFile(file) {
+    if (!file || !file.name) return;
+    var n = file.name.toLowerCase();
+    if (n.slice(-4) === '.csv' || n.slice(-4) === '.txt' || n.slice(-4) === '.rtf') window.__dataFiles[file.name] = file;
+  }
+  function appendDataFiles(fd) {
+    var m = window.__dataFiles || {};
+    Object.keys(m).forEach(function (n) { try { fd.append('data_file[]', m[n], n); } catch (e) {} });
+  }
+
   // Auto-save persists scalar/table fields ONLY. File inputs are deliberately
   // excluded: re-uploading multi-MB images on every keystroke-debounce would
   // pile up orphaned copies server-side. Images persist on explicit Save/Generate.
@@ -758,6 +773,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var reader = new FileReader();
       reader.onload = function (evt) {
         try {
@@ -821,6 +837,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var reader = new FileReader();
       reader.onload = function (evt) {
         try {
@@ -940,7 +957,9 @@
     cancelAutoSave();
     var btn = document.getElementById('genBtn'); var orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Sending...';
-    fetch('/datasheet/g/{{ code }}/generate', { method: 'POST', body: new FormData(this) })
+    var _fd = new FormData(this);
+    appendDataFiles(_fd);   // attach imported csv/txt so they are archived on send-to-review
+    fetch('/datasheet/g/{{ code }}/generate', { method: 'POST', body: _fd })
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (res.success) {
@@ -2169,6 +2188,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var fd = new FormData();
       fd.append('file', file);
       showMessage('Parsing ' + file.name + ' …', 'success');
@@ -2215,6 +2235,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var fd = new FormData();
       fd.append('file', file);
       showMessage('Parsing ' + file.name + ' …', 'success');
@@ -2330,6 +2351,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var fd = new FormData();
       fd.append('file', file);
       showMessage('Parsing ' + file.name + ' …', 'success');
@@ -2373,6 +2395,7 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
+      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var fd = new FormData();
       fd.append('file', file);
       showMessage('Parsing ' + file.name + ' …', 'success');
