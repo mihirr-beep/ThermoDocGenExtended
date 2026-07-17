@@ -3933,6 +3933,10 @@ Please do not reply to this email.
     from datasheet_gen import register_datasheet_gen
     register_datasheet_gen(flask_app)
 
+    # NL search over lab data (admin tool - see nlp_search/)
+    from nlp_search import register_nlp_search
+    register_nlp_search(flask_app)
+
     # Import and register authentication routes
     from auth_routes import auth_bp
     flask_app.register_blueprint(auth_bp)
@@ -4689,6 +4693,11 @@ Please do not reply to this email.
                 action_label
             )
             _update_parent_request_datasheet_status(entry)
+            # NOTE: indexing the approved datasheet into the vector store (NL
+            # document search) is deliberately deferred to AFTER db.session.commit()
+            # in the calling route (see _ingest_after_approval), so no DB row lock
+            # is held across the slow OpenAI/Pinecone calls and a commit failure
+            # can never leave the index ahead of the database.
             return True, 'Peer review approved successfully', 200
 
         if normalized_action == 'reject':
@@ -4743,6 +4752,16 @@ Please do not reply to this email.
             entry.updated_at = get_ist_now()
             db.session.commit()
 
+            # On approval only (status now 'datasheet_uploaded'), index the
+            # datasheet into the vector store for NL document search - AFTER the
+            # commit, in a background thread (no lock held, no response delay).
+            if entry.status == 'datasheet_uploaded':
+                try:
+                    from nlp_search import ingest as _nlp_ingest
+                    _nlp_ingest.ingest_async(flask_app, entry.id)
+                except Exception:
+                    pass
+
             return jsonify({
                 'success': True,
                 'message': message,
@@ -4794,6 +4813,15 @@ Please do not reply to this email.
             entry.updated_at = get_ist_now()
 
             db.session.commit()
+
+            # Index the approved datasheet into the vector store for NL document
+            # search - AFTER the commit, in a background thread (no lock held, no
+            # response delay). Best-effort.
+            try:
+                from nlp_search import ingest as _nlp_ingest
+                _nlp_ingest.ingest_async(flask_app, entry.id)
+            except Exception:
+                pass
 
             logger.info(
                 f'Peer review approved for planner entry {planner_id} '

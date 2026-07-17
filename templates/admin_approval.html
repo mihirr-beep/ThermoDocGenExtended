@@ -26,6 +26,17 @@
                     </div>
                 </div>
                 {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                <!-- NL search over lab data -->
+                <div class="flex-shrink-0">
+                    <a href="{{ url_for('nlp_search.page') }}"
+                        class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <span>Ask the Lab Data</span>
+                    </a>
+                </div>
                 <!-- Datasheet fixed-values / standard-map config -->
                 <div class="flex-shrink-0">
                     <a href="{{ url_for('datasheet_admin.config_page') }}"
