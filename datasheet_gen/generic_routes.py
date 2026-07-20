@@ -192,29 +192,6 @@ def _save_generic_images(ikeys, assignment_id):
     return out
 
 
-def _save_generic_data_files(assignment_id):
-    """Persist raw measurement data files (csv/txt/rtf) the engineer imported on
-    the form. They arrive as ``data_file[]`` on the send-to-review submission and are
-    filed into the job folder's 'Test data' area. Returns saved absolute paths."""
-    saved = []
-    files = request.files.getlist("data_file[]") if request.files else []
-    if not files:
-        return saved
-    data_dir = os.path.join(_output_dir(), "data", str(assignment_id))
-    os.makedirs(data_dir, exist_ok=True)
-    for fs in files:
-        name = (fs.filename or "").strip()
-        if not name or os.path.splitext(name)[1].lower() not in (".csv", ".txt", ".rtf"):
-            continue
-        path = os.path.join(data_dir, secure_filename(name))
-        try:
-            fs.save(path)
-            saved.append(path)
-        except OSError:
-            pass
-    return saved
-
-
 @datasheet_generic_bp.route("/datasheet/g/harmonic/parse-avgmax", methods=["POST"])
 @login_required
 def g_parse_avgmax():
@@ -295,7 +272,6 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
     for k, p in R.draft_images(a.id).items():
         if k not in images and p and os.path.exists(p):
             images[k] = p
-    data_files = _save_generic_data_files(a.id)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_tco = secure_filename(str(tco_id or (parent.tco_id if parent else "") or "TCO"))
     filename = f"{safe_tco}_{code}_{ts}.docx"
@@ -306,13 +282,6 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
             json.dump(form_data, fh, ensure_ascii=False, indent=2)
     except OSError:
         pass
-    # Mirror the generated datasheet + images into the job-folder tree (best-effort).
-    try:
-        from . import output_store
-        output_store.store_datasheet(parent, code, docx_path=out, images=images,
-                                     data_files=data_files, logger=current_app.logger)
-    except Exception as exc:  # never break generation
-        current_app.logger.error("output_store hook (generic) failed: %s", exc)
     return out, images, filename
 
 

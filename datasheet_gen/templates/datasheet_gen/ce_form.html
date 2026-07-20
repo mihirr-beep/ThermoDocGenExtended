@@ -512,21 +512,6 @@
     if (tpl) tbody.appendChild(tpl.content.cloneNode(true));
     triggerAutoSave();
   }
-  // Raw measurement data files (csv/txt/rtf) the engineer imports are parsed in the
-  // browser and normally discarded. We keep the original files here (deduped by
-  // name, latest wins) and attach them to the send-to-review submission so they
-  // get archived alongside the datasheet in the job folder's 'Test data' area.
-  window.__dataFiles = window.__dataFiles || {};
-  function stashDataFile(file) {
-    if (!file || !file.name) return;
-    var n = file.name.toLowerCase();
-    if (n.slice(-4) === '.csv' || n.slice(-4) === '.txt' || n.slice(-4) === '.rtf') window.__dataFiles[file.name] = file;
-  }
-  function appendDataFiles(fd) {
-    var m = window.__dataFiles || {};
-    Object.keys(m).forEach(function (n) { try { fd.append('data_file[]', m[n], n); } catch (e) {} });
-  }
-
   function uploadCSV(key) {
     const input = document.createElement('input');
     input.type = 'file';
@@ -534,7 +519,6 @@
     input.onchange = function(e) {
       const file = e.target.files[0];
       if (!file) return;
-      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       const reader = new FileReader();
       reader.onload = function(evt) {
         const rows = parseCSV(evt.target.result);
@@ -700,7 +684,6 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
-      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var reader = new FileReader();
       reader.onload = function (evt) {
         try {
@@ -741,7 +724,6 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
-      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var reader = new FileReader();
       reader.onload = function (evt) {
         try {
@@ -768,7 +750,6 @@
     input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
-      stashDataFile(file);   // keep csv/txt originals for the job-folder archive
       var reader = new FileReader();
       reader.onload = function (evt) {
         try {
@@ -824,9 +805,7 @@
     const btn = document.getElementById('genBtn');
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Sending...';
-    const _fd = new FormData(this);
-    appendDataFiles(_fd);   // attach imported csv/txt so they are archived on send-to-review
-    fetch('/datasheet/ce/generate', { method: 'POST', body: _fd })
+    fetch('/datasheet/ce/generate', { method: 'POST', body: new FormData(this) })
       .then(r => r.json())
       .then(res => {
         if (res.success) {

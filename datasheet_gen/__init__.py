@@ -10,7 +10,6 @@ from .schema import ensure_datasheet_columns
 from .records import ensure_datasheet_record_tables
 from .fixed_store import ensure_config_tables
 from .admin_routes import datasheet_admin_bp
-from .output_store import ensure_output_root
 
 
 def register_datasheet_gen(app):
@@ -27,7 +26,4 @@ def register_datasheet_gen(app):
     # Ensure the admin-editable fixed-values + basic-standard mapping tables exist
     # (seeded once with the values that were previously hardcoded).
     ensure_config_tables(app)
-    # Create the local job-folder output root (new_ouput_files) if missing, so
-    # generated datasheets can be mirrored into the lab's folder structure.
-    ensure_output_root()
     return app
