@@ -2922,7 +2922,7 @@
 
                     <!-- Conducted RF Disturbance Immunity -->
                     <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-6 py-4 text-center align-middle" rowspan="5">
+                        <td class="px-6 py-4 text-center align-middle" rowspan="8">
                             <div class="flex items-center justify-center h-full">
                                 <input type="checkbox" name="testSelected[CRF]" value="CRF"
                                     class="test-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2">
@@ -2956,6 +2956,47 @@
                                     </div>
                                 </div>
                             </div>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Immunity Test Requirement</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[immunityTestRequirement]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="Basic">Basic</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Controlled">Controlled</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Test Port</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[testPort]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="Power Line">Power Line</option>
+                                <option value="Signal Line">Signal Line</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Coupling Method</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[couplingMethod]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="CDN">CDN</option>
+                                <option value="EM Clamp">EM Clamp</option>
+                            </select>
                         </td>
                     </tr>
                     <tr class="hover:bg-gray-50 transition-colors">
@@ -13695,6 +13736,9 @@
 
             const crfConfig = {
                 frequency: crfFrequency,
+                immunityTestRequirement: document.querySelector('select[name="crf[immunityTestRequirement]"]')?.value || '',
+                testPort: document.querySelector('select[name="crf[testPort]"]')?.value || '',
+                couplingMethod: document.querySelector('select[name="crf[couplingMethod]"]')?.value || '',
                 customSpecRange: crfFrequency === 'Custom specification' ? {
                     from: formData.get('crf[customSpecRange][frequency][from]') || '',
                     fromUnit: formData.get('crf[customSpecRange][frequency][fromUnit]') || 'kHz',

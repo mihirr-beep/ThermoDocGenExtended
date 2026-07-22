@@ -63,3 +63,20 @@ def record_download(record_id):
     if not path or not os.path.exists(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+
+
+@datasheet_records_bp.route("/datasheet/records/<int:record_id>/image/<key>")
+@login_required
+def record_image(record_id, key):
+    """Serve one uploaded image belonging to a record (for the read-only preview).
+    Only paths recorded in this record's images_json are servable, and only to
+    users allowed to view the record — so `key` can't be used for path traversal."""
+    rec = R.get_record(record_id)
+    if rec is None:
+        abort(404)
+    if not R.can_view(rec, current_user):
+        abort(403)
+    path = R.record_images(rec).get(key)
+    if not path or not os.path.exists(path):
+        abort(404)
+    return send_file(path)

@@ -669,6 +669,7 @@
         {
           "type": "table",
           "key": "software_used_rows",
+          "fixed": true,
           "columns": [
             {
               "key": "c0",

@@ -2,81 +2,87 @@
 {% block title %}Datasheet — {{ rec.tco_id }} {{ rec.test_code }}{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
-  <div class="flex items-center justify-between mb-4">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">{{ rec.test_code }} Datasheet — {{ rec.tco_id or 'No TCO' }}</h1>
-      <p class="text-sm text-gray-500">
-        {{ rec.eut_name or '' }}{% if rec.eut_model_sku %} · {{ rec.eut_model_sku }}{% endif %}
-        {% if rec.eut_serial_number %} · SN {{ rec.eut_serial_number }}{% endif %}
-      </p>
+<div class="max-w-4xl mx-auto">
+
+  {# ---- action bar (outside the "paper") ---- #}
+  <div class="flex items-center justify-between gap-2 flex-wrap mb-4">
+    <div class="flex items-center gap-3 text-sm flex-wrap">
+      <a href="{{ url_for('datasheet_records.records_list') }}"
+         class="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50">&larr; All datasheets</a>
+      {% if rec.status == 'Submitted' %}
+        <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">Submitted</span>
+      {% else %}
+        <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">Draft (Not Submitted)</span>
+      {% endif %}
+      {% if rec.updated_at %}<span class="text-gray-400">Updated {{ rec.updated_at }}</span>{% endif %}
     </div>
     <div class="flex items-center gap-2">
-      <a href="{{ url_for('datasheet_records.records_list') }}" class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">&larr; All datasheets</a>
-      {% if form_url %}<a href="{{ form_url }}" class="px-3 py-1.5 text-sm rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50">Open form</a>{% endif %}
-      {% if can_download %}<a href="{{ url_for('datasheet_records.record_download', record_id=rec.id) }}" class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700">Download .docx</a>{% endif %}
+      {% if form_url %}<a href="{{ form_url }}"
+         class="px-3 py-1.5 text-sm rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50">Open form</a>{% endif %}
+      {% if can_download %}<a href="{{ url_for('datasheet_records.record_download', record_id=rec.id) }}"
+         class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700">Download .docx</a>{% endif %}
     </div>
   </div>
 
-  <div class="mb-5 flex flex-wrap items-center gap-3 text-sm">
-    {% if rec.status == 'Submitted' %}
-      <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">Submitted</span>
-    {% else %}
-      <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">Not Submitted (Draft)</span>
-    {% endif %}
-    {% if rec.result %}<span class="text-gray-600">Result: <strong>{{ rec.result }}</strong></span>{% endif %}
-    {% if rec.tested_by_name %}<span class="text-gray-600">Tested by: <strong>{{ rec.tested_by_name }}</strong></span>{% endif %}
-    {% if rec.test_date %}<span class="text-gray-600">Test date: <strong>{{ rec.test_date }}</strong></span>{% endif %}
-    <span class="text-gray-400">Updated {{ rec.updated_at or '' }}</span>
-  </div>
+  {# ---- the "paper": read-only, laid out like the exported document ---- #}
+  <div class="bg-white shadow-lg border border-gray-200 mx-auto" style="max-width:820px;padding:2.5rem 4rem;">
 
-  {% for sec in vm.sections %}
-  <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-5">
-    <h2 class="text-lg font-bold text-gray-900 mb-4">{{ sec.title }}</h2>
+    <div class="text-center border-b-2 border-gray-900 pb-3 mb-6">
+      <div class="text-xl font-bold text-gray-900">{{ vm.title }}</div>
+      {% if vm.subtitle %}<div class="text-sm text-gray-500 mt-1">{{ vm.subtitle }}</div>{% endif %}
+    </div>
 
-    {% if sec.fields %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 mb-2">
-      {% for f in sec.fields %}
-      <div class="flex justify-between gap-4 border-b border-gray-100 py-1">
-        <span class="text-gray-500">{{ f.label }}</span>
-        <span class="text-gray-900 font-medium text-right whitespace-pre-line">{{ f.value }}</span>
-      </div>
+    {% for sec in vm.sections %}
+    <div class="mb-6">
+      <div class="text-base font-bold text-gray-900 mb-3">{{ loop.index }}. {{ sec.title }}</div>
+
+      {% for it in sec['items'] %}
+        {% if it.kind == 'field' %}
+          <div class="text-sm py-0.5 flex gap-2">
+            <span class="font-semibold text-gray-700">{{ it.label }}:</span>
+            <span class="text-gray-900{% if it.block %} whitespace-pre-line{% endif %}">{{ it.value }}</span>
+          </div>
+
+        {% elif it.kind == 'table' %}
+          <div class="my-3">
+            {% if it.label %}<div class="text-sm font-semibold text-gray-700 mb-1">{{ it.label }}</div>{% endif %}
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs border-collapse">
+                <thead><tr>
+                  {% for c in it.columns %}
+                  <th class="border border-gray-400 bg-gray-100 p-1 text-left font-semibold">{{ c }}</th>
+                  {% endfor %}
+                </tr></thead>
+                <tbody>
+                  {% for row in it.rows %}
+                  <tr>{% for cell in row %}<td class="border border-gray-400 p-1 align-top">{{ cell }}</td>{% endfor %}</tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        {% elif it.kind == 'image' %}
+          <div class="my-4">
+            <div class="text-sm font-semibold text-gray-700 mb-1">{{ it.label }}</div>
+            <div class="border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden"
+                 style="width:{{ (it.w * 2.7)|round|int }}px;height:{{ (it.h * 2.7)|round|int }}px;max-width:100%;">
+              <img src="{{ url_for('datasheet_records.record_image', record_id=rec.id, key=it.key) }}"
+                   alt="{{ it.label }}" style="max-width:100%;max-height:100%;object-fit:contain;">
+            </div>
+            <div class="text-[11px] text-gray-500 mt-1">
+              {{ it.caption }} &middot; {{ it.w }} &times; {{ it.h }} mm in the document
+            </div>
+          </div>
+        {% endif %}
       {% endfor %}
-    </div>
-    {% endif %}
-
-    {% for t in sec.tables %}
-    <div class="mt-4">
-      <h3 class="text-sm font-semibold text-gray-600 mb-2">{{ t.label }}</h3>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs border border-gray-200">
-          <thead class="bg-gray-50"><tr>
-            {% for c in t.columns %}<th class="p-2 text-left">{{ c }}</th>{% endfor %}
-          </tr></thead>
-          <tbody>
-            {% for row in t.rows %}
-            <tr class="border-t border-gray-100">
-              {% for cell in row %}<td class="p-2">{{ cell }}</td>{% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
     </div>
     {% endfor %}
-  </section>
-  {% endfor %}
 
-  {% if vm.images %}
-  <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-10">
-    <h2 class="text-lg font-bold text-gray-900 mb-4">Uploaded Images</h2>
-    <ul class="text-sm text-gray-700 list-disc pl-5">
-      {% for img in vm.images %}
-      <li>{{ img.label }} — <span class="text-gray-500">{{ img.filename or '(none)' }}</span>
-        {% if not img.exists %}<span class="text-red-500">(file missing)</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% endif %}
+    {% if not vm.sections %}
+      <div class="text-sm text-gray-500 italic">This datasheet has no saved content yet.</div>
+    {% endif %}
+
+  </div>
 </div>
 {% endblock %}
