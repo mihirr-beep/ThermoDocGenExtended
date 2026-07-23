@@ -115,7 +115,7 @@
             { "key": "c1", "label": "Port Name" },
             { "key": "c2", "label": "Test Level (Vrms)" },
             { "key": "c3", "label": "Coupling method" },
-            { "key": "c4", "label": "Observation", "input": "select", "options": ["A", "B", "C", "D"] }
+            { "key": "c4", "label": "Observation", "input": "select", "options": ["A", "B", "C", "D", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3"], "legend": true }
           ]
         }
       ]

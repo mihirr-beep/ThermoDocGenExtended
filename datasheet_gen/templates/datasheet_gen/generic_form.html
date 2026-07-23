@@ -65,15 +65,22 @@
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
     {% if draft_status %}
-    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm">
-      {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
-      {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm flex items-center justify-between gap-3">
+      <div>
+        {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
+        {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+      </div>
+      {% if draft_status == 'Not Submitted' %}
+      <button type="button" id="discardDraftBtn" class="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-red-300 text-red-700 bg-white hover:bg-red-50 font-semibold">Discard draft</button>
+      {% endif %}
     </div>
     {% endif %}
 
     {% set ns = namespace(n=0) %}
     {% for sec in schema.sections %}
-      {% if sec['items'] %}
+      {# SURGE's TEST OBSERVATION carries empty schema items (its matrices are built client-side),
+         so admit it explicitly; all other empty-items sections stay non-rendered dividers. #}
+      {% if sec['items'] or (code == 'SURGE' and sec.title == 'TEST OBSERVATION') %}
       {% if sec.title == 'MEASUREMENT DATA' and code == 'RE' %}
       {% set ns.n = ns.n + 1 %}
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -108,6 +115,8 @@
           <button type="button" onclick="generateVdipsObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from EUT Voltages</button>
         </div>
         <div id="vdips-obs-records" class="mt-3"></div>
+        <div id="vdips-obs-legend" class="mt-1" data-legend-prefix="obs_legend"></div>
+        <script type="application/json" id="vdips-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
       </section>
       {% elif sec.title == 'RESULT' and code == 'VOLTAGEDIPS' %}
       {% set ns.n = ns.n + 1 %}
@@ -182,9 +191,9 @@
                       <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_2" value="{{ prefill.get(b.key ~ '_col_2', '') }}" class="w-16 px-1 py-1 border rounded"></td>
                       {% for n in [3, 4, 5, 6, 7, 8, 9, 10] %}
                       <td class="p-1 border border-gray-300">
-                        <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded">
+                        <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -193,6 +202,8 @@
                   </tbody>
                 </table>
               </div>
+              <div id="rs-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
+              <script type="application/json" id="rs-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
 
             {% elif it.layout == 'pfmf_obs' %}
               <div class="md:col-span-2 overflow-x-auto">
@@ -218,7 +229,7 @@
                       <td class="p-1 border border-gray-300">
                         <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded pfmf-obs-cell">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -270,9 +281,9 @@
                       <td class="p-1 border border-gray-300">{% if it.name_editable %}<input name="{{ row.key }}_name" value="{{ prefill.get(row.key ~ '_name', '') }}" class="w-full px-1 py-1 border rounded">{% else %}{{ row.name }}{% endif %}</td>
                       {% for n in [1, 2, 3, 4, 5, 6] %}
                       <td class="p-1 border border-gray-300">
-                        <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded">
+                        <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -282,6 +293,8 @@
                 </table>
                 </div>
               </div>
+              <div id="esd-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
+              <script type="application/json" id="esd-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
 
             {% elif it.type == 'fields' %}
               {% for f in it['fields'] %}
@@ -355,7 +368,7 @@
                     {% for row in (it['rows'] or [None]) %}
                     <tr>
                       {% set _tlock = it.locked or it.key == 'software_used_rows' %}
-                      {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}"><option value=""></option>{% for o in col['options'] %}<option {{ 'selected' if (row[col.key] if row else '') == o }}>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}">{% endif %}</td>{% endfor %}
+                      {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}{% if col.legend %} js-obs-code{% endif %}"><option value=""></option>{% for o in col['options'] %}<option {{ 'selected' if (row[col.key] if row else '') == o }}>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}">{% endif %}</td>{% endfor %}
                       {% if not no_actions %}<td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>{% endif %}
                     </tr>
                     {% endfor %}
@@ -364,9 +377,14 @@
                 </div>
                 {% if not no_actions %}
                 <template id="tpl-{{ it.key }}"><tr>
-                  {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"><option value=""></option>{% for o in col['options'] %}<option>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded">{% endif %}</td>{% endfor %}
+                  {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded{% if col.legend %} js-obs-code{% endif %}"><option value=""></option>{% for o in col['options'] %}<option>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded">{% endif %}</td>{% endfor %}
                   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
                 </tr></template>
+                {% endif %}
+                {% set _legcols = it['columns']|selectattr('legend')|list %}
+                {% if _legcols %}
+                <div id="{{ it.key }}-obs-legend" class="mt-2" data-legend-prefix="obs_legend"></div>
+                <script type="application/json" id="{{ it.key }}-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
                 {% endif %}
               </div>
 
@@ -774,11 +792,19 @@
   // Auto-save persists scalar/table fields ONLY. File inputs are deliberately
   // excluded: re-uploading multi-MB images on every keystroke-debounce would
   // pile up orphaned copies server-side. Images persist on explicit Save/Generate.
+  // Image field keys with a freshly picked/edited file that still needs saving. The
+  // autosave includes only these (not every image on every save) so uploaded images
+  // persist on draft-save without re-uploading unchanged ones; cleared once a save succeeds.
+  var pendingImages = {};
   function buildDraftFormData(form) {
     var fd = new FormData();
     Array.prototype.forEach.call(form.elements, function(el){
       if (!el.name || el.disabled) return;
-      if (el.type === 'file') return;
+      if (el.type === 'file') {
+        // include a just-added/edited image so the autosave actually persists it
+        if (pendingImages[el.name] && el.files && el.files.length) fd.append(el.name, el.files[0]);
+        return;
+      }
       if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
       fd.append(el.name, el.value);
     });
@@ -809,6 +835,7 @@
       .then(function(r) { return r.json(); })
       .then(function(res) {
         if (res.success) {
+          pendingImages = {};          // images now persisted server-side
           if (statusEl) {
             statusEl.textContent = 'Draft auto-saved';
             statusEl.classList.remove('text-gray-500');
@@ -1171,7 +1198,67 @@
   function delRow(btn) {
     var tb = btn.closest('tbody');
     if (tb.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
+    if (typeof rebuildAllObsLegends === 'function') rebuildAllObsLegends();
   }
+
+  // ---- Generic observation legend (RS/ESD/CRF/VDIPS): one describe box per unique selected code ----
+  // Activates ONLY where '.js-obs-code' observation selects and a '[data-legend-prefix]' host exist,
+  // so the bespoke EFT/SURGE/PFMF legends stay untouched. Codes include 'A' (all selected codes).
+  var __obsLegendStore = {};  // hostId -> { code: description }, preserved across rebuilds
+  function __obsLegendHosts() { return document.querySelectorAll('[data-legend-prefix]'); }
+  function __obsCodesInScope() {
+    var seen = {};
+    document.querySelectorAll('select.js-obs-code').forEach(function (el) {
+      var v = (el.value || '').trim(); if (v) seen[v] = true;
+    });
+    return Object.keys(seen).sort();
+  }
+  function rebuildObsLegend(host) {
+    if (!host) return;
+    var prefix = host.getAttribute('data-legend-prefix') || 'obs_legend';
+    var store = __obsLegendStore[host.id] || (__obsLegendStore[host.id] = {});
+    var codes = __obsCodesInScope();
+    if (!codes.length) { host.innerHTML = ''; return; }
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3">' +
+      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div>' +
+      '<p class="text-xs text-gray-500 mb-2">Describe what each observation code selected above stands for.</p>';
+    codes.forEach(function (c) {
+      var desc = (store[c] != null) ? store[c] : '';
+      html += '<div class="flex items-start gap-2 mb-2">' +
+        '<span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
+        '<input type="hidden" name="' + prefix + '_code[]" value="' + esc(c) + '">' +
+        '<textarea name="' + prefix + '_desc[]" data-code="' + esc(c) + '" rows="2" ' +
+        'class="w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea>' +
+        '</div>';
+    });
+    html += '</div>';
+    host.innerHTML = html;
+    host.querySelectorAll('textarea[data-code]').forEach(function (ta) {
+      ta.addEventListener('input', function () {
+        __obsLegendStore[host.id][ta.getAttribute('data-code')] = ta.value;
+        if (typeof triggerAutoSave === 'function') triggerAutoSave();
+      });
+    });
+  }
+  function rebuildAllObsLegends() { __obsLegendHosts().forEach(rebuildObsLegend); }
+  document.addEventListener('DOMContentLoaded', function () {
+    __obsLegendHosts().forEach(function (host) {
+      var seedEl = document.getElementById(host.id + '-seed');
+      if (seedEl) {
+        try {
+          var seed = JSON.parse(seedEl.textContent || '[]');
+          (seed || []).forEach(function (r) {
+            if (r && r.code) (__obsLegendStore[host.id] = __obsLegendStore[host.id] || {})[r.code] = r.desc || '';
+          });
+        } catch (e) {}
+      }
+      rebuildObsLegend(host);
+    });
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains('js-obs-code')) rebuildAllObsLegends();
+  });
   document.getElementById('dsForm').addEventListener('submit', function (e) {
     e.preventDefault();
     cancelAutoSave();
@@ -1383,7 +1470,7 @@
   /* ---- set / reset the underlying file input ---- */
   function setInputFile(key,file){
     var el=inputByName(key); if(!el) return;
-    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
+    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; pendingImages[key]=true; if(typeof triggerAutoSave==='function') triggerAutoSave(); }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
@@ -1440,7 +1527,7 @@
     if (el.dataset.wired) return; el.dataset.wired = '1';
     var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
     el.insertAdjacentElement('afterend', holder);
-    el.addEventListener('change', function(){ autoFitUpload(el.name); });
+    el.addEventListener('change', function(){ pendingImages[el.name]=true; autoFitUpload(el.name); });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -1462,6 +1549,43 @@
           });
         });
       }).observe(dsForm, { childList:true, subtree:true });
+    }
+
+    // Preview each image saved in a prior draft (served by g_draft_image), so
+    // reloading a draft shows the uploaded images instead of an empty file picker.
+    try {
+      var SAVED_IMAGES = {{ saved_images|tojson }};
+      Object.keys(SAVED_IMAGES || {}).forEach(function (key) {
+        var holder = document.getElementById('inlinethumb-' + key);
+        if (!holder || holder.children.length) return;   // skip if a new file preview exists
+        var wrap = document.createElement('div'); wrap.style.cssText = 'margin-top:8px;';
+        var frame = document.createElement('div');
+        frame.style.cssText = 'position:relative;display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+        var img = document.createElement('img');
+        img.style.cssText = 'max-width:230px;max-height:150px;object-fit:contain;display:block;';
+        img.src = '/datasheet/g/{{ code }}/{{ assignment_id }}/draft-image/' + encodeURIComponent(key) + '?t=' + Date.now();
+        frame.appendChild(img); wrap.appendChild(frame);
+        var meta = document.createElement('div'); meta.style.cssText = 'font-size:11px;color:#64748b;margin-top:3px;';
+        meta.textContent = 'Saved image (' + SAVED_IMAGES[key] + ') — upload a new file to replace it.';
+        wrap.appendChild(meta); holder.appendChild(wrap);
+      });
+    } catch (e) {}
+
+    // "Discard draft" (banner): wipe the saved draft + images, then reload to pure prefill.
+    var discardBtn = document.getElementById('discardDraftBtn');
+    if (discardBtn) {
+      discardBtn.addEventListener('click', function () {
+        if (!confirm('Discard the saved draft for this datasheet? This clears the saved form data and uploaded images for this test.')) return;
+        discardBtn.disabled = true; discardBtn.textContent = 'Discarding...';
+        if (typeof cancelAutoSave === 'function') cancelAutoSave();
+        fetch('/datasheet/g/{{ code }}/{{ assignment_id }}/delete-draft', { method: 'POST' })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res.success) { window.location.reload(); }
+            else { alert(res.message || 'Could not discard draft.'); discardBtn.disabled = false; discardBtn.textContent = 'Discard draft'; }
+          })
+          .catch(function () { alert('Could not discard draft.'); discardBtn.disabled = false; discardBtn.textContent = 'Discard draft'; });
+      });
     }
 
     // Wire up event listeners for input/change for auto-saving
@@ -1857,7 +1981,7 @@
       intr: [ { pct: '0', spec: '250/300 cycles', dur: '250', crit: 'C' } ]
     }
   };
-  var VDIPS_OBS_OPTS = ['A', 'B', 'C', 'D'];
+  var VDIPS_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
 
   function vdipsLevelSet() {
     var el = inputByName('immunity_test_requirement');
@@ -1941,7 +2065,7 @@
     }
   }
   function vdipsObsSelect(name) {
-    var s = '<select name="' + name + '" data-prev="" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center">';
+    var s = '<select name="' + name + '" data-prev="" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center js-obs-code">';
     s += '<option value="">Select</option>';
     VDIPS_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
     return s + '</select>';
@@ -2105,8 +2229,12 @@
     });
     return rows;
   }
+  var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
   function surgeObsCell(name) {
-    return '<input type="text" name="' + name + '" maxlength="12" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:44px">';
+    var s = '<select name="' + name + '" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:52px">';
+    s += '<option value=""></option>';
+    SURGE_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
+    return s + '</select>';
   }
   function surgePowerMatrix(kind, title, rows) {
     var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
@@ -2173,7 +2301,7 @@
   function surgeUniqueObsCodes() {
     var host = document.getElementById('surge-obs-records'); if (!host) return [];
     var seen = {};
-    host.querySelectorAll('input.surge-obs-cell').forEach(function (inp) { var v = (inp.value || '').trim(); if (v) seen[v] = true; });
+    host.querySelectorAll('.surge-obs-cell').forEach(function (inp) { var v = (inp.value || '').trim(); if (v) seen[v] = true; });
     return Object.keys(seen).sort();
   }
   function rebuildSurgeLegend() {
@@ -2267,7 +2395,7 @@
   /* ---- dynamic Test Observation: columns built from the selected Test Voltage
      (each level as +/- a column, positive -> negative); cells filled by the user. ---- */
   var EFT_COUPLING_PATHS = ['L1', 'N', 'PE', 'L1+N', 'L1+PE', 'N+PE', 'L1+N+PE'];
-  var EFT_OBS_OPTS = ['A', 'B', 'C', 'D'];
+  var EFT_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
   function eftCumLevels(level, opts) {
     var sel = -1, i;
     for (i = 0; i < opts.length; i++) { if (eftMatch(level, opts[i])) { sel = i; break; } }
@@ -2281,8 +2409,10 @@
     return cols;
   }
   function eftObsCell(name, val) {
-    return '<input type="text" name="' + name + '" value="' + esc(val || '') + '" maxlength="12" ' +
-      'class="eft-obs-cell w-full px-1 py-1 border rounded text-center">';
+    var s = '<select name="' + name + '" class="eft-obs-cell w-full px-1 py-1 border rounded text-center">';
+    s += '<option value=""' + (!val ? ' selected' : '') + '></option>';
+    EFT_OBS_OPTS.forEach(function (o) { s += '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>'; });
+    return s + '</select>';
   }
   function eftObsTable(kind, cols, rowLabels, editableRows) {
     var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
@@ -2323,7 +2453,7 @@
     var host = document.getElementById('eft-obs-records');
     if (!host) return [];
     var seen = {};
-    host.querySelectorAll('input.eft-obs-cell').forEach(function (inp) {
+    host.querySelectorAll('.eft-obs-cell').forEach(function (inp) {
       var v = (inp.value || '').trim();
       if (v) seen[v] = true;
     });

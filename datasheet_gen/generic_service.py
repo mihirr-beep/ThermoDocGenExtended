@@ -454,6 +454,19 @@ def build_context(schema, form_data):
                 if any(row.values()):
                     rows.append(row)
             ctx[it["key"]] = rows
+    # Observation legend (RS_RI / ESD / CRF / VOLTAGEDIPS generic mechanism): one
+    # {code, desc} per unique observation code the engineer selected on the form
+    # (posted as obs_legend_code[] / obs_legend_desc[]). EFT/SURGE/PFMF use their own
+    # prefixed fields, handled in their per-code build_context.
+    _leg_codes = _list(form_data, "obs_legend_code[]")
+    _leg_descs = _list(form_data, "obs_legend_desc[]")
+    _legend, _seen = [], set()
+    for _i, _c in enumerate(_leg_codes):
+        _c = _s(_c)
+        if _c and _c not in _seen:
+            _seen.add(_c)
+            _legend.append({"code": _c, "desc": _s(_leg_descs[_i]) if _i < len(_leg_descs) else ""})
+    ctx["obs_legend"] = _legend
     if schema.get("code") == "RE":
         ctx["measurement_groups"] = _re_measurement_groups(form_data)
         freq = _s(form_data.get("frequency_range"))
@@ -618,6 +631,54 @@ def _re_test_spec_columns(freq):
     return cols
 
 
+def _immunity_from_env(request_obj):
+    """Datasheet Immunity Test Requirement (Basic / Industrial / Controlled /
+    Custom) derived from the request's Product Environments (the intake
+    'Non-Medical / Medical Environment' selection). Returns '' when it can't be
+    told (e.g. medical, where the datasheet derives levels from the product
+    standard instead)."""
+    try:
+        rows = getattr(request_obj, "product_environments", []) or []
+    except Exception:  # noqa: BLE001
+        return ""
+    blob = " ".join(
+        (_s(getattr(r, "environment_key", "")) + " " + _s(getattr(r, "environment_value", "")))
+        for r in rows
+        if _s(getattr(r, "environment_value", "")).lower() not in ("", "no", "none", "false", "0")
+    ).lower()
+    if "industrial" in blob:
+        return "Industrial"
+    if "controlled" in blob:
+        return "Controlled"
+    if "basic" in blob:
+        return "Basic"
+    if "custom" in blob:
+        return "Custom"
+    return ""
+
+
+def _rs_field_strength(standard, immunity, band):
+    """RS test Field Strength (V/m) auto-fill, derived from the Product Standard x
+    Immunity Test Requirement, per frequency band. `band` is 'low' (80 MHz-1 GHz,
+    col_1) or 'high' (1 GHz-6 GHz, col_2). Returns "" for combinations left to
+    manual entry. Values match the field's checkbox options so the box gets ticked.
+
+        61326-1   Basic                 -> 3 V/m  (low) / 3 V/m (high)
+        61326-1   Industrial            -> 10 V/m (low) / 3 V/m (high)
+        60601-1-2 (Home / Professional) -> 3 V/m across 80 MHz-2.7 GHz (both bands)
+    """
+    psn = re.sub(r"[^0-9a-z]", "", (standard or "").lower())
+    imm = (immunity or "").strip().lower()
+    if "6060112" in psn:                       # IEC/EN 60601-1-2 (medical)
+        return "3V/m"
+    if "613261" in psn:                        # IEC/EN 61326-1 (non-medical)
+        if imm == "basic":
+            return "3V/m"
+        if imm == "industrial":
+            return "10V/m" if band == "low" else "3V/m"
+    return ""
+
+
 def collect_prefill(schema, request_obj, assignment):
     """Best-effort auto-fill from the request, mapped onto this schema's field keys.
 
@@ -658,6 +719,18 @@ def collect_prefill(schema, request_obj, assignment):
         except Exception:
             crf_spec = {}
 
+    # SURGE stores its intake in custom_spec too (scalar columns are blank):
+    #   cables.power/signal -> Test Ports; testLevel / customCommonKV etc. -> voltages.
+    surge_spec = {}
+    if _code == "SURGE" and detail is not None:
+        try:
+            _raw = getattr(detail, "custom_spec", None)
+            surge_spec = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+            if not isinstance(surge_spec, dict):
+                surge_spec = {}
+        except Exception:
+            surge_spec = {}
+
     is_re = (schema.get("code") or "").upper() == "RE"
     basic_std = "Sysmex"
     turn_table_step = "15°"
@@ -674,6 +747,9 @@ def collect_prefill(schema, request_obj, assignment):
         turn_table_step = '22.5°' if basic_std == 'ANSI C63.4:2024' else '15°'
 
     pre = {}
+    # Immunity Test Requirement derived from the TR environment — reused by the
+    # immunity checkbox and the RS field-strength derivation below.
+    immunity_env = _immunity_from_env(request_obj) if request_obj is not None else ""
     for f in iter_scalar_fields(schema):
         if f.get("input") == "image":
             continue
@@ -735,6 +811,33 @@ def collect_prefill(schema, request_obj, assignment):
             v = _s(crf_spec.get("couplingMethod"))
             if v:
                 pre[f["key"]] = v
+        elif k == "immunity_test_requirement" and _code in (
+                "SURGE", "VOLTAGEDIPS", "EFT", "ESD", "RS_RI", "PFMF"):
+            # From the TR's Non-Medical/Medical Environment (CRF has its own
+            # explicit source above). Only fills the field when it is otherwise
+            # blank, so it can never override an intake-specific value. For SURGE
+            # it also drives the derived Test Voltage + observation matrix.
+            v = immunity_env
+            if v:
+                pre[f["key"]] = v
+        elif _code == "RS_RI" and k in ("field_strength_col_1", "field_strength_col_2"):
+            # Field Strength (V/m) derived from Product Standard x Immunity Test
+            # Requirement, per band (col_1 = 80 MHz-1 GHz, col_2 = 1 GHz-6 GHz).
+            band = "low" if k.endswith("_col_1") else "high"
+            v = _rs_field_strength(standard, immunity_env, band)
+            if v:
+                pre[f["key"]] = v
+        elif _code == "RS_RI" and k in ("f_80_to_1000_col_1", "f_1000_to_6000_col_1"):
+            # TEST OBSERVATION "Test level (V/m)" mirrors the band's derived Field
+            # Strength (numeric only — the column header already carries the V/m unit).
+            band = "low" if k.startswith("f_80_to_1000") else "high"
+            v = re.sub(r"[^0-9.]", "", _rs_field_strength(standard, immunity_env, band))
+            if v:
+                pre[f["key"]] = v
+        elif _code == "SURGE" and k in ("test_port_power", "test_port_signal"):
+            cbl = surge_spec.get("cables") or {}
+            side = "power" if k == "test_port_power" else "signal"
+            pre[f["key"]] = "Applicable" if _s(cbl.get(side)).lower() in ("yes", "true", "1") else "Not Applicable"
         elif "modification_state" in k:
             pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
         elif k.startswith("eut_configuration"):

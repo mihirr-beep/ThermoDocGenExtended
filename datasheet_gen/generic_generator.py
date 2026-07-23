@@ -353,6 +353,11 @@ def render(code, context, img_keys, img_paths, output_path):
         # value the engineer actually used in the observation grid.
         _eft_insert_legend(tpl.docx, context.get("pfmf_obs_legend"))
 
+    if code in ("RS_RI", "ESD", "CRF", "VOLTAGEDIPS"):
+        # Same replacement using the generic per-code legend the form posts
+        # (obs_legend_code[]/obs_legend_desc[]); left as-is when no code was selected.
+        _eft_insert_legend(tpl.docx, context.get("obs_legend"))
+
     # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
     # their templates): rows never split across a page, small tables stay whole,
     # long tables repeat their header, and section headings never dangle at a page

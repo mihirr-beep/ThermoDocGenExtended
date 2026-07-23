@@ -60,8 +60,8 @@
             { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
             { "key": "immunity_test_requirement", "label": "Immunity test requirement", "input": "text", "checkbox": ["Basic", "Industrial", "Controlled", "Custom"], "default": "" },
             { "key": "test_port", "label": "Test Port", "input": "text", "default": "Enclosure" },
-            { "key": "frequency_range_col_1", "label": "Frequency Range – 80M-1G", "input": "text", "default": "80 MHz to 1GHz" },
-            { "key": "frequency_range_col_2", "label": "Frequency Range – 1G-6G", "input": "text", "default": "1GHz to 6GHz" },
+            { "key": "frequency_range_col_1", "label": "Frequency Range – 80M-1G", "input": "text", "checkbox": ["80 MHz to 1GHz"], "default": "80 MHz to 1GHz" },
+            { "key": "frequency_range_col_2", "label": "Frequency Range – 1G-6G", "input": "text", "checkbox": ["1GHz to 6GHz"], "default": "1GHz to 6GHz" },
             { "key": "field_strength_col_1", "label": "Field Strength (V/m) – 80M-1G", "input": "text", "checkbox": ["3V/m", "10V/m", "30V/m", "Custom"], "default": "" },
             { "key": "field_strength_col_2", "label": "Field Strength (V/m) – 1G-6G", "input": "text", "checkbox": ["3V/m", "10V/m", "30V/m", "Custom"], "default": "" },
             { "key": "frequency_step_size", "label": "Frequency Step Size", "input": "text", "default": "1 %" },
@@ -70,7 +70,7 @@
             { "key": "modulation_depth", "label": "Modulation depth", "input": "text", "default": "80%" },
             { "key": "modulation_depth_and_frequency", "label": "Modulation depth and Frequency", "input": "text", "default": "1kHz" },
             { "key": "antenna_polarization", "label": "Antenna Polarization", "input": "text", "default": "Horizontal and Vertical" },
-            { "key": "test_distance", "label": "Test Distance", "input": "text", "checkbox": ["3m", "1m"], "default": "" },
+            { "key": "test_distance", "label": "Test Distance", "input": "text", "checkbox": ["3m", "1m"], "default": "3m" },
             { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
             { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
             { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
@@ -187,7 +187,7 @@
           "type": "fields",
           "fields": [
             { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
-            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["Yes", "No"], "default": "" }
+            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
           ]
         },
         {

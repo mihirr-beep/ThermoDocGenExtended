@@ -373,6 +373,31 @@ def draft_form(assignment_id):
     return {}
 
 
+def delete_record_for_assignment(assignment_id):
+    """Delete the saved draft/record for this assignment and its uploaded image
+    files. Returns True if a row was removed, else False."""
+    import os
+    from models import db
+    rec = get_record_for_assignment(assignment_id)
+    if not rec:
+        return False
+    try:                                        # best-effort: remove image files
+        for p in (json.loads(rec.get("images_json") or "{}") or {}).values():
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    except (ValueError, TypeError):
+        pass
+    db.session.execute(
+        text("DELETE FROM datasheet_records WHERE planner_entry_id = :pid"),
+        {"pid": assignment_id},
+    )
+    db.session.commit()
+    return True
+
+
 # --------------------------------------------------------------------------
 # render a saved record read-only (schema-aware for generic; prettified for CE)
 # --------------------------------------------------------------------------

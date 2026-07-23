@@ -156,7 +156,9 @@ def ce_form(assignment_id):
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 prefill[k] = v
-    saved_images = [os.path.basename(p) for p in R.draft_images(assignment.id).values() if p]
+    # {field_key: basename} so the form can preview each draft image on reload
+    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(assignment.id).items()
+                    if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/ce_form.html",
         assignment_id=assignment.id,
@@ -249,6 +251,40 @@ def save_draft_ce():
         db.session.rollback()
         current_app.logger.error("Error saving CE draft: %s", exc)
         return jsonify(success=False, message="An error occurred while saving the draft"), 500
+
+
+@datasheet_gen_bp.route("/datasheet/ce/<int:assignment_id>/draft-image/<key>")
+@login_required
+def ce_draft_image(assignment_id, key):
+    """Serve one image saved in this CE assignment's draft, so the form can preview
+    it on reload. Only paths in the draft's images_json are servable; access-checked."""
+    assignment = db.session.get(PlannerEntry, assignment_id)
+    if assignment is None:
+        abort(404)
+    if not _can_access(assignment):
+        abort(403)
+    path = R.draft_images(assignment_id).get(key)
+    if not path or not os.path.exists(path):
+        abort(404)
+    return send_file(path)
+
+
+@datasheet_gen_bp.route("/datasheet/ce/<int:assignment_id>/delete-draft", methods=["POST"])
+@login_required
+def ce_delete_draft(assignment_id):
+    """Discard the saved CE draft data + uploaded images for this assignment.
+    Refused for an already-submitted record so a submission can't be lost here."""
+    assignment = db.session.get(PlannerEntry, assignment_id)
+    if assignment is None:
+        return jsonify(success=False, message="Assignment not found"), 404
+    if not _can_access(assignment):
+        return jsonify(success=False, message="Access denied"), 403
+    rec = R.get_record_for_assignment(assignment_id)
+    if rec and rec.get("status") == R.SUBMITTED:
+        return jsonify(success=False,
+                       message="This datasheet is already submitted; its data can't be discarded here."), 400
+    R.delete_record_for_assignment(assignment_id)
+    return jsonify(success=True, message="Draft removed")
 
 
 def _render_ce_docx(assignment, form_data, tco_id, files):
