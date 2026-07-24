@@ -348,6 +348,11 @@ def render(code, context, img_keys, img_paths, output_path):
                                   context.get("surge_obs_dc"), context.get("surge_obs_signal"))
         _eft_insert_legend(tpl.docx, context.get("surge_obs_legend"))
 
+    if code == "PFMF":
+        # Replace the static A/B/C/D observation legend with one line per unique
+        # value the engineer actually used in the observation grid.
+        _eft_insert_legend(tpl.docx, context.get("pfmf_obs_legend"))
+
     # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
     # their templates): rows never split across a page, small tables stay whole,
     # long tables repeat their header, and section headings never dangle at a page

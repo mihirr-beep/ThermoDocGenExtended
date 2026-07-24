@@ -436,7 +436,7 @@ def populate_emc_request_from_form(
         or form_data.get('requesterName', '')
     )
 
-    request_obj.job_number = form_data.get('jobNumber', '')
+    request_obj.job_number = (str(form_data.get('jobNumber') or '').strip() or None)
     request_obj.sample_condition = form_data.get('sampleCondition', '')
     request_obj.capability_available = form_data.get('capabilityAvailable', '')
     request_obj.sample_received_date = _parse_optional_date(form_data.get('sampleReceivedDate'))

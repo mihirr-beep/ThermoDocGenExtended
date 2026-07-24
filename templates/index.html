@@ -2922,7 +2922,7 @@
 
                     <!-- Conducted RF Disturbance Immunity -->
                     <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-6 py-4 text-center align-middle" rowspan="5">
+                        <td class="px-6 py-4 text-center align-middle" rowspan="8">
                             <div class="flex items-center justify-center h-full">
                                 <input type="checkbox" name="testSelected[CRF]" value="CRF"
                                     class="test-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2">
@@ -2956,6 +2956,47 @@
                                     </div>
                                 </div>
                             </div>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Immunity Test Requirement</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[immunityTestRequirement]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="Basic">Basic</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Controlled">Controlled</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Test Port</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[testPort]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="Power Line">Power Line</option>
+                                <option value="Signal Line">Signal Line</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-left align-top">
+                            <div class="font-medium text-gray-800">Coupling Method</div>
+                        </td>
+                        <td class="px-6 py-4 text-left align-top">
+                            <select name="crf[couplingMethod]"
+                                class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white text-sm text-gray-900">
+                                <option value="">Select</option>
+                                <option value="CDN">CDN</option>
+                                <option value="EM Clamp">EM Clamp</option>
+                            </select>
                         </td>
                     </tr>
                     <tr class="hover:bg-gray-50 transition-colors">
@@ -4071,6 +4112,7 @@
 </script>
 <script>
     let currentTcoId = null;
+    let referenceTcoId = null;
     let allowTcoUpdate = false;
     let currentRequestId = null;
     let currentViewedDetailsRequestId = null;
@@ -4079,6 +4121,36 @@
     );
     const CAN_ADMIN_EDIT_ANY_TCO = indexPageFlags.can_admin_edit_any_tco === true;
     window._floatingNavCurrentTcoId = '';
+
+    function getActiveFormTcoId() {
+        if (allowTcoUpdate && currentTcoId) {
+            return String(currentTcoId || '').trim();
+        }
+        if (referenceTcoId) {
+            return String(referenceTcoId || '').trim();
+        }
+        return String(document.getElementById('tcoIdDisplay')?.value || '').trim();
+    }
+
+    function clearReferenceIdentifiers(options = {}) {
+        const clearJobNumber = options.clearJobNumber !== false;
+        ['tcoIdDisplay', 'tcoId'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = '';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        if (clearJobNumber) {
+            const jobNumberEl = document.getElementById('jobNumber');
+            if (jobNumberEl) {
+                jobNumberEl.value = '';
+                jobNumberEl.dispatchEvent(new Event('input', { bubbles: true }));
+                jobNumberEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    }
 
     function triggerFormDocxDownload(requestId) {
         if (!requestId) return;
@@ -6647,14 +6719,14 @@
             if (navHideIcon) navHideIcon.classList.remove('hidden');
             if (navShowIcon) navShowIcon.classList.add('hidden');
             if (navTitle) navTitle.textContent = 'Quick Navigation';
-            const formTco = currentTcoId || (document.getElementById('tcoIdDisplay')?.value || '');
+            const formTco = getActiveFormTcoId();
             setFloatingNavTcoText(formTco);
         }
     }
 
     function resetFormForNewRequestIfNeeded() {
         const hasEditingBanner = !!document.querySelector('.editing-banner');
-        const isEditingContext = hasEditingBanner || !!currentTcoId || !!allowTcoUpdate;
+        const isEditingContext = hasEditingBanner || !!currentTcoId || !!referenceTcoId || !!allowTcoUpdate;
         if (!isEditingContext) {
             return;
         }
@@ -8421,31 +8493,21 @@
                     }
 
                     const status = json.data.status;
-                    const isStandardEditable = status === 'Draft' || status === 'Need More Information';
-                    const isAdminEditable = CAN_ADMIN_EDIT_ANY_TCO === true;
-                    const isEditable = isStandardEditable || isAdminEditable;
 
-                    if (isEditable) {
-                        // Allow updating this TCO
-                        currentTcoId = json.data.tco_id;
-                        currentRequestId = json.data.id;
-                        allowTcoUpdate = true;
-
-                    } else {
-                        // Reference only - will create new TCO on submit
-                        currentTcoId = null;
-                        currentRequestId = null;
-                        allowTcoUpdate = false;
-
-                    }
-                    setFloatingNavTcoText(isEditable ? (json.data.tco_id || '') : '');
+                    // Manual TCO fetch is always reference-only.
+                    // Updating an existing TCO must go through the explicit edit flow.
+                    currentTcoId = null;
+                    referenceTcoId = json.data.tco_id || raw;
+                    currentRequestId = null;
+                    allowTcoUpdate = false;
+                    setFloatingNavTcoText(referenceTcoId || '');
 
                     // Use the comprehensive form population function
                     if (typeof populateIECEMCForm === 'function') {
                         // Add a small delay to ensure DOM is ready
                         setTimeout(() => {
                             const populated = populateIECEMCFormSafely(json.data, {
-                                includeRequestIdentifiers: isEditable
+                                includeRequestIdentifiers: false
                             });
                             if (!populated) {
                                 setStatus('TCO found, but the form could not be populated completely.', true);
@@ -8453,7 +8515,10 @@
                                 return;
                             }
 
-                            restoreLoggedInRequesterContext(previousRequesterContext);
+                            restoreLoggedInRequesterContext(previousRequesterContext, {
+                                preserveFetchedRequesterStructure: true
+                            });
+                            clearReferenceIdentifiers();
 
                             // Always set current date when fetching via TCO lookup
                             setTimeout(() => {
@@ -8469,22 +8534,12 @@
 
                             setStatus('Form auto-filled successfully from TCO!', false);
 
-                            // Show appropriate message based on editability
-                            if (isEditable) {
-                                showStatusMessage(
-                                    isStandardEditable
-                                        ? `Form loaded from TCO: ${raw}. Status: "${status}". You can edit and resubmit with the same TCO ID.`
-                                        : `Admin edit mode enabled for TCO: ${raw}. Status: "${status}". Changes will update the same TCO.`,
-                                    'info'
-                                );
-                            } else {
-                                showStatusMessage(
-                                    `Form populated from TCO: ${raw} (Status: "${status}"). This is for reference only. Submitting will create a NEW TCO ID.`,
-                                    'warning'
-                                );
-                            }
+                            showStatusMessage(
+                                `Form populated from TCO: ${raw} (Status: "${status}"). This is for reference only. Submitting will create a NEW TCO ID and Job Number.`,
+                                'warning'
+                            );
 
-                            // Show editing banner
+                            // Show reference banner
                             if (typeof showEditingBanner === 'function') {
                                 showEditingBanner();
                             }
@@ -8493,8 +8548,19 @@
                     } else {
                         // Fallback to basic fillForm if populateIECEMCForm is not available
                         const count = fillForm(json.data);
-                        restoreLoggedInRequesterContext(previousRequesterContext);
-                        setStatus(count > 0 ? `Auto-filled ${count} fields from TCO.` : 'No matching fields to fill.');
+                        clearReferenceIdentifiers();
+                        restoreLoggedInRequesterContext(previousRequesterContext, {
+                            preserveFetchedRequesterStructure: true
+                        });
+                        if (typeof showEditingBanner === 'function') {
+                            showEditingBanner();
+                        }
+                        setStatus(
+                            count > 0
+                                ? `Auto-filled ${count} fields from TCO. Reference only: submitting will create a new TCO ID and Job Number.`
+                                : 'No matching fields to fill.',
+                            count <= 0
+                        );
                     }
 
                     fetchBtn.disabled = false;
@@ -13695,6 +13761,9 @@
 
             const crfConfig = {
                 frequency: crfFrequency,
+                immunityTestRequirement: document.querySelector('select[name="crf[immunityTestRequirement]"]')?.value || '',
+                testPort: document.querySelector('select[name="crf[testPort]"]')?.value || '',
+                couplingMethod: document.querySelector('select[name="crf[couplingMethod]"]')?.value || '',
                 customSpecRange: crfFrequency === 'Custom specification' ? {
                     from: formData.get('crf[customSpecRange][frequency][from]') || '',
                     fromUnit: formData.get('crf[customSpecRange][frequency][fromUnit]') || 'kHz',
@@ -14116,10 +14185,16 @@
         const selectedEquipment = getSelectedEquipment();
 
 
+        const isReferenceOnlyContext = !allowTcoUpdate && !!referenceTcoId;
+        if (isReferenceOnlyContext) {
+            formData.jobNumber = '';
+            clearReferenceIdentifiers();
+        }
+
         // *** NEW: Only include TCO update info if allowTcoUpdate is true ***
         const payload = {
             form_data: formData,
-            draft_id: currentRequestId || null,
+            draft_id: isReferenceOnlyContext ? null : (currentRequestId || null),
             selected_tests: selectedTests,
             selected_equipment: selectedEquipment,
             // Only set these if we're allowed to update
@@ -14169,6 +14244,7 @@
                     // *** Clear the TCO tracking variables ***
                     const wasUpdate = allowTcoUpdate && !!currentTcoId;
                     currentTcoId = null;
+                    referenceTcoId = null;
                     currentRequestId = null;
                     allowTcoUpdate = false;  // NEW: Reset the flag
                     setFloatingNavTcoText(data.data?.tco_id || '');
@@ -17961,7 +18037,7 @@
             existingBanner.remove();
         }
 
-        if (currentTcoId || allowTcoUpdate) {
+        if (allowTcoUpdate || referenceTcoId) {
             const formElement = document.getElementById('testPlanForm');
             if (formElement) {
                 const banner = document.createElement('div');
@@ -17987,8 +18063,8 @@
                     <svg class="inline w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
                     </svg>
-                    <strong>Reference Mode:</strong> Form populated from an existing TCO for reference. 
-                    When you submit, this will CREATE A NEW TCO ID.
+                    <strong>Reference Mode:</strong> Form populated from existing TCO <strong>${referenceTcoId}</strong> for reference only. 
+                    When you submit, this will CREATE A NEW TCO ID AND JOB NUMBER.
                 `;
                 }
 
@@ -18002,6 +18078,8 @@
                 formElement.insertBefore(banner, formElement.firstChild);
                 if (allowTcoUpdate) {
                     formElement.classList.add('editing-mode');
+                } else {
+                    formElement.classList.remove('editing-mode');
                 }
             }
         }
@@ -18060,6 +18138,7 @@
             if (isEditable) {
                 // Allow updating
                 currentTcoId = json.data.tco_id;
+                referenceTcoId = null;
                 currentRequestId = json.data.id;
                 allowTcoUpdate = true;
 
@@ -18073,6 +18152,7 @@
             } else {
                 // Read-only - will create new on submit
                 currentTcoId = null;
+                referenceTcoId = json.data.tco_id || null;
                 currentRequestId = null;
                 allowTcoUpdate = false;
 
@@ -18082,7 +18162,7 @@
                     'warning'
                 );
             }
-            setFloatingNavTcoText(isEditable ? (json.data.tco_id || '') : '');
+            setFloatingNavTcoText(isEditable ? (json.data.tco_id || '') : (referenceTcoId || ''));
 
             // Populate the form
             if (typeof populateIECEMCForm === 'function') {
@@ -18091,6 +18171,10 @@
                 });
                 if (!populated) {
                     throw new Error('Failed to populate test request form');
+                }
+
+                if (!isEditable) {
+                    clearReferenceIdentifiers();
                 }
 
                 // Show editing banner
@@ -18130,6 +18214,7 @@
     })();
     function clearEditingMode() {
         currentTcoId = null;
+        referenceTcoId = null;
         currentRequestId = null;
         allowTcoUpdate = false;  // NEW: Reset the flag
         setFloatingNavTcoText('');
@@ -18174,7 +18259,9 @@
         };
     }
 
-    function restoreLoggedInRequesterContext(previousContext = {}) {
+    function restoreLoggedInRequesterContext(previousContext = {}, options = {}) {
+        const preserveFetchedRequesterStructure = options.preserveFetchedRequesterStructure !== false;
+
         const setElementValue = (id, value) => {
             const el = document.getElementById(id);
             if (!el) return;
@@ -18197,16 +18284,19 @@
         setElementValue('requesterContact', previousContext.requesterContact || '');
         setElementValue('requesterDesignation', previousContext.requesterDesignation || '');
 
-        if (typeof setDepartmentByNumber === 'function') {
-            setDepartmentByNumber(previousContext.requesterDepartment || '');
-        } else {
-            setElementValue('requesterDepartmentDisplay', previousContext.requesterDepartment || '');
-            setElementValue('requesterDepartment', previousContext.requesterDepartment || '');
+        if (!preserveFetchedRequesterStructure) {
+            if (typeof setDepartmentByNumber === 'function') {
+                setDepartmentByNumber(previousContext.requesterDepartment || '');
+            } else {
+                setElementValue('requesterDepartmentDisplay', previousContext.requesterDepartment || '');
+                setElementValue('requesterDepartment', previousContext.requesterDepartment || '');
+            }
+
+            setElementValue('requesterGroup', previousContext.requesterGroup || '');
+            setElementValue('requesterDivision', previousContext.requesterDivision || '');
+            setElementValue('requesterSite', previousContext.requesterSite || '');
         }
 
-        setElementValue('requesterGroup', previousContext.requesterGroup || '');
-        setElementValue('requesterDivision', previousContext.requesterDivision || '');
-        setElementValue('requesterSite', previousContext.requesterSite || '');
         setElementValue('requesterSignature', requesterName);
         setElementValue('requesterSignatureName', requesterName);
     }

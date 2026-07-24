@@ -207,6 +207,13 @@ def _validate_planner_time_window(start_time_obj, end_time_obj):
     """Validate planner times are provided and ordered logically."""
     if not start_time_obj or not end_time_obj:
         return 'start_time and end_time must be provided in HH:MM format'
+
+    business_start = time(9, 0, 0)
+    business_end = time(18, 0, 0)
+    if end_time_obj <= start_time_obj:
+        return 'end_time must be after start_time'
+    if min(end_time_obj, business_end) <= max(start_time_obj, business_start):
+        return 'Schedule must overlap working hours between 09:00 and 18:00'
     return None
 
 
@@ -465,14 +472,21 @@ def _calculate_planner_schedule_hours(
     start_time_value,
     end_time_value
 ):
-    """Calculate schedule hours across weekdays only."""
+    """Calculate schedule hours across weekdays within 09:00-18:00 only."""
     start_time_obj = _coerce_planner_conflict_time(start_time_value)
     end_time_obj = _coerce_planner_conflict_time(end_time_value)
     if not start_time_obj or not end_time_obj or end_time_obj <= start_time_obj:
         return 0
 
-    start_dt = datetime.combine(date.today(), start_time_obj)
-    end_dt = datetime.combine(date.today(), end_time_obj)
+    business_start = time(9, 0, 0)
+    business_end = time(18, 0, 0)
+    effective_start = max(start_time_obj, business_start)
+    effective_end = min(end_time_obj, business_end)
+    if effective_end <= effective_start:
+        return 0
+
+    start_dt = datetime.combine(date.today(), effective_start)
+    end_dt = datetime.combine(date.today(), effective_end)
     daily_hours = (end_dt - start_dt).total_seconds() / 3600
     if daily_hours <= 0:
         return 0
@@ -3486,112 +3500,116 @@ This is an automated notification. Please do not reply.
                     role='admin', is_active=True).all() if u.email
             ]
 
-            if not lab_engineer_recipients:
+            if not lab_engineer_recipients and not admin_recipients:
                 logger.info(
-                    'No lab engineer recipients found; skipping equipment reminders.')
+                    'No lab engineer or admin recipients found; skipping equipment reminders.')
                 return
 
-            # Collect all reminders
+            def _is_yes(value):
+                return str(value or '').strip().lower() == 'yes'
+
+            def _is_not_no(value):
+                return str(value or '').strip().lower() != 'no'
+
+            def _reminder_days_for_equipment(equipment):
+                eou_status = getattr(equipment, 'eou_status', None) or ''
+                if eou_status.strip().upper() == 'EOU':
+                    return [60, 30, 15, 7]
+                return [30, 15, 7]
+
             reminders = []
+            seen_reminders = set()
 
-            # Check calibration due dates
-            equipment_with_calibration = Equipment.query.filter(
-                Equipment.calibration_due_date.isnot(None),
-                Equipment.calibration_required == 'Yes'
-            ).all()
+            def _append_reminder(reminder_type, equipment, due_date, days_remaining, **extra):
+                if not equipment or not due_date or days_remaining <= 0:
+                    return
+                reminder_days = _reminder_days_for_equipment(equipment)
+                if days_remaining not in reminder_days:
+                    return
+                dedupe_key = (
+                    reminder_type,
+                    getattr(equipment, 'id', None),
+                    due_date.isoformat(),
+                )
+                if dedupe_key in seen_reminders:
+                    return
+                seen_reminders.add(dedupe_key)
+                reminder = {
+                    'type': reminder_type,
+                    'equipment': equipment,
+                    'due_date': due_date,
+                    'days_remaining': days_remaining,
+                }
+                reminder.update(extra)
+                reminders.append(reminder)
 
-            for equipment in equipment_with_calibration:
-                if not equipment.calibration_due_date:
+            for equipment in Equipment.query.filter(Equipment.calibration_due_date.isnot(None)).all():
+                if not _is_yes(equipment.calibration_required):
                     continue
-
-                days_remaining = (equipment.calibration_due_date - today).days
-                eou_status = getattr(equipment, 'eou_status', None) or ''
-
-                # Determine reminder schedule based on EOU status
-                if eou_status.strip().upper() == 'EOU':
-                    # 2 months, 1 month, 15 days, 1 week
-                    reminder_days = [60, 30, 15, 7]
-                else:
-                    reminder_days = [30, 15, 7]  # 1 month, 15 days, 1 week
-
-                if days_remaining in reminder_days and days_remaining > 0:
-                    reminders.append({
-                        'type': 'Calibration',
-                        'equipment': equipment,
-                        'due_date': equipment.calibration_due_date,
-                        'days_remaining': days_remaining
-                    })
-
-            # Check IC due dates
-            equipment_with_ic = Equipment.query.filter(
-                Equipment.ic_due_date.isnot(None),
-                Equipment.ic_required == 'Yes'
-            ).all()
-
-            for equipment in equipment_with_ic:
-                if not equipment.ic_due_date:
+                due_date = equipment.calibration_due_date
+                if not due_date:
                     continue
+                _append_reminder(
+                    'Calibration',
+                    equipment,
+                    due_date,
+                    (due_date - today).days,
+                )
 
-                days_remaining = (equipment.ic_due_date - today).days
-                eou_status = getattr(equipment, 'eou_status', None) or ''
+            for equipment in Equipment.query.filter(Equipment.ic_due_date.isnot(None)).all():
+                if not _is_yes(equipment.ic_required):
+                    continue
+                due_date = equipment.ic_due_date
+                if not due_date:
+                    continue
+                _append_reminder(
+                    'IC (Intermediate Check)',
+                    equipment,
+                    due_date,
+                    (due_date - today).days,
+                )
 
-                # Determine reminder schedule based on EOU status
-                if eou_status.strip().upper() == 'EOU':
-                    reminder_days = [60, 30, 15, 7]
-                else:
-                    reminder_days = [30, 15, 7]
+            for equipment in Equipment.query.filter(Equipment.maintenance_due_date.isnot(None)).all():
+                if not _is_not_no(equipment.maintenance_required):
+                    continue
+                due_date = equipment.maintenance_due_date
+                if not due_date:
+                    continue
+                _append_reminder(
+                    'Maintenance',
+                    equipment,
+                    due_date,
+                    (due_date - today).days,
+                    source='equipment',
+                )
 
-                if days_remaining in reminder_days and days_remaining > 0:
-                    reminders.append({
-                        'type': 'IC (Intermediate Check)',
-                        'equipment': equipment,
-                        'due_date': equipment.ic_due_date,
-                        'days_remaining': days_remaining
-                    })
-
-            # Check maintenance due dates
             maintenance_records = Maintenance.query.filter(
                 Maintenance.maintenance_due_date.isnot(None)
             ).all()
-
             for maintenance in maintenance_records:
-                if not maintenance.maintenance_due_date:
-                    continue
-
+                due_date = maintenance.maintenance_due_date
                 equipment = maintenance.equipment
-                if not equipment:
+                if not equipment or not due_date:
                     continue
+                if not _is_not_no(maintenance.maintenance_required):
+                    continue
+                _append_reminder(
+                    'Maintenance',
+                    equipment,
+                    due_date,
+                    (due_date - today).days,
+                    maintenance_id=maintenance.id,
+                    source='maintenance_record',
+                )
 
-                days_remaining = (
-                    maintenance.maintenance_due_date - today).days
-                eou_status = getattr(equipment, 'eou_status', None) or ''
-
-                # Determine reminder schedule based on EOU status
-                if eou_status.strip().upper() == 'EOU':
-                    reminder_days = [60, 30, 15, 7]
-                else:
-                    reminder_days = [30, 15, 7]
-
-                if days_remaining in reminder_days and days_remaining > 0:
-                    reminders.append({
-                        'type': 'Maintenance',
-                        'equipment': equipment,
-                        'due_date': maintenance.maintenance_due_date,
-                        'days_remaining': days_remaining,
-                        'maintenance_id': maintenance.id
-                    })
-
-            # Group reminders by type and send emails
             if reminders:
-                # Group by reminder type
                 calibration_reminders = [
                     r for r in reminders if r['type'] == 'Calibration']
-                ic_reminders = [r for r in reminders if r['type']
-                                == 'IC (Intermediate Check)']
+                ic_reminders = [
+                    r for r in reminders if r['type'] == 'IC (Intermediate Check)']
                 maintenance_reminders = [
                     r for r in reminders if r['type'] == 'Maintenance']
 
-                # Send separate emails for each type if there are reminders
                 if calibration_reminders:
                     _send_equipment_reminder_email(
                         'Calibration Due Date Reminder',
@@ -3617,7 +3635,12 @@ This is an automated notification. Please do not reply.
                     )
 
                 logger.info(
-                    f'Sent equipment reminder emails for {len(reminders)} reminder(s)')
+                    'Sent equipment reminder emails: calibration=%s, ic=%s, maintenance=%s, total=%s',
+                    len(calibration_reminders),
+                    len(ic_reminders),
+                    len(maintenance_reminders),
+                    len(reminders),
+                )
             else:
                 logger.info('No equipment reminders to send today.')
 
@@ -4650,6 +4673,105 @@ Please do not reply to this email.
             formatted_entry
         )
 
+    def _generate_final_datasheet_after_peer_review(
+        entry: PlannerEntry
+    ) -> tuple[bool, str, str | None]:
+        """Generate the final datasheet file from the saved submitted form."""
+        from datasheet_gen import records as datasheet_records
+
+        record = datasheet_records.get_record_for_assignment(entry.id)
+        if not record:
+            return False, 'No submitted datasheet form found for this entry', None
+
+        form_data = datasheet_records.draft_form(entry.id)
+        if not form_data:
+            return False, 'No submitted datasheet data found for this entry', None
+
+        raw_code = str(
+            record.get('test_code')
+            or entry.test_name
+            or ''
+        ).strip().upper()
+        if not raw_code:
+            return False, 'Unable to determine datasheet type for this entry', None
+
+        try:
+            if raw_code == 'CE':
+                from datasheet_gen.routes import _render_ce_docx
+
+                output_path, _, filename = _render_ce_docx(
+                    entry,
+                    form_data,
+                    entry.tco_id,
+                    None
+                )
+                record_code = 'CE'
+            elif raw_code == 'SURGE':
+                parent_request = db.session.get(EMCRequest, entry.test_request_id)
+                if not parent_request:
+                    return False, 'Parent test request not found for this Surge datasheet', None
+                if not os.path.exists(SURGE_DATASHEET_TEMPLATE_PATH):
+                    return False, 'Surge datasheet template not found', None
+
+                os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                safe_tco_id = secure_filename(str(entry.tco_id or parent_request.tco_id or 'TCO'))
+                safe_test_name = secure_filename(str(entry.test_name or 'Surge'))
+                filename = f"{safe_tco_id}_{safe_test_name}_{timestamp}.docx"
+                output_path = os.path.join(UPLOAD_FOLDER, filename)
+
+                _build_surge_datasheet_docx(
+                    SURGE_DATASHEET_TEMPLATE_PATH,
+                    output_path,
+                    parent_request,
+                    entry,
+                    form_data
+                )
+                record_code = 'SURGE'
+            else:
+                from datasheet_gen.generic_routes import _render_datasheet_docx
+                from datasheet_gen.registry import load_schema, normalize_code
+
+                record_code = normalize_code(raw_code)
+                schema = load_schema(record_code)
+                output_path, _, filename = _render_datasheet_docx(
+                    record_code,
+                    schema,
+                    entry,
+                    form_data,
+                    entry.tco_id
+                )
+        except Exception as exc:
+            logger.error(
+                'Failed to generate final datasheet during peer review approval '
+                'for planner entry %s: %s',
+                entry.id,
+                exc
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, 'Failed to generate the final datasheet for this entry', None
+
+        entry.datasheet_file_path = output_path
+        db.session.execute(
+            text(
+                """
+                UPDATE datasheet_records
+                SET test_code = :test_code,
+                    generated_file_path = :generated_file_path,
+                    updated_at = :updated_at
+                WHERE planner_entry_id = :planner_entry_id
+                """
+            ),
+            {
+                'test_code': record_code,
+                'generated_file_path': output_path,
+                'updated_at': get_ist_now(),
+                'planner_entry_id': entry.id,
+            }
+        )
+        return True, filename, output_path
+
     def _apply_peer_review_action(
         entry: PlannerEntry,
         action: str,
@@ -4665,9 +4787,6 @@ Please do not reply to this email.
                 f'Entry is not in Peer Review status. Current status: {entry.status}'
             ), 400
 
-        if not entry.datasheet_file_path:
-            return False, 'No datasheet found for this entry', 400
-
         if current_user.role != 'admin':
             if not entry.peer_reviewer_user_id:
                 return False, 'No peer reviewer is assigned to this datasheet yet', 400
@@ -4680,6 +4799,10 @@ Please do not reply to this email.
         action_label = None
 
         if normalized_action == 'approve':
+            if not entry.datasheet_file_path:
+                generation_success, generation_message, _ = _generate_final_datasheet_after_peer_review(entry)
+                if not generation_success:
+                    return False, generation_message, 400
             action_label = 'APPROVED'
             entry.status = 'datasheet_uploaded'
             _append_datasheet_peer_review_comment(
@@ -4723,7 +4846,7 @@ Please do not reply to this email.
             if current_user.role not in ['admin', 'lab_engineer']:
                 return jsonify({'success': False, 'error': 'Not authorized'}), 403
 
-            entry = PlannerEntry.query.get(planner_id)
+            entry = db.session.get(PlannerEntry, planner_id)
             if not entry:
                 return jsonify({'success': False, 'error': 'Planner entry not found'}), 404
 
@@ -4775,7 +4898,7 @@ Please do not reply to this email.
                 return jsonify({'success': False, 'error': 'Not authorized'}), 403
 
             # Fetch the planner entry
-            entry = PlannerEntry.query.get(planner_id)
+            entry = db.session.get(PlannerEntry, planner_id)
             if not entry:
                 return jsonify({'success': False, 'error': 'Planner entry not found'}), 404
 
@@ -4840,8 +4963,7 @@ Please do not reply to this email.
                 EMCRequest,
                 PlannerEntry.test_request_id == EMCRequest.id
             ).filter(
-                PlannerEntry.status == 'Peer Review',
-                PlannerEntry.datasheet_file_path.isnot(None)
+                PlannerEntry.status == 'Peer Review'
             ).order_by(
                 EMCRequest.tco_id,
                 PlannerEntry.test_name,
@@ -4870,16 +4992,33 @@ Please do not reply to this email.
                 # Get uploaded_by user name if available
                 uploaded_by_name = None
                 if entry.datasheet_uploaded_by:
-                    uploaded_by_user = User.query.get(
+                    uploaded_by_user = db.session.get(User, 
                         entry.datasheet_uploaded_by)
                     if uploaded_by_user:
                         uploaded_by_name = uploaded_by_user.username
 
                 peer_reviewer_name = None
                 if entry.peer_reviewer_user_id:
-                    peer_reviewer_user = User.query.get(entry.peer_reviewer_user_id)
+                    peer_reviewer_user = db.session.get(User, entry.peer_reviewer_user_id)
                     if peer_reviewer_user:
                         peer_reviewer_name = peer_reviewer_user.username
+
+                datasheet_record = None
+                datasheet_record_view_url = None
+                try:
+                    from datasheet_gen import records as datasheet_records
+                    datasheet_record = datasheet_records.get_record_for_assignment(entry.id)
+                    if datasheet_record:
+                        datasheet_record_view_url = url_for(
+                            'datasheet_records.record_detail',
+                            record_id=datasheet_record['id']
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        'Unable to load saved datasheet record for peer review entry %s: %s',
+                        entry.id,
+                        exc
+                    )
 
                 result.append({
                     'id': entry.id,
@@ -4905,7 +5044,10 @@ Please do not reply to this email.
                     'peer_reviewer_name': peer_reviewer_name,
                     'datasheet_comments': entry.datasheet_comments,
                     'completion_date': entry.completion_date.isoformat() if entry.completion_date else None,
-                    'uploaded_by_name': uploaded_by_name
+                    'uploaded_by_name': uploaded_by_name,
+                    'has_datasheet_record': bool(datasheet_record),
+                    'datasheet_record_id': datasheet_record.get('id') if datasheet_record else None,
+                    'datasheet_record_view_url': datasheet_record_view_url
                 })
 
             return jsonify({'success': True, 'data': result})
@@ -5012,22 +5154,39 @@ Please do not reply to this email.
         """Get detailed information for a single planner entry"""
         logger.info(f'Fetching planner entry {planner_id}')
         try:
-            entry = PlannerEntry.query.get(planner_id)
+            entry = db.session.get(PlannerEntry, planner_id)
             if not entry:
                 return jsonify({'success': False, 'error': 'Planner entry not found'}), 404
 
             # Get uploaded_by user name if available
             uploaded_by_name = None
             if entry.datasheet_uploaded_by:
-                uploaded_by_user = User.query.get(entry.datasheet_uploaded_by)
+                uploaded_by_user = db.session.get(User, entry.datasheet_uploaded_by)
                 if uploaded_by_user:
                     uploaded_by_name = uploaded_by_user.username
 
             peer_reviewer_name = None
             if entry.peer_reviewer_user_id:
-                peer_reviewer_user = User.query.get(entry.peer_reviewer_user_id)
+                peer_reviewer_user = db.session.get(User, entry.peer_reviewer_user_id)
                 if peer_reviewer_user:
                     peer_reviewer_name = peer_reviewer_user.username
+
+            datasheet_record = None
+            datasheet_record_view_url = None
+            try:
+                from datasheet_gen import records as datasheet_records
+                datasheet_record = datasheet_records.get_record_for_assignment(entry.id)
+                if datasheet_record:
+                    datasheet_record_view_url = url_for(
+                        'datasheet_records.record_detail',
+                        record_id=datasheet_record['id']
+                    )
+            except Exception as exc:
+                logger.warning(
+                    'Unable to load saved datasheet record for planner entry %s: %s',
+                    entry.id,
+                    exc
+                )
 
             result = {
                 'id': entry.id,
@@ -5050,6 +5209,9 @@ Please do not reply to this email.
                 'datasheet_comments': entry.datasheet_comments,
                 'completion_date': entry.completion_date.isoformat() if entry.completion_date else None,
                 'uploaded_by_name': uploaded_by_name,
+                'has_datasheet_record': bool(datasheet_record),
+                'datasheet_record_id': datasheet_record.get('id') if datasheet_record else None,
+                'datasheet_record_view_url': datasheet_record_view_url,
                 'event_description': entry.event_description
             }
 
@@ -7685,7 +7847,7 @@ Please do not reply to this email.
             ensure_equipment_test_name_column()
 
             tco_display = test_request.tco_id or f'REQ-{test_request.id}'
-            engineer_cache: dict[int, User | None] = {}
+            engineer_cache: dict[object, User | None] = {}
             existing_serialized_assignments = []
             existing_assignment_keys = set()
             existing_schedule_records = []
@@ -7695,6 +7857,48 @@ Please do not reply to this email.
             notification_payloads = []
             submitted_assignment_keys = set()
             submitted_schedule_snapshots = []
+
+            def _resolve_assignable_engineer(engineer_id, engineer_name=None):
+                normalized_engineer_id = None
+                if engineer_id not in (None, '', []):
+                    try:
+                        normalized_engineer_id = int(engineer_id)
+                    except (TypeError, ValueError):
+                        normalized_engineer_id = None
+
+                if normalized_engineer_id is not None and normalized_engineer_id not in engineer_cache:
+                    engineer_cache[normalized_engineer_id] = User.query.filter(
+                        User.id == normalized_engineer_id,
+                        User.role.in_(['lab_engineer', 'admin']),
+                        User.is_active.is_(True)
+                    ).first()
+
+                engineer_user = (
+                    engineer_cache.get(normalized_engineer_id)
+                    if normalized_engineer_id is not None else None
+                )
+                normalized_engineer_name = str(engineer_name or '').strip()
+
+                if not engineer_user and normalized_engineer_name:
+                    engineer_name_cache_key = f'username:{normalized_engineer_name.casefold()}'
+                    if engineer_name_cache_key not in engineer_cache:
+                        engineer_cache[engineer_name_cache_key] = User.query.filter(
+                            User.username == normalized_engineer_name,
+                            User.role.in_(['lab_engineer', 'admin']),
+                            User.is_active.is_(True)
+                        ).first()
+                    engineer_user = engineer_cache.get(engineer_name_cache_key)
+
+                    if engineer_user and normalized_engineer_id is not None and engineer_user.id != normalized_engineer_id:
+                        logger.warning(
+                            'Remapped stale engineer id %s to active user %s (%s) while assigning request %s.',
+                            engineer_id,
+                            engineer_user.username,
+                            engineer_user.id,
+                            request_id
+                        )
+
+                return engineer_user
 
             def _record_schedule_snapshot(start_date, end_date, total_hours):
                 existing_schedule_records.append({
@@ -7714,6 +7918,20 @@ Please do not reply to this email.
                 end_date = str(payload.get('end_date') or '').strip()
                 start_time = str(payload.get('start_time') or '').strip()
                 end_time = str(payload.get('end_time') or '').strip()
+
+                engineer_user = _resolve_assignable_engineer(engineer_id, engineer_name)
+                if engineer_user:
+                    engineer_id = engineer_user.id
+                    engineer_name = engineer_user.username
+                else:
+                    logger.warning(
+                        'Ignoring stale existing assignment for request %s test "%s" because engineer id=%s name="%s" is no longer valid.',
+                        request_id,
+                        test_name,
+                        engineer_id,
+                        engineer_name
+                    )
+                    engineer_id = None
 
                 if not all([test_name, engineer_id, engineer_name, start_date, end_date]):
                     return
@@ -7813,19 +8031,17 @@ Please do not reply to this email.
                         }), 400
                     submitted_assignment_keys.add(assignment_key)
 
-                if engineer_id not in engineer_cache:
-                    engineer_cache[engineer_id] = User.query.filter(
-                        User.id == engineer_id,
-                        User.role.in_(['lab_engineer', 'admin']),
-                        User.is_active.is_(True)
-                    ).first()
-
-                engineer_user = engineer_cache[engineer_id]
+                engineer_user = _resolve_assignable_engineer(
+                    engineer_id,
+                    assignment.get('engineer_name')
+                )
                 if not engineer_user:
                     return jsonify({
                         'success': False,
                         'error': f'Engineer with ID {engineer_id} not found'
                     }), 400
+
+                engineer_id = engineer_user.id
 
                 # Validate dates
                 try:
@@ -9232,11 +9448,44 @@ Please do not reply to this email.
             if per_page not in [5, 10, 20, 50, 100]:
                 per_page = 10
 
+            normalized_status_column = db.func.lower(db.func.trim(Equipment.status))
+
+            def _equipment_status_values(status_key):
+                status_aliases = {
+                    'available': {'available'},
+                    'in_use': {'in_use', 'in use', 'active'},
+                    'maintenance': {'maintenance', 'under maintenance'},
+                    'out_of_service': {'out_of_service', 'out of service'},
+                    'calibration': {'calibration', 'needs calibration'},
+                }
+                return tuple(status_aliases.get(status_key, {status_key}))
+
+            def _equipment_status_filter(status_key):
+                return normalized_status_column.in_(
+                    _equipment_status_values(status_key)
+                )
+
             # Build query with status filter, test type filter, and search term
             query = Equipment.query
             if status_filter and status_filter.strip():
-                query = query.filter(Equipment.status ==
-                                     status_filter)  # type: ignore
+                normalized_status_filter = status_filter.strip()
+                status_filter_key = normalized_status_filter.lower()
+
+                if status_filter_key in {'calibration', 'needs_calibration', 'out_of_calibration'}:
+                    query = query.filter(
+                        db.or_(
+                            Equipment.calibration_status_col == 'Out of Calibration',
+                            _equipment_status_filter('calibration')
+                        )
+                    )
+                elif status_filter_key == 'in_calibration':
+                    query = query.filter(
+                        Equipment.calibration_status_col == 'In Calibration'
+                    )
+                else:
+                    query = query.filter(
+                        _equipment_status_filter(status_filter_key)
+                    )
 
             if test_type_filter and test_type_filter.strip():
                 query = query.filter(Equipment.test_type == test_type_filter)
@@ -9281,10 +9530,15 @@ Please do not reply to this email.
 
             # Calculate statistics
             total = Equipment.query.count()
-            available = Equipment.query.filter_by(status='Available').count()
-            in_use = Equipment.query.filter_by(status='in_use').count()
-            maintenance = Equipment.query.filter_by(
-                status='maintenance').count()
+            available = Equipment.query.filter(
+                _equipment_status_filter('available')
+            ).count()
+            in_use = Equipment.query.filter(
+                _equipment_status_filter('in_use')
+            ).count()
+            maintenance = Equipment.query.filter(
+                _equipment_status_filter('maintenance')
+            ).count()
             # Calculate calibration status statistics based on calibration_status_col
             in_calibration = Equipment.query.filter(
                 Equipment.calibration_status_col == 'In Calibration'
@@ -9685,6 +9939,23 @@ Please do not reply to this email.
 
             # Handle maintenance records
             maintenance_records = data.get('maintenance_records', [])
+            first_maintenance_entry = next(
+                (
+                    maint_data for maint_data in maintenance_records
+                    if maint_data.get('maintenance_required') or maint_data.get('maintenance_date') or maint_data.get('maintenance_due_date')
+                ),
+                None
+            )
+            equipment.maintenance_required = (
+                first_maintenance_entry.get('maintenance_required') or None
+                if first_maintenance_entry else None
+            )
+            equipment.maintenance_date = parse_date_field(
+                first_maintenance_entry.get('maintenance_date')
+            ) if first_maintenance_entry else None
+            equipment.maintenance_due_date = parse_date_field(
+                first_maintenance_entry.get('maintenance_due_date')
+            ) if first_maintenance_entry else None
             if maintenance_records:
                 for maint_data in maintenance_records:
                     if maint_data.get('maintenance_required') or maint_data.get('maintenance_date') or maint_data.get('maintenance_due_date'):
@@ -9944,6 +10215,23 @@ Please do not reply to this email.
             # Handle maintenance records - delete existing and create new ones
             Maintenance.query.filter_by(equipment_id=equipment.id).delete()
             maintenance_records = data.get('maintenance_records', [])
+            first_maintenance_entry = next(
+                (
+                    maint_data for maint_data in maintenance_records
+                    if maint_data.get('maintenance_required') or maint_data.get('maintenance_date') or maint_data.get('maintenance_due_date')
+                ),
+                None
+            )
+            equipment.maintenance_required = (
+                first_maintenance_entry.get('maintenance_required') or None
+                if first_maintenance_entry else None
+            )
+            equipment.maintenance_date = parse_date_field(
+                first_maintenance_entry.get('maintenance_date')
+            ) if first_maintenance_entry else None
+            equipment.maintenance_due_date = parse_date_field(
+                first_maintenance_entry.get('maintenance_due_date')
+            ) if first_maintenance_entry else None
             if maintenance_records:
                 for maint_data in maintenance_records:
                     if maint_data.get('maintenance_required') or maint_data.get('maintenance_date') or maint_data.get('maintenance_due_date'):
@@ -10596,6 +10884,96 @@ Please do not reply to this email.
                         engineer_name.casefold() == current_engineer_name.casefold()
                     )
 
+                def normalize_review_status(raw_status):
+                    status_text = str(raw_status or '').strip()
+                    if not status_text:
+                        return 'Assigned Lab Engineer'
+
+                    status_map = {
+                        'assigned': 'Assigned Lab Engineer',
+                        'assigned lab engineer': 'Assigned Lab Engineer',
+                        'update plan': 'Update plan',
+                        'test plan approved': 'Test Plan Approved',
+                        'test plan to approve': 'Test Plan To Approve',
+                        'in progress': 'In Progress',
+                        'in_progress': 'In Progress',
+                        'test schedule in progress': 'In Progress',
+                        'draft report': 'Draft Report',
+                        'proceed report': 'Proceed Report',
+                        'peer review': 'Peer Review',
+                        'datasheet uploaded': 'Datasheet Uploaded',
+                        'datasheet_uploaded': 'Datasheet Uploaded',
+                        'report uploaded': 'Draft Report',
+                        'report_uploaded': 'Draft Report',
+                        'admin sign off': 'Admin Sign Off',
+                        'need more information': 'Need More Information',
+                        'completed': 'Completed',
+                        'cancelled': 'Cancelled',
+                        'rejected': 'Rejected',
+                    }
+                    return status_map.get(status_text.casefold(), status_text)
+
+                def review_status_key(status_label):
+                    if status_label == 'Need More Information':
+                        return 'need_more_info'
+                    if status_label == 'Completed':
+                        return 'completed'
+                    if status_label == 'Cancelled':
+                        return 'cancelled'
+                    if status_label == 'Rejected':
+                        return 'rejected'
+                    if status_label in {
+                        'Assigned Lab Engineer',
+                        'Update plan',
+                        'Test Plan Approved',
+                        'Test Plan To Approve',
+                    }:
+                        return 'assigned'
+                    return 'in_progress'
+
+                def derive_review_status(parent_status, remaining_test_names, assignment_payloads):
+                    normalized_parent_status = normalize_review_status(parent_status)
+                    if normalized_parent_status in {
+                        'Need More Information',
+                        'Completed',
+                        'Cancelled',
+                        'Rejected',
+                    }:
+                        return normalized_parent_status
+
+                    status_priority = {
+                        'Assigned Lab Engineer': 0,
+                        'Update plan': 1,
+                        'Test Plan Approved': 2,
+                        'Test Plan To Approve': 3,
+                        'In Progress': 4,
+                        'Draft Report': 5,
+                        'Proceed Report': 6,
+                        'Peer Review': 7,
+                        'Datasheet Uploaded': 8,
+                        'Admin Sign Off': 9,
+                        'Completed': 10,
+                    }
+
+                    candidate_statuses = []
+                    if remaining_test_names:
+                        candidate_statuses.append('Assigned Lab Engineer')
+
+                    for assignment_payload in assignment_payloads:
+                        normalized_assignment_status = normalize_review_status(
+                            assignment_payload.get('status')
+                        )
+                        if normalized_assignment_status in status_priority:
+                            candidate_statuses.append(normalized_assignment_status)
+
+                    if not candidate_statuses:
+                        return normalized_parent_status or 'Assigned Lab Engineer'
+
+                    return min(
+                        candidate_statuses,
+                        key=lambda status_label: status_priority.get(status_label, 999)
+                    )
+
                 # Use PlannerEntry records if available, otherwise fall back to JSON
                 if filtered_planner_entries:
                     for entry in filtered_planner_entries:
@@ -10605,7 +10983,7 @@ Please do not reply to this email.
                                 entry, 'peer_reviewer_user_id', None
                             )
                             if peer_reviewer_user_id:
-                                peer_reviewer_user = User.query.get(
+                                peer_reviewer_user = db.session.get(User, 
                                     peer_reviewer_user_id
                                 )
                                 if peer_reviewer_user:
@@ -10785,6 +11163,12 @@ Please do not reply to this email.
                         and not report_already_uploaded
                     )
 
+                aggregated_status = derive_review_status(
+                    request.status,
+                    remaining_tests,
+                    parsed_assignments
+                )
+
                 shared_review_thread = _get_combined_review_comment_thread(request)
                 latest_shared_comment = shared_review_thread[-1] if shared_review_thread else None
 
@@ -10798,10 +11182,11 @@ Please do not reply to this email.
                     'manufacturer': request.manufacturer or 'N/A',
                     'model_number': request.model_number or 'N/A',
                     'project': request.manufacturer or 'N/A',
-                    'status': request.status or 'Assigned Lab Engineer',
-                    'status_key': 'assigned',
-                    'status_label': request.status or 'Assigned Lab Engineer',
-                    'status_display': request.status or 'In Progress',
+                    'status': aggregated_status,
+                    'status_key': review_status_key(aggregated_status),
+                    'status_label': aggregated_status,
+                    'status_display': aggregated_status,
+                    'parent_status': request.status or '',
                     'requester_name': request.requester_name or 'Unknown',
                     'requester_email': request.requester_email or '',
                     'submitted_date': request.submitted_at or request.created_at,
@@ -11167,12 +11552,12 @@ Please do not reply to this email.
             recipients = []
 
             # Add the engineer/test person email
-            engineer = User.query.get(planner_entry.engineer_user_id)
+            engineer = db.session.get(User, planner_entry.engineer_user_id)
             if engineer and engineer.email:
                 recipients.append(engineer.email)
 
             # Add the creator's email if different from engineer
-            creator = User.query.get(planner_entry.created_by_user_id)
+            creator = db.session.get(User, planner_entry.created_by_user_id)
             if creator and creator.email and creator.id != planner_entry.engineer_user_id:
                 recipients.append(creator.email)
 
@@ -11471,7 +11856,7 @@ Please do not reply to this email.
                 }), 400
 
             # Get the planner entry
-            planner_entry = PlannerEntry.query.get(planner_id)
+            planner_entry = db.session.get(PlannerEntry, planner_id)
             if not planner_entry:
                 logger.warning(f'Planner entry {planner_id} not found')
                 return jsonify({
@@ -11695,7 +12080,7 @@ Please do not reply to this email.
         """Update an existing planner entry."""
         try:
             # Get the planner entry
-            planner_entry = PlannerEntry.query.get(planner_id)
+            planner_entry = db.session.get(PlannerEntry, planner_id)
 
             if not planner_entry:
                 return jsonify({
@@ -11906,7 +12291,7 @@ Please do not reply to this email.
                 }), 403
 
             # Fetch the entry
-            entry = PlannerEntry.query.get(planner_id)
+            entry = db.session.get(PlannerEntry, planner_id)
             if not entry:
                 return jsonify({
                     'success': False,
@@ -14165,7 +14550,7 @@ Please do not reply to this email.
     @flask_app.route('/generate-surge-datasheet', methods=['POST'])
     @login_required
     def generate_surge_datasheet():
-        """Generate a Surge datasheet DOCX from the external IEC-FRM-510 template."""
+        """Persist the filled Surge form and send it to peer review."""
         try:
             payload = request.get_json(silent=True) or {}
             form_data = payload.get('form_data') or {}
@@ -14185,7 +14570,7 @@ Please do not reply to this email.
             except (TypeError, ValueError):
                 return jsonify({'success': False, 'message': 'Invalid assignment ID'}), 400
 
-            assignment = PlannerEntry.query.get(assignment_id)
+            assignment = db.session.get(PlannerEntry, assignment_id)
             if not assignment:
                 return jsonify({'success': False, 'message': 'Assignment not found'}), 404
 
@@ -14227,35 +14612,24 @@ Please do not reply to this email.
             if reviewer_error:
                 return jsonify({'success': False, 'message': reviewer_error}), 400
 
-            if not os.path.exists(SURGE_DATASHEET_TEMPLATE_PATH):
-                return jsonify({
-                    'success': False,
-                    'message': 'Surge datasheet template not found'
-                }), 500
+            from datasheet_gen import records as datasheet_records
 
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            safe_tco_id = secure_filename(str(tco_id or parent_request.tco_id or 'TCO'))
-            safe_test_name = secure_filename(str(assignment.test_name or 'Surge'))
-            filename = f"{safe_tco_id}_{safe_test_name}_{timestamp}.docx"
-            output_path = os.path.join(UPLOAD_FOLDER, filename)
-
-            _build_surge_datasheet_docx(
-                SURGE_DATASHEET_TEMPLATE_PATH,
-                output_path,
-                parent_request,
-                assignment,
-                form_data
-            )
-
-            assignment.datasheet_file_path = output_path
-            assignment.datasheet_uploaded_at = get_ist_now()
+            submitted_at = get_ist_now()
+            assignment.datasheet_file_path = None
+            assignment.datasheet_uploaded_at = submitted_at
             assignment.datasheet_uploaded_by = current_user.id
-            assignment.datasheet_comments = 'Generated from Surge datasheet form'
             assignment.peer_reviewer_user_id = peer_reviewer.id
-            assignment.peer_review_assigned_at = get_ist_now()
+            assignment.peer_review_assigned_at = submitted_at
             assignment.status = 'Peer Review'
+            _append_datasheet_peer_review_comment(
+                assignment,
+                (
+                    f"Surge datasheet form submitted to {peer_reviewer.username} for peer review. "
+                    "Final Word datasheet will be generated after approval."
+                ),
+                current_user.username,
+                'SENT FOR REVIEW'
+            )
 
             test_date_raw = _datasheet_text(form_data.get('test_date'))
             if test_date_raw:
@@ -14268,13 +14642,19 @@ Please do not reply to this email.
                     logger.warning('Unable to parse generated Surge test date: %s', test_date_raw)
 
             _update_parent_request_datasheet_status(assignment)
-            db.session.commit()
+            datasheet_records.upsert_record(
+                assignment,
+                'SURGE',
+                form_data,
+                {},
+                datasheet_records.SUBMITTED,
+                generated_file_path='',
+                user=current_user
+            )
 
             return jsonify({
                 'success': True,
-                'message': f'Surge datasheet generated successfully and assigned to {peer_reviewer.username} for peer review',
-                'filename': filename,
-                'download_url': url_for('download_file_by_path', path=output_path),
+                'message': f'Surge datasheet form sent to {peer_reviewer.username} for peer review',
                 'peer_reviewer_name': peer_reviewer.username
             })
 
@@ -14285,7 +14665,7 @@ Please do not reply to this email.
             logger.error(traceback.format_exc())
             return jsonify({
                 'success': False,
-                'message': 'An error occurred while generating the Surge datasheet'
+                'message': 'An error occurred while sending the Surge datasheet for peer review'
             }), 500
 
     @flask_app.route('/upload-test-datasheet', methods=['POST'])
@@ -14333,7 +14713,7 @@ Please do not reply to this email.
                 return jsonify({'success': False, 'message': 'Invalid file type. Allowed: PDF, DOCX, XLSX, DOC, XLS'}), 400
 
             # Get the assignment
-            assignment = PlannerEntry.query.get(assignment_id)
+            assignment = db.session.get(PlannerEntry, assignment_id)
             if not assignment:
                 return jsonify({'success': False, 'message': 'Assignment not found'}), 404
 
@@ -14468,7 +14848,7 @@ Please do not reply to this email.
                 return jsonify({'success': False, 'message': 'Assignment ID and cancel reason are required'}), 400
 
             # Get the assignment
-            assignment = PlannerEntry.query.get(assignment_id)
+            assignment = db.session.get(PlannerEntry, assignment_id)
             if not assignment:
                 return jsonify({'success': False, 'message': 'Assignment not found'}), 404
 

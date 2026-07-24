@@ -425,7 +425,7 @@
                             <option value="in_use" {% if status_filter=='in_use' %}selected{% endif %}>In Use</option>
                             <option value="maintenance" {% if status_filter=='maintenance' %}selected{% endif %}>Under
                                 maintenance</option>
-                            <option value="calibration" {% if status_filter=='calibration' %}selected{% endif %}>Needs
+                            <option value="out_of_calibration" {% if status_filter in ['out_of_calibration', 'calibration'] %}selected{% endif %}>Needs
                                 Calibration</option>
                             <option value="out_of_service" {% if status_filter=='out_of_service' %}selected{% endif %}>
                                 Out of Service</option>

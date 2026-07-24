@@ -1,25 +1,12 @@
-# Local Setup Guide — EMC Test Workflow App
+# Local Setup Guide — EMC Test Workflow & Datasheet Generator
 
-This guide brings the application up **from a clean clone on any machine**, using Docker.
-It is written so that **either a developer or an AI coding agent (e.g. Claude Code)** can
-follow it top‑to‑bottom and self‑correct using the Troubleshooting section.
+Brings the app up **from a clean checkout**, running **bare-metal** (Python + a local MySQL 8
+server). No Docker. Written for Windows (PowerShell); macOS/Linux differences are noted inline.
 
-> TL;DR
-> ```bash
-> docker compose up -d --build           # start MySQL + the Flask app
-> docker compose exec web python seed.py # load login accounts + sample data
-> # open http://localhost:5000  → log in: admin@local.test / Password@123
+> TL;DR (after the one-time setup in §2–§5)
+> ```powershell
+> .\.venv\Scripts\python.exe app.py      # serve on http://localhost:3000
 > ```
-
----
-
-## 0. Notes for an AI agent
-
-- The **only hard prerequisite is Docker Desktop running**. MySQL and Python run inside containers — do **not** install MySQL or pip packages on the host.
-- Run every command from the **project root** (the directory that contains `docker-compose.yml`).
-- Steps are ordered. If a step errors, find the symptom in **§7 Troubleshooting** before retrying.
-- Do not "fix" things by editing `app.py`; the Docker setup already works around its quirks via helper scripts (explained in §4). Changing them is usually the wrong move.
-- This is a **local/dev** setup (Flask debug server). Not for production.
 
 ---
 
@@ -27,207 +14,149 @@ follow it top‑to‑bottom and self‑correct using the Troubleshooting section
 
 | Tool | Why | Check |
 |---|---|---|
-| **Docker Desktop** (running) | runs MySQL + the app | `docker version` shows a **Server** version |
-| **git** | clone the repo | `git --version` |
+| **Python 3.11+** | runs the app (3.13 works — all deps ship wheels for it) | `py --version` |
+| **MySQL Community Server 8.0** | the database | `Get-Service MySQL80` shows **Running** |
 
-> If `docker` commands hang, Docker Desktop's engine isn't fully started yet — wait for the whale icon to go solid, then retry.
+Install MySQL via the official **MySQL Installer** ("Server only"). Set the **root password** and
+let it configure MySQL as a **Windows service** (default `MySQL80`, port `3306`). The app's `.env`
+below uses root password **`Thermo@123`** — match it, or set your own and edit `.env`.
+
+> Datasheet **generation** reads its source `.docx` templates from `datasheet_gen/word_templates/`
+> (bundled, so runtime needs nothing extra). Only *rebuilding* templates via `spec_build.py` needs
+> the original source docs — point `DATASHEET_SRC_DIR` at them if you do that.
 
 ---
 
-## 2. Get the code
+## 2. Python environment
 
-```bash
-git clone <YOUR_REPO_URL>
-cd <repo>            # cd into the folder that contains docker-compose.yml
+From the project root (the folder with `app.py`):
+
+```powershell
+py -m venv .venv                                  # macOS/Linux: python3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+`PyMySQL` + `cryptography` (in `requirements.txt`) cover MySQL 8's `caching_sha2_password` auth,
+so the `mysqlclient` C extension is **not** needed. `mysql_config.py` registers the
+PyMySQL→MySQLdb shim itself at import.
+
+---
+
+## 3. Create the database
+
+The app needs an **empty** database named `test_plan_generator`; it creates its own tables.
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -uroot -p `
+  -e "CREATE DATABASE IF NOT EXISTS test_plan_generator CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 ```
 
 ---
 
-## 3. Start the application
+## 4. Configure `.env`
 
-**Option A — two commands (recommended, explicit):**
-```bash
-docker compose up -d --build               # build + start db and web
-docker compose exec web python seed.py     # seed login accounts + sample data
+Create `.env` in the project root (it's gitignored). `mysql_config.py` reads it and its values
+**override** the hardcoded fallbacks in that file:
+
+```dotenv
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=Thermo@123
+MYSQL_DATABASE=test_plan_generator
+APP_ENV=development
 ```
 
-**Option B — one‑shot helper (does both, with retries):**
-- Windows (PowerShell): `./setup.ps1`
-- macOS / Linux: `./setup.sh`
-
-Then open **http://localhost:5000**.
-
-To watch it boot: `docker compose logs -f web` — success looks like:
-```
-Database is ready (after N attempt(s)).
-Schema ready.
- * Running on http://0.0.0.0:5000
-```
+(No `python-dotenv` needed — ignore Flask's "install python-dotenv" tip.)
 
 ---
 
-## 4. What happens on startup (and why the helper files exist)
+## 5. Create tables + load data
 
-`docker compose up` starts two services (see `docker-compose.yml`):
+**On a fresh/empty DB, create the schema once before the first run:**
+```powershell
+.\.venv\Scripts\python.exe init_db.py            # prints "Schema ready."
+```
+> Why once, separately: the Flask debug reloader loads `app.py` in two processes; on an empty DB
+> their two `create_all()` calls race and fail with MySQL error 1684 ("concurrent DDL"). Doing it
+> first makes the app's `create_all()` a no-op. It also creates the datasheet + peer-review tables.
 
-- **`db`** — MySQL 8. Auto‑creates database `test_plan_generator` (user `root`, password `Thermo@123`). Data persists in the `db_data` volume.
-- **`web`** — the Flask app. Its command is `wait_for_db.py → init_db.py → app.py`:
-  1. **`wait_for_db.py`** — blocks until MySQL accepts a real connection (MySQL's first‑run init briefly passes the healthcheck before the server is actually ready).
-  2. **`init_db.py`** — creates all tables **once**, in a single process (the app runs Flask's debug reloader, which would otherwise run `create_all()` in two processes at once and crash a fresh DB with MySQL error 1684 "concurrent DDL").
-  3. **`app.py`** — serves on port 5000.
+**Then load data — pick one:**
 
-Other helpers:
-- **`sitecustomize.py`** — makes PyMySQL satisfy the app's `mysql+mysqldb://` driver (so the `mysqlclient` C‑extension isn't needed). It auto‑loads because the Dockerfile sets `PYTHONPATH=/app`.
-- The Dockerfile also `pip install cryptography` — required by PyMySQL for MySQL 8's `caching_sha2_password` auth.
+*Sample/dev data:*
+```powershell
+.\.venv\Scripts\python.exe seed.py               # login accounts + sample equipment
+```
+Seeded accounts (all password **`Password@123`**): `admin@local.test`, `engineer1@local.test`,
+`engineer2@local.test`, `requester1@local.test`, `requester2@local.test`, `inactive@local.test`.
+
+*Real `mysqldump`:* reset the DB and import (the wide legacy table `iec_emc_test_requests` needs
+`SET SESSION innodb_strict_mode=OFF;` — put it as the dump's first line), then run
+`set_test_passwords.py` (dump passwords are unrecoverable scrypt hashes → sets `Password@123` on all
+users; log in with the **email**, since `username` may hold a full name with spaces).
 
 ---
 
-## 5. Login accounts (from `seed.py`)
+## 6. Run
 
-All seeded passwords: **`Password@123`**. The login **Username** field accepts the **email or the short username**.
+```powershell
+.\.venv\Scripts\python.exe app.py
+```
+Open **http://localhost:3000**. Stop with **Ctrl+C**. MySQL keeps running as a service, so
+day-to-day you only start the app.
 
-| Username | Email | Role |
+---
+
+## 7. The datasheet + peer-review flow
+
+Lab engineers fill a per-test **datasheet** from **Assigned Tests** and click **Send to Peer
+Review** (picking a reviewer). That generates the `.docx`, sets the planner entry to
+`Peer Review`, and routes it into the peer-review queue. A reviewer **Approves** (→
+`datasheet_uploaded`) or **Rejects** (→ back to the engineer). After approval the engineer clicks
+**Generate Final Datasheet** to produce the official `.docx`. See `MERGE_NOTES.md` for details.
+
+---
+
+## 8. Troubleshooting (symptom → fix)
+
+| Symptom | Cause | Fix |
 |---|---|---|
-| `admin` | `admin@local.test` | admin |
-| `engineer1`, `engineer2` | `engineer1@local.test`, … | lab_engineer |
-| `requester1`, `requester2` | `requester1@local.test`, … | user |
-| `inactive` | `inactive@local.test` | user *(deactivated — to test the rejected‑login path)* |
-
-`seed.py` is idempotent and also seeds a few sample equipment rows.
-
----
-
-## 6. (Optional) Load a real MySQL dump
-
-If you have a `mysqldump` `.sql` of this app's database and want to test against real data:
-
-```bash
-# 1) stop the app so it doesn't write during the import
-docker compose stop web
-
-# 2) reset the database to a clean state
-docker compose exec -T db mysql -uroot -pThermo@123 \
-  -e "DROP DATABASE IF EXISTS test_plan_generator; CREATE DATABASE test_plan_generator CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-# 3) import (innodb_strict_mode OFF: the wide legacy table iec_emc_test_requests,
-#    170+ columns, otherwise hits MySQL row-size ERROR 1118)
-{ echo "SET SESSION innodb_strict_mode=OFF;"; cat ./Dump20260624.sql; } \
-  | docker compose exec -T db mysql -uroot -pThermo@123 test_plan_generator
-
-# 4) start the app again
-docker compose start web
-```
-
-Dumped passwords are **one‑way scrypt hashes** (unrecoverable). To log in, set a known
-password on every user:
-```bash
-docker compose exec web python set_test_passwords.py        # sets Password@123 on all users
-```
-> In some dumps the `users.username` column holds a person's **full name** (with a space),
-> so log in with the **email**.
+| `Access denied for user 'root'@'localhost'` | wrong password | Make `.env` `MYSQL_PASSWORD` match your MySQL root password |
+| `Can't connect to MySQL server` | service not running | `Start-Service MySQL80` |
+| `Unknown database 'test_plan_generator'` | DB not created | Do §3 |
+| MySQL `ERROR 1684 ... concurrent DDL` | two `create_all()` at once on empty DB | Run `python init_db.py` once before `app.py` (§5) |
+| MySQL `ERROR 1118 ... Row size too large` (dump import) | strict mode on | Prepend `SET SESSION innodb_strict_mode=OFF;` to the dump |
+| `No module named 'MySQLdb'` | deps not installed / wrong interpreter | Install `requirements.txt` into `.venv`; run via `.\.venv\Scripts\python.exe` |
+| Port `3000` already in use | stale instance / another app | Stop the other process, or change the port at the bottom of `app.py` |
 
 ---
 
-## 7. Troubleshooting (symptom → fix)
+## 9. Configuration reference
 
-| Symptom in logs / output | Cause | Fix |
-|---|---|---|
-| `docker ...` hangs | Docker engine still starting | Wait for Docker Desktop to be fully up, retry |
-| `No module named 'MySQLdb'` | driver shim not loaded | Ensure `PYTHONPATH=/app` (Dockerfile) and `sitecustomize.py` present; rebuild |
-| `'cryptography' package is required ... caching_sha2_password` | missing dep | It's installed in the image — `docker compose build --no-cache web` |
-| `Can't connect to MySQL ... Connection refused` on first boot | DB still initializing | Expected; `wait_for_db.py` retries. Just wait |
-| MySQL `ERROR 1684 ... concurrent DDL` | two `create_all()` at once on empty DB | `init_db.py` prevents this — don't remove it from the Dockerfile CMD |
-| `KeyError: 'WERKZEUG_SERVER_FD'` | someone set `WERKZEUG_RUN_MAIN=true` | **Remove** that env var — it's the wrong way to disable the reloader |
-| MySQL `ERROR 1118 ... Row size too large` (during dump import) | strict mode on | Import with `SET SESSION innodb_strict_mode=OFF;` (see §6) |
-| `service "web" is not running` | web container crashed | `docker compose logs web` to see the real error |
-| Port `5000` or `3307` already in use | another stack is using it | Stop the other stack, or change the host port in `docker-compose.yml` |
+Read by `mysql_config.py` from `.env` (or process env; `.env` overrides the in-file fallbacks):
 
-Reset everything (⚠️ wipes the database):
-```bash
-docker compose down -v && docker compose up -d --build && docker compose exec web python seed.py
-```
-
----
-
-## 8. Common commands
-
-```bash
-docker compose logs -f web                  # tail app logs
-docker compose exec web python seed.py      # (re)seed accounts + sample data
-docker compose exec web python set_test_passwords.py   # reset all user passwords
-docker compose exec db mysql -uroot -pThermo@123 test_plan_generator   # SQL shell
-docker compose down                          # stop
-docker compose down -v                       # stop + wipe DB volume
-docker compose up -d                         # start again (no rebuild)
-```
-
----
-
-## 9. Configuration
-
-Set via env in `docker-compose.yml` (read by `mysql_config.py`):
-
-| Var | Default | Meaning |
-|---|---|---|
-| `MYSQL_HOST` | `db` | DB hostname (the compose service) |
-| `MYSQL_USER` / `MYSQL_PASSWORD` | `root` / `Thermo@123` | DB credentials |
-| `MYSQL_DATABASE` | `test_plan_generator` | database name |
-| `APP_ENV` | `development` | config profile |
-
-Host ports: app `5000:5000`, MySQL `3307:3306` (host 3307 avoids clashing with a local MySQL).
+| Var | Meaning |
+|---|---|
+| `MYSQL_HOST` / `MYSQL_PORT` | DB host / port (`localhost` / `3306`) |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | DB credentials (`root` / `Thermo@123`) |
+| `MYSQL_DATABASE` | database name (`test_plan_generator`) |
+| `APP_ENV` | config profile (`development`) |
+| `DATASHEET_SRC_DIR` | source `.docx` templates for *rebuilding* datasheet templates (optional) |
 
 ---
 
 ## 10. About `node_modules` / Tailwind CSS
 
 `node_modules` is **only** Tailwind build tooling — **not needed to run the app**. The compiled
-`static/css/output.css` is committed and served directly. You only need Node if you change
-styles:
-```bash
-npm install
-npm run build:css     # rebuild static/css/output.css
-```
+`static/css/output.css` is committed and served directly. You only need Node to change styles
+(`npm install` then `npm run build:css`). See `TAILWIND_SETUP.md`.
 
 ---
 
-## 11. ⚠️ Before pushing to GitHub (read this)
+## 11. ⚠️ Before pushing to GitHub
 
-This repo can contain **real data and secrets** — clean it up first:
-
-1. **Add these to `.gitignore`** (they are NOT ignored by default):
-   ```gitignore
-   node_modules/
-   outputs/
-   uploads/
-   *.sql
-   ```
-   `uploads/` and `outputs/` hold **real uploaded/generated documents**; `*.sql` would commit a database dump containing **real user data and password hashes**.
-2. **Never commit a database dump** or the `db_data` volume.
-3. If any of the above are already tracked, untrack them (keeps the files locally):
-   ```bash
-   git rm -r --cached node_modules outputs uploads
-   git commit -m "Stop tracking generated/real-data folders"
-   ```
-4. The dev DB password (`Thermo@123`) and seed password (`Password@123`) are **local‑only defaults** — change them for any shared or real deployment, and prefer real env vars / secrets.
-5. The app runs the **Flask debug server** — local development only.
-
----
-
-## 12. Project map (where things live)
-
-```
-docker-compose.yml      db (MySQL) + web (Flask) services
-Dockerfile              Python 3.11 image; CMD = wait_for_db -> init_db -> app
-wait_for_db.py          waits for MySQL to accept connections
-init_db.py              creates the schema once (avoids reloader DDL race)
-sitecustomize.py        PyMySQL -> MySQLdb shim
-seed.py                 seed login accounts + sample equipment (idempotent)
-set_test_passwords.py   set a known password on all users (after a dump import)
-setup.ps1 / setup.sh    one-shot: up + seed
-app.py                  the whole Flask app (routes defined inside create_app)
-models.py               SQLAlchemy models (37 tables)
-auth_routes.py          login / register / password flows
-utils/                  document generation, upload handling, services
-templates/              Jinja HTML pages (+ static/css/output.css)
-word_templates/         Word document templates
-```
+Keep out of git (already in `.gitignore`): `.env`, `.venv/`, `uploads/`, `outputs/`, and any
+`*.sql` dump (real user data + password hashes). The dev password (`Thermo@123`) and seed password
+(`Password@123`) are **local-only defaults** — change them for any shared/real deployment. The app
+runs the **Flask debug server** — local development only.

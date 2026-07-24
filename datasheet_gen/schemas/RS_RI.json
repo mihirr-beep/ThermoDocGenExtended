@@ -3,44 +3,18 @@
   "name": "Radiated Susceptibility",
   "form": "IEC-FRM-512",
   "sections": [
-    {
-      "title": "Radiated Susceptibility",
-      "items": []
-    },
-    {
-      "title": "EUT AND TECHNICAL DETAILS",
-      "items": []
-    },
+    { "title": "Radiated Susceptibility", "items": [] },
+    { "title": "EUT AND TECHNICAL DETAILS", "items": [] },
     {
       "title": "EUT DETAILS",
       "items": [
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "job_number",
-              "label": "Job Number",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_name",
-              "label": "EUT Name",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_model_sku_number",
-              "label": "EUT Model/SKU Number",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_serial_number",
-              "label": "EUT Serial Number",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "job_number", "label": "Job Number", "input": "text", "default": "" },
+            { "key": "eut_name", "label": "EUT Name", "input": "text", "default": "" },
+            { "key": "eut_model_sku_number", "label": "EUT Model/SKU Number", "input": "text", "default": "" },
+            { "key": "eut_serial_number", "label": "EUT Serial Number", "input": "text", "default": "" }
           ]
         }
       ]
@@ -51,23 +25,14 @@
         {
           "type": "table",
           "key": "eut_modification_rec_rows",
+          "rows": [
+            { "c0": "0", "c1": "Initial state", "c2": "-", "c3": "-" }
+          ],
           "columns": [
-            {
-              "key": "c0",
-              "label": "Modification state"
-            },
-            {
-              "key": "c1",
-              "label": "Description of Modification still fitted to EUT"
-            },
-            {
-              "key": "c2",
-              "label": "Modification fitted by"
-            },
-            {
-              "key": "c3",
-              "label": "Date modification fitted"
-            }
+            { "key": "c0", "label": "Modification state" },
+            { "key": "c1", "label": "Description of Modification still fitted to EUT" },
+            { "key": "c2", "label": "Modification fitted by" },
+            { "key": "c3", "label": "Date modification fitted" }
           ]
         }
       ]
@@ -75,178 +40,48 @@
     {
       "title": "FUNCTIONAL CHECK",
       "items": [
-        {
-          "type": "field",
-          "key": "sop_reference",
-          "label": "SOP Reference Number",
-          "input": "text"
-        }
+        { "type": "field", "key": "sop_reference", "label": "SOP Reference Number", "input": "text", "default": "IEC-SOP-508" }
       ]
     },
     {
       "title": "MONITORING PARAMETERS:",
       "items": [
-        {
-          "type": "textarea",
-          "key": "monitoring_parameters",
-          "label": "Monitoring Parameters"
-        }
+        { "type": "textarea", "key": "monitoring_parameters", "label": "Monitoring Parameters" }
       ]
     },
-    {
-      "title": "RADIATED SUSCEPTIBILITY TEST",
-      "items": []
-    },
+    { "title": "RADIATED SUSCEPTIBILITY TEST", "items": [] },
     {
       "title": "TEST SPECIFICATION",
       "items": [
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "product_standard",
-              "label": "Product Standard",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "basic_standard",
-              "label": "Basic Standard",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "immunity_test_requirement",
-              "label": "Immunity test requirement",
-              "input": "text",
-              "default": "Basic   Industrial       Controlled    Custom"
-            },
-            {
-              "key": "test_port",
-              "label": "Test Port",
-              "input": "text",
-              "default": "Enclosure"
-            },
-            {
-              "key": "frequency_range_col_1",
-              "label": "Frequency Range (Col 2)",
-              "input": "text",
-              "default": "80 MHz to 1GHz"
-            },
-            {
-              "key": "frequency_range_col_2",
-              "label": "Frequency Range (Col 3)",
-              "input": "text",
-              "default": "1GHz to 6GHz"
-            },
-            {
-              "key": "field_strength_col_1",
-              "label": "Field Strength(V/m) (Col 2)",
-              "input": "text",
-              "default": "3V/m       10V/m \n 30V/m    Custom____"
-            },
-            {
-              "key": "field_strength_col_2",
-              "label": "Field Strength(V/m) (Col 3)",
-              "input": "text",
-              "default": "3V/m       10V/m \n 30V/m    Custom____"
-            },
-            {
-              "key": "frequency_step_size",
-              "label": "Frequency Step size",
-              "input": "text",
-              "default": "1 %"
-            },
-            {
-              "key": "dwell_time",
-              "label": "Dwell Time",
-              "input": "text",
-              "default": "3 seconds"
-            },
-            {
-              "key": "modulation",
-              "label": "Modulation",
-              "input": "text",
-              "default": "Amplitude Modulation"
-            },
-            {
-              "key": "modulation_depth",
-              "label": "Modulation depth",
-              "input": "text",
-              "default": "80%"
-            },
-            {
-              "key": "modulation_depth_and_frequency",
-              "label": "Modulation depth and Frequency",
-              "input": "text",
-              "default": "1kHz"
-            },
-            {
-              "key": "antenna_polarization",
-              "label": "Antenna Polarization",
-              "input": "text",
-              "default": "Horizontal and Vertical"
-            },
-            {
-              "key": "test_distance",
-              "label": "Test Distance",
-              "input": "text",
-              "default": "3m            1m"
-            },
-            {
-              "key": "test_mode",
-              "label": "Test Mode",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_modification_state",
-              "label": "EUT Modification state \n(Refer 1.2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "eut_configuration_col_1",
-              "label": "EUT Configuration (Col 2)",
-              "input": "text",
-              "default": "Tabletop"
-            },
-            {
-              "key": "eut_configuration_col_2",
-              "label": "EUT Configuration (Col 3)",
-              "input": "text",
-              "default": "Floor standing"
-            },
-            {
-              "key": "eut_input_voltage_frequency",
-              "label": "EUT Input Voltage & Frequency",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ambient_temperature",
-              "label": "Ambient Temperature (°C)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "relative_humidity",
-              "label": "Relative Humidity (%)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "test_date",
-              "label": "Test Date",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "tested_by",
-              "label": "Tested by",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "product_standard", "label": "Product Standard", "input": "text", "default": "" },
+            { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
+            { "key": "immunity_test_requirement", "label": "Immunity test requirement", "input": "text", "checkbox": ["Basic", "Industrial", "Controlled", "Custom"], "default": "" },
+            { "key": "test_port", "label": "Test Port", "input": "text", "default": "Enclosure" },
+            { "key": "frequency_range_col_1", "label": "Frequency Range – 80M-1G", "input": "text", "default": "80 MHz to 1GHz" },
+            { "key": "frequency_range_col_2", "label": "Frequency Range – 1G-6G", "input": "text", "default": "1GHz to 6GHz" },
+            { "key": "field_strength_col_1", "label": "Field Strength (V/m) – 80M-1G", "input": "text", "checkbox": ["3V/m", "10V/m", "30V/m", "Custom"], "default": "" },
+            { "key": "field_strength_col_2", "label": "Field Strength (V/m) – 1G-6G", "input": "text", "checkbox": ["3V/m", "10V/m", "30V/m", "Custom"], "default": "" },
+            { "key": "frequency_step_size", "label": "Frequency Step Size", "input": "text", "default": "1 %" },
+            { "key": "dwell_time", "label": "Dwell Time", "input": "text", "default": "3 seconds" },
+            { "key": "modulation", "label": "Modulation", "input": "text", "default": "Amplitude Modulation" },
+            { "key": "modulation_depth", "label": "Modulation depth", "input": "text", "default": "80%" },
+            { "key": "modulation_depth_and_frequency", "label": "Modulation depth and Frequency", "input": "text", "default": "1kHz" },
+            { "key": "antenna_polarization", "label": "Antenna Polarization", "input": "text", "default": "Horizontal and Vertical" },
+            { "key": "test_distance", "label": "Test Distance", "input": "text", "checkbox": ["3m", "1m"], "default": "" },
+            { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
+            { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
+            { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
+            { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
+            { "key": "ambient_temperature_col_1", "label": "Ambient Temperature (°C) – 80M-1G", "input": "text", "default": "" },
+            { "key": "ambient_temperature_col_2", "label": "Ambient Temperature (°C) – 1G-6G", "input": "text", "default": "" },
+            { "key": "relative_humidity_col_1", "label": "Relative Humidity (%) – 80M-1G", "input": "text", "default": "" },
+            { "key": "relative_humidity_col_2", "label": "Relative Humidity (%) – 1G-6G", "input": "text", "default": "" },
+            { "key": "test_date_col_1", "label": "Test Date – 80M-1G", "input": "text", "default": "" },
+            { "key": "test_date_col_2", "label": "Test Date – 1G-6G", "input": "text", "default": "" },
+            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "" }
           ]
         }
       ]
@@ -254,11 +89,7 @@
     {
       "title": "DEVIATION FROM THE STANDARD",
       "items": [
-        {
-          "type": "textarea",
-          "key": "deviation",
-          "label": "Deviation"
-        }
+        { "type": "textarea", "key": "deviation", "label": "Deviation" }
       ]
     },
     {
@@ -268,7 +99,7 @@
           "type": "textarea",
           "key": "test_procedure",
           "label": "Test Procedure",
-          "default": "The test procedure was in accordance with <Standard name>.\n\nThe EUT was tested in a Semi-Anechoic chamber. The EUT was placed on non-conductive table/ insulation support of 0.8/0.1m height which was in turn placed on turn table to enable 0° to 360° rotation at 90° step as per standard. RF absorbers were placed on the floor between the transmitting antenna and the EUT.\n\nThe distance between the edge of the EUT and receiving antenna was 3m. Pre-calibrated RF field strength level was transmitted using appropriate antenna in both horizontal and vertical polarization. The RF signal was amplitude modulated to 80% depth with 1 kHz sine wave as per standard. During the test, performance of the EUT was monitored as per the criteria specified in the standard."
+          "default": "The test procedure was in accordance with EN 61000-4-3:2020 & IEC 61000-4-3:2020.\n\nThe EUT was tested in a Semi-Anechoic chamber. The EUT was placed on non-conductive table/ insulation support of 0.8/0.1m height which was in turn placed on turn table to enable 0° to 360° rotation at 90° step as per standard. RF absorbers were placed on the floor between the transmitting antenna and the EUT.\n\nThe distance between the edge of the EUT and receiving antenna was 3m. Pre-calibrated RF field strength level was transmitted using appropriate antenna in both horizontal and vertical polarization. The RF signal was amplitude modulated to 80% depth with 1 kHz sine wave as per standard. During the test, performance of the EUT was monitored as per the criteria specified in the standard."
         }
       ]
     },
@@ -277,259 +108,32 @@
       "items": [
         {
           "type": "fields",
+          "layout": "rs_obs",
+          "bands": [
+            { "key": "f_80_to_1000", "label": "80 to 1000" },
+            { "key": "f_1000_to_6000", "label": "1000 to 6000" }
+          ],
           "fields": [
-            {
-              "key": "frequency_test_level_col_2",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 3)",
-              "input": "text",
-              "default": "Dwell time\n(s)"
-            },
-            {
-              "key": "frequency_test_level_col_3",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 4)",
-              "input": "text",
-              "default": "Horizontal Polarization"
-            },
-            {
-              "key": "frequency_test_level_col_7",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 8)",
-              "input": "text",
-              "default": "Vertical Polarization"
-            },
-            {
-              "key": "frequency_test_level_col_2_2",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 3)",
-              "input": "text",
-              "default": "Dwell time\n(s)"
-            },
-            {
-              "key": "frequency_test_level_col_3_2",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 4)",
-              "input": "text",
-              "default": "0°"
-            },
-            {
-              "key": "frequency_test_level_col_4",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 5)",
-              "input": "text",
-              "default": "90°"
-            },
-            {
-              "key": "frequency_test_level_col_5",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 6)",
-              "input": "text",
-              "default": "180°"
-            },
-            {
-              "key": "frequency_test_level_col_6",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 7)",
-              "input": "text",
-              "default": "270°"
-            },
-            {
-              "key": "frequency_test_level_col_7_2",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 8)",
-              "input": "text",
-              "default": "0°"
-            },
-            {
-              "key": "frequency_test_level_col_8",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 9)",
-              "input": "text",
-              "default": "90°"
-            },
-            {
-              "key": "frequency_test_level_col_9",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 10)",
-              "input": "text",
-              "default": "180°"
-            },
-            {
-              "key": "frequency_test_level_col_10",
-              "label": "Frequency\n(MHz) - Test level\n(V/m) (Col 11)",
-              "input": "text",
-              "default": "270°"
-            },
-            {
-              "key": "f_80_to_1000_col_1",
-              "label": "80 to 1000 (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_2",
-              "label": "80 to 1000 (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_3",
-              "label": "80 to 1000 (Col 4)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_4",
-              "label": "80 to 1000 (Col 5)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_5",
-              "label": "80 to 1000 (Col 6)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_6",
-              "label": "80 to 1000 (Col 7)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_7",
-              "label": "80 to 1000 (Col 8)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_8",
-              "label": "80 to 1000 (Col 9)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_9",
-              "label": "80 to 1000 (Col 10)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_80_to_1000_col_10",
-              "label": "80 to 1000 (Col 11)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_1",
-              "label": "1000 to 6000 (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_2",
-              "label": "1000 to 6000 (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_3",
-              "label": "1000 to 6000 (Col 4)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_4",
-              "label": "1000 to 6000 (Col 5)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_5",
-              "label": "1000 to 6000 (Col 6)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_6",
-              "label": "1000 to 6000 (Col 7)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_7",
-              "label": "1000 to 6000 (Col 8)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_8",
-              "label": "1000 to 6000 (Col 9)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_9",
-              "label": "1000 to 6000 (Col 10)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "f_1000_to_6000_col_10",
-              "label": "1000 to 6000 (Col 11)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_1",
-              "label": "ISM Band(1) (Col 2)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_2",
-              "label": "ISM Band(1) (Col 3)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_3",
-              "label": "ISM Band(1) (Col 4)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_4",
-              "label": "ISM Band(1) (Col 5)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_5",
-              "label": "ISM Band(1) (Col 6)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_6",
-              "label": "ISM Band(1) (Col 7)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_7",
-              "label": "ISM Band(1) (Col 8)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_8",
-              "label": "ISM Band(1) (Col 9)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_9",
-              "label": "ISM Band(1) (Col 10)",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "ism_band_col_10",
-              "label": "ISM Band(1) (Col 11)",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "f_80_to_1000_col_1", "input": "text", "default": "" },
+            { "key": "f_80_to_1000_col_2", "input": "text", "default": "" },
+            { "key": "f_80_to_1000_col_3", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_4", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_5", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_6", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_7", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_8", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_9", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_80_to_1000_col_10", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_1", "input": "text", "default": "" },
+            { "key": "f_1000_to_6000_col_2", "input": "text", "default": "" },
+            { "key": "f_1000_to_6000_col_3", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_4", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_5", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_6", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_7", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_8", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_9", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "f_1000_to_6000_col_10", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
           ]
         }
       ]
@@ -537,26 +141,10 @@
     {
       "title": "TEST SETUP PICTURES",
       "items": [
-        {
-          "type": "image",
-          "key": "img_photo_1",
-          "label": "Photo 1: RS test setup_Vertical_80 MHz - 1GHz"
-        },
-        {
-          "type": "image",
-          "key": "img_photo_2",
-          "label": "Photo 2: RS test setup_Horizontal_80 MHz - 1GHz"
-        },
-        {
-          "type": "image",
-          "key": "img_photo_3",
-          "label": "Photo 3: RS test setup_Vertical_1 GHz - 6 GHz"
-        },
-        {
-          "type": "image",
-          "key": "img_photo_4",
-          "label": "Photo 4: RS test setup_Horizontal_1 GHz - 6 GHz"
-        }
+        { "type": "image", "key": "img_photo_1", "label": "Photo 1: RS test setup_Vertical_80 MHz - 1GHz", "caption": true },
+        { "type": "image", "key": "img_photo_2", "label": "Photo 2: RS test setup_Horizontal_80 MHz - 1GHz", "caption": true },
+        { "type": "image", "key": "img_photo_3", "label": "Photo 3: RS test setup_Vertical_1 GHz - 6 GHz", "caption": true },
+        { "type": "image", "key": "img_photo_4", "label": "Photo 4: RS test setup_Horizontal_1 GHz - 6 GHz", "caption": true }
       ]
     },
     {
@@ -566,26 +154,11 @@
           "type": "table",
           "key": "test_equipment_used_rows",
           "columns": [
-            {
-              "key": "c0",
-              "label": "Equipment Name"
-            },
-            {
-              "key": "c1",
-              "label": "Make"
-            },
-            {
-              "key": "c2",
-              "label": "Model No."
-            },
-            {
-              "key": "c3",
-              "label": "Serial No."
-            },
-            {
-              "key": "c4",
-              "label": "Calibration Due"
-            }
+            { "key": "c0", "label": "Equipment Name" },
+            { "key": "c1", "label": "Make" },
+            { "key": "c2", "label": "Model No." },
+            { "key": "c3", "label": "Serial No." },
+            { "key": "c4", "label": "Calibration Due" }
           ]
         }
       ]
@@ -596,15 +169,13 @@
         {
           "type": "table",
           "key": "software_used_rows",
+          "fixed": true,
+          "rows": [
+            { "c0": "TDK Radiated Immunity Lab", "c1": "14.31" }
+          ],
           "columns": [
-            {
-              "key": "c0",
-              "label": "Software Name"
-            },
-            {
-              "key": "c1",
-              "label": "Software Version"
-            }
+            { "key": "c0", "label": "Software Name" },
+            { "key": "c1", "label": "Software Version" }
           ]
         }
       ]
@@ -615,41 +186,16 @@
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "required_performance_criteria",
-              "label": "Required Performance Criteria",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "met_performance_criteria",
-              "label": "Met Performance Criteria",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["Yes", "No"], "default": "" }
           ]
         },
         {
           "type": "fields",
           "fields": [
-            {
-              "key": "name",
-              "label": "Name",
-              "input": "text",
-              "default": ""
-            },
-            {
-              "key": "signature",
-              "label": "Signature",
-              "input": "image",
-              "default": ""
-            },
-            {
-              "key": "date",
-              "label": "Date",
-              "input": "text",
-              "default": ""
-            }
+            { "key": "name", "label": "Name", "input": "text", "default": "" },
+            { "key": "signature", "label": "Signature", "input": "image", "default": "" },
+            { "key": "date", "label": "Date", "input": "text", "default": "" }
           ]
         }
       ]

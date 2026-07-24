@@ -1,12 +1,12 @@
 """Seed prefilled data for local/dev.
 
-After `docker compose up`, run this to populate the database with working login
-accounts (every role) plus a little sample equipment, so you can start working on
-the app (e.g. the login flow) immediately.
+Populates the database with working login accounts (every role) plus a little
+sample equipment, so you can start working on the app (e.g. the login flow)
+immediately.
 
-Usage:
-    docker compose up -d --build
-    docker compose exec web python seed.py
+Usage (from the project root, using the venv interpreter):
+    .\.venv\Scripts\python.exe seed.py         # Windows
+    ./.venv/bin/python seed.py                 # macOS/Linux
 
 Idempotent: safe to run repeatedly (matches on unique keys).
 The app creates the schema on startup; this script only waits for the tables and

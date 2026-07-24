@@ -609,6 +609,8 @@
                                     {% else %}
                                     <div class="flex flex-col gap-2">
                                         {% set _tn = (assignment.test_name or '')|upper %}
+                                        {% set can_manage_datasheet = assignment.id is not none and assignment.engineer_user_id is not none %}
+                                        {% if can_manage_datasheet %}
                                         {% if _tn == 'CE' %}
                                         <button type="button" data-test-name="{{ assignment.test_name|e }}"
                                             data-tco-id="{{ plan.tco_id|e }}"
@@ -630,6 +632,11 @@
                                             class="inline-flex items-center justify-center px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Upload Datasheet
                                         </button>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200">
+                                            Assign Test First
+                                        </span>
                                         {% endif %}
                                         <button type="button"
                                             data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"

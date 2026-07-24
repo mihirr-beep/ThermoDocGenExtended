@@ -288,10 +288,9 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
 @datasheet_generic_bp.route("/datasheet/g/<code>/generate", methods=["POST"])
 @login_required
 def g_generate(code):
-    """SEND TO PEER REVIEW: generate the datasheet .docx and route it into the
-    company's peer-review queue (status='Peer Review', reviewer assigned). The
-    datasheet is NOT final until a reviewer approves it on the peer-review page;
-    after approval the engineer produces the final copy via /generate-final."""
+    """SEND TO PEER REVIEW: persist the filled datasheet form and route it into
+    the company's peer-review queue. The final .docx is generated only after
+    peer-review approval."""
     try:
         code = normalize_code(code)
         if not _valid(code):
@@ -317,28 +316,32 @@ def g_generate(code):
         if fut:
             return jsonify(success=False, message="Date cannot be in the future: " + ", ".join(fut)), 400
 
-        out, images, filename = _render_datasheet_docx(code, schema, a, form_data, tco_id)
+        images = _save_generic_images(gs.image_keys(schema), a.id)
+        submitted_at = _ist_now()
 
-        a.datasheet_file_path = out
-        a.datasheet_uploaded_at = _ist_now()
+        a.datasheet_file_path = None
+        a.datasheet_uploaded_at = submitted_at
         a.datasheet_uploaded_by = current_user.id
         a.peer_reviewer_user_id = reviewer.id
-        a.peer_review_assigned_at = _ist_now()
+        a.peer_review_assigned_at = submitted_at
         a.status = "Peer Review"
         _append_review_note(
-            a, f"Datasheet generated and sent to {reviewer.username} for peer review.",
+            a,
+            f"Datasheet form submitted to {reviewer.username} for peer review. "
+            "Final Word datasheet will be generated after approval.",
             current_user.username, "SENT FOR REVIEW")
-        db.session.commit()
-
-        try:
-            R.upsert_record(a, code, form_data, images, R.SUBMITTED,
-                            generated_file_path=out, user=current_user)
-        except Exception as exc:  # noqa: BLE001
-            db.session.rollback()
-            current_app.logger.error("%s datasheet record save failed: %s", code, exc)
+        R.upsert_record(
+            a,
+            code,
+            form_data,
+            images,
+            R.SUBMITTED,
+            generated_file_path="",
+            user=current_user,
+        )
 
         return jsonify(success=True, status="Peer Review",
-                       message=f"Sent to {reviewer.username} for peer review.")
+                       message=f"Form sent to {reviewer.username} for peer review.")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         current_app.logger.error("Generic datasheet send-to-review error: %s", exc)

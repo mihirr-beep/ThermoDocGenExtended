@@ -286,9 +286,9 @@ def _apply_test_date(assignment, form_data):
 @datasheet_gen_bp.route("/datasheet/ce/generate", methods=["POST"])
 @login_required
 def generate_ce():
-    """SEND TO PEER REVIEW: generate the CE datasheet .docx and route it into the
-    company's peer-review queue (status='Peer Review', reviewer assigned). Not
-    final until approved; the final copy is produced via /generate-final."""
+    """SEND TO PEER REVIEW: persist the filled CE form and route it into the
+    company's peer-review queue. The final .docx is generated only after the
+    peer review is approved."""
     try:
         form_data, assignment_id, tco_id, files = _read_payload()
         if not assignment_id:
@@ -313,33 +313,35 @@ def generate_ce():
             return jsonify(success=False,
                            message="Date cannot be in the future: " + ", ".join(future)), 400
 
-        output_path, images, filename = _render_ce_docx(assignment, form_data, tco_id, files)
+        images = _save_images(files, assignment.id)
+        submitted_at = _ist_now()
 
-        assignment.datasheet_file_path = output_path
-        assignment.datasheet_uploaded_at = _ist_now()
+        assignment.datasheet_file_path = None
+        assignment.datasheet_uploaded_at = submitted_at
         assignment.datasheet_uploaded_by = current_user.id
         assignment.peer_reviewer_user_id = reviewer.id
-        assignment.peer_review_assigned_at = _ist_now()
+        assignment.peer_review_assigned_at = submitted_at
         assignment.status = "Peer Review"
         _append_review_note(
-            assignment, f"CE datasheet generated and sent to {reviewer.username} for peer review.",
+            assignment,
+            f"CE datasheet form submitted to {reviewer.username} for peer review. "
+            "Final Word datasheet will be generated after approval.",
             current_user.username, "SENT FOR REVIEW")
         _apply_test_date(assignment, form_data)
-        db.session.commit()
-
-        # Persist the filled form as a Submitted datasheet record (best-effort:
-        # a store failure must not fail an otherwise-successful submission).
-        try:
-            R.upsert_record(assignment, "CE", form_data, images, R.SUBMITTED,
-                            generated_file_path=output_path, user=current_user)
-        except Exception as exc:  # noqa: BLE001
-            db.session.rollback()
-            current_app.logger.error("CE datasheet record save failed: %s", exc)
+        R.upsert_record(
+            assignment,
+            "CE",
+            form_data,
+            images,
+            R.SUBMITTED,
+            generated_file_path="",
+            user=current_user,
+        )
 
         return jsonify(
             success=True,
             status="Peer Review",
-            message=f"Sent to {reviewer.username} for peer review.",
+            message=f"Form sent to {reviewer.username} for peer review.",
         )
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()

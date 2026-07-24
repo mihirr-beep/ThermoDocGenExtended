@@ -43,17 +43,17 @@ class MySQLConfig:
     DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
     # MySQL Database Configuration
-    # MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
-    # MYSQL_PORT = int(os.environ.get('MYSQL_PORT', 3306))
-    # MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
-    # MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'Thermo@123')
-    # MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'test_plan_generator')
-
-    MYSQL_HOST = os.environ.get('MYSQL_HOST', '10.96.45.52')
+    MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
     MYSQL_PORT = int(os.environ.get('MYSQL_PORT', 3306))
-    MYSQL_USER = os.environ.get('MYSQL_USER', 'jagadeswar')
+    MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
     MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'Thermo@123')
-    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'test_plan_generator_test')
+    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'test_plan_generator')
+
+    # MYSQL_HOST = os.environ.get('MYSQL_HOST', '10.96.45.52')
+    # MYSQL_PORT = int(os.environ.get('MYSQL_PORT', 3306))
+    # MYSQL_USER = os.environ.get('MYSQL_USER', 'jagadeswar')
+    # MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'Thermo@123')
+    # MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'test_plan_generator_test')
 
     # SQLAlchemy MySQL URI will be constructed dynamically
     SQLALCHEMY_DATABASE_URI = None

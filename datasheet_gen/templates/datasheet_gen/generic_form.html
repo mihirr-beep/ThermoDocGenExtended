@@ -20,8 +20,11 @@
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
       <select name="{{ f.key }}" {% if _lock %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if _lock %} ds-locked{% endif %}">
+        {% set _opts = (f.checkbox or f.options) %}
+        {% set _pv2 = prefill.get(f.key, '') %}
         <option value="">Select</option>
-        {% for o in (f.checkbox or f.options) %}<option {{ 'selected' if prefill.get(f.key, '') == o }}>{{ o }}</option>{% endfor %}
+        {% for o in _opts %}<option {{ 'selected' if _pv2 == o }}>{{ o }}</option>{% endfor %}
+        {% if _pv2 and _pv2 not in _opts %}<option selected>{{ _pv2 }}</option>{% endif %}
       </select>
     </div>
   {% elif f.input == 'textarea' %}
@@ -155,7 +158,132 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           {% for it in sec['items'] %}
 
-            {% if it.type == 'fields' %}
+            {% if it.layout == 'rs_obs' %}
+              <div class="md:col-span-2 overflow-x-auto">
+                <table class="w-full text-xs border border-gray-300 text-center">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th rowspan="2" class="p-1 border border-gray-300">Frequency<br>(MHz)</th>
+                      <th rowspan="2" class="p-1 border border-gray-300">Test level<br>(V/m)</th>
+                      <th rowspan="2" class="p-1 border border-gray-300">Dwell time<br>(s)</th>
+                      <th colspan="4" class="p-1 border border-gray-300">Horizontal Polarization</th>
+                      <th colspan="4" class="p-1 border border-gray-300">Vertical Polarization</th>
+                    </tr>
+                    <tr>
+                      <th class="p-1 border border-gray-300">0&deg;</th><th class="p-1 border border-gray-300">90&deg;</th><th class="p-1 border border-gray-300">180&deg;</th><th class="p-1 border border-gray-300">270&deg;</th>
+                      <th class="p-1 border border-gray-300">0&deg;</th><th class="p-1 border border-gray-300">90&deg;</th><th class="p-1 border border-gray-300">180&deg;</th><th class="p-1 border border-gray-300">270&deg;</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for b in it['bands'] %}
+                    <tr>
+                      <td class="p-1 border border-gray-300 font-medium text-left">{{ b.label }}</td>
+                      <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_1" value="{{ prefill.get(b.key ~ '_col_1', '') }}" class="w-16 px-1 py-1 border rounded"></td>
+                      <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_2" value="{{ prefill.get(b.key ~ '_col_2', '') }}" class="w-16 px-1 py-1 border rounded"></td>
+                      {% for n in [3, 4, 5, 6, 7, 8, 9, 10] %}
+                      <td class="p-1 border border-gray-300">
+                        <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded">
+                          <option value=""></option>
+                          {% for o in ['A', 'B', 'C', 'D'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                        </select>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+            {% elif it.layout == 'pfmf_obs' %}
+              <div class="md:col-span-2 overflow-x-auto">
+                <table class="w-full text-xs border border-gray-300 text-center">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th rowspan="2" class="p-1 border border-gray-300">Field Strength<br>(A/m)</th>
+                      <th rowspan="2" class="p-1 border border-gray-300">Test Frequency</th>
+                      <th colspan="4" class="p-1 border border-gray-300">Proximity method</th>
+                      <th colspan="3" class="p-1 border border-gray-300">Immersion method</th>
+                    </tr>
+                    <tr>
+                      <th class="p-1 border border-gray-300">0&deg;</th><th class="p-1 border border-gray-300">90&deg;</th><th class="p-1 border border-gray-300">180&deg;</th><th class="p-1 border border-gray-300">270&deg;</th>
+                      <th class="p-1 border border-gray-300">X</th><th class="p-1 border border-gray-300">Y</th><th class="p-1 border border-gray-300">Z</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for b in it['bands'] %}
+                    <tr>
+                      <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_1" value="{{ prefill.get(b.key ~ '_col_1', '') }}" class="w-16 px-1 py-1 border rounded"></td>
+                      <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_2" value="{{ prefill.get(b.key ~ '_col_2', '') }}" class="w-16 px-1 py-1 border rounded"></td>
+                      {% for n in [3, 4, 5, 6, 7, 8, 9] %}
+                      <td class="p-1 border border-gray-300">
+                        <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded pfmf-obs-cell">
+                          <option value=""></option>
+                          {% for o in ['A', 'B', 'C', 'D', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                        </select>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <div id="pfmf-obs-legend" class="md:col-span-2 mt-1"></div>
+
+            {% elif it.layout == 'pfmf_coil' %}
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">{{ it.label or 'Coil Orientation' }}</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="text-xs font-semibold text-gray-500 mb-2">Proximity method</div>
+                    {% for a in ['0°', '90°', '180°', '270°'] %}
+                    <label class="inline-flex items-center mr-3 mb-1"><input type="checkbox" name="coil_angles[]" value="{{ a }}" class="mr-1"{% if prefill.get('coil_angles') and a in prefill.get('coil_angles') %} checked{% endif %}>{{ a }}</label>
+                    {% endfor %}
+                  </div>
+                  <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="text-xs font-semibold text-gray-500 mb-2">Immersion method</div>
+                    {% for a in ['X', 'Y', 'Z'] %}
+                    <label class="inline-flex items-center mr-3 mb-1"><input type="checkbox" name="coil_axes[]" value="{{ a }}" class="mr-1"{% if prefill.get('coil_axes') and a in prefill.get('coil_axes') %} checked{% endif %}>{{ a }}</label>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+
+            {% elif it.layout == 'esd_obs' %}
+              <div class="md:col-span-2">
+                <div class="text-sm font-semibold text-gray-700 mb-1">{{ it.label }}:</div>
+                <div class="overflow-x-auto">
+                <table class="w-full text-xs border border-gray-300 text-center">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th rowspan="2" class="p-1 border border-gray-300">S. No.</th>
+                      <th rowspan="2" class="p-1 border border-gray-300">Name of test points</th>
+                      <th colspan="6" class="p-1 border border-gray-300">Test Level (kV)</th>
+                    </tr>
+                    <tr>
+                      <th class="p-1 border border-gray-300">+2</th><th class="p-1 border border-gray-300">-2</th><th class="p-1 border border-gray-300">+4</th><th class="p-1 border border-gray-300">-4</th><th class="p-1 border border-gray-300">+8</th><th class="p-1 border border-gray-300">-8</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in it['rows'] %}
+                    <tr>
+                      <td class="p-1 border border-gray-300">{{ row.sno }}</td>
+                      <td class="p-1 border border-gray-300">{% if it.name_editable %}<input name="{{ row.key }}_name" value="{{ prefill.get(row.key ~ '_name', '') }}" class="w-full px-1 py-1 border rounded">{% else %}{{ row.name }}{% endif %}</td>
+                      {% for n in [1, 2, 3, 4, 5, 6] %}
+                      <td class="p-1 border border-gray-300">
+                        <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded">
+                          <option value=""></option>
+                          {% for o in ['A', 'B', 'C', 'D'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                        </select>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+
+            {% elif it.type == 'fields' %}
               {% for f in it['fields'] %}
                 {% if f.derived %}
                   <div>
@@ -226,7 +354,8 @@
                   <tbody id="rows-{{ it.key }}">
                     {% for row in (it['rows'] or [None]) %}
                     <tr>
-                      {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+                      {% set _tlock = it.locked or it.key == 'software_used_rows' %}
+                      {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}"><option value=""></option>{% for o in col['options'] %}<option {{ 'selected' if (row[col.key] if row else '') == o }}>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" value="{{ (row[col.key] if row else '') | default('', true) }}"{% if _tlock %} data-lock="1"{% endif %} class="w-full px-1 py-1 border rounded{% if _tlock %} ds-locked{% endif %}">{% endif %}</td>{% endfor %}
                       {% if not no_actions %}<td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>{% endif %}
                     </tr>
                     {% endfor %}
@@ -235,7 +364,7 @@
                 </div>
                 {% if not no_actions %}
                 <template id="tpl-{{ it.key }}"><tr>
-                  {% for col in it['columns'] %}<td class="p-1"><input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"></td>{% endfor %}
+                  {% for col in it['columns'] %}<td class="p-1">{% if col.input == 'select' %}<select name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded"><option value=""></option>{% for o in col['options'] %}<option>{{ o }}</option>{% endfor %}</select>{% else %}<input name="{{ it.key }}__{{ col.key }}[]" class="w-full px-1 py-1 border rounded">{% endif %}</td>{% endfor %}
                   <td class="p-1"><button type="button" onclick="delRow(this)" class="text-red-500">&times;</button></td>
                 </tr></template>
                 {% endif %}
@@ -525,6 +654,114 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script src="{{ url_for('datasheet_gen.static', filename='ds_section_lock.js') }}"></script>
+{% if code == 'CRF' %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    /* Test Level: choosing "Custom" prompts for a numeric value which becomes the
+       selected value (added as an option) so it flows through to the document. */
+    var lvl = document.querySelector('[name="test_level"]');
+    if (lvl) {
+      lvl.addEventListener('change', function () {
+        if (lvl.value !== 'Custom') return;
+        var v = (window.prompt('Enter the custom Test Level (Vrms):', '') || '').trim();
+        if (!v) { lvl.value = ''; return; }
+        var has = Array.prototype.some.call(lvl.options, function (o) { return o.value === v; });
+        if (!has) {
+          var opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          lvl.insertBefore(opt, lvl.querySelector('option[value="Custom"]'));
+        }
+        lvl.value = v;
+      });
+    }
+
+    /* Mirror the Test-Specification selections into the Test Observation table:
+       Test Port -> Port Name (c1), Test Level -> Test Level Vrms (c2),
+       Coupling Method -> Coupling method (c3). Runs on change and for new rows. */
+    var tbody = document.getElementById('rows-test_observation_rows');
+    var MAP = [
+      { src: 'test_port', col: 'c1' },
+      { src: 'test_level', col: 'c2' },
+      { src: 'coupling_method', col: 'c3' }
+    ];
+    function srcVal(name) {
+      var el = document.querySelector('[name="' + name + '"]');
+      return el ? el.value : '';
+    }
+    function syncObservation() {
+      if (!tbody) return;
+      MAP.forEach(function (m) {
+        var v = srcVal(m.src);
+        tbody.querySelectorAll('[name="test_observation_rows__' + m.col + '[]"]')
+          .forEach(function (inp) { inp.value = v; });
+      });
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+    function fillRow(tr) {
+      MAP.forEach(function (m) {
+        var inp = tr.querySelector('[name="test_observation_rows__' + m.col + '[]"]');
+        if (inp) inp.value = srcVal(m.src);
+      });
+    }
+    MAP.forEach(function (m) {
+      var el = document.querySelector('[name="' + m.src + '"]');
+      if (el) el.addEventListener('change', syncObservation);
+    });
+    if (tbody) {
+      new MutationObserver(function (muts) {
+        muts.forEach(function (mu) {
+          Array.prototype.forEach.call(mu.addedNodes, function (n) {
+            if (n.nodeType === 1 && n.tagName === 'TR') fillRow(n);
+          });
+        });
+      }).observe(tbody, { childList: true });
+      syncObservation();
+    }
+  });
+</script>
+{% endif %}
+{% if code == 'RS_RI' %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    /* Field Strength: choosing "Custom" prompts for a numeric value which becomes
+       the selected value (added as an option) so it flows through to the document. */
+    ['field_strength_col_1', 'field_strength_col_2'].forEach(function (nm) {
+      var sel = document.querySelector('[name="' + nm + '"]');
+      if (!sel) return;
+      sel.addEventListener('change', function () {
+        if (sel.value !== 'Custom') return;
+        var v = (window.prompt('Enter the custom Field Strength (V/m):', '') || '').trim();
+        if (!v) { sel.value = ''; return; }
+        var has = Array.prototype.some.call(sel.options, function (o) { return o.value === v; });
+        if (!has) {
+          var opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          sel.insertBefore(opt, sel.querySelector('option[value="Custom"]'));
+        }
+        sel.value = v;
+        if (typeof triggerAutoSave === 'function') triggerAutoSave();
+      });
+    });
+
+    /* Observation "Dwell time (s)" mirrors the Test-Specification Dwell Time. */
+    var dwell = document.querySelector('[name="dwell_time"]');
+    var targets = ['f_80_to_1000_col_2', 'f_1000_to_6000_col_2'];
+    function syncDwell() {
+      var v = dwell ? dwell.value : '';
+      targets.forEach(function (n) {
+        var el = document.querySelector('[name="' + n + '"]');
+        if (el) el.value = v;
+      });
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+    if (dwell) {
+      dwell.addEventListener('change', syncDwell);
+      dwell.addEventListener('input', syncDwell);
+    }
+    syncDwell();
+  });
+</script>
+{% endif %}
 <script>
   // Auto-save debounced function
   var autoSaveTimeout = null;
@@ -1045,9 +1282,9 @@
     var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
     var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:4px;'; lbl.textContent=label||key; wrap.appendChild(lbl);
     var frame=document.createElement('div');
-    frame.style.cssText='border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    frame.style.cssText='position:relative;border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
     var file=imgFileFor(key);
-    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); }
+    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); frame.appendChild(makeRemoveBadge(key)); }
     else { var ph=document.createElement('div'); ph.style.cssText='color:#94a3b8;font-size:11px;'; ph.textContent='(no image uploaded)'; frame.appendChild(ph); }
     wrap.appendChild(frame);
     var cap=document.createElement('div'); cap.style.cssText='font-size:10px;color:#64748b;margin-top:2px;'; cap.textContent='Document size: '+box[0]+' × '+box[1]+' mm'; wrap.appendChild(cap);
@@ -1067,6 +1304,41 @@
     }
     return wrap;
   }
+  // Inline thumbnail + Edit/Reset shown right under each image picker once a file is chosen.
+  function renderInlineThumb(key){
+    var holder=document.getElementById('inlinethumb-'+key);
+    if(!holder) return;
+    holder.innerHTML='';
+    var file=imgFileFor(key);
+    if(!file) return;
+    var box=imageBoxMM(key);
+    var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
+    var frame=document.createElement('div');
+    frame.style.cssText='position:relative;display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+    var img=document.createElement('img');
+    img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;';
+    img.src=URL.createObjectURL(file);
+    frame.appendChild(img);
+    frame.appendChild(makeRemoveBadge(key));
+    wrap.appendChild(frame);
+    var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;';
+    meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document';
+    wrap.appendChild(meta);
+    var actions=document.createElement('div'); actions.style.marginTop='5px';
+    var editBtn=document.createElement('button'); editBtn.type='button';
+    editBtn.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
+    editBtn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">✎</span> Edit / Crop'; editBtn.onclick=function(){ openImageEditor(key); };
+    actions.appendChild(editBtn);
+    if(originalFiles[key] && originalFiles[key]!==file){
+      var rb=document.createElement('button'); rb.type='button';
+      rb.style.cssText='font-size:11px;padding:2px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
+      rb.textContent='↺ Reset'; rb.onclick=function(){ resetImage(key); };
+      actions.appendChild(rb);
+    }
+    wrap.appendChild(actions);
+    holder.appendChild(wrap);
+  }
+
   function renderPreviewTable(it){
     var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
     if (it.label){ var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:3px;'; lbl.textContent=it.label; wrap.appendChild(lbl); }
@@ -1114,7 +1386,24 @@
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); showMessage('Reverted to the original image.','success'); } }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); } }
+  function removeImage(key){
+    var inp=inputByName(key);
+    if (inp){ try { inp.value=''; } catch(e){} }
+    delete originalFiles[key];
+    renderInlineThumb(key);
+    if (typeof buildPreview==='function') buildPreview();
+    if (typeof triggerAutoSave==='function') triggerAutoSave();
+    showMessage('Image removed.','success');
+  }
+  // Small red "×" badge pinned to the top-right corner of an image frame; removes the upload.
+  function makeRemoveBadge(key){
+    var b=document.createElement('button'); b.type='button'; b.title='Remove image'; b.setAttribute('aria-label','Remove image');
+    b.innerHTML='&times;';
+    b.style.cssText='position:absolute;top:3px;right:3px;width:20px;height:20px;line-height:16px;text-align:center;border-radius:50%;border:1px solid #dc2626;background:#fff;color:#dc2626;font-size:15px;font-weight:bold;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25);padding:0;z-index:5;';
+    b.onclick=function(){ removeImage(key); };
+    return b;
+  }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
@@ -1125,31 +1414,55 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); showMessage('Image updated.','success'); }
+      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
 
   // Conform a freshly-picked image to its document-slot ratio immediately, keeping
   // the raw upload (in originalFiles) so Edit can still reframe a different portion.
   function autoFitUpload(key){
-    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; return; }
+    var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
     var raw=el.files[0]; originalFiles[key]=raw;
     if(window.DSImageEditor && DSImageEditor.autoFit){
       DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
         if(fitted && fitted!==raw) setInputFile(key, fitted);
+        renderInlineThumb(key);
       }});
+    } else {
+      renderInlineThumb(key);
     }
+  }
+
+  // Wire an image <input type=file>: inline-preview holder + auto-fit-on-change.
+  // Applied to EVERY image picker (static + dynamically-added) so the Edit/Crop
+  // module appears on all image uploads (test setup photo, signature, plots, ...).
+  function wireImageInput(el){
+    if (el.dataset.wired) return; el.dataset.wired = '1';
+    var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
+    el.insertAdjacentElement('afterend', holder);
+    el.addEventListener('change', function(){ autoFitUpload(el.name); });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
     // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
     var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
-    // auto-fit each upload to its doc slot; originals kept for Edit / Reset
-    schemaImageKeys().forEach(function(key){
-      var el=inputByName(key);
-      if (el) el.addEventListener('change', function(){ autoFitUpload(key); });
-    });
+    // Inline Edit/Crop module on EVERY image upload (static + dynamically-added).
+    var dsForm = document.getElementById('dsForm');
+    if (dsForm){
+      dsForm.querySelectorAll('input[type=file]').forEach(wireImageInput);
+      // repeatable image inputs (e.g. RE measurement plots) are inserted later ->
+      // wire them the moment they appear so their Edit button is present too.
+      new MutationObserver(function(muts){
+        muts.forEach(function(m){
+          Array.prototype.forEach.call(m.addedNodes, function(node){
+            if (node.nodeType !== 1) return;
+            if (node.matches && node.matches('input[type=file]')) wireImageInput(node);
+            if (node.querySelectorAll) node.querySelectorAll('input[type=file]').forEach(wireImageInput);
+          });
+        });
+      }).observe(dsForm, { childList:true, subtree:true });
+    }
 
     // Wire up event listeners for input/change for auto-saving
     var formEl = document.getElementById('dsForm');
@@ -1676,6 +1989,22 @@
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
 
+  // Test Procedure — the EUT placement text follows EUT Configuration:
+  //   Tabletop       -> 0.8m wooden table
+  //   Floor standing -> 0.1m insulation support
+  var PROC_VDIPS = "The test procedure was in accordance with <Standard name>.\n\n" +
+    "The EUT was placed on a {PLACEMENT}. The power supply to the EUT was fed by a programmable AC power source. The EUT was subjected to voltage dips and short interruptions according to the specification in standard. Each test sequence with the below mentioned test level and duration was repeated 3 times with a minimum interval of 10 seconds. Voltage dips test was done by synchronizing the dips at 0° to 360° phase angles in 45° steps/ 0° & 180°.\n\n" +
+    "During the test, performance of EUT was monitored as per the criteria specified in standard.";
+
+  function setVdipsProcedure() {
+    var cfgEl = inputByName('eut_configuration');
+    var cfg = cfgEl ? cfgEl.value : 'Tabletop';
+    var isFloor = (cfg || '').toLowerCase().indexOf('floor') >= 0;
+    var txt = PROC_VDIPS.replace('{PLACEMENT}', isFloor ? '0.1m insulation support' : '0.8m wooden table');
+    var pEl = inputByName('test_procedure');
+    if (pEl) pEl.value = txt;
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     var imm = inputByName('immunity_test_requirement');
     if (imm) imm.addEventListener('change', function () { renderVdipsTestLevel(); renderVdipsResult(); generateVdipsObservation(true); });
@@ -1683,7 +2012,10 @@
     if (vf) vf.addEventListener('change', function () { generateVdipsObservation(true); });
     var ps = inputByName('product_standard');
     if (ps) { ps.addEventListener('input', derivePhaseAngle); ps.addEventListener('change', derivePhaseAngle); }
+    var cfg = inputByName('eut_configuration');
+    if (cfg) cfg.addEventListener('change', setVdipsProcedure);
     derivePhaseAngle();
+    setVdipsProcedure();
     renderVdipsTestLevel();
     renderVdipsResult();
     // Auto-build the observation tables on load when the inputs are already present.
@@ -2040,6 +2372,77 @@
     } catch (e) {}
     deriveEFT();
     generateEftObservation(true);
+  });
+</script>
+{% endif %}
+
+{% if code == 'PFMF' %}
+<script>
+  /* Standard meanings pre-fill each legend comment; the engineer can edit them. */
+  var pfmfLegend = {
+    'A': 'No degradation was observed during the test based on the parameters monitored.',
+    'B': 'The EUT recovered automatically without manual intervention.',
+    'C': 'The EUT recovered after manual intervention.',
+    'D': 'The EUT got damaged permanently.',
+    'NA': 'Not Applicable'
+  };
+  function pfmfUniqueObsCodes() {
+    var seen = {};
+    document.querySelectorAll('.pfmf-obs-cell').forEach(function (el) {
+      var v = (el.value || '').trim();
+      if (v) seen[v] = true;
+    });
+    return Object.keys(seen).sort();
+  }
+  function rebuildPfmfLegend() {
+    var box = document.getElementById('pfmf-obs-legend'); if (!box) return;
+    var codes = pfmfUniqueObsCodes();
+    if (!codes.length) { box.innerHTML = ''; return; }
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-2">' +
+      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div>' +
+      '<p class="text-xs text-gray-500 mb-2">Describe what each observation value used above stands for.</p>';
+    codes.forEach(function (c) {
+      var desc = (pfmfLegend[c] != null) ? pfmfLegend[c] : '';
+      html += '<div class="flex items-start gap-2 mb-2">' +
+        '<span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
+        '<input type="hidden" name="pfmf_obs_legend_code[]" value="' + esc(c) + '">' +
+        '<textarea name="pfmf_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" ' +
+        'class="pfmf-legend-desc w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea>' +
+        '</div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+    box.querySelectorAll('textarea.pfmf-legend-desc').forEach(function (ta) {
+      ta.addEventListener('input', function () { pfmfLegend[ta.getAttribute('data-code')] = ta.value; });
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    /* Test Level: "Custom" prompts for a numeric value which becomes the selection. */
+    var lvl = document.querySelector('[name="test_level"]');
+    if (lvl) {
+      lvl.addEventListener('change', function () {
+        if (lvl.value !== 'Custom') return;
+        var v = (window.prompt('Enter the custom Test Level (A/m):', '') || '').trim();
+        if (!v) { lvl.value = ''; return; }
+        var has = Array.prototype.some.call(lvl.options, function (o) { return o.value === v; });
+        if (!has) {
+          var opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          lvl.insertBefore(opt, lvl.querySelector('option[value="Custom"]'));
+        }
+        lvl.value = v;
+        if (typeof triggerAutoSave === 'function') triggerAutoSave();
+      });
+    }
+    /* Observation legend: seed saved comments, then rebuild as values change. */
+    try {
+      var seed = {{ prefill.get('pfmf_obs_legend', [])|tojson }};
+      (seed || []).forEach(function (row) { if (row && row.code) pfmfLegend[row.code] = row.desc || ''; });
+    } catch (e) {}
+    document.querySelectorAll('.pfmf-obs-cell').forEach(function (el) {
+      el.addEventListener('change', rebuildPfmfLegend);
+    });
+    rebuildPfmfLegend();
   });
 </script>
 {% endif %}

@@ -321,7 +321,10 @@ def upsert_record(assignment, test_code, form_data, images, status,
         "status": status,
         "form_json": json.dumps(form_data, ensure_ascii=False, default=str),
         "images_json": json.dumps(merged_images, ensure_ascii=False),
-        "generated_file_path": generated_file_path or (existing or {}).get("generated_file_path"),
+        "generated_file_path": (
+            (existing or {}).get("generated_file_path")
+            if generated_file_path is None else generated_file_path
+        ),
         "created_by_user_id": uid,
         "now": now,
     }
@@ -343,7 +346,7 @@ def upsert_record(assignment, test_code, form_data, images, status,
            result=VALUES(result), tested_by_name=VALUES(tested_by_name),
            tested_by_user_id=VALUES(tested_by_user_id), status=VALUES(status),
            form_json=VALUES(form_json), images_json=VALUES(images_json),
-           generated_file_path=COALESCE(VALUES(generated_file_path), generated_file_path),
+           generated_file_path=VALUES(generated_file_path),
            updated_at=VALUES(updated_at)
     """)
     db.session.execute(sql, params)
@@ -415,86 +418,147 @@ _CE_TABLES = [
 ]
 
 
-def _view_ce(form):
-    table_prefixes = {p for _, p, _ in _CE_TABLES}
-    fields = []
+def record_images(record):
+    """{key: path} of images saved on this record (parsed from images_json)."""
+    try:
+        return json.loads(record.get("images_json") or "{}") or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _img_box(key, code):
+    """Document image-slot size in mm — mirrors generic_generator._box so the
+    on-screen preview matches the exported .docx exactly."""
+    try:
+        from .generic_generator import _box
+        return _box(key, code)
+    except Exception:
+        k = (key or "").lower()
+        if "sign" in k:
+            return (40, 20)
+        if "photo" in k:
+            return (140, 90)
+        return (150, 90)
+
+
+def _image_item(key, label, form, images, code):
+    """An inline image block for one uploaded image, or None if not uploaded."""
+    import os
+    path = (images or {}).get(key)
+    if not path or not os.path.exists(path):
+        return None
+    w, h = _img_box(key, code)
+    caption = _scalar(form.get(key + "_caption")) or (label or _pretty(key))
+    return {"kind": "image", "key": key, "label": label or _pretty(key),
+            "caption": caption, "w": w, "h": h}
+
+
+def _sections_ce(form, images):
+    """Document-ordered blocks for the bespoke CE datasheet."""
+    detail = []
     for k, v in form.items():
-        if k in ("assignment_id", "tco_id") or k.endswith("[]"):
+        if k in ("assignment_id", "tco_id") or k.endswith("[]") or k.endswith("_caption"):
+            continue
+        if k in (images or {}):
             continue
         sv = _scalar(v)
         if sv:
-            fields.append({"label": _pretty(k), "value": sv})
-    sections = [{"title": "Details", "fields": fields, "tables": []}]
-    tables = []
+            detail.append({"kind": "field", "label": _pretty(k), "value": sv})
+    sections = []
+    if detail:
+        sections.append({"title": "Details", "items": detail})
     for label, prefix, cols in _CE_TABLES:
         rows = _table_from_form(form, prefix, [c for _, c in cols])
         if rows:
-            tables.append({"label": label, "columns": [c for c, _ in cols], "rows": rows})
-    sections.append({"title": "Tables", "fields": [], "tables": tables})
+            sections.append({"title": label, "items": [{
+                "kind": "table", "label": "",
+                "columns": [c for c, _ in cols], "rows": rows}]})
+    imgs = [i for i in (_image_item(k, None, form, images, "CE") for k in (images or {})) if i]
+    if imgs:
+        sections.append({"title": "Images", "items": imgs})
     return sections
 
 
-def _view_generic(schema, form):
-    from . import generic_service as gs
+def _sections_generic(schema, form, images, code):
+    """Document-ordered blocks for a schema-driven datasheet: fields, tables and
+    inline images emitted in schema order, mirroring the exported document."""
     sections = []
+    seen_imgs = set()
     for sec in schema.get("sections", []):
         if not sec.get("items"):
             continue
-        s = {"title": sec.get("title", ""), "fields": [], "tables": []}
+        items = []
         for it in sec["items"]:
             t = it.get("type")
-            if t in ("fields",):
+            if t == "fields":
                 for f in it.get("fields", []):
                     if f.get("input") == "image":
-                        continue
-                    v = _scalar(form.get(f["key"]))
-                    if v:
-                        s["fields"].append({"label": f.get("label") or _pretty(f["key"]), "value": v})
+                        im = _image_item(f["key"], f.get("label"), form, images, code)
+                        if im:
+                            items.append(im); seen_imgs.add(f["key"])
+                    else:
+                        v = _scalar(form.get(f["key"]))
+                        if v:
+                            items.append({"kind": "field",
+                                          "label": f.get("label") or _pretty(f["key"]), "value": v})
             elif t in ("field", "textarea"):
                 if it.get("input") == "image":
-                    continue
-                v = _scalar(form.get(it["key"]))
-                if v:
-                    s["fields"].append({"label": it.get("label") or _pretty(it["key"]), "value": v})
+                    im = _image_item(it["key"], it.get("label"), form, images, code)
+                    if im:
+                        items.append(im); seen_imgs.add(it["key"])
+                else:
+                    v = _scalar(form.get(it["key"]))
+                    if v:
+                        items.append({"kind": "field", "block": t == "textarea",
+                                      "label": it.get("label") or _pretty(it["key"]), "value": v})
+            elif t == "image":
+                im = _image_item(it["key"], it.get("label"), form, images, code)
+                if im:
+                    items.append(im); seen_imgs.add(it["key"])
             elif t == "table":
                 col_keys = [c["key"] for c in it.get("columns", [])]
                 rows = _table_from_form(form, f"{it['key']}__", col_keys)
                 if rows:
-                    s["tables"].append({
-                        "label": it.get("label") or _pretty(it["key"]),
-                        "columns": [c.get("label") or c["key"] for c in it["columns"]],
-                        "rows": rows,
-                    })
-        if s["fields"] or s["tables"]:
-            sections.append(s)
+                    items.append({"kind": "table",
+                                  "label": it.get("label") or _pretty(it["key"]),
+                                  "columns": [c.get("label") or c["key"] for c in it["columns"]],
+                                  "rows": rows})
+        if items:
+            sections.append({"title": sec.get("title", ""), "items": items})
+    # any uploaded images not declared in the schema (e.g. RE meas_img_* plots)
+    extra = [i for i in (_image_item(k, None, form, images, code)
+                         for k in sorted(images or {}) if k not in seen_imgs) if i]
+    if extra:
+        sections.append({"title": "Measurement Plots", "items": extra})
     return sections
 
 
 def record_view_model(record):
-    """Structured, read-only view of a saved record for the detail template."""
-    import os
+    """Read-only view of a saved record, laid out like the document it exports to:
+    ordered sections whose items are fields / tables / inline images (in their
+    exact document image-slot boxes)."""
     form = {}
     if record.get("form_json"):
         try:
             form = json.loads(record["form_json"])
         except (ValueError, TypeError):
             form = {}
+    images = record_images(record)
     code = (record.get("test_code") or "").upper()
+    name, form_id = (code or "Datasheet"), ""
     if code and code != "CE":
         try:
             from .registry import load_schema
-            sections = _view_generic(load_schema(code), form)
+            schema = load_schema(code)
+            name = schema.get("name") or code
+            form_id = schema.get("form") or ""
+            sections = _sections_generic(schema, form, images, code)
         except Exception:
-            sections = _view_ce(form)
+            name, form_id = code, ""
+            sections = _sections_ce(form, images)
     else:
-        sections = _view_ce(form)
-
-    images = []
-    if record.get("images_json"):
-        try:
-            for key, path in json.loads(record["images_json"]).items():
-                images.append({"label": _pretty(key), "filename": os.path.basename(path or ""),
-                               "exists": bool(path) and os.path.exists(path)})
-        except (ValueError, TypeError):
-            pass
-    return {"sections": sections, "images": images}
+        name, form_id = "CE", "IEC-FRM-504"
+        sections = _sections_ce(form, images)
+    tco = record.get("tco_id") or ""
+    subtitle = " · ".join([x for x in (form_id, ("TCO " + tco) if tco else "") if x])
+    return {"title": "%s Test Data Sheet" % name, "subtitle": subtitle, "sections": sections}

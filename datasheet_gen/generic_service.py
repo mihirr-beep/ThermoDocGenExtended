@@ -1,4 +1,5 @@
 """Schema-driven context building + prefill for the generic datasheet engine."""
+import json
 import re
 
 from .service import _join, _fmt_supply, _ra, _eut_config, as_checkbox_line, _functional_modes_text  # reuse CE helpers
@@ -299,6 +300,112 @@ def _surge_build_context(form_data):
     return ctx
 
 
+def _pfmf_build_context(form_data):
+    """PFMF docx context: ticked checkboxes for Test Method (Proximity/Immersion),
+    EUT Configuration (Tabletop/Floor standing) and the multi-select Coil Orientation
+    (proximity angles + immersion axes), each rendered into its own {{r ... }} cell."""
+    from .layout import human_checkbox, RunsXml, _box_run, _label_run
+    ctx = {}
+
+    def multi(selected, options):
+        sel = {_s(x) for x in selected if _s(x)}
+        rt = RunsXml()
+        for i, opt in enumerate(options):
+            rt.add(_box_run(opt in sel))
+            sep = "    " if i < len(options) - 1 else ""
+            rt.add(_label_run(" " + opt + sep))
+        return rt
+
+    method = _s(form_data.get("test_method"))
+    ctx["test_method_proximity"] = human_checkbox(method, ["Proximity method"])
+    ctx["test_method_immersion"] = human_checkbox(method, ["Immersion method"])
+
+    cfg = _s(form_data.get("eut_configuration"))
+    ctx["eut_configuration_tabletop"] = human_checkbox(cfg, ["Tabletop"])
+    ctx["eut_configuration_floor"] = human_checkbox(cfg, ["Floor standing"])
+
+    ctx["coil_orientation_proximity"] = multi(_list(form_data, "coil_angles[]"), ["0°", "90°", "180°", "270°"])
+    ctx["coil_orientation_immersion"] = multi(_list(form_data, "coil_axes[]"), ["X", "Y", "Z"])
+
+    # Test Level: tick the chosen fixed option, or tick Custom and fill in its value.
+    def _level(value):
+        v = _s(value)
+        rt = RunsXml()
+        matched = False
+        for opt in ["1A/m", "3A/m", "30A/m"]:
+            on = (v == opt)
+            matched = matched or on
+            rt.add(_box_run(on)).add(_label_run(" " + opt + "    "))
+        custom_on = bool(v) and not matched
+        rt.add(_box_run(custom_on)).add(_label_run(" Custom " + (v if custom_on else "______")))
+        return rt
+    ctx["test_level"] = _level(form_data.get("test_level"))
+
+    # Observation legend: one {code, desc} per unique A/B/C/D/NA value the engineer used.
+    codes = _list(form_data, "pfmf_obs_legend_code[]")
+    descs = _list(form_data, "pfmf_obs_legend_desc[]")
+    legend, seen = [], set()
+    for i, c in enumerate(codes):
+        c = _s(c)
+        if c and c not in seen:
+            seen.add(c)
+            legend.append({"code": c, "desc": _s(descs[i]) if i < len(descs) else ""})
+    ctx["pfmf_obs_legend"] = legend
+    return ctx
+
+
+def _esd_build_context(form_data):
+    """ESD docx context: ticked EUT-Configuration cells, the two-line Indirect
+    Contact Discharge cell (HCP line + VCP line), and all observation-table cell
+    values (Indirect 8 fixed rows; Direct/Air 3 rows with editable names)."""
+    from .layout import human_checkbox, RunsXml
+    ctx = {}
+    cfg = _s(form_data.get("eut_configuration"))
+    ctx["eut_configuration_tabletop"] = human_checkbox(cfg, ["Tabletop"])
+    ctx["eut_configuration_floor"] = human_checkbox(cfg, ["Floor standing"])
+
+    hcp = human_checkbox(_s(form_data.get("indirect_hcp")), ["NA", "±2kV", "±4kV", "±8kV", "Custom"])
+    vcp = human_checkbox(_s(form_data.get("indirect_vcp")), ["±2kV", "±4kV", "±8kV", "Custom"])
+    ctx["indirect_contact_discharge_hcp_vcp"] = RunsXml(str(hcp)).add('<w:r><w:br/></w:r>').add(str(vcp))
+
+    for i in range(1, 9):                       # Indirect: 8 fixed rows
+        for c in range(1, 7):
+            k = "ind_r%d_c%d" % (i, c)
+            ctx[k] = _s(form_data.get(k))
+    for grp in ("dir", "air"):                  # Direct / Air: 3 rows + editable name
+        for i in range(1, 4):
+            ctx["%s_r%d_name" % (grp, i)] = _s(form_data.get("%s_r%d_name" % (grp, i)))
+            for c in range(1, 7):
+                k = "%s_r%d_c%d" % (grp, i, c)
+                ctx[k] = _s(form_data.get(k))
+    return ctx
+
+
+def _rs_ri_build_context(form_data):
+    """RS Field Strength cells: render the ticked options with a fill-in value on
+    Custom (e.g. '☐ 3V/m ☐ 10V/m ☐ 30V/m ☒ Custom 5V/m') — the generic checkbox
+    can only tick a fixed option, not carry the custom numeric value."""
+    from .layout import RunsXml, _box_run, _label_run
+    fixed = ["3V/m", "10V/m", "30V/m"]
+
+    def fs(value):
+        v = _s(value)
+        rt = RunsXml()
+        matched = False
+        for opt in fixed:
+            on = (v == opt)
+            matched = matched or on
+            rt.add(_box_run(on)).add(_label_run(" " + opt + "    "))
+        custom_on = bool(v) and not matched
+        rt.add(_box_run(custom_on)).add(_label_run(" Custom " + (v if custom_on else "______")))
+        return rt
+
+    return {
+        "field_strength_col_1": fs(form_data.get("field_strength_col_1")),
+        "field_strength_col_2": fs(form_data.get("field_strength_col_2")),
+    }
+
+
 def build_context(schema, form_data):
     """Map the posted form into the docxtpl context for this schema."""
     ctx = {}
@@ -371,6 +478,12 @@ def build_context(schema, form_data):
         ctx.update(_eft_build_context(form_data))
     if schema.get("code") == "SURGE":
         ctx.update(_surge_build_context(form_data))
+    if schema.get("code") == "PFMF":
+        ctx.update(_pfmf_build_context(form_data))
+    if schema.get("code") == "ESD":
+        ctx.update(_esd_build_context(form_data))
+    if schema.get("code") == "RS_RI":
+        ctx.update(_rs_ri_build_context(form_data))
     return ctx
 
 
@@ -530,6 +643,20 @@ def collect_prefill(schema, request_obj, assignment):
         cfg = _eut_config(request_obj)  # 'Tabletop' / 'Floor standing' / ''
     eng = _s(getattr(assignment, "test_person_name", "")) if assignment else ""
     detail = _test_detail(request_obj, schema.get("code"))
+    _code = (schema.get("code") or "").upper()
+    # CRF: Immunity Test Requirement / Test Port / Coupling Method are chosen at
+    # Test-Request intake and stored in the CRF detail's custom_spec JSON blob
+    # (keys immunityTestRequirement / testPort / couplingMethod). Parse once here
+    # so the loop below can prefill the datasheet dropdowns from them.
+    crf_spec = {}
+    if _code == "CRF" and detail is not None:
+        try:
+            _raw = getattr(detail, "custom_spec", None)
+            crf_spec = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+            if not isinstance(crf_spec, dict):
+                crf_spec = {}
+        except Exception:
+            crf_spec = {}
 
     is_re = (schema.get("code") or "").upper() == "RE"
     basic_std = "Sysmex"
@@ -582,6 +709,10 @@ def collect_prefill(schema, request_obj, assignment):
                     "VOLTAGEDIPS": "IEC 61000-4-11:2020 & EN 61000-4-11:2020",
                     "EFT": "IEC 61000-4-4:2012 & EN 61000-4-4:2012",
                     "SURGE": "IEC 61000-4-5:2014+A1:2017 & EN 61000-4-5:2014+A1:2017",
+                    "CRF": "IEC 61000-4-6:2023 & EN 61000-4-6:2023",
+                    "RS_RI": "EN 61000-4-3:2020 & IEC 61000-4-3:2020",
+                    "PFMF": "IEC 61000-4-8:2009 & EN 61000-4-8:2010",
+                    "ESD": "IEC 61000-4-2:2008 & EN 61000-4-2:2009",
                 }
                 pre[f["key"]] = _basic_map.get(_bcode, "Sysmex")
         elif "monitoring_parameters" in k:
@@ -592,10 +723,22 @@ def collect_prefill(schema, request_obj, assignment):
             pre[f["key"]] = vf
         elif k == "test_mode":
             pre[f["key"]] = test_mode
+        elif _code == "CRF" and k == "immunity_test_requirement":
+            v = _s(crf_spec.get("immunityTestRequirement"))
+            if v:
+                pre[f["key"]] = v
+        elif _code == "CRF" and k == "test_port":
+            v = _s(crf_spec.get("testPort"))
+            if v:
+                pre[f["key"]] = v
+        elif _code == "CRF" and k == "coupling_method":
+            v = _s(crf_spec.get("couplingMethod"))
+            if v:
+                pre[f["key"]] = v
         elif "modification_state" in k:
             pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
         elif k.startswith("eut_configuration"):
-            if (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER"):
+            if (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER", "CRF", "RS_RI", "PFMF", "ESD"):
                 if cfg in ("Tabletop", "Floor standing"):
                     pre[f["key"]] = cfg
                 elif cfg and "table" in cfg.lower():

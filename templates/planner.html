@@ -2725,7 +2725,12 @@
                 }
             }
 
-                const plannedHours = isAllDay ? '' : this.getNumericDurationHours(startDateValue, endDateValue, startTimeValue, endTimeValue);
+            const plannedHours = isAllDay ? '' : this.getNumericDurationHours(startDateValue, endDateValue, startTimeValue, endTimeValue);
+            if (!isAllDay && plannedHours <= 0) {
+                alert('Scheduled time must overlap working hours between 9:00 AM and 6:00 PM.');
+                startTimeInput.focus();
+                return;
+            }
 
             const payload = {
                 test_person_name: engineerName,
@@ -3080,12 +3085,20 @@
                 return 0;
             }
 
+            const workdayStartMinutes = 9 * 60;
+            const workdayEndMinutes = 18 * 60;
+            const effectiveStartMinutes = Math.max(startMinutes, workdayStartMinutes);
+            const effectiveEndMinutes = Math.min(endMinutes, workdayEndMinutes);
+            if (effectiveEndMinutes <= effectiveStartMinutes) {
+                return 0;
+            }
+
             const workingDays = this.countWorkingDays(startDateValue, endDateValue);
             if (workingDays <= 0) {
                 return 0;
             }
 
-            const dailyHours = (endMinutes - startMinutes) / 60;
+            const dailyHours = (effectiveEndMinutes - effectiveStartMinutes) / 60;
             const hours = dailyHours * workingDays;
             return hours > 0 ? hours : 0;
         }

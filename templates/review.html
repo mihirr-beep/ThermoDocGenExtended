@@ -9,6 +9,102 @@
         max-height: none !important;
     }
 
+    .review-page-container {
+        box-sizing: border-box;
+        width: min(1800px, calc(100vw - 1.5rem));
+        max-width: 1800px;
+        position: relative;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    .review-table-wrapper {
+        width: 100%;
+        overflow-x: visible;
+    }
+
+    .review-data-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .review-data-table th,
+    .review-data-table td {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .review-owner-cell > div,
+    .review-peer-engineer-cell > div {
+        min-width: 0;
+    }
+
+    .review-owner-name,
+    .review-peer-engineer-cell span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .review-assignments-cell > div {
+        max-width: 100%;
+    }
+
+    .review-assignments-cell > div > span {
+        max-width: 100%;
+        white-space: normal;
+        flex-wrap: wrap;
+    }
+
+    .review-actions-cell button,
+    .review-peer-actions-cell button {
+        max-width: 100%;
+        justify-content: center;
+        white-space: normal;
+        line-height: 1.2;
+        text-align: center;
+    }
+
+    .review-peer-actions-cell > div {
+        flex-wrap: wrap;
+    }
+
+    #peerReviewTable td > * {
+        max-width: 100%;
+    }
+
+    #peerReviewTable td:nth-child(3) > div,
+    #peerReviewTable td:last-child > div {
+        min-width: 0;
+        flex-wrap: wrap;
+    }
+
+    #peerReviewTable td:nth-child(3) > div > div:first-child {
+        flex-shrink: 0;
+    }
+
+    #peerReviewTable td a,
+    #peerReviewTable td button {
+        max-width: 100%;
+        justify-content: center;
+        white-space: normal;
+        line-height: 1.2;
+        text-align: center;
+    }
+
+    .review-submitted-cell {
+        width: 100%;
+        white-space: normal;
+    }
+
+    .review-submitter-value,
+    #testPlanSubmitter {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
     @media (min-width: 1024px) {
         #reviewFiltersGrid {
             grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -76,7 +172,7 @@
     }
 </style>
 <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-    <div class="max-w-[1500px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-4">
+    <div class="review-page-container w-full mx-auto px-3 sm:px-4 lg:px-6 py-4">
         <!-- Enhanced Header -->
         <div class="mb-4">
             <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
@@ -369,8 +465,18 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full table-auto whitespace-nowrap divide-y divide-gray-200">
+            <div class="review-table-wrapper">
+                <table id="assignedReviewTable" class="review-data-table divide-y divide-gray-200">
+                    <colgroup>
+                        <col style="width: 14%;">
+                        <col style="width: 7%;">
+                        <col style="width: 8%;">
+                        <col style="width: 13%;">
+                        <col style="width: 22%;">
+                        <col style="width: 11%;">
+                        <col style="width: 14%;">
+                        <col style="width: 11%;">
+                    </colgroup>
                     <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
                         <tr>
                             <th
@@ -406,10 +512,10 @@
                                 class="px-2 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
                                 Status</th>
                             <th
-                                class="px-2 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                                Submitted</th>
+                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                Submitted By / On</th>
                             <th
-                                class="px-2 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider min-w-[200px]">
+                                class="px-2 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
                                 Actions</th>
                         </tr>
                     </thead>
@@ -460,18 +566,18 @@
                                     </button>
                                 </div>
                             </td>
-                            <td class="px-2 py-2 whitespace-nowrap">
-                                <div class="flex items-center gap-3">
+                            <td class="review-owner-cell px-2 py-2">
+                                <div class="flex items-center gap-2">
                                     <div
-                                        class="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-semibold">
+                                        class="h-8 w-8 flex-shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-semibold">
                                         {{ test_plan.assigned_engineer_display[0:2].upper() if test_plan.assigned_engineer_display else (test_plan.requester_name[0:2].upper() if test_plan.requester_name else 'U') }}
                                     </div>
-                                    <div class="flex items-center gap-2 text-sm font-medium text-gray-900">
-                                        <span>{{ test_plan.assigned_engineer_display or test_plan.requester_name or 'Unknown' }}</span>
+                                    <div class="min-w-0 text-sm font-medium text-gray-900">
+                                        <span class="review-owner-name">{{ test_plan.assigned_engineer_display or test_plan.requester_name or 'Unknown' }}</span>
                                     </div>
                                 </div>
                             </td>
-                            <td class="px-2 py-2 whitespace-nowrap">
+                            <td class="review-assignments-cell px-2 py-2">
                                 {% if test_plan.test_assignments %}
                                 <div class="flex flex-wrap gap-2 text-[11px] max-w-[360px]">
                                     {% for assignment in test_plan.test_assignments %}
@@ -545,15 +651,26 @@
                                         {% endif %}
                                     </span>
                                     {% endfor %}
+                                    {% for test_name in test_plan.remaining_tests or [] %}
+                                    <span
+                                        class="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-100 px-2 py-1 text-gray-600"
+                                        title="Not Assigned">
+                                        <span class="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></span>
+                                        <span class="font-semibold">{{ test_name }}</span>
+                                        <span class="text-[9px] font-bold uppercase tracking-wide text-gray-500">Not Assigned</span>
+                                    </span>
+                                    {% endfor %}
                                 </div>
                                 {% elif test_plan.selected_tests %}
                                 <div class="flex flex-wrap gap-2 text-[11px] max-w-[360px]">
                                     {% for test_name in test_plan.selected_tests %}
                                     <span
-                                        class="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
+                                        class="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-100 px-2 py-1 text-gray-600"
+                                        title="Not Assigned">
                                         <span class="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"
-                                            title="Not assigned yet"></span>
+                                            title="Not Assigned"></span>
                                         <span class="font-semibold">{{ test_name }}</span>
+                                        <span class="text-[9px] font-bold uppercase tracking-wide text-gray-500">Not Assigned</span>
                                     </span>
                                     {% endfor %}
                                 </div>
@@ -562,7 +679,7 @@
                                 {% endif %}
                             </td>
 
-                            <td class="px-2 py-2 whitespace-nowrap">
+                            <td class="px-2 py-2">
                                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
 {% if test_plan.status_display == 'In Progress' %}bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 border border-blue-200
 {% elif test_plan.status_display == 'Assigned Lab Engineer' or test_plan.status == 'Assigned Lab Engineer' %}bg-gradient-to-r from-slate-100 to-gray-100 text-slate-800 border border-slate-300
@@ -585,15 +702,27 @@
                                 </div>
                                 {% endif %}
                             </td>
-                            <td class="px-2 py-2 text-xs text-gray-900 whitespace-nowrap">
-                                {% if test_plan.submitted_date %}
-                                <span class="font-semibold">{{ test_plan.submitted_date.strftime('%Y-%m-%d %H:%M')
-                                    }}</span>
-                                {% else %}
-                                <span class="text-gray-400 italic">N/A</span>
-                                {% endif %}
+                            <td class="review-submitted-cell px-2 py-2 text-xs text-gray-900 align-middle">
+                                <div class="space-y-1">
+                                    <div class="flex items-start gap-1">
+                                        <span class="flex-shrink-0 font-medium text-gray-500">By:</span>
+                                        <span class="review-submitter-value font-semibold text-gray-900"
+                                            title="{{ (test_plan.requester_name or 'Unknown')|e }}">
+                                            {{ test_plan.requester_name or 'Unknown' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-start gap-1">
+                                        <span class="flex-shrink-0 font-medium text-gray-500">On:</span>
+                                        {% if test_plan.submitted_date %}
+                                        <span class="font-medium text-gray-700">{{
+                                            test_plan.submitted_date.strftime('%Y-%m-%d %H:%M') }}</span>
+                                        {% else %}
+                                        <span class="text-gray-400 italic">N/A</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
                             </td>
-                            <td class="px-2 py-2 whitespace-nowrap">
+                            <td class="review-actions-cell px-2 py-2">
                                 {% set assigned_count = test_plan.test_assignments|length if test_plan.test_assignments else 0 %}
                                 {% set unassigned_count = test_plan.remaining_tests|length if test_plan.remaining_tests else (test_plan.selected_tests|length if test_plan.selected_tests and not test_plan.test_assignments else 0) %}
                                 <div class="flex flex-col items-end gap-2">
@@ -618,10 +747,10 @@
                                             </path>
                                         </svg>
                                         View
-                                    </button>
+                                    </button>                                    {% if test_plan.status_display != 'Test Plan To Approve' and test_plan.status != 'Test Plan To Approve' %}
 
-                                    {% if test_plan.status_display in ['Assigned Lab Engineer', 'Update plan', 'Test Plan Approved', 'Need More Information']
-                                    or test_plan.status in ['Assigned Lab Engineer', 'Update plan', 'Test Plan Approved', 'Need More Information'] %}
+                                    {% if test_plan.status_display in ['Assigned Lab Engineer', 'Update plan', 'Test Plan Approved', 'Test Plan To Approve', 'Need More Information']
+                                    or test_plan.status in ['Assigned Lab Engineer', 'Update plan', 'Test Plan Approved', 'Test Plan To Approve', 'Need More Information'] %}
 
                                     {% if not test_plan.test_assignments %}
                                     <!-- No assignments yet: Assign + Need More Information / Comments -->
@@ -746,6 +875,8 @@
                                     </button>
                                     {% endif %}
 
+                                    {% endif %}
+
                                 </div>
                             </td>
                         </tr>
@@ -792,8 +923,17 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full table-auto whitespace-nowrap divide-y divide-gray-200">
+            <div class="review-table-wrapper">
+                <table id="peerReviewTable" class="review-data-table divide-y divide-gray-200">
+                    <colgroup>
+                        <col style="width: 14%;">
+                        <col style="width: 10%;">
+                        <col style="width: 15%;">
+                        <col style="width: 12%;">
+                        <col style="width: 14%;">
+                        <col style="width: 22%;">
+                        <col style="width: 13%;">
+                    </colgroup>
                     <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -968,7 +1108,7 @@
     <div class="relative top-4 mx-auto p-4 border w-full max-w-2xl shadow-2xl rounded-2xl bg-white">
         <div class="mb-4">
             <div class="flex items-center justify-between">
-                <div class="flex items-center">
+                <div class="flex items-center min-w-0">
                     <div class="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center mr-3">
                         <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -995,22 +1135,23 @@
             <!-- Test Request Info -->
             <div class="bg-gray-50 rounded-lg p-4">
                 <h4 class="text-sm font-semibold text-gray-700 mb-2">Test Request Details</h4>
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <span class="text-gray-500">Name:</span>
-                        <span class="font-medium text-gray-900" id="testPlanName">-</span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div class="min-w-0">
+                        <span class="block text-gray-500">Name:</span>
+                        <span class="block break-words font-medium text-gray-900" id="testPlanName">-</span>
                     </div>
-                    <div>
-                        <span class="text-gray-500">Project:</span>
-                        <span class="font-medium text-gray-900" id="testPlanProject">-</span>
+                    <div class="min-w-0">
+                        <span class="block text-gray-500">Project:</span>
+                        <span class="block break-words font-medium text-gray-900" id="testPlanProject">-</span>
                     </div>
-                    <div>
-                        <span class="text-gray-500">Submitter:</span>
-                        <span class="font-medium text-gray-900" id="testPlanSubmitter">-</span>
+                    <div class="min-w-0">
+                        <span class="block text-gray-500">Submitted By:</span>
+                        <span class="review-submitter-value block font-medium text-gray-900"
+                            id="testPlanSubmitter">-</span>
                     </div>
-                    <div>
-                        <span class="text-gray-500">Submitted:</span>
-                        <span class="font-medium text-gray-900" id="testPlanSubmitted">-</span>
+                    <div class="min-w-0">
+                        <span class="block text-gray-500">Submitted On:</span>
+                        <span class="block break-words font-medium text-gray-900" id="testPlanSubmitted">-</span>
                     </div>
                 </div>
             </div>
@@ -1133,7 +1274,14 @@
                             </path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-bold text-gray-900">Assign Tests to Engineers</h3>
+                    <div class="min-w-0">
+                        <h3 class="text-xl font-bold text-gray-900">Assign Tests to Engineers</h3>
+                        <p class="mt-1 flex flex-wrap items-center gap-1 text-sm text-gray-600">
+                            <span class="font-semibold">TCO Number:</span>
+                            <span id="assignTestsTcoNumber"
+                                class="break-words font-bold text-purple-700">Loading...</span>
+                        </p>
+                    </div>
                 </div>
                 <button type="button" onclick="closeAssignTestsModal()" aria-label="Close assign tests modal"
                     title="Close"
@@ -1188,6 +1336,10 @@
                             class="inline-flex px-3 py-1 rounded-full bg-purple-100 border border-purple-200">
                             Test Assignments
                         </span>
+                        <span id="assignStepLabBadge"
+                            class="ml-2 inline-flex px-3 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                            Laboratory Checks
+                        </span>
                     </div>
 
                     <div class="space-y-4 max-h-[600px] overflow-y-auto pr-2">
@@ -1202,6 +1354,18 @@
                                 <h4 class="text-sm font-bold text-gray-900 mb-3">Laboratory Use Details</h4>
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="md:col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                                        <div class="flex flex-wrap items-center justify-between gap-2">
+                                            <span class="text-sm font-semibold text-blue-900">
+                                                Samples available in the lab (request form)
+                                            </span>
+                                            <span id="assignSamplesAvailableInLab"
+                                                class="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-blue-800">
+                                                Not provided
+                                            </span>
+                                        </div>
+                                    </div>
+
                                     <div class="md:col-span-2">
                                         <label class="block text-sm font-semibold text-gray-700 mb-2">
                                             Condition of samples on receipt <span class="text-red-500">*</span>
@@ -1300,13 +1464,13 @@
                             </svg>
                             Cancel
                         </button>
-                        <button type="submit"
+                        <button id="assignStep1PrimaryButton" type="button" onclick="handleAssignStep1Action()"
                             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200 transform hover:scale-105 shadow-lg">
                             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M5 13l4 4L19 7"></path>
                             </svg>
-                            Assign Tests
+                            <span id="assignStep1PrimaryButtonLabel">Continue to Laboratory Checks</span>
                         </button>
                     </div>
 
@@ -2184,6 +2348,31 @@
                                             Download
                                         </a>
                                     </div>
+                                ` : entry.datasheet_record_view_url ? `
+                                    <div class="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                        <div class="flex items-center gap-3">
+                                            <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                                </path>
+                                            </svg>
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900">Submitted Form</p>
+                                                <p class="text-xs text-gray-600">Final Word datasheet will be generated after approval.</p>
+                                            </div>
+                                        </div>
+                                        <a href="${entry.datasheet_record_view_url}" target="_blank" rel="noopener noreferrer"
+                                           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 transition-all duration-200">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                                                </path>
+                                            </svg>
+                                            Open Form
+                                        </a>
+                                    </div>
                                 ` : '<p class="text-sm text-gray-500 italic">No datasheet uploaded</p>'}
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2578,6 +2767,18 @@
                                 </svg>
                                 Download
                             </a>
+                        ` : entry.datasheet_record_view_url ? `
+                            <a href="${entry.datasheet_record_view_url}" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 transition-all duration-200">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                                    </path>
+                                </svg>
+                                Open Form
+                            </a>
                         ` : '<span class="text-xs text-gray-400">No file</span>'}
                     </td>
                     <td class="px-4 py-3">
@@ -2757,6 +2958,18 @@
                                     </path>
                                 </svg>
                                 Download
+                            </a>
+                        ` : entry.datasheet_record_view_url ? `
+                            <a href="${entry.datasheet_record_view_url}" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 transition-all duration-200">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                                    </path>
+                                </svg>
+                                Open Form
                             </a>
                         ` : '<span class="text-xs text-gray-400">No file</span>'}
                     </td>
@@ -5397,6 +5610,7 @@
     let currentAssignTestRequest = null;
     let currentViewTestPlanId = null;
     let currentAssignLockedAssignments = [];
+    let currentAssignRequiresLaboratoryChecks = true;
     const PLANNER_CALENDAR_SYNC_KEY = 'plannerCalendarSyncVersion';
     let reviewCalendarSyncListenerBound = false;
 
@@ -5574,8 +5788,43 @@
         bindAssignLaboratoryScheduleHandlers();
     }
 
+    function hasSavedAssignLaboratoryDetails(testRequest) {
+        if (!testRequest || typeof testRequest !== 'object') {
+            return false;
+        }
+
+        const sampleCondition = String(testRequest.sample_condition || '').trim().toLowerCase();
+        const capabilityAvailable = String(testRequest.capability_available || '').trim().toLowerCase();
+        const sampleReceivedDate = toDateInputValue(testRequest.sample_received_date);
+        const testDuration = String(testRequest.test_duration || '').trim();
+        const commencementDate = toDateInputValue(testRequest.test_commencement_date);
+        const completionDate = toDateInputValue(testRequest.test_completion_date);
+
+        return ['good', 'bad'].includes(sampleCondition)
+            && ['yes', 'no'].includes(capabilityAvailable)
+            && Boolean(sampleReceivedDate)
+            && Boolean(testDuration)
+            && Boolean(commencementDate)
+            && Boolean(completionDate);
+    }
+
+    function syncAssignLaboratoryStepUi() {
+        const labBadge = document.getElementById('assignStepLabBadge');
+        const primaryLabel = document.getElementById('assignStep1PrimaryButtonLabel');
+
+        if (labBadge) {
+            labBadge.classList.toggle('hidden', !currentAssignRequiresLaboratoryChecks);
+        }
+
+        if (primaryLabel) {
+            primaryLabel.textContent = currentAssignRequiresLaboratoryChecks
+                ? 'Continue to Laboratory Checks'
+                : 'Assign Tests';
+        }
+    }
+
     function setAssignModalStep(step) {
-        assignModalStep = step === 2 ? 2 : 1;
+        assignModalStep = currentAssignRequiresLaboratoryChecks && step === 2 ? 2 : 1;
 
         const testsSection = document.getElementById('assignStepTestsSection');
         const labSection = document.getElementById('assignStepLaboratorySection');
@@ -5585,6 +5834,8 @@
         const labBadge = document.getElementById('assignStepLabBadge');
         const calendarPanel = document.getElementById('assignCalendarPanel');
 
+        syncAssignLaboratoryStepUi();
+
         if (testsSection && labSection && step1Actions && step2Actions) {
             if (assignModalStep === 1) {
                 testsSection.classList.remove('hidden');
@@ -5593,7 +5844,7 @@
                 step2Actions.classList.add('hidden');
                 if (calendarPanel) calendarPanel.classList.remove('hidden');
                 if (testsBadge) testsBadge.className = 'px-3 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200';
-                if (labBadge) labBadge.className = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200';
+                if (labBadge && currentAssignRequiresLaboratoryChecks) labBadge.className = 'ml-2 inline-flex px-3 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200';
             } else {
                 testsSection.classList.add('hidden');
                 labSection.classList.remove('hidden');
@@ -5601,7 +5852,7 @@
                 step2Actions.classList.remove('hidden');
                 if (calendarPanel) calendarPanel.classList.add('hidden');
                 if (testsBadge) testsBadge.className = 'px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200';
-                if (labBadge) labBadge.className = 'px-3 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200';
+                if (labBadge && currentAssignRequiresLaboratoryChecks) labBadge.className = 'ml-2 inline-flex px-3 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200';
             }
         }
 
@@ -5733,6 +5984,14 @@
     }
 
     function goToAssignLabStep() {
+        if (!currentAssignRequiresLaboratoryChecks) {
+            const form = document.getElementById('assignTestsForm');
+            if (form) {
+                submitAssignTestsForm(form, false);
+            }
+            return;
+        }
+
         const form = document.getElementById('assignTestsForm');
         if (!form) return;
         const result = collectTestAssignments(form, true);
@@ -5747,6 +6006,10 @@
 
     function goToAssignTestsStep() {
         setAssignModalStep(1);
+    }
+
+    function handleAssignStep1Action() {
+        goToAssignLabStep();
     }
 
     function assignTests(testPlanId, mode = 'auto') {
@@ -5874,6 +6137,23 @@
         setValue('assign_test_commencement_date', testRequest.test_commencement_date, true);
         setValue('assign_test_completion_date', testRequest.test_completion_date, true);
 
+        const samplesAvailableElement = document.getElementById('assignSamplesAvailableInLab');
+        if (samplesAvailableElement) {
+            const samplesAvailableValue = String(
+                testRequest.samples_available_in_lab || ''
+            ).trim().toLowerCase();
+            if (samplesAvailableValue === 'yes') {
+                samplesAvailableElement.textContent = 'Yes';
+                samplesAvailableElement.className = 'rounded-full border border-green-300 bg-green-100 px-3 py-1 text-xs font-bold text-green-800';
+            } else if (samplesAvailableValue === 'no') {
+                samplesAvailableElement.textContent = 'No';
+                samplesAvailableElement.className = 'rounded-full border border-red-300 bg-red-100 px-3 py-1 text-xs font-bold text-red-800';
+            } else {
+                samplesAvailableElement.textContent = 'Not provided';
+                samplesAvailableElement.className = 'rounded-full border border-gray-300 bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700';
+            }
+        }
+
         const sampleConditionValue = String(testRequest.sample_condition || '').toLowerCase().includes('bad') ? 'bad' :
             (String(testRequest.sample_condition || '').toLowerCase().includes('good') ? 'good' : '');
         const capabilityValue = String(testRequest.capability_available || '').toLowerCase().includes('no') ? 'no' :
@@ -5983,8 +6263,13 @@
 
         // Set request ID
         document.getElementById('assignTestsRequestId').value = testPlanId;
+        const tcoNumberElement = document.getElementById('assignTestsTcoNumber');
+        if (tcoNumberElement) {
+            const tcoNumber = String(testRequest.tco_id || '').trim() || 'N/A';
+            tcoNumberElement.textContent = tcoNumber;
+            tcoNumberElement.title = tcoNumber;
+        }
         populateAssignLaboratoryFields(testRequest);
-        setAssignModalStep(1);
 
         const planUpdateBanner = document.getElementById('assignPlanUpdateBanner');
         const planUpdateComment = document.getElementById('assignPlanUpdateComment');
@@ -6124,8 +6409,11 @@
 
         const hasAnyExistingAssignments = Array.from(assignmentLookup.values()).some(hasExistingAssignmentData);
         currentAssignTestRequest.merge_existing_assignments = hasAnyExistingAssignments;
+        currentAssignRequiresLaboratoryChecks = !hasAnyExistingAssignments || !hasSavedAssignLaboratoryDetails(testRequest);
         const lockedAssignmentsCount = currentAssignLockedAssignments.length;
         const remainingAssignmentsCount = Math.max(selectedTests.length - lockedAssignmentsCount, 0);
+
+        setAssignModalStep(1);
 
         // Get container
         const container = document.getElementById('testsContainer');
@@ -6139,6 +6427,9 @@
             <div>
                 TCO owner: <strong>${escapeHtml(tcoAssigneeName || 'Not assigned')}</strong>.
                 Select the lab engineer for each individual test below. The TCO assignment is not copied automatically to all tests.
+            </div>
+            <div class="mt-2">
+                TCO number: <strong>${escapeHtml(testRequest.tco_id || testPlanId || 'N/A')}</strong>
             </div>
             ${lockedAssignmentsCount > 0 ? `
                 <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
@@ -7099,6 +7390,11 @@
         document.getElementById('assignTestsModal').classList.add('hidden');
         document.getElementById('assignTestsForm').reset();
         document.getElementById('testsContainer').innerHTML = '';
+        const tcoNumberElement = document.getElementById('assignTestsTcoNumber');
+        if (tcoNumberElement) {
+            tcoNumberElement.textContent = 'Loading...';
+            tcoNumberElement.removeAttribute('title');
+        }
         currentAssignTestRequest = null;
         currentAssignLockedAssignments = [];
         setAssignModalStep(1);
@@ -7853,12 +8149,15 @@
         });
     }
 
-    function confirmAssignTests(event) {
-        event.preventDefault();
-
-        const form = event.target;
+    function submitAssignTestsForm(form, requireLaboratoryDetails = false) {
         const requestId = document.getElementById('assignTestsRequestId').value;
-        const submitBtn = form.querySelector('button[type="submit"]');
+        const submitBtn = requireLaboratoryDetails
+            ? form.querySelector('button[type="submit"]')
+            : document.getElementById('assignStep1PrimaryButton');
+        if (!submitBtn) {
+            alert('Unable to submit assignments right now.');
+            return;
+        }
         const originalText = submitBtn.innerHTML;
 
         const testAssignmentResult = collectTestAssignments(form, true);
@@ -7870,6 +8169,17 @@
 
         if (testAssignments.length === 0) {
             return;
+        }
+
+        let laboratoryDetailsPayload = null;
+        if (requireLaboratoryDetails) {
+            const laboratoryDetailsResult = collectAssignLaboratoryDetails();
+            if (!laboratoryDetailsResult.valid) {
+                alert(laboratoryDetailsResult.error);
+                setAssignModalStep(2);
+                return;
+            }
+            laboratoryDetailsPayload = laboratoryDetailsResult.payload;
         }
 
         // Show loading state
@@ -7890,7 +8200,8 @@
             },
             body: JSON.stringify({
                 test_assignments: testAssignments,
-                merge_existing_assignments: mergeExistingAssignments
+                merge_existing_assignments: mergeExistingAssignments,
+                laboratory_details: laboratoryDetailsPayload
             })
         })
             .then(response => {
@@ -7922,8 +8233,21 @@
             });
     }
 
+    function confirmAssignTests(event) {
+        event.preventDefault();
+
+        const form = event.target;
+        if (assignModalStep !== 2 && currentAssignRequiresLaboratoryChecks) {
+            goToAssignLabStep();
+            return;
+        }
+
+        submitAssignTestsForm(form, assignModalStep === 2);
+    }
+
     function needMoreInformation(testPlanId, isCommentMode = false) {
         // Set test plan ID
+    currentAssignRequiresLaboratoryChecks = true;
         document.getElementById('testPlanId').value = testPlanId;
         document.getElementById('reviewAction').value = 'more_info';
         document.getElementById('reviewActionMode').value = isCommentMode ? 'comments' : 'need_more_info';
@@ -7961,7 +8285,10 @@
                     // Populate modal with test request details
                     document.getElementById('testPlanName').textContent = testRequest.product_name || '-';
                     document.getElementById('testPlanProject').textContent = testRequest.tco_id || '-';
-                    document.getElementById('testPlanSubmitter').textContent = testRequest.requester_name || '-';
+                    const submitterElement = document.getElementById('testPlanSubmitter');
+                    const submitterName = testRequest.requester_name || '-';
+                    submitterElement.textContent = submitterName;
+                    submitterElement.title = submitterName;
 
                     // Format submitted date
                     if (testRequest.submitted_at) {

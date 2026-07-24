@@ -31,19 +31,21 @@
     </div>
     {% endif %}
 
-    <!-- 1. EUT & TECHNICAL DETAILS -->
+    <!-- 1. EUT DETAILS -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">1. EUT &amp; Technical Details</h2>
-      <h3 class="text-sm font-semibold text-gray-600 mb-2">EUT Details</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <h2 class="text-lg font-bold text-gray-900 mb-4">1. EUT Details</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Job Number</label>{{ field('job_number', prefill.job_number) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Name</label>{{ field('eut_name', prefill.eut_name) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Model/SKU Number</label>{{ field('eut_model', prefill.eut_model) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Serial Number</label>{{ field('eut_serial', prefill.eut_serial) }}</div>
       </div>
+    </section>
 
+    <!-- 2. EUT MODIFICATION RECORD -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-semibold text-gray-600">EUT Modification Record</h3>
+        <h2 class="text-lg font-bold text-gray-900">2. EUT Modification Record</h2>
         <div class="flex items-center gap-2">
           <button type="button" onclick="uploadCSV('mod')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
           <button type="button" onclick="addRow('mod')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
@@ -51,8 +53,8 @@
       </div>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr>
-          <th class="p-2 text-left">State</th><th class="p-2 text-left">Description</th>
-          <th class="p-2 text-left">Fitted by</th><th class="p-2 text-left">Date</th><th></th></tr></thead>
+          <th class="p-2 text-left">Modification state</th><th class="p-2 text-left">Description of Modification still fitted to EUT</th>
+          <th class="p-2 text-left">Modification fitted by</th><th class="p-2 text-left">Date modification fitted</th><th></th></tr></thead>
         <tbody id="rows-mod">
           <tr>
             <td class="p-1"><input name="mod_state[]" value="0" class="w-full px-2 py-1 border rounded"></td>
@@ -65,17 +67,18 @@
       </table>
     </section>
 
-    <!-- 2. MEASUREMENT UNCERTAINTY -->
+    <!-- 3. MEASUREMENT UNCERTAINTY -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">2. Measurement Uncertainty</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">3. Measurement Uncertainty</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Measurement Uncertainty - CE</label>{{ field('measurement_uncertainty', prefill.measurement_uncertainty) }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Name of the Test</label>{{ field('name_of_the_test', prefill.name_of_the_test or 'Measurement Uncertainty') }}</div>
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Conducted Emission</label>{{ field('measurement_uncertainty', prefill.measurement_uncertainty) }}</div>
       </div>
     </section>
 
     <!-- 3. FUNCTIONAL CHECK -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">3. Functional Check</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">4. Functional Check</h2>
       <div><label class="block text-sm font-medium text-gray-700 mb-1">SOP Reference Number</label>{{ field('sop_reference', prefill.sop_reference) }}</div>
       <div class="mt-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">Line</label>
@@ -98,7 +101,7 @@
 
     <!-- 4. TEST SPECIFICATION -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">4. Test Specification</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">5. Test Specification</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Product Standard</label>{{ field('product_standard', prefill.product_standard) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Basic Standard</label>{{ field('basic_standard', prefill.basic_standard) }}</div>
@@ -122,8 +125,9 @@
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Mode</label>{{ field('test_mode', prefill.test_mode) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Modification State (ref 1.2)</label>
           <input type="text" name="eut_modification_state" id="eut_modification_state" value="{{ prefill.eut_modification_state }}"
-                 title="Current modification level. Defaults to the latest State in the EUT Modification Record above; editable."
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
+                 data-lock="1" readonly
+                 title="Auto-derived from the latest State in the EUT Modification Record above. Use Edit in this section to override."
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg ds-locked"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Configuration</label>
           <select name="eut_configuration" {% if prefill.eut_configuration %}data-lock="1"{% endif %} class="w-full px-3 py-2 border border-gray-300 rounded-lg{% if prefill.eut_configuration %} ds-locked{% endif %}">
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
@@ -138,13 +142,13 @@
 
     <!-- 5. DEVIATION -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">5. Deviation from the Standard</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">6. Deviation from the Standard</h2>
       <textarea name="deviation" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg">{{ prefill.deviation }}</textarea>
     </section>
 
     <!-- 6. TEST LIMITS -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">6. Test Limits (dB&micro;V)</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Limits (dB&micro;V)</h2>
       <table class="w-full text-sm border border-gray-200">
         <thead class="bg-gray-50"><tr><th class="p-2 text-left">Frequency (MHz)</th><th class="p-2 text-left">Quasi-Peak</th><th class="p-2 text-left">Average</th></tr></thead>
         <tbody>
@@ -160,7 +164,7 @@
 
     <!-- 7. TEST PROCEDURE -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">7. Test Procedure</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">8. Test Procedure</h2>
       <p class="text-xs text-gray-500 mb-1">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only.</p>
       <input type="hidden" name="test_procedure" id="test_procedure" value="{{ prefill.test_procedure }}">
       <div id="test_procedure_view"
@@ -171,7 +175,7 @@
     <!-- 8. MEASUREMENT DATA (one block per Test; add more via "+ Add Test") -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900">8. Measurement Data</h2>
+        <h2 class="text-lg font-bold text-gray-900">9. Measurement Data</h2>
         <div class="flex items-center gap-2">
           <button type="button" onclick="generateTestsFromVoltages()"
                   title="Create one Test per value in 'EUT Input Voltage & Frequency' (semicolon-separated), using each as the Test label. Replaces the current Tests."
@@ -186,7 +190,7 @@
 
     <!-- 9. TEST SETUP PICTURES -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">9. Test Setup Pictures</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">10. Test Setup Pictures</h2>
       <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (9&times;14 cm)</label>
       <input type="file" name="photo_setup" accept="image/*" class="w-full text-sm">
       <input type="text" name="photo_caption" value="{{ prefill.photo_caption }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
@@ -195,7 +199,7 @@
     <!-- 10. TEST EQUIPMENT USED -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center justify-between mb-2">
-        <h2 class="text-lg font-bold text-gray-900">10. Test Equipment Used</h2>
+        <h2 class="text-lg font-bold text-gray-900">11. Test Equipment Used</h2>
         <div class="flex items-center gap-2">
           <button type="button" onclick="uploadCSV('eq')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Upload CSV</button>
           <button type="button" onclick="addRow('eq')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
@@ -222,7 +226,7 @@
 
     <!-- 11. SOFTWARE USED -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">11. Software Used</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">12. Software Used</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Name</label>{{ field('software_used', prefill.software_used) }}</div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Software Version</label>{{ field('software_version', prefill.software_version) }}</div>
@@ -231,7 +235,7 @@
 
     <!-- 12. RESULT -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">12. Result</h2>
+      <h2 class="text-lg font-bold text-gray-900 mb-4">13. Result</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Result Class</label>
           <select name="result_class" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
@@ -883,9 +887,9 @@
     var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
     var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:4px;'; lbl.textContent=label||key; wrap.appendChild(lbl);
     var frame=document.createElement('div');
-    frame.style.cssText='border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    frame.style.cssText='position:relative;border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
     var file=imgFileFor(key);
-    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); }
+    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); frame.appendChild(makeRemoveBadge(key)); }
     else { var ph=document.createElement('div'); ph.style.cssText='color:#94a3b8;font-size:11px;'; ph.textContent='(no image uploaded)'; frame.appendChild(ph); }
     wrap.appendChild(frame);
     var cap=document.createElement('div'); cap.style.cssText='font-size:10px;color:#64748b;margin-top:2px;'; cap.textContent='Document size: '+box[0]+' × '+box[1]+' mm'; wrap.appendChild(cap);
@@ -915,11 +919,13 @@
     var box=imageBoxMM(key);
     var wrap=document.createElement('div'); wrap.style.cssText='margin-top:8px;';
     var frame=document.createElement('div');
-    frame.style.cssText='display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+    frame.style.cssText='position:relative;display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
     var img=document.createElement('img');
     img.style.cssText='max-width:230px;max-height:150px;object-fit:contain;display:block;';
     img.src=URL.createObjectURL(file);
-    frame.appendChild(img); wrap.appendChild(frame);
+    frame.appendChild(img);
+    frame.appendChild(makeRemoveBadge(key));
+    wrap.appendChild(frame);
     var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;';
     meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document';
     wrap.appendChild(meta);
@@ -998,6 +1004,22 @@
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
+  function removeImage(key){
+    var inp=inputByName(key);
+    if (inp){ try { inp.value=''; } catch(e){} }
+    delete originalFiles[key];
+    renderInlineThumb(key);
+    if (typeof buildPreview==='function') buildPreview();
+    if (typeof triggerAutoSave==='function') triggerAutoSave();
+    if (typeof showMessage==='function') showMessage('Image removed.','success');
+  }
+  function makeRemoveBadge(key){
+    var b=document.createElement('button'); b.type='button'; b.title='Remove image'; b.setAttribute('aria-label','Remove image');
+    b.innerHTML='&times;';
+    b.style.cssText='position:absolute;top:3px;right:3px;width:20px;height:20px;line-height:16px;text-align:center;border-radius:50%;border:1px solid #dc2626;background:#fff;color:#dc2626;font-size:15px;font-weight:bold;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25);padding:0;z-index:5;';
+    b.onclick=function(){ removeImage(key); };
+    return b;
+  }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user

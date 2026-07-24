@@ -37,10 +37,10 @@ and IEC 60601-1-2.
 |---|---|
 | Backend | Python 3.11, Flask 3.1, Flask-Login, Flask-WTF/WTForms |
 | ORM / DB | SQLAlchemy (Flask-SQLAlchemy) → MySQL 8 (`test_plan_generator` DB) |
-| MySQL driver | PyMySQL masquerading as MySQLdb (`sitecustomize.py` shim in Docker; also installed by `mysql_config.py` in the working tree) |
+| MySQL driver | PyMySQL masquerading as MySQLdb (shim installed by `mysql_config.py` at import) |
 | Documents | `python-docx` (build/edit .docx), `docxtpl` (Jinja-style .docx templating), `docx2txt` + optional Spire.Doc (text extraction), Pillow (image scaling) |
 | Frontend | Jinja2 templates + Tailwind CSS (pre-compiled `static/css/output.css`) + vanilla JS |
-| Runtime | Docker Compose (`db` = MySQL 8 on host port 3307, `web` = Flask dev server on 5000) or bare `python app.py` with a local MySQL via `.env` |
+| Runtime | `python app.py` (Flask dev server on :3000) against a local MySQL 8 service, configured via `.env` |
 | E-mail | SMTP relay `SMTPRELAY1.THERMOFISHER.COM:25` (assignment/submission/equipment-reminder mails) |
 
 **Timezone:** everything runs in IST (UTC+5:30) via a shared `get_ist_now()` helper.
@@ -48,22 +48,20 @@ and IEC 60601-1-2.
 ### Running it
 
 ```bash
-# Docker (recommended; see SETUP.md for full detail & troubleshooting)
-docker compose up -d --build
-docker compose exec web python seed.py     # seed users + sample equipment
-# open http://localhost:5000 — admin@local.test / Password@123
-
-# Bare metal (working tree currently supports this):
-# .env provides MYSQL_HOST/PORT/USER/PASSWORD; mysql_config.py now loads .env
+# Bare metal (Python + local MySQL 8; see SETUP.md for full detail & troubleshooting)
+# .env provides MYSQL_HOST/PORT/USER/PASSWORD/DATABASE; mysql_config.py loads .env
 # and installs the PyMySQL shim itself.
-python app.py
+python init_db.py    # first run on an empty DB only (creates the schema once)
+python seed.py       # seed users + sample equipment
+python app.py        # serves on http://localhost:3000
 ```
 
 Seeded logins (all `Password@123`): `admin`, `engineer1`, `engineer2`, `requester1`,
 `requester2`, `inactive` (deactivated, for testing the rejected-login path).
 
-Docker startup order matters: `wait_for_db.py` → `init_db.py` (creates schema once, avoiding a
-Flask-reloader concurrent-DDL race) → `app.py`. Don't remove these from the Dockerfile CMD.
+On a **fresh/empty** database, run `python init_db.py` once before `python app.py`: the Flask
+debug reloader loads app.py in two processes, and their `create_all()` calls would otherwise race
+and fail with MySQL error 1684 ("concurrent DDL"). Once tables exist it's a harmless no-op.
 
 ---
 
@@ -86,8 +84,7 @@ Flask-reloader concurrent-DDL race) → `app.py`. Don't remove these from the Do
 ├── migrate_iec_emc_to_relational.py  One-time legacy→normalized data migration
 ├── import_equipment_csv.py    Equipment CSV importer
 ├── send_equipment_reminders.py  Daily cron/Task-Scheduler entry point for reminder e-mails
-├── init_db.py / wait_for_db.py / sitecustomize.py  Docker boot helpers
-├── Dockerfile / docker-compose.yml / setup.ps1 / setup.sh
+├── init_db.py                 Create schema once on a fresh DB (avoids the reloader DDL race)
 └── README.md / SETUP.md / RELEASE_NOTES.md / TAILWIND_SETUP.md
 ```
 
@@ -308,7 +305,7 @@ templates were regenerated this way (e.g. ESD observation = 48+18+18 fields; SUR
 fields; **HARMONIC's results grid is currently back to `static_table`**).
 Matching uncommitted support changes: `generic_service.collect_prefill()` now honors schema
 `"default"` values, and `mysql_config.py` loads `.env` + installs the PyMySQL shim so the app
-runs outside Docker.
+runs against a local MySQL service.
 
 ⚠️ Implication for new work: decide whether the per-cell-fields approach (working tree) or the
 row-loop-table approach (HEAD) is the way forward before building on the observation grids —
