@@ -467,6 +467,18 @@ def build_context(schema, form_data):
             _seen.add(_c)
             _legend.append({"code": _c, "desc": _s(_leg_descs[_i]) if _i < len(_leg_descs) else ""})
     ctx["obs_legend"] = _legend
+    # Per-image document size (Word-style Shape Width x Height in cm), posted as
+    # <key>__wcm / <key>__hcm; stored in mm for the generator. When absent, the
+    # generator falls back to that slot's default box.
+    _img_boxes = {}
+    for _ik in image_keys(schema):
+        _w, _h = _s(form_data.get(_ik + "__wcm")), _s(form_data.get(_ik + "__hcm"))
+        if _w and _h:
+            try:
+                _img_boxes[_ik] = (float(_w) * 10.0, float(_h) * 10.0)
+            except ValueError:
+                pass
+    ctx["_img_boxes"] = _img_boxes
     if schema.get("code") == "RE":
         ctx["measurement_groups"] = _re_measurement_groups(form_data)
         freq = _s(form_data.get("frequency_range"))

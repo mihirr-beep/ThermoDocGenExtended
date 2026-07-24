@@ -293,8 +293,15 @@
                 </table>
                 </div>
               </div>
+              {# One common observation legend for ALL esd_obs tables, emitted once
+                 after the LAST table (like Surge) — collects every unique code
+                 selected across the tables. Avoids the duplicate-id hosts that
+                 caused legends to appear under the wrong table. #}
+              {% set _esd_last = (sec['items']|selectattr('layout','equalto','esd_obs')|list|last) %}
+              {% if it is sameas _esd_last %}
               <div id="esd-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
               <script type="application/json" id="esd-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
+              {% endif %}
 
             {% elif it.type == 'fields' %}
               {% for f in it['fields'] %}
@@ -349,7 +356,7 @@
                   <div class="flex items-center gap-2">
                     <button type="button" onclick="importFlickerMeas('{{ it.key }}')" title="Import the instrument RTF/TXT verification file; the measured Pst / Plt / Tmax / dmax / dc values are filled into this table." class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import TXT</button>
                   </div>
-                  {% elif not it.fixed %}
+                  {% elif not it.fixed and it.key != 'software_used_rows' %}
                   <div class="flex items-center gap-2">
                     {% if it.key != 'eut_modification_rec_rows' %}
                     <button type="button" onclick="importData('{{ it.key }}')" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">Import CSV / TXT</button>
@@ -358,7 +365,8 @@
                   </div>
                   {% endif %}
                 </div>
-                {% set no_actions = it.fixed or it.import %}
+                {# software_used_rows: no import / add-row / delete actions (fixed list). #}
+                {% set no_actions = it.fixed or it.import or it.key == 'software_used_rows' %}
                 <div class="overflow-x-auto">
                 <table class="w-full text-xs border border-gray-200">
                   <thead class="bg-gray-50"><tr>
@@ -1329,6 +1337,23 @@
     if (k.indexOf('photo')>=0) return [140,90];
     return [150,90];
   }
+  // Per-image document size in CM (Word-style Shape Width x Height). Falls back to
+  // the slot's default box when the user hasn't set an explicit size.
+  function imageCm(key){
+    var host=inputByName(key), form=host&&host.form;
+    var w=form&&form.querySelector('[name="'+cssEsc(key+'__wcm')+'"]');
+    var h=form&&form.querySelector('[name="'+cssEsc(key+'__hcm')+'"]');
+    if (w&&h&&w.value&&h.value) return [parseFloat(w.value), parseFloat(h.value)];
+    var b=imageBoxMM(key); return [b[0]/10, b[1]/10];
+  }
+  function setImageCm(key,w,h){
+    var host=inputByName(key), form=host&&host.form; if(!form) return;
+    [['w',w],['h',h]].forEach(function(p){
+      var name=key+'__'+p[0]+'cm', el=form.querySelector('[name="'+cssEsc(name)+'"]');
+      if(!el){ el=document.createElement('input'); el.type='hidden'; el.name=name; form.appendChild(el); }
+      el.value=p[1];
+    });
+  }
   function schemaImageKeys(){
     var keys=[];
     (DS_SCHEMA.sections||[]).forEach(function(sec){
@@ -1409,7 +1434,7 @@
     frame.appendChild(makeRemoveBadge(key));
     wrap.appendChild(frame);
     var meta=document.createElement('div'); meta.style.cssText='font-size:11px;color:#64748b;margin-top:3px;';
-    meta.textContent=file.name+'  ·  fits '+box[0]+' × '+box[1]+' mm in the document';
+    var _cm=imageCm(key); meta.textContent=file.name+'  ·  '+_cm[0]+' × '+_cm[1]+' cm (W × H) in the document';
     wrap.appendChild(meta);
     var actions=document.createElement('div'); actions.style.marginTop='5px';
     var editBtn=document.createElement('button'); editBtn.type='button';
@@ -1500,8 +1525,8 @@
     if(!originalFiles[key]) originalFiles[key]=orig;
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
-      file:orig, boxMM:imageBoxMM(key),
-      onApply:function(edited){ setInputFile(key, edited); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
+      file:orig, boxMM:imageBoxMM(key), sizeCm:imageCm(key),
+      onApply:function(edited, sz){ setInputFile(key, edited); if(sz&&sz.w>0&&sz.h>0) setImageCm(key, sz.w, sz.h); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
 

@@ -19,8 +19,8 @@
  *     so nothing is cropped away and no white border is added.
  *   - A live PREVIEW pane on the right (same shape/size as the document slot) shows
  *     exactly how the current crop / fit will look.
- *   - Rotate 90 L/R, grayscale, brightness, contrast. "Reset" returns to step 1
- *     (the original upload, default centred frame).
+ *   - Shape Height / Shape Width (cm) set the exact document size (the crop ratio
+ *     and preview follow). "Reset" returns to the original upload + default frame.
  * No external dependencies.
  */
 (function () {
@@ -49,6 +49,8 @@
     ".dsie-chip{font-size:12px;padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;cursor:pointer;color:#334155;}",
     ".dsie-chip.active{border-color:#059669;background:#ecfdf5;color:#047857;font-weight:600;}",
     ".dsie-range{vertical-align:middle;width:92px;}",
+    ".dsie-num{width:66px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;color:#0f172a;}",
+    ".dsie-grp .unit{color:#64748b;font-size:11px;}",
     ".dsie-body{display:flex;gap:14px;align-items:stretch;padding:16px 18px;background:#f1f5f9;flex-wrap:wrap;}",
     ".dsie-col{display:flex;flex-direction:column;min-width:0;}",
     ".dsie-col.left{flex:1 1 420px;}",
@@ -89,12 +91,9 @@
     '          <button type="button" data-mode="crop" id="dsie-mcrop" class="active">Crop</button>' +
     '          <button type="button" data-mode="fit"  id="dsie-mfit">Set image to frame</button>' +
     '        </span></div>' +
-    '      <div class="dsie-grp"><span class="lbl">Rotate</span>' +
-    '        <button type="button" class="dsie-chip" data-act="rotL">&#8634; 90&deg;</button>' +
-    '        <button type="button" class="dsie-chip" data-act="rotR">90&deg; &#8635;</button></div>' +
-    '      <div class="dsie-grp"><button type="button" class="dsie-chip" id="dsie-gray" data-act="gray">B&amp;W</button></div>' +
-    '      <div class="dsie-grp"><span class="lbl">Brightness</span><input id="dsie-bright" class="dsie-range" type="range" min="50" max="150" value="100"></div>' +
-    '      <div class="dsie-grp"><span class="lbl">Contrast</span><input id="dsie-contrast" class="dsie-range" type="range" min="50" max="150" value="100"></div>' +
+    '      <div class="dsie-grp"><span class="lbl">Shape Height</span><input id="dsie-hcm" class="dsie-num" type="number" min="0.5" max="27" step="0.1"><span class="unit">cm</span></div>' +
+    '      <div class="dsie-grp"><span class="lbl">Shape Width</span><input id="dsie-wcm" class="dsie-num" type="number" min="0.5" max="40" step="0.1"><span class="unit">cm</span></div>' +
+    '      <div class="dsie-grp"><span class="dsie-hint">Sets the exact size of the image in the document (like Word&rsquo;s Picture Format &rarr; Size).</span></div>' +
     '    </div>' +
     '    <div class="dsie-body">' +
     '      <div class="dsie-col left">' +
@@ -136,9 +135,8 @@
     els.stage = ov.querySelector("#dsie-stage");
     els.frame = ov.querySelector("#dsie-frame");
     els.prev = ov.querySelector("#dsie-prev");
-    els.gray = ov.querySelector("#dsie-gray");
-    els.bright = ov.querySelector("#dsie-bright");
-    els.contrast = ov.querySelector("#dsie-contrast");
+    els.hcm = ov.querySelector("#dsie-hcm");
+    els.wcm = ov.querySelector("#dsie-wcm");
     els.hint = ov.querySelector("#dsie-hint");
     els.leftcap = ov.querySelector("#dsie-leftcap");
     els.mcrop = ov.querySelector("#dsie-mcrop");
@@ -154,13 +152,23 @@
       if (!act) return;
       if (act === "cancel") close();
       else if (act === "apply") apply();
-      else if (act === "rotL") { S.angle -= 90; renderWork(); }
-      else if (act === "rotR") { S.angle += 90; renderWork(); }
-      else if (act === "gray") { S.gray = !S.gray; els.gray.classList.toggle("active", S.gray); applyFilter(); }
       else if (act === "reset") resetAll();
     });
-    els.bright.addEventListener("input", function () { S.bright = this.value / 100; applyFilter(); });
-    els.contrast.addEventListener("input", function () { S.contrast = this.value / 100; applyFilter(); });
+    // Shape Height / Shape Width (cm): set the exact document size; the crop frame
+    // ratio and the preview follow the width:height you enter.
+    function onSizeInput() {
+      var w = parseFloat(els.wcm.value), h = parseFloat(els.hcm.value);
+      if (!(w > 0) || !(h > 0)) return;
+      S.wCm = w; S.hCm = h; S.ratio = w / h;
+      // Typing an exact size means "make the whole image exactly this size" (like
+      // Word's Picture Format -> Size): keep the whole image and squeeze/stretch it
+      // to fill, so switch to "Set image to frame". setDefaultSel keeps the crop
+      // frame ratio in sync in case the user switches back to Crop afterwards.
+      if (S.mode !== "fit") setMode("fit");
+      setDefaultSel(); renderSel(); renderPreview();
+    }
+    els.wcm.addEventListener("input", onSizeInput);
+    els.hcm.addEventListener("input", onSizeInput);
 
     // ---- crop frame: move (drag inside) + resize (corner handles), ratio-locked ----
     function onDown(e) {
@@ -216,9 +224,7 @@
     mounted = true;
   }
 
-  function filterStr() {
-    return "grayscale(" + (S.gray ? 1 : 0) + ") brightness(" + S.bright + ") contrast(" + S.contrast + ")";
-  }
+  function filterStr() { return "none"; }
 
   // Largest centred box-ratio rectangle that fits the current display image.
   function setDefaultSel() {
@@ -302,14 +308,15 @@
   }
 
   function resetAll() {
-    S.angle = 0; S.ratio = S.boxRatio; S.gray = false; S.bright = 1; S.contrast = 1; S.sel = null; S.drag = null;
-    els.gray.classList.remove("active");
-    els.bright.value = 100; els.contrast.value = 100;
+    S.angle = 0; S.sel = null; S.drag = null;
+    S.wCm = S.boxCm[0]; S.hCm = S.boxCm[1]; S.ratio = S.boxRatio;
+    els.wcm.value = fmtCm(S.wCm); els.hcm.value = fmtCm(S.hCm);
     setMode("crop");
     renderWork();
   }
 
   function baseName(name) { return (name || "image").replace(/\.[^.]+$/, ""); }
+  function fmtCm(v) { return String(Math.round((v || 0) * 100) / 100); }
 
   function apply() {
     var work = S.work; if (!work) { close(); return; }
@@ -336,12 +343,12 @@
       octx.drawImage(work, sx, sy, sw, sh, 0, 0, out.width, out.height);
     }
     var isPng = (S.file.type === "image/png");
-    var cb = S.onApply;
+    var cb = S.onApply, sizeCm = { w: S.wCm, h: S.hCm };
     out.toBlob(function (blob) {
       var f = new File([blob], baseName(S.file.name) + "_edited." + (isPng ? "png" : "jpg"),
                        { type: blob.type || (isPng ? "image/png" : "image/jpeg") });
       close();
-      if (cb) cb(f);
+      if (cb) cb(f, sizeCm);
     }, isPng ? "image/png" : "image/jpeg", 0.95);
   }
 
@@ -355,11 +362,13 @@
     if (!opts || !opts.file) return;
     mount();
     var box = opts.boxMM || [150, 90];
-    var ratio = boxRatioOf(box);
-    S = { file: opts.file, box: box, boxRatio: ratio, onApply: opts.onApply,
-          angle: 0, ratio: ratio, gray: false, bright: 1, contrast: 1, sel: null, drag: null,
+    var boxCm = [Math.round(box[0]) / 10, Math.round(box[1]) / 10];
+    var sizeCm = (opts.sizeCm && opts.sizeCm[0] > 0 && opts.sizeCm[1] > 0) ? opts.sizeCm : boxCm;
+    var wCm = sizeCm[0], hCm = sizeCm[1];
+    S = { file: opts.file, box: box, boxCm: boxCm, boxRatio: boxCm[0] / boxCm[1], onApply: opts.onApply,
+          angle: 0, ratio: wCm / hCm, wCm: wCm, hCm: hCm, sel: null, drag: null,
           mode: "crop", natural: null, work: null };
-    els.gray.classList.remove("active"); els.bright.value = 100; els.contrast.value = 100;
+    els.wcm.value = fmtCm(wCm); els.hcm.value = fmtCm(hCm);
     setMode("crop");
     var img = new Image();
     img.onload = function () { S.natural = img; renderWork(); els.ov.classList.add("open"); };

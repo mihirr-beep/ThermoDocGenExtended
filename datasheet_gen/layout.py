@@ -212,6 +212,90 @@ def page_break_before_top_sections(doc):
                 p.paragraph_format.page_break_before = True
 
 
+def _remove_blank_spacers_before(para):
+    """Delete empty paragraphs immediately preceding `para` (template spacers used
+    to push a section onto a new page — redundant once a page break is forced, and
+    a cause of blank pages). Stops at the first paragraph that has text, an image,
+    or section properties (a sectPr must never be removed)."""
+    prev = para._p.getprevious()
+    while prev is not None and prev.tag == qn("w:p"):
+        txt = "".join(t.text or "" for t in prev.iter(qn("w:t"))).strip()
+        has_img = prev.find(".//" + qn("w:drawing")) is not None
+        has_sectpr = prev.find(".//" + qn("w:sectPr")) is not None
+        if txt or has_img or has_sectpr:
+            break
+        nxt = prev.getprevious()
+        prev.getparent().remove(prev)
+        prev = nxt
+
+
+def paginate_generic_datasheet(doc, last_block_heading="TEST EQUIPMENT USED"):
+    """Pagination for the generic immunity datasheets (RS_RI / ESD / CRF / PFMF /
+    HARMONIC / VOLTAGEFLICKER / VOLTAGEDIPS / EFT / SURGE).
+
+      (1) Every major section (a 'Heading 1' paragraph) after the first starts on
+          a NEW page, even if the previous page has room — so section 2 never
+          continues under section 1.
+      (3) The final subsections (from `last_block_heading` to the end: TEST
+          EQUIPMENT USED / SOFTWARE USED / RESULT, i.e. 2.6 / 2.7 / 2.8) are pushed
+          onto a fresh page and glued together, so they always land together on
+          the LAST page instead of drifting up under the setup photos.
+
+    Reflow-safe: uses page-break-before + keep-with-next + cantSplit only. Any
+    manual break runs and the template's blank 'spacer' paragraphs that used to
+    push a section down are removed first, so forcing the break never leaves an
+    empty page in between."""
+    # Remove manual run-level page breaks so they cannot double up with the
+    # page-break-before set below (a cause of blank pages).
+    for br in list(doc.element.body.iter(qn("w:br"))):
+        if br.get(qn("w:type")) == "page":
+            br.getparent().remove(br)
+
+    # (1) each major section (Heading 1 after the first) begins a new page; drop the
+    #     blank spacer paragraphs before it so no empty page appears in between.
+    first = True
+    for p in list(doc.paragraphs):
+        name = (p.style.name if p.style is not None else "") or ""
+        if name.strip().lower() in ("heading 1", "heading1"):
+            if first:
+                first = False
+            else:
+                _remove_blank_spacers_before(p)
+                p.paragraph_format.page_break_before = True
+
+    # (3) push the final block onto a fresh (last) page, dropping any spacer
+    #     paragraphs before it, then keep the whole block together.
+    target = last_block_heading.strip().upper()
+    block_head = None
+    for p in doc.paragraphs:
+        if _text(p).strip().upper().startswith(target):
+            block_head = p
+            break
+    if block_head is None:
+        return
+    _remove_blank_spacers_before(block_head)
+    block_head.paragraph_format.page_break_before = True
+
+    # recompute element positions AFTER the removals for the keep-together pass
+    body = list(doc.element.body)
+    pos = {el: i for i, el in enumerate(body)}
+    start = pos.get(block_head._p, -1)
+    # glue every paragraph from here to the end to what follows (except the very
+    # last), so the 2.6/2.7/2.8 block cannot break across pages
+    tail_paras = [p for p in doc.paragraphs if pos.get(p._p, -1) >= start]
+    for p in tail_paras[:-1]:
+        _keep_with_next(p)
+    # tables in the tail (equipment / software / result): never split a row, and
+    # keep their rows together so the whole small table stays on the page
+    for tbl in doc.tables:
+        if pos.get(tbl._tbl, -1) >= start:
+            rows = tbl.rows
+            for tr in rows:
+                _row_cant_split(tr)
+            for tr in rows[:-1]:
+                _keep_row(tr)
+
+
 def polish_layout(doc):
     """Apply all layout fixes to a rendered document (body only; headers/footers
     are left untouched)."""
@@ -468,6 +552,10 @@ def enforce_arial_procedure(doc):
             continue
         if not in_proc or not (p.text or "").strip():
             continue
+        # The procedure is one paragraph with soft line-breaks; if the template
+        # justifies it, every line is stretched with big word gaps. Left-align it
+        # (matches polish_layout's textarea handling) so the text reads normally.
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         for run in p.runs:
             rPr = run._r.get_or_add_rPr()
             rFonts = rPr.find(qn("w:rFonts"))

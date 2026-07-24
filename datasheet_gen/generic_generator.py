@@ -7,7 +7,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders
 from .layout import (polish_layout, page_break_before_top_sections, enforce_arial_fonts,
-                     enforce_arial_procedure, enforce_body_arial, shrink_wide_obs_tables)
+                     enforce_arial_procedure, enforce_body_arial, shrink_wide_obs_tables,
+                     paginate_generic_datasheet)
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
@@ -27,8 +28,14 @@ def _box(key, code=None):
     return (150, 90)
 
 
-def _fit(tpl, path, box):
+def _fit(tpl, path, box, exact=False):
     bw, bh = box
+    if exact:
+        # The user set an exact size in the image editor (Word Picture Format -> Size).
+        # Honour it precisely: set BOTH width and height so the image is stretched /
+        # squeezed to fill exactly bw x bh, matching the "Set image to frame" preview
+        # (python-docx keeps both dimensions verbatim when both are given).
+        return InlineImage(tpl, path, width=Mm(bw), height=Mm(bh))
     try:
         from PIL import Image
         with Image.open(path) as im:
@@ -311,15 +318,20 @@ def _surge_insert_observation(doc, ac, dc, signal):
 
 def render(code, context, img_keys, img_paths, output_path):
     tpl = DocxTemplate(os.path.join(TPL_DIR, f"{code}.docx"))
+    _img_boxes = context.get("_img_boxes") or {}
     for k in img_keys:
         p = img_paths.get(k)
-        context[k] = _fit(tpl, p, _box(k, code)) if (p and os.path.exists(p)) else ""
+        custom = _img_boxes.get(k)
+        box = custom or _box(k, code)
+        context[k] = _fit(tpl, p, box, exact=bool(custom)) if (p and os.path.exists(p)) else ""
     if code == "RE":
         for group in context.get("measurement_groups") or []:
             for role in ("img_vertical", "img_horizontal"):
                 key = group.get(role + "_key")
                 p = img_paths.get(key)
-                group[role] = _fit(tpl, p, _box(role, code)) if (p and os.path.exists(p)) else ""
+                custom = _img_boxes.get(key)
+                box = custom or _box(role, code)
+                group[role] = _fit(tpl, p, box, exact=bool(custom)) if (p and os.path.exists(p)) else ""
     tpl.render(context, autoescape=True)
     
     if code == "RE":
@@ -368,6 +380,12 @@ def render(code, context, img_keys, img_paths, output_path):
     if code == "SURGE":
         enforce_arial_fonts(tpl.docx)                # Arial on the freshly-inserted observation cells
         shrink_wide_obs_tables(tpl.docx)             # 17-col matrices can't be 11pt on a portrait page
+
+    # Every major section starts on a new page, and the final block (2.6 TEST
+    # EQUIPMENT USED / 2.7 SOFTWARE USED / 2.8 RESULT) is kept together on the last
+    # page. RE has its own paginator (_re_paginate) so it is excluded.
+    if code != "RE":
+        paginate_generic_datasheet(tpl.docx)
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

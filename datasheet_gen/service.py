@@ -187,6 +187,22 @@ def build_ce_context(form_data):
     # Test procedure as RichText so "LISN (Voltage Method):" renders bold, on its
     # own line (template uses {{r test_procedure }}).
     ctx["test_procedure"] = procedure_richtext(ctx.get("test_procedure", ""))
+    # Per-image size overrides (Word Picture Format -> Size, in cm). The form posts
+    # hidden <imgvar>__wcm / <imgvar>__hcm inputs when the user sets an exact size in
+    # the image editor. Convert cm -> mm and expose as {imgvar: (w_mm, h_mm)} so the
+    # generator fits each image to the user's exact box instead of the default.
+    _img_boxes = {}
+    for _k in list(form_data.keys()):
+        if not _k.endswith("__wcm"):
+            continue
+        _base = _k[:-5]
+        _w, _h = _s(form_data.get(_base + "__wcm")), _s(form_data.get(_base + "__hcm"))
+        if _w and _h:
+            try:
+                _img_boxes[_base] = (float(_w) * 10.0, float(_h) * 10.0)
+            except ValueError:
+                pass
+    ctx["_img_boxes"] = _img_boxes
     return ctx
 
 

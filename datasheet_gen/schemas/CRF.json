@@ -123,8 +123,8 @@
     {
       "title": "TEST SETUP PICTURES",
       "items": [
-        { "type": "image", "key": "img_photo_1", "label": "Photo 1: CRF test setup - Power Line" },
-        { "type": "image", "key": "img_photo_2", "label": "Photo 2: CRF test setup - Signal Line" }
+        { "type": "image", "key": "img_photo_1", "label": "Photo 1: CRF test setup - Power Line", "caption": true },
+        { "type": "image", "key": "img_photo_2", "label": "Photo 2: CRF test setup - Signal Line", "caption": true }
       ]
     },
     {

@@ -49,9 +49,16 @@ _IMAGE_VARS = tuple(_IMAGE_BOXES)
 _PLOT_BOX = (150, 90)
 
 
-def _fit_image(tpl, path, box):
-    """Return an InlineImage scaled to fit within `box` (mm), preserving aspect ratio."""
+def _fit_image(tpl, path, box, exact=False):
+    """Return an InlineImage for `path` sized to `box` (mm).
+
+    With exact=True the image is stretched/squeezed to fill exactly box_w x box_h
+    (both dimensions set) — this honours a size the user typed in the image editor
+    (Word Picture Format -> Size) and matches its "Set image to frame" preview.
+    Otherwise it is scaled to fit WITHIN the box, preserving aspect ratio."""
     box_w, box_h = box
+    if exact:
+        return InlineImage(tpl, path, width=Mm(box_w), height=Mm(box_h))
     try:
         from PIL import Image
         with Image.open(path) as im:
@@ -85,14 +92,22 @@ def _add_image_borders(doc, emu=6350, color="000000"):
 def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLATE_PATH):
     tpl = DocxTemplate(template_path)
     images = images or {}
+    # Per-image cm size overrides collected by build_ce_context ({imgvar: (w_mm, h_mm)}).
+    # A user-set size wins over the default _IMAGE_BOXES / _PLOT_BOX box.
+    _img_boxes = context.get("_img_boxes") or {}
     for var in _IMAGE_VARS:
         path = images.get(var)
-        context[var] = _fit_image(tpl, path, _IMAGE_BOXES[var]) if (path and os.path.exists(path)) else ""
+        custom = _img_boxes.get(var)
+        box = custom or _IMAGE_BOXES[var]
+        context[var] = _fit_image(tpl, path, box, exact=bool(custom)) if (path and os.path.exists(path)) else ""
     # per-Test measurement plots (plot_line_i / plot_neutral_i) -> InlineImage on each record
     for rec in context.get("measurement_records") or []:
         for role in ("plot_line", "plot_neutral"):
-            path = images.get(rec.get(role + "_key"))
-            rec[role] = _fit_image(tpl, path, _PLOT_BOX) if (path and os.path.exists(path)) else ""
+            key = rec.get(role + "_key")
+            path = images.get(key)
+            custom = _img_boxes.get(key)
+            box = custom or _PLOT_BOX
+            rec[role] = _fit_image(tpl, path, box, exact=bool(custom)) if (path and os.path.exists(path)) else ""
     tpl.render(context, autoescape=True)
     polish_layout(tpl.docx)
     page_break_before_top_sections(tpl.docx)   # each top-level section (2, 3, ...) on a new page
