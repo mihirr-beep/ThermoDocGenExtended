@@ -25,9 +25,14 @@
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
     {% if draft_status %}
-    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm">
-      {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
-      {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+    <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm flex items-center justify-between gap-3">
+      <div>
+        {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
+        {% if saved_images %} {{ saved_images|length }} previously uploaded image(s) will be reused unless you upload new ones.{% endif %}
+      </div>
+      {% if draft_status == 'Not Submitted' %}
+      <button type="button" id="discardDraftBtn" class="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-red-300 text-red-700 bg-white hover:bg-red-50 font-semibold">Discard draft</button>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -424,11 +429,19 @@
   // Auto-save persists scalar/table fields ONLY. File inputs are deliberately
   // excluded: re-uploading multi-MB images on every keystroke-debounce would
   // pile up orphaned copies server-side. Images persist on explicit Save/Generate.
+  // Image field keys with a freshly picked/edited file that still needs saving. The
+  // autosave includes only these (not every image on every save) so uploaded images
+  // persist on draft-save without re-uploading unchanged ones; cleared once a save succeeds.
+  var pendingImages = {};
   function buildDraftFormData(form) {
     var fd = new FormData();
     Array.prototype.forEach.call(form.elements, function(el){
       if (!el.name || el.disabled) return;
-      if (el.type === 'file') return;
+      if (el.type === 'file') {
+        // include a just-added/edited image so the autosave actually persists it
+        if (pendingImages[el.name] && el.files && el.files.length) fd.append(el.name, el.files[0]);
+        return;
+      }
       if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
       fd.append(el.name, el.value);
     });
@@ -459,6 +472,7 @@
       .then(function(r) { return r.json(); })
       .then(function(res) {
         if (res.success) {
+          pendingImages = {};          // images now persisted server-side
           if (statusEl) {
             statusEl.textContent = 'Draft auto-saved';
             statusEl.classList.remove('text-gray-500');
@@ -598,8 +612,9 @@
   }
   // ---- Build a measurement table from a RAW instrument sweep (0.15-30 MHz) ----
   // The uploaded CSV holds one row per measured frequency. For each CISPR sub-band
-  // we keep only the WORST case: the row with the max Q-peak (left half) and the row
-  // with the max Average (right half). 6 bands -> 6 rows. Separate button from the
+  // we keep only the WORST case per limit: the row with the SMALLEST Margin/Delta for
+  // Q-peak (left half) and the row with the smallest Margin/Delta for Average (right
+  // half) -- NOT the raw max level. 6 bands -> 6 rows. Separate button from the
   // plain "Upload CSV" (which pastes rows verbatim).
   const CE_SCAN_BANDS = [[0.15, 0.5], [0.5, 1], [1, 5], [5, 10], [10, 20], [20, 30]];
 
@@ -645,6 +660,7 @@
       if (fN === null || (qN === null && aN === null)) continue;
       data.push({
         fN: fN, qN: qN, aN: aN,
+        qmN: scanNum(r[col.qp_margin]), amN: scanNum(r[col.avg_margin]),   // Delta (Margin) numbers
         freq: scanStr(r[col.freq]),
         qp: scanStr(r[col.qp]), qp_limit: scanStr(r[col.qp_limit]), qp_margin: scanStr(r[col.qp_margin]),
         avg: scanStr(r[col.avg]), avg_limit: scanStr(r[col.avg_limit]), avg_margin: scanStr(r[col.avg_margin])
@@ -659,8 +675,11 @@
       for (var k = 0; k < data.length; k++) {
         var d = data[k];
         if (d.fN < lo || (last ? d.fN > hi : d.fN >= hi)) continue;
-        if (d.qN !== null && (qpRow === null || d.qN > qpRow.qN)) qpRow = d;
-        if (d.aN !== null && (avRow === null || d.aN > avRow.aN)) avRow = d;
+        // Worst case per band = the SMALLEST Margin/Delta (closest to / most over the
+        // limit), chosen independently for Q-peak and Average from their own Delta
+        // column — NOT the max measured level (per the manager's correction).
+        if (d.qmN !== null && (qpRow === null || d.qmN < qpRow.qmN)) qpRow = d;
+        if (d.amN !== null && (avRow === null || d.amN < avRow.amN)) avRow = d;
       }
       out.push({
         qp_freq: qpRow ? qpRow.freq : '', qp: qpRow ? qpRow.qp : '',
@@ -1000,7 +1019,7 @@
   /* ---- set / reset the underlying file input ---- */
   function setInputFile(key,file){
     var el=inputByName(key); if(!el) return;
-    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; }
+    try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; pendingImages[key]=true; if(typeof triggerAutoSave==='function') triggerAutoSave(); }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
   function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
@@ -1058,7 +1077,7 @@
     if (el.dataset.wired) return; el.dataset.wired = '1';
     var holder = document.createElement('div'); holder.id = 'inlinethumb-' + el.name;
     el.insertAdjacentElement('afterend', holder);
-    el.addEventListener('change', function(){ autoFitUpload(el.name); });   // auto-fit to the doc slot on upload
+    el.addEventListener('change', function(){ pendingImages[el.name]=true; autoFitUpload(el.name); });   // auto-fit to the doc slot on upload
   }
 
   // ---- Measurement Data: repeatable Test records (each = label + Line + Neutral) ----
@@ -1130,6 +1149,44 @@
     var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
+
+    // Preview each image saved in a prior draft (served by ce_draft_image), so
+    // reloading a draft shows the uploaded images instead of an empty file picker.
+    try {
+      var SAVED_IMAGES = {{ saved_images|tojson }};
+      Object.keys(SAVED_IMAGES || {}).forEach(function (key) {
+        var holder = document.getElementById('inlinethumb-' + key);
+        if (!holder || holder.children.length) return;
+        var wrap = document.createElement('div'); wrap.style.cssText = 'margin-top:8px;';
+        var frame = document.createElement('div');
+        frame.style.cssText = 'position:relative;display:inline-block;border:1px solid #cbd5e1;background:#f8fafc;padding:4px;border-radius:8px;';
+        var img = document.createElement('img');
+        img.style.cssText = 'max-width:230px;max-height:150px;object-fit:contain;display:block;';
+        img.src = '/datasheet/ce/{{ assignment_id }}/draft-image/' + encodeURIComponent(key) + '?t=' + Date.now();
+        frame.appendChild(img); wrap.appendChild(frame);
+        var meta = document.createElement('div'); meta.style.cssText = 'font-size:11px;color:#64748b;margin-top:3px;';
+        meta.textContent = 'Saved image (' + SAVED_IMAGES[key] + ') — upload a new file to replace it.';
+        wrap.appendChild(meta); holder.appendChild(wrap);
+      });
+    } catch (e) {}
+
+    // "Discard draft" (banner): wipe the saved draft + images, then reload to pure prefill.
+    var discardBtn = document.getElementById('discardDraftBtn');
+    if (discardBtn) {
+      discardBtn.addEventListener('click', function () {
+        if (!confirm('Discard the saved draft for this datasheet? This clears the saved form data and uploaded images for this test.')) return;
+        discardBtn.disabled = true; discardBtn.textContent = 'Discarding...';
+        if (typeof cancelAutoSave === 'function') cancelAutoSave();
+        fetch('/datasheet/ce/{{ assignment_id }}/delete-draft', { method: 'POST' })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res.success) { window.location.reload(); }
+            else { alert(res.message || 'Could not discard draft.'); discardBtn.disabled = false; discardBtn.textContent = 'Discard draft'; }
+          })
+          .catch(function () { alert('Could not discard draft.'); discardBtn.disabled = false; discardBtn.textContent = 'Discard draft'; });
+      });
+    }
+
     addTest();   // start with one empty Measurement Data Test
 
     // Wire up event listeners for input/change for auto-saving

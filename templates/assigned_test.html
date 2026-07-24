@@ -598,6 +598,13 @@
                                             Edit Datasheet
                                         </button>
                                         {% endif %}
+                                        {% if assignment.datasheet_file_path %}
+                                        <a href="/api/files/download?path={{ assignment.datasheet_file_path | urlencode }}"
+                                            target="_blank" rel="noopener noreferrer"
+                                            class="inline-flex items-center justify-center px-3 py-1 text-[10px] font-semibold text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-all duration-200">
+                                            View Datasheet
+                                        </a>
+                                        {% endif %}
                                     </div>
                                     {% elif normalized_status in ['admin_sign_off', 'proceed_report',
                                     'report_uploaded', 'draft_report'] %}

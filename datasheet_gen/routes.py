@@ -156,7 +156,9 @@ def ce_form(assignment_id):
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 prefill[k] = v
-    saved_images = [os.path.basename(p) for p in R.draft_images(assignment.id).values() if p]
+    # {field_key: basename} so the form can preview each draft image on reload
+    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(assignment.id).items()
+                    if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/ce_form.html",
         assignment_id=assignment.id,
@@ -251,6 +253,40 @@ def save_draft_ce():
         return jsonify(success=False, message="An error occurred while saving the draft"), 500
 
 
+@datasheet_gen_bp.route("/datasheet/ce/<int:assignment_id>/draft-image/<key>")
+@login_required
+def ce_draft_image(assignment_id, key):
+    """Serve one image saved in this CE assignment's draft, so the form can preview
+    it on reload. Only paths in the draft's images_json are servable; access-checked."""
+    assignment = db.session.get(PlannerEntry, assignment_id)
+    if assignment is None:
+        abort(404)
+    if not _can_access(assignment):
+        abort(403)
+    path = R.draft_images(assignment_id).get(key)
+    if not path or not os.path.exists(path):
+        abort(404)
+    return send_file(path)
+
+
+@datasheet_gen_bp.route("/datasheet/ce/<int:assignment_id>/delete-draft", methods=["POST"])
+@login_required
+def ce_delete_draft(assignment_id):
+    """Discard the saved CE draft data + uploaded images for this assignment.
+    Refused for an already-submitted record so a submission can't be lost here."""
+    assignment = db.session.get(PlannerEntry, assignment_id)
+    if assignment is None:
+        return jsonify(success=False, message="Assignment not found"), 404
+    if not _can_access(assignment):
+        return jsonify(success=False, message="Access denied"), 403
+    rec = R.get_record_for_assignment(assignment_id)
+    if rec and rec.get("status") == R.SUBMITTED:
+        return jsonify(success=False,
+                       message="This datasheet is already submitted; its data can't be discarded here."), 400
+    R.delete_record_for_assignment(assignment_id)
+    return jsonify(success=True, message="Draft removed")
+
+
 def _render_ce_docx(assignment, form_data, tco_id, files):
     """Build the CE datasheet .docx; return (path, images, filename). Shared by
     'send to peer review' and the post-approval 'generate final' regeneration."""
@@ -286,9 +322,9 @@ def _apply_test_date(assignment, form_data):
 @datasheet_gen_bp.route("/datasheet/ce/generate", methods=["POST"])
 @login_required
 def generate_ce():
-    """SEND TO PEER REVIEW: persist the filled CE form and route it into the
-    company's peer-review queue. The final .docx is generated only after the
-    peer review is approved."""
+    """SEND TO PEER REVIEW: generate the CE datasheet .docx and route it into the
+    company's peer-review queue (status='Peer Review', reviewer assigned). Not
+    final until approved; the final copy is produced via /generate-final."""
     try:
         form_data, assignment_id, tco_id, files = _read_payload()
         if not assignment_id:
@@ -313,35 +349,33 @@ def generate_ce():
             return jsonify(success=False,
                            message="Date cannot be in the future: " + ", ".join(future)), 400
 
-        images = _save_images(files, assignment.id)
-        submitted_at = _ist_now()
+        output_path, images, filename = _render_ce_docx(assignment, form_data, tco_id, files)
 
-        assignment.datasheet_file_path = None
-        assignment.datasheet_uploaded_at = submitted_at
+        assignment.datasheet_file_path = output_path
+        assignment.datasheet_uploaded_at = _ist_now()
         assignment.datasheet_uploaded_by = current_user.id
         assignment.peer_reviewer_user_id = reviewer.id
-        assignment.peer_review_assigned_at = submitted_at
+        assignment.peer_review_assigned_at = _ist_now()
         assignment.status = "Peer Review"
         _append_review_note(
-            assignment,
-            f"CE datasheet form submitted to {reviewer.username} for peer review. "
-            "Final Word datasheet will be generated after approval.",
+            assignment, f"CE datasheet generated and sent to {reviewer.username} for peer review.",
             current_user.username, "SENT FOR REVIEW")
         _apply_test_date(assignment, form_data)
-        R.upsert_record(
-            assignment,
-            "CE",
-            form_data,
-            images,
-            R.SUBMITTED,
-            generated_file_path="",
-            user=current_user,
-        )
+        db.session.commit()
+
+        # Persist the filled form as a Submitted datasheet record (best-effort:
+        # a store failure must not fail an otherwise-successful submission).
+        try:
+            R.upsert_record(assignment, "CE", form_data, images, R.SUBMITTED,
+                            generated_file_path=output_path, user=current_user)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            current_app.logger.error("CE datasheet record save failed: %s", exc)
 
         return jsonify(
             success=True,
             status="Peer Review",
-            message=f"Form sent to {reviewer.username} for peer review.",
+            message=f"Sent to {reviewer.username} for peer review.",
         )
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()

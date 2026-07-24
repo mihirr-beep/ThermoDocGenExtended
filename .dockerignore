@@ -1,9 +1,0 @@
-.git/
-node_modules/
-outputs/
-uploads/
-logs/
-.venv/
-venv/
-__pycache__/
-*.pyc

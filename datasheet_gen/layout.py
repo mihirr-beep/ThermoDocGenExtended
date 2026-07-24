@@ -423,6 +423,27 @@ def ce_finalize_layout(doc):
             paras[amb].paragraph_format.page_break_before = True
             paras[amb].paragraph_format.keep_with_next = True
 
+    # 5) Glue each table to the "Table N:" / "Figure N:" caption that sits BELOW it.
+    #    A table has no keep-with-next of its own, so when it lands at the bottom of a
+    #    page Word can strand its caption on the next page (caption orphaned from its
+    #    table). Setting keepNext on the table's cell paragraphs keeps the whole table
+    #    with the caption that follows it. Scoped to tables followed by such a caption
+    #    (the small measurement plot/data tables), so large tables are unaffected.
+    from docx.oxml import OxmlElement
+    for tbl in body.findall(qn("w:tbl")):
+        nxt = tbl.getnext()
+        if nxt is None or nxt.tag != w_p:
+            continue
+        cap = "".join(t.text or "" for t in nxt.iter(qn("w:t"))).strip().lower()
+        if not cap.startswith("table "):   # data table -> its "Table N:" caption below
+            continue
+        for cp in tbl.iter(w_p):
+            pPr = cp.find(qn("w:pPr"))
+            if pPr is None:
+                pPr = OxmlElement("w:pPr"); cp.insert(0, pPr)
+            if pPr.find(qn("w:keepNext")) is None:
+                pPr.append(OxmlElement("w:keepNext"))
+
 
 # --------------------------------------------------------------------------
 # Font enforcement — force Arial on every table cell run

@@ -152,7 +152,10 @@ def g_form(code, assignment_id):
             for it in sec.get("items", []):
                 if it.get("type") == "table" and not it.get("rows") and prefill_tables.get(it["key"]):
                     it["rows"] = prefill_tables[it["key"]]
-    saved_images = [os.path.basename(p) for p in R.draft_images(a.id).values() if p]
+    # {field_key: basename} of images saved in a prior draft, so the form can show
+    # a preview of each on reload (served by g_draft_image below).
+    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(a.id).items()
+                    if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/generic_form.html",
         code=code, schema=schema, prefill=pre,
@@ -260,6 +263,41 @@ def g_save_draft(code):
         return jsonify(success=False, message="An error occurred while saving the draft"), 500
 
 
+@datasheet_generic_bp.route("/datasheet/g/<code>/<int:assignment_id>/draft-image/<key>")
+@login_required
+def g_draft_image(code, assignment_id, key):
+    """Serve one image saved in this assignment's draft, so the form can preview it
+    on reload. Only paths recorded in the draft's images_json are servable (key can't
+    be used for path traversal), and only to users allowed to open the assignment."""
+    a = db.session.get(PlannerEntry, assignment_id)
+    if a is None:
+        abort(404)
+    if not _can_access(a):
+        abort(403)
+    path = R.draft_images(assignment_id).get(key)
+    if not path or not os.path.exists(path):
+        abort(404)
+    return send_file(path)
+
+
+@datasheet_generic_bp.route("/datasheet/g/<code>/<int:assignment_id>/delete-draft", methods=["POST"])
+@login_required
+def g_delete_draft(code, assignment_id):
+    """Discard the saved draft data (and images) for this assignment's datasheet.
+    Refused for an already-submitted record so a submission can't be lost here."""
+    a = db.session.get(PlannerEntry, assignment_id)
+    if a is None:
+        return jsonify(success=False, message="Assignment not found"), 404
+    if not _can_access(a):
+        return jsonify(success=False, message="Access denied"), 403
+    rec = R.get_record_for_assignment(assignment_id)
+    if rec and rec.get("status") == R.SUBMITTED:
+        return jsonify(success=False,
+                       message="This datasheet is already submitted; its data can't be discarded here."), 400
+    R.delete_record_for_assignment(assignment_id)
+    return jsonify(success=True, message="Draft removed")
+
+
 def _render_datasheet_docx(code, schema, a, form_data, tco_id):
     """Build the datasheet .docx from form_data; return (path, images, filename).
     Shared by 'send to peer review' (initial generation) and the post-approval
@@ -288,9 +326,10 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
 @datasheet_generic_bp.route("/datasheet/g/<code>/generate", methods=["POST"])
 @login_required
 def g_generate(code):
-    """SEND TO PEER REVIEW: persist the filled datasheet form and route it into
-    the company's peer-review queue. The final .docx is generated only after
-    peer-review approval."""
+    """SEND TO PEER REVIEW: generate the datasheet .docx and route it into the
+    company's peer-review queue (status='Peer Review', reviewer assigned). The
+    datasheet is NOT final until a reviewer approves it on the peer-review page;
+    after approval the engineer produces the final copy via /generate-final."""
     try:
         code = normalize_code(code)
         if not _valid(code):
@@ -316,32 +355,28 @@ def g_generate(code):
         if fut:
             return jsonify(success=False, message="Date cannot be in the future: " + ", ".join(fut)), 400
 
-        images = _save_generic_images(gs.image_keys(schema), a.id)
-        submitted_at = _ist_now()
+        out, images, filename = _render_datasheet_docx(code, schema, a, form_data, tco_id)
 
-        a.datasheet_file_path = None
-        a.datasheet_uploaded_at = submitted_at
+        a.datasheet_file_path = out
+        a.datasheet_uploaded_at = _ist_now()
         a.datasheet_uploaded_by = current_user.id
         a.peer_reviewer_user_id = reviewer.id
-        a.peer_review_assigned_at = submitted_at
+        a.peer_review_assigned_at = _ist_now()
         a.status = "Peer Review"
         _append_review_note(
-            a,
-            f"Datasheet form submitted to {reviewer.username} for peer review. "
-            "Final Word datasheet will be generated after approval.",
+            a, f"Datasheet generated and sent to {reviewer.username} for peer review.",
             current_user.username, "SENT FOR REVIEW")
-        R.upsert_record(
-            a,
-            code,
-            form_data,
-            images,
-            R.SUBMITTED,
-            generated_file_path="",
-            user=current_user,
-        )
+        db.session.commit()
+
+        try:
+            R.upsert_record(a, code, form_data, images, R.SUBMITTED,
+                            generated_file_path=out, user=current_user)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            current_app.logger.error("%s datasheet record save failed: %s", code, exc)
 
         return jsonify(success=True, status="Peer Review",
-                       message=f"Form sent to {reviewer.username} for peer review.")
+                       message=f"Sent to {reviewer.username} for peer review.")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         current_app.logger.error("Generic datasheet send-to-review error: %s", exc)

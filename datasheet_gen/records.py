@@ -321,10 +321,7 @@ def upsert_record(assignment, test_code, form_data, images, status,
         "status": status,
         "form_json": json.dumps(form_data, ensure_ascii=False, default=str),
         "images_json": json.dumps(merged_images, ensure_ascii=False),
-        "generated_file_path": (
-            (existing or {}).get("generated_file_path")
-            if generated_file_path is None else generated_file_path
-        ),
+        "generated_file_path": generated_file_path or (existing or {}).get("generated_file_path"),
         "created_by_user_id": uid,
         "now": now,
     }
@@ -346,7 +343,7 @@ def upsert_record(assignment, test_code, form_data, images, status,
            result=VALUES(result), tested_by_name=VALUES(tested_by_name),
            tested_by_user_id=VALUES(tested_by_user_id), status=VALUES(status),
            form_json=VALUES(form_json), images_json=VALUES(images_json),
-           generated_file_path=VALUES(generated_file_path),
+           generated_file_path=COALESCE(VALUES(generated_file_path), generated_file_path),
            updated_at=VALUES(updated_at)
     """)
     db.session.execute(sql, params)
@@ -374,6 +371,31 @@ def draft_form(assignment_id):
         except (ValueError, TypeError):
             pass
     return {}
+
+
+def delete_record_for_assignment(assignment_id):
+    """Delete the saved draft/record for this assignment and its uploaded image
+    files. Returns True if a row was removed, else False."""
+    import os
+    from models import db
+    rec = get_record_for_assignment(assignment_id)
+    if not rec:
+        return False
+    try:                                        # best-effort: remove image files
+        for p in (json.loads(rec.get("images_json") or "{}") or {}).values():
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    except (ValueError, TypeError):
+        pass
+    db.session.execute(
+        text("DELETE FROM datasheet_records WHERE planner_entry_id = :pid"),
+        {"pid": assignment_id},
+    )
+    db.session.commit()
+    return True
 
 
 # --------------------------------------------------------------------------

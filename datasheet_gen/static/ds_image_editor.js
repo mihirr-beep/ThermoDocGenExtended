@@ -14,9 +14,9 @@
  *     and centred on the upload, with a rule-of-thirds grid + corner handles so a
  *     new user immediately sees they can drag (to move) or grab a corner (to
  *     resize, ratio-locked).
- *   - "Set image to frame": instead of cropping, fits the WHOLE image inside the
- *     box ratio, centred, with the surrounding area padded WHITE (letterbox) — for
- *     uploads of any ratio (1:1, 4:5, …). Nothing is cropped away.
+ *   - "Set image to frame": instead of cropping, keeps the WHOLE image and stretches
+ *     it to the box ratio — the width is preserved and the height is stretched to fill,
+ *     so nothing is cropped away and no white border is added.
  *   - A live PREVIEW pane on the right (same shape/size as the document slot) shows
  *     exactly how the current crop / fit will look.
  *   - Rotate 90 L/R, grayscale, brightness, contrast. "Reset" returns to step 1
@@ -80,7 +80,7 @@
     '<div class="dsie-mid" data-close="1">' +
     '  <div class="dsie-panel">' +
     '    <div class="dsie-head">' +
-    '      <div><h3>Edit image</h3><p>Drag the frame to position it, or grab a corner to resize (locked to the document ratio). Or use “Set image to frame” to fit the whole photo with a white border.</p></div>' +
+    '      <div><h3>Edit image</h3><p>Drag the frame to position it, or grab a corner to resize (locked to the document ratio). Or use “Set image to frame” to keep the whole photo and stretch it to fill (no white border).</p></div>' +
     '      <button type="button" class="dsie-x" data-act="cancel">&times;</button>' +
     '    </div>' +
     '    <div class="dsie-tools">' +
@@ -274,9 +274,9 @@
     ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, pw, ph);
     try { ctx.filter = filterStr(); } catch (e) {}
     if (S.mode === "fit") {
-      var sc = Math.min(pw / S.work.width, ph / S.work.height);
-      var dw = S.work.width * sc, dh = S.work.height * sc;
-      ctx.drawImage(S.work, 0, 0, S.work.width, S.work.height, (pw - dw) / 2, (ph - dh) / 2, dw, dh);
+      // Keep the whole image; stretch it to fill the box ratio (width preserved,
+      // height stretched) instead of letterboxing with a white border.
+      ctx.drawImage(S.work, 0, 0, S.work.width, S.work.height, 0, 0, pw, ph);
     } else if (S.sel) {
       var r = els.img.getBoundingClientRect();
       var scale = S.work.width / r.width;   // work px per display px
@@ -292,10 +292,10 @@
     els.mcrop.classList.toggle("active", m === "crop");
     els.mfit.classList.toggle("active", m === "fit");
     els.leftcap.textContent = (m === "fit")
-      ? "Whole image — will be centred with a white border"
+      ? "Whole image — stretched to fill the frame"
       : "Original — adjust the frame";
     els.hint.textContent = (m === "fit")
-      ? "The full image is kept; empty space is filled white."
+      ? "The full image is kept; the width is preserved and the height is stretched to fill."
       : "Drag inside the frame to move; drag a corner to resize.";
     if (m === "crop" && (!S.sel || S.sel.w < 2)) setDefaultSel();
     renderSel(); renderPreview();
@@ -315,17 +315,14 @@
     var work = S.work; if (!work) { close(); return; }
     var out = document.createElement("canvas"), octx;
     if (S.mode === "fit") {
-      // whole image, letterboxed into the box ratio with a white border
-      var ratio = S.ratio, OW, OH;
-      if (work.width / work.height > ratio) { OW = work.width; OH = Math.round(OW / ratio); }
-      else { OH = work.height; OW = Math.round(OH * ratio); }
-      out.width = Math.max(1, OW); out.height = Math.max(1, OH);
+      // whole image, STRETCHED into the box ratio: the width is preserved and the
+      // height is stretched to fill, so nothing is cropped and no white border is added
+      var ratio = S.ratio;
+      var OW = Math.max(1, work.width), OH = Math.max(1, Math.round(work.width / ratio));
+      out.width = OW; out.height = OH;
       octx = out.getContext("2d");
-      octx.fillStyle = "#fff"; octx.fillRect(0, 0, out.width, out.height);
       try { octx.filter = filterStr(); } catch (e) {}
-      var sc = Math.min(out.width / work.width, out.height / work.height);
-      var dw = work.width * sc, dh = work.height * sc;
-      octx.drawImage(work, 0, 0, work.width, work.height, (out.width - dw) / 2, (out.height - dh) / 2, dw, dh);
+      octx.drawImage(work, 0, 0, work.width, work.height, 0, 0, OW, OH);
     } else {
       // crop to the selected frame (falls back to the whole image)
       var rect = els.img.getBoundingClientRect();
@@ -373,7 +370,7 @@
   // Centre-crop `opts.file` to the box ratio and hand back the cropped File via
   // opts.onApply WITHOUT opening the dialog. Used to conform an image on upload so
   // the document preview matches the slot immediately; the caller keeps the
-  // original around so the user can still reframe (open) or letterbox it later.
+  // original around so the user can still reframe (open) or stretch it to fill later.
   function autoFit(opts) {
     if (!opts || !opts.file) { if (opts && opts.onApply) opts.onApply(null); return; }
     var box = opts.boxMM || [150, 90];
