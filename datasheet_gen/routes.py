@@ -205,8 +205,13 @@ def _save_images(files, assignment_id):
     img_dir = os.path.join(_output_dir(), "images")
     os.makedirs(img_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plot_keys = [k for k in files.keys() if re.match(r"^plot_(line|neutral)_\d+$", k)]
-    for var in list(_IMAGE_VARS) + plot_keys:
+    # per-Test measurement plots, the extra plots added to a Test, and the extra
+    # Test Setup pictures are all dynamic keys, so they are matched by shape
+    dynamic = [k for k in files.keys()
+               if re.match(r"^plot_(line|neutral)(_avg)?_\d+$", k)
+               or re.match(r"^plot_extra_\d+_\d+$", k)
+               or re.match(r"^ce_extra_photo_\d+$", k)]
+    for var in list(_IMAGE_VARS) + dynamic:
         fs = files.get(var)
         if fs and (fs.filename or "").strip():
             safe = secure_filename(fs.filename)
@@ -317,6 +322,41 @@ def _apply_test_date(assignment, form_data):
             assignment.end_date = d
         except ValueError:
             pass
+
+
+@datasheet_gen_bp.route("/datasheet/ce/preview-docx", methods=["POST"])
+@login_required
+def preview_ce_docx():
+    """DRAFT DOCUMENT: render the CE datasheet .docx from the form exactly as it
+    stands and hand it back as a download, so the engineer can see how the real
+    document looks BEFORE sending it for peer review.
+
+    Deliberately side-effect free: no status/reviewer change, no datasheet record
+    written, and no peer reviewer required."""
+    try:
+        form_data, assignment_id, tco_id, files = _read_payload()
+        if not assignment_id:
+            return jsonify(success=False, message="Assignment ID is required"), 400
+        try:
+            assignment_id = int(assignment_id)
+        except (TypeError, ValueError):
+            return jsonify(success=False, message="Invalid assignment ID"), 400
+        assignment = db.session.get(PlannerEntry, assignment_id)
+        if assignment is None:
+            return jsonify(success=False, message="Assignment not found"), 404
+        if not _can_access(assignment):
+            return jsonify(success=False, message="Access denied"), 403
+
+        output_path, _images, filename = _render_ce_docx(assignment, form_data, tco_id, files)
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name="DRAFT_" + filename,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.error("CE draft document preview failed: %s", exc)
+        return jsonify(success=False, message="Could not generate the draft document"), 500
 
 
 @datasheet_gen_bp.route("/datasheet/ce/generate", methods=["POST"])

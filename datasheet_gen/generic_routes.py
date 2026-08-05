@@ -113,12 +113,18 @@ def g_form(code, assignment_id):
     draft = R.draft_form(a.id)
     draft_status = ""
     measurement_groups = []
+    extra_photos = []
     if draft:
         rec = R.get_record_for_assignment(a.id)
         draft_status = (rec or {}).get("status", "")
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 pre[k] = v
+        if code == "RE":
+            # A draft saved before the format corrections must not resurrect legacy
+            # values (e.g. EUT Modification state '0 - Initial state').
+            from .generic_service import re_normalize_legacy_values
+            re_normalize_legacy_values(pre)
         for sec in schema.get("sections", []):
             for it in sec.get("items", []):
                 if it.get("type") != "table":
@@ -135,14 +141,34 @@ def g_form(code, assignment_id):
                 if rows:
                     it["rows"] = rows
         if code == "RE":
-            from .generic_service import _re_measurement_groups
+            from .generic_service import _re_measurement_groups, re_extra_photo_slots
             measurement_groups = _re_measurement_groups(draft)
+            extra_photos = re_extra_photo_slots(draft)
         elif code == "HARMONIC":
             from .generic_service import _harmonic_build_context
             pre.update(_harmonic_build_context(draft))
             measurement_groups = []
         else:
             measurement_groups = []
+
+    # Upload-driven tables: hand the saved headings + rows back so the form rebuilds the
+    # table the engineer uploaded (its column count is not fixed by the schema).
+    if draft:
+        for _ut in gs.upload_tables(schema):
+            _tbl = gs.collect_upload_table(draft, _ut["key"])
+            if _tbl["headers"]:
+                pre[_ut["key"] + "__headers"] = _tbl["headers"]
+                pre[_ut["key"] + "__rows"] = [r["cells"] for r in _tbl["rows"]]
+
+    # Per-day rows render as date pickers, which need YYYY-MM-DD; drafts saved while
+    # these were free-text fields hold DD/MM/YYYY and would otherwise show blank.
+    for sec in schema.get("sections", []):
+        for _row in sec.get("split_rows", []) or []:
+            if _row.get("type") != "date":
+                continue
+            for _k in (_row["base"], _row["base"] + "_2", _row["base"] + "_3"):
+                if pre.get(_k):
+                    pre[_k] = gs.to_iso_date(pre[_k])
 
     # Prefill repeating tables (equipment / RE Test Limits / software) from the
     # request + derivations, but only where the engineer has no saved draft rows.
@@ -162,6 +188,7 @@ def g_form(code, assignment_id):
         assignment_id=a.id, tco_id=a.tco_id or "", test_name=a.test_name or code,
         draft_status=draft_status, saved_images=saved_images,
         measurement_groups=measurement_groups,
+        extra_photos=extra_photos,
         reviewers=_reviewer_candidates(),
         assigned_reviewer_id=a.peer_reviewer_user_id,
         entry_status=a.status,
@@ -182,8 +209,10 @@ def _save_generic_images(ikeys, assignment_id):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     all_keys = list(ikeys)
     if request.files:
+        # repeatable slots aren't in the schema: RE measurement plots and the extra
+        # test-setup pictures the engineer adds on the form
         for k in request.files.keys():
-            if k.startswith("meas_img_") and k not in all_keys:
+            if k.startswith(("meas_img_", "re_extra_photo_")) and k not in all_keys:
                 all_keys.append(k)
     for k in all_keys:
         fs = request.files.get(k)
@@ -381,6 +410,43 @@ def g_generate(code):
         db.session.rollback()
         current_app.logger.error("Generic datasheet send-to-review error: %s", exc)
         return jsonify(success=False, message="An error occurred while sending the datasheet for peer review"), 500
+
+
+@datasheet_generic_bp.route("/datasheet/g/<code>/preview-docx", methods=["POST"])
+@login_required
+def g_preview_docx(code):
+    """DRAFT DOCUMENT: render the datasheet .docx from the form exactly as it stands
+    and hand it straight back as a download, so the engineer can see how the real
+    document looks BEFORE sending it for peer review.
+
+    Deliberately side-effect free: the planner entry's status/reviewer are untouched,
+    no datasheet record is written, and no peer reviewer is required."""
+    try:
+        code = normalize_code(code)
+        if not _valid(code):
+            abort(404)
+        schema = load_schema(code)
+        raw = request.form
+        form_data = {k: (raw.getlist(k) if k.endswith("[]") else raw.get(k)) for k in raw.keys()}
+        assignment_id = raw.get("assignment_id")
+        if not assignment_id:
+            return jsonify(success=False, message="Assignment ID is required"), 400
+        a = db.session.get(PlannerEntry, int(assignment_id))
+        if a is None:
+            return jsonify(success=False, message="Assignment not found"), 404
+        if not _can_access(a):
+            return jsonify(success=False, message="Access denied"), 403
+
+        out, _images, filename = _render_datasheet_docx(code, schema, a, form_data, raw.get("tco_id"))
+        return send_file(
+            out,
+            as_attachment=True,
+            download_name="DRAFT_" + filename,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.error("%s draft document preview failed: %s", code, exc)
+        return jsonify(success=False, message="Could not generate the draft document"), 500
 
 
 @datasheet_generic_bp.route("/datasheet/g/<code>/<int:assignment_id>/generate-final", methods=["POST"])

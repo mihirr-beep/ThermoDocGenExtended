@@ -138,10 +138,40 @@
             {% for o in ['Tabletop','Floor standing'] %}<option {{ 'selected' if prefill.eut_configuration==o }}>{{ o }}</option>{% endfor %}
           </select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">EUT Input Voltage &amp; Frequency</label>{{ field('eut_voltage_frequency', prefill.eut_voltage_frequency) }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ambient Temperature (&deg;C)</label>{{ field('ambient_temperature') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Relative Humidity (%)</label>{{ field('relative_humidity') }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Test Date</label><input type="date" name="test_date" max="{{ today }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested by</label>{{ field('tested_by', prefill.tested_by) }}</div>
+      </div>
+      {# Ambient Temperature / Relative Humidity / Test Date / Tested by can each be
+         recorded for up to 3 test days; the row's value cell in 2.1 TEST SPECIFICATION
+         is split into that many sections. Each row is independent (Ambient can be 2
+         sections while Test Date is 3), exactly as on the RE datasheet. #}
+      <div class="mt-4 pt-4 border-t border-dashed border-gray-300 space-y-4">
+        {% for row in [
+             {'base':'ambient_temperature', 'label':'Ambient Temperature (&deg;C)', 'type':'text'},
+             {'base':'relative_humidity',   'label':'Relative Humidity (%)',        'type':'text'},
+             {'base':'test_date',           'label':'Test Date',                    'type':'date'},
+             {'base':'tested_by',           'label':'Tested by',                    'type':'text'}
+           ] %}
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end js-split-row" data-base="{{ row.base }}">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ row.label|safe }} &ndash; sections</label>
+            <select name="{{ row.base }}_sections" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+              {% for n in ['1','2','3'] %}<option {{ 'selected' if (prefill.get(row.base ~ '_sections') or '1') == n }}>{{ n }}</option>{% endfor %}
+            </select>
+          </div>
+          {% for d in [1, 2, 3] %}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ row.label|safe }} &ndash; Day {{ d }}{% if d > 1 %} <span class="text-[10px] font-normal text-gray-400">(optional)</span>{% endif %}</label>
+            {% set _n = row.base if d == 1 else row.base ~ '_' ~ d %}
+            {% if row.type == 'date' %}
+            <input type="date" name="{{ _n }}" value="{{ prefill.get(_n, '') }}" max="{{ today }}"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% else %}
+            <input type="text" name="{{ _n }}" value="{{ prefill.get(_n, '') or '' }}"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
       </div>
     </section>
 
@@ -193,12 +223,22 @@
       <div id="meas-records"></div>
     </section>
 
-    <!-- 9. TEST SETUP PICTURES -->
+    <!-- 9. TEST SETUP PICTURES (the standard slot + any number of further pictures) -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 class="text-lg font-bold text-gray-900 mb-4">10. Test Setup Pictures</h2>
-      <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (9&times;14 cm)</label>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Photo 1 - CE Test Setup (Power Port) (15.92 &times; 9.5 cm, W &times; H)</label>
       <input type="file" name="photo_setup" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
       <input type="text" name="photo_caption" value="{{ prefill.photo_caption }}" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+
+      <div class="mt-6 pt-5 border-t border-dashed border-gray-300">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-sm font-semibold text-gray-700">Additional pictures</span>
+          <button type="button" onclick="addExtraPhoto()"
+                  class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">+ Add picture</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">Optional &mdash; use these for any test-setup picture beyond the standard slot above. Each picture prints with the label you type, and the &ldquo;Photo&nbsp;N:&nbsp;&rdquo; number is added for you so the section stays in sequence (don't type one &mdash; it gets resequenced anyway). Slots with no upload are skipped.</p>
+        <div id="ce-extra-photos" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </div>
     </section>
 
     <!-- 10. TEST EQUIPMENT USED -->
@@ -283,6 +323,9 @@
             {% endfor %}
           </select>
         </div>
+        <button type="button" id="draftDocxBtn"
+                title="Generate the Word document from the form as it stands and download it. Nothing is submitted."
+                class="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow">Generate Datasheet</button>
         <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Send to Peer Review</button>
       </div>
     </div>
@@ -316,9 +359,14 @@
   </div>
   <div class="border border-gray-200 rounded-xl p-4 mb-4">
     <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 1 - Line plot (9&times;16 cm)</label>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Line plot &ndash; Quasi-peak (15.92 &times; 9.5 cm, W &times; H)</label>
       <input type="file" name="plot_line_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
       <input type="text" name="plot_line_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+    </div>
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Line plot &ndash; Average (15.92 &times; 9.5 cm, W &times; H)</label>
+      <input type="file" name="plot_line_avg_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <input type="text" name="plot_line_avg_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </div>
     <div class="flex items-center justify-between mb-2">
       <h3 class="text-sm font-semibold text-gray-600">Table 1 - Line (Quasi-peak &amp; Average)</h3>
@@ -338,9 +386,14 @@
   </div>
   <div class="border border-gray-200 rounded-xl p-4">
     <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Figure 2 - Neutral plot (9&times;16 cm)</label>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Neutral plot &ndash; Quasi-peak (15.92 &times; 9.5 cm, W &times; H)</label>
       <input type="file" name="plot_neutral_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
       <input type="text" name="plot_neutral_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+    </div>
+    <div class="mb-3">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Neutral plot &ndash; Average (15.92 &times; 9.5 cm, W &times; H)</label>
+      <input type="file" name="plot_neutral_avg_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <input type="text" name="plot_neutral_avg_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </div>
     <div class="flex items-center justify-between mb-2">
       <h3 class="text-sm font-semibold text-gray-600">Table 2 - Neutral (Quasi-peak &amp; Average)</h3>
@@ -358,12 +411,35 @@
     </table>
     </div>
   </div>
+  <div class="mt-4 pt-4 border-t border-dashed border-gray-300">
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-sm font-semibold text-gray-700">Additional images / graphs for this Test</span>
+      <button type="button" onclick="addExtraPlot(this)"
+              class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">+ Add image</button>
+    </div>
+    <p class="text-xs text-gray-500 mb-3">Optional &mdash; any further plot for this Test (a second detector, an ambient sweep, a zoomed band). Each prints after the two tables above with the label you type; the &ldquo;Figure&nbsp;N:&nbsp;&rdquo; number is added for you. Slots with no upload are skipped.</p>
+    <div id="extra-plots-%%I%%" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+  </div>
+</div>
+</template>
+<!-- One additional-picture slot, shared by the Test Setup section and each Test block.
+     JS swaps %%FILE%% / %%CAP%% for the two field names and %%HINT%% for the placeholder.
+     The caption field is NOT "<file>_caption": the server reads <prefix>caption_<n>
+     alongside <prefix><n>, so the two names are passed in separately. -->
+<template id="tpl-ce-extra-pic">
+<div class="ce-extra-pic relative border border-gray-200 rounded-lg p-3 bg-gray-50">
+  <button type="button" onclick="removeExtraPic(this)" title="Remove this picture"
+          class="absolute top-2 right-2 text-red-500 hover:text-red-700 font-bold leading-none text-lg">&times;</button>
+  <label class="block text-xs font-medium text-gray-600 mb-1 pr-6">Picture</label>
+  <input type="file" name="%%FILE%%" accept="image/*" class="w-full text-xs">
+  <input type="text" name="%%CAP%%" placeholder="%%HINT%%"
+         class="mt-2 w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
 </div>
 </template>
 
 <!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
 <style>
-  #previewBtn{position:fixed;right:24px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
+  #previewBtn{position:fixed;right:96px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
     padding:12px 20px;background:#059669;color:#fff;font-weight:600;border:none;border-radius:9999px;
     box-shadow:0 10px 20px rgba(0,0,0,.25);cursor:pointer;font-size:15px;}
   #previewBtn:hover{background:#047857;}
@@ -611,11 +687,15 @@
     return lines;
   }
   // ---- Build a measurement table from a RAW instrument sweep (0.15-30 MHz) ----
-  // The uploaded CSV holds one row per measured frequency. For each CISPR sub-band
-  // we keep only the WORST case per limit: the row with the SMALLEST Margin/Delta for
-  // Q-peak (left half) and the row with the smallest Margin/Delta for Average (right
-  // half) -- NOT the raw max level. 6 bands -> 6 rows. Separate button from the
-  // plain "Upload CSV" (which pastes rows verbatim).
+  // The uploaded CSV/TXT holds one row per measured frequency, with two halves:
+  //   Frequency, QPeak, Limit, Delta   |   Avg, Limit, Delta
+  // Those are treated as two independent data sets (max Q-peaks / max Averages), each
+  // split into the six CISPR sub-bands below. Within a band, each set contributes the
+  // single row with the SMALLEST MARGIN -- the largest (least negative) Delta, i.e. the
+  // frequency that came closest to its limit. NOT the raw max level, and not the
+  // biggest margin. 6 bands x (1 Q-peak row + 1 Average row) -> the 6-row, 8-column
+  // table the datasheet prints. The Q-peak and Average halves of a row are picked
+  // separately, so they often sit at different frequencies.
   const CE_SCAN_BANDS = [[0.15, 0.5], [0.5, 1], [1, 5], [5, 10], [10, 20], [20, 30]];
 
   function scanNum(v) {
@@ -675,11 +755,13 @@
       for (var k = 0; k < data.length; k++) {
         var d = data[k];
         if (d.fN < lo || (last ? d.fN > hi : d.fN >= hi)) continue;
-        // Worst case per band = the SMALLEST Margin/Delta (closest to / most over the
-        // limit), chosen independently for Q-peak and Average from their own Delta
-        // column — NOT the max measured level (per the manager's correction).
-        if (d.qmN !== null && (qpRow === null || d.qmN < qpRow.qmN)) qpRow = d;
-        if (d.amN !== null && (avRow === null || d.amN < avRow.amN)) avRow = d;
+        // Worst case per band = the SMALLEST MARGIN, i.e. the row whose Delta is
+        // closest to the limit. Delta is negative (level - limit), so that is the
+        // LARGEST (least negative) Delta in the band — -31.96 beats -54.56. Chosen
+        // independently for Q-peak and Average from their own Delta column, so the two
+        // halves of a row can come from different frequencies.
+        if (d.qmN !== null && (qpRow === null || d.qmN > qpRow.qmN)) qpRow = d;
+        if (d.amN !== null && (avRow === null || d.amN > avRow.amN)) avRow = d;
       }
       out.push({
         qp_freq: qpRow ? qpRow.freq : '', qp: qpRow ? qpRow.qp : '',
@@ -821,6 +903,30 @@
       btn.closest('tr').remove();
       triggerAutoSave();
     }
+    syncRowDeleteButtons();
+  }
+
+  /* ---- Hide the row-delete cross when a table has only one row -------------------
+     delRow() refuses to remove the last row (a table must keep at least one), so on a
+     single-row table - EUT Modification Record, for instance - the cross did nothing
+     when clicked. Hide it there rather than offer a control that cannot work; it comes
+     back as soon as a second row exists. visibility (not display) keeps the actions
+     column width steady. */
+  function syncRowDeleteButtons(root) {
+    const scope = root || document;
+    const bodies = new Set();
+    scope.querySelectorAll('tbody button[onclick^="delRow"]').forEach((btn) => {
+      const tb = btn.closest('tbody');
+      if (tb) bodies.add(tb);
+    });
+    bodies.forEach((tb) => {
+      const only = tb.querySelectorAll('tr').length <= 1;
+      tb.querySelectorAll('button[onclick^="delRow"]').forEach((b) => {
+        b.style.visibility = only ? 'hidden' : '';
+        b.setAttribute('aria-hidden', only ? 'true' : 'false');
+        if (only) { b.tabIndex = -1; } else { b.removeAttribute('tabindex'); }
+      });
+    });
   }
   document.getElementById('ceForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -859,6 +965,68 @@
     });
   }
 
+  /* ---- Ambient / Humidity / Test Date / Tested by: 1-3 day sections per row --------
+     Greys out and disables the Day 2 / Day 3 boxes a row isn't using, so only the
+     sections that will appear in the document are fillable. Same behaviour as RE. */
+  var CE_SPLIT_BASES = ['ambient_temperature', 'relative_humidity', 'test_date', 'tested_by'];
+
+  function syncCESectionFields() {
+    CE_SPLIT_BASES.forEach(function (base) {
+      var sel = document.querySelector('[name="' + base + '_sections"]');
+      var n = sel ? parseInt(sel.value || '1', 10) : 1;
+      if (!(n >= 1 && n <= 3)) n = 1;
+      [2, 3].forEach(function (i) {
+        var el = document.querySelector('[name="' + base + '_' + i + '"]');
+        if (!el) return;
+        var open = (i <= n);
+        el.disabled = !open;
+        el.classList.toggle('ds-locked', !open);
+        var wrap = el.closest('div');
+        if (wrap) wrap.style.opacity = open ? '' : '0.5';
+      });
+    });
+  }
+
+  CE_SPLIT_BASES.forEach(function (base) {
+    var sel = document.querySelector('[name="' + base + '_sections"]');
+    if (sel) sel.addEventListener('change', function () { syncCESectionFields(); triggerAutoSave(); });
+  });
+  syncCESectionFields();
+
+  // DRAFT DOCUMENT: render the .docx from the form as it stands and download it, so the
+  // engineer can check the document before sending it for peer review. Nothing is
+  // submitted: no status change, no reviewer needed, no datasheet record written.
+  document.getElementById('draftDocxBtn').addEventListener('click', function () {
+    const btn = this, orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating...';
+    showMessage('Generating the Word document…', 'info');
+    fetch('/datasheet/ce/preview-docx', { method: 'POST', body: new FormData(document.getElementById('ceForm')) })
+      .then(r => {
+        const ct = r.headers.get('content-type') || '';
+        // errors come back as JSON; a success is the .docx itself
+        if (!r.ok || ct.indexOf('json') >= 0) {
+          return r.json().then(j => { throw new Error((j && j.message) || 'Could not generate the document.'); });
+        }
+        let name = 'DRAFT_datasheet.docx';
+        const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(r.headers.get('content-disposition') || '');
+        if (m) name = decodeURIComponent(m[1].replace(/"$/, ''));
+        return r.blob().then(b => ({ blob: b, name: name }));
+      })
+      .then(d => {
+        const url = URL.createObjectURL(d.blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = d.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        btn.disabled = false; btn.textContent = orig;
+        showMessage('Draft document downloaded — nothing was submitted.', 'success');
+      })
+      .catch(err => {
+        btn.disabled = false; btn.textContent = orig;
+        showMessage((err && err.message) || 'Could not generate the document.', 'error');
+      });
+  });
+
   document.getElementById('draftBtn').addEventListener('click', function () {
     cancelAutoSave();   // explicit save supersedes any pending debounce
     const btn = this, orig = btn.textContent;
@@ -887,16 +1055,15 @@
   // Mirror datasheet_gen/generator._IMAGE_BOXES (aspect box the .docx fits images into)
   function imageBoxMM(key){
     var k=(key||'').toLowerCase();
-    if (k.indexOf('sign')>=0) return [40,20];
-    if (k.indexOf('photo')>=0) return [140,90];
-    return [150,90];                     // plot_line / plot_neutral / default
+    if (k.indexOf('sign')>=0) return [40,20];   // signatures stay small
+    return [159.2,95];                          // photos + plots: 15.92 x 9.5 cm (W x H)
   }
   function imageCm(key){
     var host=inputByName(key), form=host&&host.form;
     var w=form&&form.querySelector('[name="'+cssEsc(key+'__wcm')+'"]');
     var h=form&&form.querySelector('[name="'+cssEsc(key+'__hcm')+'"]');
     if (w&&h&&w.value&&h.value) return [parseFloat(w.value), parseFloat(h.value)];
-    var b=imageBoxMM(key); return [b[0]/10, b[1]/10];
+    var b=imageBoxMM(key); return [Math.round(b[0]*10)/100, Math.round(b[1]*10)/100];
   }
   function setImageCm(key,w,h){
     var host=inputByName(key), form=host&&host.form; if(!form) return;
@@ -1074,9 +1241,10 @@
   function autoFitUpload(key){
     var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); triggerAutoSave(); return; }
     var raw=el.files[0]; originalFiles[key]=raw;
-    if(window.DSImageEditor && DSImageEditor.autoFit){
-      DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
-        if(fitted && fitted!==raw) setInputFile(key, fitted);
+    if(window.DSImageEditor && DSImageEditor.autoFrame){
+      DSImageEditor.autoFrame({ file:raw, boxMM:imageBoxMM(key), onApply:function(framed, sz){
+        if(framed && framed!==raw) setInputFile(key, framed);
+        if(sz && sz[0]>0 && sz[1]>0) setImageCm(key, sz[0], sz[1]);   // lock 15.92 x 9.5 by default
         renderInlineThumb(key);
         triggerAutoSave();
       }});
@@ -1100,20 +1268,79 @@
   // Default figure caption shown (pre-filled) in the plot caption box — the same
   // name the document uses when the box is left blank. Position-based so the figure
   // numbers stay correct as Tests are added/removed.
-  function ceCaptionDefault(side, n){
-    return "Figure " + n + ": CE plot_" + side + "_Quasi-peak & Average_0.15MHz - 30MHz";
+  function ceCaptionDefault(side, detector, n){
+    return "Figure " + n + ": CE plot_" + side + "_" + detector + "_0.15MHz - 30MHz";
   }
-  var CE_CAP_RE = /^Figure \d+: CE plot_(Line|Neutral)_Quasi-peak & Average_0\.15MHz - 30MHz$/;
+  // Matches a default caption so renumbering can rewrite it. The "Quasi-peak & Average"
+  // spelling is the pre-split default and is still matched, so a draft saved before the
+  // detectors were separated is re-captioned instead of keeping the old combined name.
+  var CE_CAP_RE = /^Figure \d+: CE plot_(Line|Neutral)_(Quasi-peak|Average|Quasi-peak & Average)_0\.15MHz - 30MHz$/;
+  // Each Test carries four plots — Quasi-peak and Average for Line, then for Neutral.
+  var CE_PLOT_SLOTS = [
+    { field: 'plot_line_caption_',        side: 'Line',    detector: 'Quasi-peak' },
+    { field: 'plot_line_avg_caption_',    side: 'Line',    detector: 'Average'    },
+    { field: 'plot_neutral_caption_',     side: 'Neutral', detector: 'Quasi-peak' },
+    { field: 'plot_neutral_avg_caption_', side: 'Neutral', detector: 'Average'    }
+  ];
   // Re-number the plot caption boxes to match each Test's position. Only boxes that
   // are empty or still hold a default caption are touched — user-typed names are kept.
   function renumberCaptions(){
     var recs = document.querySelectorAll('#meas-records .meas-record');
     recs.forEach(function (rec, p) {
-      var lc = rec.querySelector('input[name^="plot_line_caption_"]');
-      var nc = rec.querySelector('input[name^="plot_neutral_caption_"]');
-      if (lc && (lc.value.trim() === '' || CE_CAP_RE.test(lc.value.trim()))) lc.value = ceCaptionDefault('Line', 2 * p + 1);
-      if (nc && (nc.value.trim() === '' || CE_CAP_RE.test(nc.value.trim()))) nc.value = ceCaptionDefault('Neutral', 2 * p + 2);
+      CE_PLOT_SLOTS.forEach(function (slot, s) {
+        // exact field name (not name^=) so plot_line_caption_ can't match plot_line_avg_caption_
+        var el = rec.querySelector('input[name="' + slot.field + rec.dataset.idx + '"]');
+        if (!el) return;
+        var v = el.value.trim();
+        if (v === '' || CE_CAP_RE.test(v)) {
+          el.value = ceCaptionDefault(slot.side, slot.detector, CE_PLOT_SLOTS.length * p + s + 1);
+        }
+      });
     });
+  }
+
+  /* ---- additional pictures ------------------------------------------------------
+     Two open-ended lists share one slot template: further Test Setup pictures
+     (ce_extra_photo_<n> / ce_extra_photo_caption_<n>) and further plots on a Test
+     (plot_extra_<i>_<n> / plot_extra_<i>_caption_<n>). The server pairs each file with
+     its caption, drops the slots with no upload, and renumbers the surviving captions
+     in document order — so a skipped slot never leaves a gap or an empty frame. */
+  function addExtraPic(host, prefix, hint, caption, at){
+    var tpl = document.getElementById('tpl-ce-extra-pic');
+    if (!host || !tpl) return null;
+    // On draft reload the slot keeps the index it was saved under, so its already
+    // uploaded image still matches; new slots take the next free number.
+    var n = (at != null) ? at : parseInt(host.dataset.seq || '0', 10);
+    host.dataset.seq = Math.max(parseInt(host.dataset.seq || '0', 10), n + 1);
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML
+      .replace(/%%FILE%%/g, prefix + n)
+      .replace(/%%CAP%%/g, prefix + 'caption_' + n)
+      .replace(/%%HINT%%/g, hint).trim();
+    var block = wrap.firstElementChild;
+    host.appendChild(block);
+    if (caption) { var c = block.querySelector('input[type=text]'); if (c) c.value = caption; }
+    block.querySelectorAll('input[type=file]').forEach(wireImageInput);
+    triggerAutoSave();
+    return block;
+  }
+  // "+ Add picture" in Test Setup Pictures
+  function addExtraPhoto(caption, at){
+    return addExtraPic(document.getElementById('ce-extra-photos'), 'ce_extra_photo_',
+                       'Label, e.g. CE test setup_Signal Port', caption, at);
+  }
+  // "+ Add image" inside a Test block (btn is the button, so the Test is found from it)
+  function addExtraPlot(btn, caption, at){
+    var rec = btn.closest ? btn.closest('.meas-record') : null;
+    if (!rec) return null;
+    var idx = rec.dataset.idx;
+    return addExtraPic(document.getElementById('extra-plots-' + idx),
+                       'plot_extra_' + idx + '_',
+                       'Label, e.g. CE plot_Line_Ambient_0.15MHz - 30MHz', caption, at);
+  }
+  function removeExtraPic(btn){
+    var block = btn.closest('.ce-extra-pic');
+    if (block) { block.remove(); triggerAutoSave(); }
   }
 
   function addTest(label, data){
@@ -1127,8 +1354,17 @@
     if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
     if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
     // pre-fill any user-supplied captions (draft restore), else the position default
-    if (data && data.line_caption) { var lc = block.querySelector('[name="plot_line_caption_' + idx + '"]'); if (lc) lc.value = data.line_caption; }
-    if (data && data.neutral_caption) { var nc = block.querySelector('[name="plot_neutral_caption_' + idx + '"]'); if (nc) nc.value = data.neutral_caption; }
+    if (data) {
+      var caps = { plot_line_caption_:        data.line_caption,
+                   plot_line_avg_caption_:    data.line_avg_caption,
+                   plot_neutral_caption_:     data.neutral_caption,
+                   plot_neutral_avg_caption_: data.neutral_avg_caption };
+      Object.keys(caps).forEach(function (f) {
+        if (!caps[f]) return;
+        var el = block.querySelector('[name="' + f + idx + '"]');
+        if (el) el.value = caps[f];
+      });
+    }
     block.querySelectorAll('input[type=file]').forEach(wireImageInput);
     renumberCaptions();
     triggerAutoSave();
@@ -1164,6 +1400,20 @@
     var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
     document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
+
+    // Rows are added from many places (Add row, CSV import, draft restore, Add Test), so
+    // watch the DOM for row changes instead of hooking each call site.
+    var _ceForm = document.getElementById('ceForm');
+    if (_ceForm) {
+      var _rowSyncPending = null;
+      new MutationObserver(function (muts) {
+        if (muts.some(function (m) { return m.target && m.target.tagName === 'TBODY'; })) {
+          clearTimeout(_rowSyncPending);
+          _rowSyncPending = setTimeout(syncRowDeleteButtons, 0);
+        }
+      }).observe(_ceForm, { childList: true, subtree: true });
+    }
+    syncRowDeleteButtons();
 
     // Preview each image saved in a prior draft (served by ce_draft_image), so
     // reloading a draft shows the uploaded images instead of an empty file picker.
@@ -1203,6 +1453,15 @@
     }
 
     addTest();   // start with one empty Measurement Data Test
+
+    // Re-create the additional Test Setup picture slots a saved draft had, keeping each
+    // slot's original index so the image already stored under that name still shows.
+    [
+      {%- for k, v in prefill.items() if k.startswith('ce_extra_photo_caption_') and k.split('_')[-1].isdigit() %}
+      { idx: {{ k.split('_')[-1] }}, caption: {{ v|tojson }} },
+      {%- endfor %}
+    ].sort(function (a, b) { return a.idx - b.idx; })
+     .forEach(function (s) { addExtraPhoto(s.caption, s.idx); });
 
     // Wire up event listeners for input/change for auto-saving
     var formEl = document.getElementById('ceForm');

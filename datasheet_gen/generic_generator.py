@@ -1,11 +1,14 @@
 """Render any test's docxtpl template (by code) with a context + fitted images."""
+import copy
+import functools
 import os
 
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 
-from .generator import strip_trailing_blank_paragraphs, _add_image_borders
+from .generator import strip_trailing_blank_paragraphs, _add_image_borders, _PIC_NS
 from .layout import (polish_layout, page_break_before_top_sections, enforce_arial_fonts,
                      enforce_arial_procedure, enforce_body_arial, shrink_wide_obs_tables,
                      paginate_generic_datasheet)
@@ -16,16 +19,12 @@ TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
-        return (40, 20)
+        return (40, 20)              # signatures stay small
     if "img_fc" in k:
-        return (140, 52)   # functional-check captures: short so all 3 fit on one page
-    if (code or "").upper() == "RE":
-        if "photo" in k:
-            return (140, 90)
-        return (160, 90)
-    if "photo" in k:
-        return (140, 90)
-    return (150, 90)
+        return (140, 52)             # functional-check captures: short so all 3 fit on one page
+    # All test-setup photos and measurement/emission plots default to
+    # 15.92 cm (W) x 9.5 cm (H) = 159.2 x 95 mm; editable per-image in the form.
+    return (159.2, 95)
 
 
 def _fit(tpl, path, box, exact=False):
@@ -104,7 +103,10 @@ def _re_paginate(doc):
       * keep every image with its caption so a page break never orphans a label.
     Two 90 mm plots + captions + a heading fit one page naturally."""
     from docx.oxml.ns import qn
-    BREAK_HEADINGS = ("FUNCTIONAL CHECK", "DEVIATION FROM THE STANDARD",
+    # 2.4 TEST PROCEDURE is several long paragraphs: keep-with-next alone cannot stop
+    # Word splitting it when it starts low on a page, so it begins on a fresh page and
+    # therefore always fits in one piece.
+    BREAK_HEADINGS = ("FUNCTIONAL CHECK", "DEVIATION FROM THE STANDARD", "TEST PROCEDURE",
                       "MEASUREMENT DATA", "TEST SETUP PICTURES", "TEST EQUIPMENT USED")
     pm = {p._p: p for p in doc.paragraphs}
     tm = {t._tbl: t for t in doc.tables}
@@ -316,6 +318,886 @@ def _surge_insert_observation(doc, ac, dc, signal):
             marker._p.getparent().remove(marker._p)
 
 
+_EMU_PER_CM = 360000
+_A_NS_URI = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+
+def _tc_spans(tr):
+    """[(tc, start_grid, span), ...] for one table row."""
+    out, g = [], 0
+    for tc in tr.findall(qn("w:tc")):
+        gs = tc.find(qn("w:tcPr") + "/" + qn("w:gridSpan"))
+        span = int(gs.get(qn("w:val"))) if gs is not None else 1
+        out.append((tc, g, span))
+        g += span
+    return out
+
+
+def _set_span(tc, span):
+    tcPr = tc.find(qn("w:tcPr"))
+    if tcPr is None:
+        tcPr = tc.makeelement(qn("w:tcPr"), {})
+        tc.insert(0, tcPr)
+    gs = tcPr.find(qn("w:gridSpan"))
+    if span <= 1:
+        if gs is not None:
+            tcPr.remove(gs)
+        return
+    if gs is None:
+        gs = tcPr.makeelement(qn("w:gridSpan"), {})
+        tcPr.append(gs)
+    gs.set(qn("w:val"), str(span))
+
+
+def _write_tc_text(tc, text):
+    """Replace a cell's text, keeping the first run's formatting."""
+    ps = tc.findall(qn("w:p"))
+    if not ps:
+        return
+    for extra in ps[1:]:
+        tc.remove(extra)
+    p = ps[0]
+    runs = p.findall(qn("w:r"))
+    if not runs:
+        r = p.makeelement(qn("w:r"), {})
+        t = p.makeelement(qn("w:t"), {})
+        r.append(t)
+        p.append(r)
+        runs = [r]
+    for extra in runs[1:]:
+        p.remove(extra)
+    ts = runs[0].findall(qn("w:t"))
+    if not ts:
+        t = runs[0].makeelement(qn("w:t"), {})
+        runs[0].append(t)
+        ts = [t]
+    ts[0].text = text or ""
+    ts[0].set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    for extra in ts[1:]:
+        extra.getparent().remove(extra)
+
+
+def _grid_widths(tb):
+    g = tb._tbl.find(qn("w:tblGrid"))
+    return [int(c.get(qn("w:w")) or 0) for c in (g.findall(qn("w:gridCol")) if g is not None else [])]
+
+
+def _sync_row_widths(tb):
+    """Re-derive every cell's preferred width (w:tcW) from the table grid + its
+    gridSpan. Word lays a table out from tcW, so a span change that leaves a stale
+    tcW makes it recompute the columns — which squeezes the label column and pushes
+    the table onto a second page."""
+    widths = _grid_widths(tb)
+    if not widths:
+        return
+    for tr in tb._tbl.findall(qn("w:tr")):
+        g = 0
+        for tc in tr.findall(qn("w:tc")):
+            gs = tc.find(qn("w:tcPr") + "/" + qn("w:gridSpan"))
+            span = int(gs.get(qn("w:val"))) if gs is not None else 1
+            total = sum(widths[g:g + span])
+            tcPr = tc.find(qn("w:tcPr"))
+            if tcPr is None:
+                tcPr = tc.makeelement(qn("w:tcPr"), {})
+                tc.insert(0, tcPr)
+            w = tcPr.find(qn("w:tcW"))
+            if w is None:
+                w = tcPr.makeelement(qn("w:tcW"), {})
+                tcPr.append(w)
+            w.set(qn("w:w"), str(total))
+            w.set(qn("w:type"), "dxa")
+            g += span
+
+
+def _re_spec_table(doc):
+    """The RE 2.1 TEST SPECIFICATION table (identified by its 'Product Standard' row)."""
+    for tb in doc.tables:
+        try:
+            if (tb.rows[0].cells[0].text or "").strip().lower().startswith("product standard"):
+                return tb
+        except (IndexError, AttributeError):
+            continue
+    return None
+
+
+def _re_row_by_label(tb, *needles):
+    for idx, row in enumerate(tb.rows):
+        lbl = (row.cells[0].text or "").strip().lower()
+        if any(n in lbl for n in needles):
+            return idx
+    return None
+
+
+def _re_set_row_sections(tb, row_idx, values):
+    """Split a spec row's value area (grid cols 1..N) into len(values) sections."""
+    if row_idx is None or not values:
+        return
+    tr = tb._tbl.findall(qn("w:tr"))[row_idx]
+    cells = _tc_spans(tr)
+    if len(cells) < 2:
+        return
+    total = sum(span for _, _, span in cells[1:])          # grid width of the value area
+    n = min(len(values), total)
+    base, extra = divmod(total, n)
+    spans = [base + (1 if i < extra else 0) for i in range(n)]
+    proto = cells[1][0]
+    for tc, _, _ in cells[2:]:                             # drop the old value cells
+        tr.remove(tc)
+    anchor = proto
+    _set_span(proto, spans[0])
+    _write_tc_text(proto, values[0])
+    for i in range(1, n):
+        new = copy.deepcopy(proto)
+        _set_span(new, spans[i])
+        _write_tc_text(new, values[i])
+        anchor.addnext(new)
+        anchor = new
+
+
+# The template's value area is 4 uneven grid columns (one is a 168-twip sliver), so a
+# 3-way split would land on it and wrap. Re-grid the value area into 12 equal columns
+# (LCM of 1/2/3) mapped from the originals, so every 1/2/3 split is exact and each
+# section stays on one line. The label column keeps its original width.
+_RE_NEW_COLS = (3, 2, 1, 6)          # new columns per original value column -> 12
+
+
+def _re_regrid_value_area(tb, new_cols=_RE_NEW_COLS):
+    """Split the value area into equal grid columns, remapping existing spans.
+    new_cols gives how many new columns each ORIGINAL value column becomes, so its sum
+    must be a multiple of every section count wanted (RE: 12; CE: (3, 3) -> 6)."""
+    widths = _grid_widths(tb)
+    if len(widths) != 1 + len(new_cols):
+        return False                  # unexpected geometry -> leave the table alone
+    label_w, value_total = widths[0], sum(widths[1:])
+    n = sum(new_cols)
+    base, rem = divmod(value_total, n)
+    new_widths = [base + (1 if i < rem else 0) for i in range(n)]
+
+    for tr in tb._tbl.findall(qn("w:tr")):
+        for tc, g0, span in _tc_spans(tr):
+            if g0 == 0:
+                _set_span(tc, 1)      # label cell
+                continue
+            start = g0 - 1
+            _set_span(tc, sum(new_cols[start:start + span]) or 1)
+
+    grid = tb._tbl.find(qn("w:tblGrid"))
+    for gc in grid.findall(qn("w:gridCol")):
+        grid.remove(gc)
+    for w in [label_w] + new_widths:
+        gc = grid.makeelement(qn("w:gridCol"), {})
+        gc.set(qn("w:w"), str(w))
+        grid.append(gc)
+    return True
+
+
+#: Fallback average glyph advance for Arial, as a fraction of the font size, used only
+#: when the real font metrics can't be read. It over-estimates mixed-case text badly
+#: ('Kondababu Arjilli' measures 82.5pt at 11pt but estimates 97.2pt), so it is a last
+#: resort - _text_width_em() measures the actual glyph advances instead.
+_ARIAL_AVG_EM = 0.52
+_CELL_MARGIN_PT = 10.8          # Word's default 0.19 cm left+right cell margins
+#: Word wraps only when the text exceeds the usable width exactly, so this stays tiny -
+#: just enough to absorb metric rounding. A larger value would shrink text that really
+#: does fit, which is the bug this replaced.
+_FIT_HEADROOM_PT = 0.25
+
+_ARIAL_FONT_PATHS = (
+    r"C:\Windows\Fonts\arial.ttf",
+    r"C:\Windows\Fonts\Arial.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",   # metric-compatible
+    "/Library/Fonts/Arial.ttf",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _arial_font():
+    """Arial loaded at 1000 pt, so getlength(text)/1000 is the width in em units and the
+    width at N pt is simply em * N. None when no Arial-metric font is installed."""
+    try:
+        from PIL import ImageFont
+    except Exception:
+        return None
+    for path in _ARIAL_FONT_PATHS:
+        try:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, 1000)
+        except Exception:
+            continue
+    return None
+
+
+@functools.lru_cache(maxsize=512)
+def _text_width_em(text):
+    """Width of text in em units (multiply by the point size to get points)."""
+    font = _arial_font()
+    if font is not None:
+        try:
+            return font.getlength(text) / 1000.0
+        except Exception:
+            pass
+    return len(text) * _ARIAL_AVG_EM
+
+
+def _set_cell_font_pt(tc, pt):
+    """Force every run in a cell to a given point size (w:sz is in half-points)."""
+    half = str(int(round(pt * 2)))
+    for r in tc.iter(qn("w:r")):
+        rPr = r.find(qn("w:rPr"))
+        if rPr is None:
+            rPr = r.makeelement(qn("w:rPr"), {})
+            r.insert(0, rPr)
+        for tag in ("w:sz", "w:szCs"):
+            el = rPr.find(qn(tag))
+            if el is None:
+                el = rPr.makeelement(qn(tag), {})
+                rPr.append(el)
+            el.set(qn("w:val"), half)
+
+
+def _re_fit_row_font(tb, needle, max_pt=11.0, min_pt=7.0, step=0.5):
+    """Keep a row's values on ONE line. Try the normal 11 pt first; only when a value
+    is too wide for its (possibly 3-way split) section, step down to the closest size
+    that fits — never below min_pt. Returns the size applied, or None if 11 pt was fine."""
+    r = _re_row_by_label(tb, needle)
+    if r is None:
+        return None
+    cells = _tc_spans(tb._tbl.findall(qn("w:tr"))[r])[1:]
+    if not cells:
+        return None
+    demand = []
+    for tc, _, _ in cells:
+        w = tc.find(qn("w:tcPr") + "/" + qn("w:tcW"))
+        avail = ((int(w.get(qn("w:w"))) / 20.0) - _CELL_MARGIN_PT) if w is not None else 0.0
+        text = "".join(t.text or "" for t in tc.iter(qn("w:t"))).strip()
+        if text:
+            demand.append((_text_width_em(text), max(1.0, avail)))
+    if not demand:
+        return None
+
+    def fits(pt):
+        return all(em * pt + _FIT_HEADROOM_PT <= avail for em, avail in demand)
+
+    if fits(max_pt):
+        return None                                  # 11 pt is fine, leave it alone
+    pt, chosen = max_pt, None
+    while pt - step >= min_pt:
+        pt -= step
+        if fits(pt):
+            chosen = pt
+            break
+    if chosen is None:
+        # Nothing down to min_pt keeps it on one line, so shrinking would make the text
+        # unreadable AND still wrap. Leave the row at its normal size and let Word wrap.
+        return None
+    for tc, _, _ in cells:
+        _set_cell_font_pt(tc, chosen)
+    return chosen
+
+
+#: Rows whose two value cells are OPTION pairs, not frequency-range columns
+#: (Group|Class and Tabletop|Floor standing). They must survive the range collapse.
+_RE_OPTION_PAIR_ROWS = ("classification", "eut configuration")
+
+
+def _re_collapse_single_range(tb, use_second):
+    """Only one Frequency Range is selected, so the spec table keeps ONE value column
+    spanning the whole value area. use_second=True carries the 1GHz-6GHz column's
+    content over (the 30MHz-1GHz column is the one that gets dropped)."""
+    for tr in tb._tbl.findall(qn("w:tr")):
+        cells = _tc_spans(tr)
+        if len(cells) < 2:
+            continue
+        label = "".join(t.text or "" for t in cells[0][0].iter(qn("w:t"))).strip().lower()
+        if any(k in label for k in _RE_OPTION_PAIR_ROWS):
+            continue        # keep both checkbox cells (e.g. Tabletop | Floor standing)
+        value_cells = cells[1:]
+        total = sum(span for _, _, span in value_cells)
+        keep = value_cells[0][0]
+        if use_second and len(value_cells) > 1:
+            src = value_cells[-1][0]
+            for p in keep.findall(qn("w:p")):
+                keep.remove(p)
+            for p in src.findall(qn("w:p")):
+                keep.append(copy.deepcopy(p))
+        for tc, _, _ in value_cells[1:]:
+            tr.remove(tc)
+        _set_span(keep, total)
+
+
+def _re_delete_grid_cols(tb, start, count):
+    """Remove grid columns [start, start+count) from a table, shrinking spans."""
+    if count <= 0:
+        return
+    end = start + count
+    for tr in tb._tbl.findall(qn("w:tr")):
+        for tc, g0, span in _tc_spans(tr):
+            g1 = g0 + span
+            overlap = max(0, min(g1, end) - max(g0, start))
+            if overlap <= 0:
+                continue
+            if overlap >= span:
+                tr.remove(tc)
+            else:
+                _set_span(tc, span - overlap)
+    grid = tb._tbl.find(qn("w:tblGrid"))
+    if grid is not None:
+        gcs = grid.findall(qn("w:gridCol"))
+        for gc in gcs[start:end]:
+            grid.remove(gc)
+
+
+# Tables that stay LEFT-aligned in the reference datasheet (identified by the label
+# in their first cell): 1.1 EUT DETAILS, 2.1 TEST SPECIFICATION and the sign-off
+# block. Every other table is centered.
+_RE_LEFT_TABLES = ("job number", "product standard", "tested by")
+
+
+def _re_align_tables(doc):
+    """Mirror the reference datasheet's table alignment: data/limit/equipment tables
+    centered, the EUT-details / test-specification / sign-off tables left-aligned
+    (their '-' placeholder cells stay centered), all cells vertically centered."""
+    for tb in doc.tables:
+        try:
+            first = (tb.rows[0].cells[0].text or "").strip().lower()
+        except (IndexError, AttributeError):
+            first = ""
+        left = any(first.startswith(k) for k in _RE_LEFT_TABLES)
+        for row in tb.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    txt = (p.text or "").strip()
+                    if left:
+                        # '-' placeholders are centered even in a left-aligned table
+                        p.alignment = (WD_ALIGN_PARAGRAPH.CENTER if txt in ("-", "–", "—")
+                                       else WD_ALIGN_PARAGRAPH.LEFT)
+                    else:
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                tcPr = cell._tc.find(qn("w:tcPr"))
+                if tcPr is None:
+                    tcPr = cell._tc.makeelement(qn("w:tcPr"), {})
+                    cell._tc.insert(0, tcPr)
+                va = tcPr.find(qn("w:vAlign"))
+                if va is None:
+                    va = tcPr.makeelement(qn("w:vAlign"), {})
+                    tcPr.append(va)
+                va.set(qn("w:val"), "center")
+
+
+def _re_center_signoff_title(doc):
+    """Centre the 'Tested By' / 'Reviewed By' heading row of the sign-off block. The
+    rest of that table (Name / Signature / Date and their values) stays left-aligned,
+    so this runs after _re_align_tables, which left-aligns the whole table."""
+    n = 0
+    for tb in doc.tables:
+        try:
+            rows = tb.rows
+            first = (rows[0].cells[0].text or "").strip().lower()
+        except (IndexError, AttributeError):
+            continue
+        # Identified by shape: a heading row above Name / Signature / Date.
+        if not first.startswith(("tested by", "reviewed by", "approved by")):
+            continue
+        labels = [(rows[i].cells[0].text or "").strip().lower() for i in range(1, len(rows))]
+        if "name" not in labels:
+            continue
+        for cell in rows[0].cells:
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            n += 1
+    return n
+
+
+def _re_tighten_image_spacing(doc):
+    """An image paragraph inherits the document default 8pt space-after (docDefaults
+    w:after=160) plus 1.08 line spacing, so a figure ends up further from its caption
+    than a table does - a table contributes no paragraph spacing at all. Zero it so
+    image->caption spacing matches table->caption spacing everywhere."""
+    n = 0
+    for p in doc.paragraphs:
+        if p._p.findall(".//" + qn("w:drawing")):
+            pf = p.paragraph_format
+            pf.space_before = Pt(0)
+            pf.space_after = Pt(0)
+            pf.line_spacing = 1
+            n += 1
+    return n
+
+
+def _re_caption_spacing(doc):
+    """Captions under graphs/tables: single line spacing, centred, and NO space above -
+    so every caption sits the same distance below its image or table (the template put
+    6pt above some photo captions, which made those gaps look bigger)."""
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if t.upper().startswith(_RE_CAPTION_PREFIX):
+            pf = p.paragraph_format
+            pf.line_spacing = 1
+            pf.space_before = Pt(0)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def _re_subsection_spacing(doc, pt=11):
+    """Font-size-11 worth of space between sub-sections (2.1, 2.2, ...)."""
+    first = True
+    for p in doc.paragraphs:
+        if p.style.name == "Heading 2":
+            p.paragraph_format.space_before = Pt(0 if first else pt)
+            first = False
+
+
+def _re_keep_subsections(doc):
+    """Keep each sub-section together so a short block is pushed whole to the next
+    page rather than splitting. Long blocks (which cannot fit a page) are skipped."""
+    paras = doc.paragraphs
+    starts = [i for i, p in enumerate(paras) if p.style.name == "Heading 2"]
+    for si, s in enumerate(starts):
+        end = starts[si + 1] if si + 1 < len(starts) else len(paras)
+        block = paras[s:end]
+        if len(block) > 9:                     # too long to guarantee one page
+            continue
+        for p in block[:-1]:
+            if not (p.text or "").strip().upper().startswith(_RE_CAPTION_PREFIX):
+                p.paragraph_format.keep_with_next = True
+
+
+def _re_fix_signature(doc, max_h_cm=1.5):
+    """Signature image: no border, height capped at 1.5 cm (aspect preserved)."""
+    tables = doc.tables
+    if not tables:
+        return
+    for tb in tables[-2:]:                      # RESULT / sign-off block
+        for row in tb.rows:
+            for cell in row.cells:
+                for inline in cell._tc.iter(qn("wp:inline")):
+                    ext = inline.find(qn("wp:extent"))
+                    if ext is None:
+                        continue
+                    cx, cy = int(ext.get("cx") or 0), int(ext.get("cy") or 0)
+                    cap = int(max_h_cm * _EMU_PER_CM)
+                    if cy > cap and cy:
+                        ext.set("cx", str(max(1, int(cx * cap / cy))))
+                        ext.set("cy", str(cap))
+                for spPr in cell._tc.iter("{%s}spPr" % _PIC_NS):
+                    for ln in spPr.findall("{%s}ln" % _A_NS_URI):
+                        spPr.remove(ln)
+
+
+def _re_prune_photos(doc, show_30m_1g, show_1g_6g, keep=(), custom_range=""):
+    """Drop the Test-Setup photo slots that do not apply.
+
+    Standard ranges are pruned by the band named in the caption. A CUSTOM range is ONE
+    band, so no caption names a band to match on - there the template's slots are pruned
+    by POSITION instead, keeping the first Vertical/Horizontal pair.
+
+    'keep' holds the captions of pictures the engineer added by hand; those are never
+    pruned and never counted as one of the template's two slots.
+    """
+    protected = {c.strip() for c in keep if (c or "").strip()}
+    custom = bool((custom_range or "").strip())
+    if not custom and show_30m_1g and show_1g_6g:
+        return                                   # 'Both': every slot applies
+    drop = () if custom else (("1GHz - 6GHz",) if not show_1g_6g else ("30MHz - 1GHz",))
+
+    body = doc.element.body
+    paras = list(doc.paragraphs)
+    removed = []
+    kept_template_slots = 0
+    for i, p in enumerate(paras):
+        t = (p.text or "").strip()
+        if not t.upper().startswith("PHOTO "):
+            continue
+        if t in protected:
+            continue                             # an engineer-added picture
+        if custom:
+            # one band -> the first pair is the band's Vertical/Horizontal
+            kept_template_slots += 1
+            if kept_template_slots <= 2:
+                continue
+        elif not any(d in t for d in drop):
+            continue
+        removed.append(p)
+        if i > 0 and paras[i - 1]._p.findall(".//" + qn("w:drawing")):
+            removed.append(paras[i - 1])
+        elif i > 0 and not (paras[i - 1].text or "").strip():
+            removed.append(paras[i - 1])
+    for p in removed:
+        if p._p.getparent() is not None:
+            body.remove(p._p)
+
+
+#: Full content width of an RE page in twips - every other table in the template uses it.
+_RE_TABLE_WIDTH_TWIPS = 9016
+
+
+def _re_drop_empty_upload_tables(doc, tables):
+    """Remove an upload-driven table (and the blank paragraph above it) when nothing was
+    uploaded, so the datasheet does not carry an empty grid. `tables` is the list of
+    {'headers', 'has_data'} dicts built by collect_upload_table()."""
+    empties = [
+        [str(h or "").strip() for h in (t.get("headers") or [])]
+        for t in (tables or []) if not t.get("has_data") and t.get("headers")
+    ]
+    if not empties:
+        return 0
+    body = doc.element.body
+    removed = 0
+    for tb in list(doc.tables):
+        rows = tb._tbl.findall(qn("w:tr"))
+        if not rows:
+            continue
+        header = [
+            "".join(t.text or "" for t in tc.iter(qn("w:t"))).strip()
+            for tc in rows[0].findall(qn("w:tc"))
+        ]
+        if header not in empties:
+            continue
+        prev = tb._tbl.getprevious()
+        if tb._tbl.getparent() is not None:
+            body.remove(tb._tbl)
+            removed += 1
+        # tidy up the spacer paragraph that preceded it
+        if prev is not None and prev.tag == qn("w:p") and not \
+                "".join(t.text or "" for t in prev.iter(qn("w:t"))).strip():
+            if prev.getparent() is not None:
+                body.remove(prev)
+    return removed
+
+
+def _re_sync_meas_table_widths(doc, groups, extra_header_sets=None):
+    """The MEASUREMENT DATA tables are generated with a column loop, so their column
+    COUNT comes from the data. docxtpl rebuilds w:tblGrid for the rendered count, but it
+    re-splits the template's width and leaves each cell's w:tcW at the template value -
+    so the total drifts a few twips and Word re-lays the table out from the stale widths.
+    Rebuild the grid as N exactly-equal columns summing to the full page width, then
+    re-derive every cell width from it.
+
+    Tables are matched by their header row equalling a group's table_headers, so renamed
+    or added columns still match and no other RE table is touched.
+    """
+    wanted = []
+    for g in (groups or []):
+        # a group can hold several tables (30MHz-1GHz quasi-peak, plus Peak AND Average
+        # above 1GHz), each with its own headers
+        for t in (g.get("tables") or [{"headers": g.get("table_headers")}]):
+            hdrs = [str(h or "").strip() for h in (t.get("headers") or [])]
+            if hdrs and hdrs not in wanted:
+                wanted.append(hdrs)
+    for extra in (extra_header_sets or []):
+        hdrs = [str(h or "").strip() for h in (extra or [])]
+        if hdrs and hdrs not in wanted:
+            wanted.append(hdrs)
+    if not wanted:
+        return 0
+
+    fixed = 0
+    for tb in doc.tables:
+        rows = tb._tbl.findall(qn("w:tr"))
+        if not rows:
+            continue
+        header = [
+            "".join(t.text or "" for t in tc.iter(qn("w:t"))).strip()
+            for tc in rows[0].findall(qn("w:tc"))
+        ]
+        if header not in wanted:
+            continue
+        n = len(header)
+        if n < 1:
+            continue
+        grid = tb._tbl.find(qn("w:tblGrid"))
+        if grid is None:
+            continue
+        base, rem = divmod(_RE_TABLE_WIDTH_TWIPS, n)
+        new_widths = [base + (1 if i < rem else 0) for i in range(n)]
+        for gc in grid.findall(qn("w:gridCol")):
+            grid.remove(gc)
+        for w in new_widths:
+            gc = grid.makeelement(qn("w:gridCol"), {})
+            gc.set(qn("w:w"), str(w))
+            grid.append(gc)
+        _sync_row_widths(tb)
+        fixed += 1
+    return fixed
+
+
+def _re_tidy_caption_whitespace(doc):
+    """Last-pass tidy of every Photo/Figure/Table caption: collapse runs of spaces and
+    drop a stray space straight after an underscore ('RE plot_ Vertical' -> 'RE plot_
+    Vertical' becomes 'RE plot_Vertical').
+
+    The defaults no longer produce these, but a caption can also arrive from a saved
+    draft or be typed by hand, so the document is normalised here rather than trusting
+    every upstream source."""
+    import re as _re
+    fixed = 0
+    for p in doc.paragraphs:
+        t = (p.text or "")
+        if not t.strip().upper().startswith(("PHOTO ", "FIGURE ", "TABLE ")):
+            continue
+        new = _re.sub(r"_[ \t]+", "_", t)        # '_ Vertical' -> '_Vertical'
+        new = _re.sub(r"[ \t]{2,}", " ", new)    # collapse double spaces
+        new = new.strip()
+        if new != t:
+            _write_para_text(p, new)
+            fixed += 1
+    return fixed
+
+
+def _re_relabel_captions_custom_range(doc, custom_range):
+    """Rename every Photo/Figure/Table caption that still carries a STANDARD band label
+    to the custom Frequency Range.
+
+    Measurement plot and table captions are already built with the custom label by the
+    service. The ones that need fixing here come from fixed template/schema text - the
+    Test Setup photo captions and the Functional Check ambient plots
+    ('Figure 1: RE_Ambient_plot_ Vertical_Peak_30MHz - 1GHz') - because a custom range is
+    a single band and none of the standard band names apply to it. A caption the engineer
+    retyped himself no longer contains a standard band name, so it is left alone.
+    """
+    if not custom_range:
+        return 0
+    renamed = 0
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if ":" not in t or not t.upper().startswith(("PHOTO ", "FIGURE ", "TABLE ")):
+            continue
+        head, rest = t.split(":", 1)
+        new = rest
+        # '1-6GHz' is the short form used in the 1GHz-6GHz TABLE captions
+        for band in ("30MHz - 1GHz", "1GHz - 6GHz", "30MHz-1GHz", "1GHz-6GHz", "1-6GHz"):
+            if band in new:
+                new = new.replace(band, custom_range)
+        if new != rest:
+            _write_para_text(p, "%s:%s" % (head, new))
+            renamed += 1
+    return renamed
+
+
+def _re_drop_captionless_photos(doc):
+    """Remove a Test-Setup photo caption when nothing was uploaded for that slot. The
+    template pairs each '{{ img_photo_N }}' paragraph with its caption, so an empty slot
+    would otherwise print 'Photo N: ...' over blank space. Runs before renumbering so the
+    survivors stay 1..N."""
+    body = doc.element.body
+    paras = list(doc.paragraphs)
+    removed = []
+    for i, p in enumerate(paras):
+        t = (p.text or "").strip()
+        if not (t.upper().startswith("PHOTO ") and ":" in t):
+            continue
+        prev = paras[i - 1] if i > 0 else None
+        if prev is None:
+            continue
+        if prev._p.findall(".//" + qn("w:drawing")):
+            continue                        # has a picture -> keep
+        if (prev.text or "").strip():
+            continue                        # not this caption's (empty) image paragraph
+        removed.extend([p, prev])
+    for p in removed:
+        if p._p.getparent() is not None:
+            body.remove(p._p)
+    return len(removed) // 2
+
+
+def _re_renumber_figures(doc):
+    """Number every 'Figure N:' caption 1..N in document order. The document runs one
+    continuous sequence (Functional Check plots, then the measurement plots of each
+    group), and a slot with no upload is dropped, so without this the numbering would
+    show gaps wherever an empty slot had reserved a number."""
+    n = 1
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if t.upper().startswith("FIGURE ") and ":" in t:
+            _write_para_text(p, "Figure %d:%s" % (n, t.split(":", 1)[1]))
+            n += 1
+    return n - 1
+
+
+def _re_renumber_photos(doc):
+    """Number every surviving Test-Setup photo caption 'Photo 1..N' in document order.
+    Runs unconditionally (not only after pruning) so pictures the engineer appended
+    continue the sequence after the standard slots that actually printed."""
+    n = 1
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if t.upper().startswith("PHOTO ") and ":" in t:
+            _write_para_text(p, "Photo %d:%s" % (n, t.split(":", 1)[1]))
+            n += 1
+    return n - 1
+
+
+def _re_rebuild_procedure(doc, text):
+    """Replace the template's hard-coded 2.4 TEST PROCEDURE body with the actual
+    procedure text (already range-filtered and mapped), one paragraph per block with a
+    one-line gap between them. The template carries only the 30MHz-1GHz wording and no
+    {{ test_procedure }} placeholder, so the body has to be rebuilt here."""
+    import re as _re
+    from docx.text.paragraph import Paragraph
+    blocks = [b.strip() for b in _re.split(r"\n\s*\n", (text or "").strip()) if b.strip()]
+    if not blocks:
+        return False
+    paras = doc.paragraphs
+    start = None
+    for i, p in enumerate(paras):
+        if (p.style.name or "").startswith("Heading") and "TEST PROCEDURE" in (p.text or "").upper():
+            start = i
+            break
+    if start is None:
+        return False
+    end = start + 1
+    while end < len(paras) and not (paras[end].style.name or "").startswith("Heading"):
+        end += 1
+    body = [p for p in paras[start + 1:end]]
+    if not body:
+        return False
+
+    proto = body[0]
+    anchor = proto._p
+    new_els = []
+    for blk in blocks:
+        el = copy.deepcopy(proto._p)
+        np = Paragraph(el, proto._parent)
+        _write_para_text(np, blk)
+        pf = np.paragraph_format
+        pf.line_spacing = 1
+        pf.space_after = Pt(11)          # one blank line between paragraphs
+        pf.space_before = Pt(0)
+        new_els.append(el)
+    for el in reversed(new_els):
+        anchor.addnext(el)
+    for p in body:                        # drop the template's hard-coded wording
+        if p._p.getparent() is not None:
+            p._p.getparent().remove(p._p)
+    return True
+
+
+def _re_fill_missing_na(doc, header_needle="calibration due", value="NA"):
+    """Any blank Calibration Due cell on a populated equipment row prints 'NA' rather
+    than an empty box. Rows that are entirely empty (spare rows) are left alone."""
+    filled = 0
+    for tb in doc.tables:
+        try:
+            hdr = [(c.text or "").strip().lower() for c in tb.rows[0].cells]
+        except (IndexError, AttributeError):
+            continue
+        idx = next((i for i, h in enumerate(hdr) if header_needle in h), None)
+        if idx is None:
+            continue
+        for row in tb.rows[1:]:
+            cells = row.cells
+            if idx >= len(cells):
+                continue
+            if (cells[idx].text or "").strip():
+                continue
+            if any((c.text or "").strip() for i, c in enumerate(cells) if i != idx):
+                _write_tc_text(cells[idx]._tc, value)
+                filled += 1
+    return filled
+
+
+def _re_fix_procedure_standard(doc, basic_standard):
+    """The RE template hard-codes the whole 2.4 TEST PROCEDURE text, including the
+    reference document's standard names (there is no {{ test_procedure }} placeholder).
+    Rewrite just the opening line so it names THIS datasheet's Basic Standard."""
+    std = (basic_standard or "").strip()
+    if not std:
+        return False
+    lead = "the test procedure was in accordance with"
+    for p in doc.paragraphs:
+        if (p.text or "").strip().lower().startswith(lead):
+            _write_para_text(p, "The test procedure was in accordance with %s" % std)
+            return True
+    return False
+
+
+def _write_para_text(p, text):
+    runs = p.runs
+    if not runs:
+        p.add_run(text)
+        return
+    runs[0].text = text
+    for r in runs[1:]:
+        r._r.getparent().remove(r._r)
+
+
+def _re_finalize(doc, context):
+    """Apply the RE reference-format corrections that can't be templated."""
+    meta = (context or {}).get("_re_meta") or {}
+    s30 = meta.get("show_30m_1g", True)
+    s16 = meta.get("show_1g_6g", True)
+    rot = meta.get("rotation_steps") or []
+    days = meta.get("days") or []
+
+    tb = _re_spec_table(doc)
+    if tb is not None:
+        # 1) Re-grid the value area to 12 equal columns so any 1/2/3 split is exact.
+        _re_regrid_value_area(tb)
+        # 2) Only the selected frequency range keeps a value column ('Both' keeps two).
+        if s30 != s16:
+            _re_collapse_single_range(tb, use_second=s16)
+        # 3) Turn-table rotation step: one section per applicable family (15deg CISPR /
+        #    22.5deg CFR), repeated for each frequency column that is shown, so both
+        #    columns read identically (15deg | 22.5deg  |  15deg | 22.5deg).
+        if rot:
+            per_range = list(rot) * (2 if (s30 and s16) else 1)
+            _re_set_row_sections(tb, _re_row_by_label(tb, "rotation step"), per_range)
+        # 4) Per-row splits the engineer chose: Ambient Temperature, Relative Humidity,
+        #    Test Date and Tested by each get 1, 2 or 3 equal sections, independently.
+        #    Applied even for a single section, so the row always shows the engineer's
+        #    value (these cells no longer come from template placeholders).
+        for row in (meta.get("row_splits") or []):
+            vals = row.get("values") or []
+            if vals:
+                _re_set_row_sections(tb, _re_row_by_label(tb, row["needle"]), vals)
+        # 5) Cell widths must match the grid, otherwise Word re-lays the table out and
+        #    the label column collapses (pushing the table onto a second page).
+        _sync_row_widths(tb)
+        # 6) Names are long: if a 'Tested by' value can't fit its section at 11 pt,
+        #    shrink JUST that row to the closest size that keeps it on one line.
+        _re_fit_row_font(tb, "tested by")
+
+    # 2.4 TEST PROCEDURE: rebuild from the (range-filtered, mapped) text, then make
+    # sure the opening line names this datasheet's Basic Standard.
+    _re_rebuild_procedure(doc, (context or {}).get("test_procedure"))
+    _re_fix_procedure_standard(doc, meta.get("basic_standard"))
+    # Prune first (a custom range prunes by position, standard ranges by band name), THEN
+    # rename what survived. Renaming first would erase the band names the standard prune
+    # matches on; pruning first by band name would delete a stale caption instead of
+    # renaming it - hence the position rule for a custom range.
+    _re_prune_photos(doc, s30, s16,
+                     keep=[p.get("caption") for p in (context or {}).get("re_extra_photos") or []],
+                     custom_range=meta.get("custom_range"))
+    # A custom Frequency Range is ONE band: rename every surviving caption that still
+    # holds a standard band name (Test Setup photos, Functional Check ambient plots, and
+    # any stale caption carried in from an older draft).
+    _re_relabel_captions_custom_range(doc, meta.get("custom_range"))
+    # Upload-driven tables (RE Functional Check): drop the ones with no data, then treat
+    # the rest like the measurement tables when re-deriving column widths.
+    _upload_tables = [v for v in (context or {}).values()
+                      if isinstance(v, dict) and "has_data" in v and "headers" in v]
+    _re_drop_empty_upload_tables(doc, _upload_tables)
+    # dynamic measurement columns: rebuild the grid to the rendered column count
+    _re_sync_meas_table_widths(
+        doc, (context or {}).get("measurement_groups"),
+        extra_header_sets=[t.get("headers") for t in _upload_tables if t.get("has_data")])
+    _re_drop_captionless_photos(doc)  # no upload -> no 'Photo N:' caption over blank space
+    _re_renumber_photos(doc)          # 'Photo 1..N' in document order, extras included
+    _re_renumber_figures(doc)         # 'Figure 1..N' with no gaps from dropped plot slots
+    _re_tidy_caption_whitespace(doc)  # no '_ Vertical' / double spaces in any caption
+    _re_fill_missing_na(doc)          # blank Calibration Due -> NA
+    _re_align_tables(doc)
+    # Only the sign-off block's heading row is centred. The 2.1 TEST SPECIFICATION
+    # 'Tested by' row label stays left, like every other label in that table.
+    # Runs AFTER _re_align_tables, which would otherwise reset it to left.
+    _re_center_signoff_title(doc)
+    _re_tighten_image_spacing(doc)     # image->caption gap == table->caption gap
+    _re_caption_spacing(doc)
+    _re_subsection_spacing(doc)
+    _re_keep_subsections(doc)
+    _re_fix_signature(doc)
+
+
 def render(code, context, img_keys, img_paths, output_path):
     tpl = DocxTemplate(os.path.join(TPL_DIR, f"{code}.docx"))
     _img_boxes = context.get("_img_boxes") or {}
@@ -326,12 +1208,29 @@ def render(code, context, img_keys, img_paths, output_path):
         context[k] = _fit(tpl, p, box, exact=bool(custom)) if (p and os.path.exists(p)) else ""
     if code == "RE":
         for group in context.get("measurement_groups") or []:
-            for role in ("img_vertical", "img_horizontal"):
-                key = group.get(role + "_key")
-                p = img_paths.get(key)
-                custom = _img_boxes.get(key)
-                box = custom or _box(role, code)
-                group[role] = _fit(tpl, p, box, exact=bool(custom)) if (p and os.path.exists(p)) else ""
+            # One entry per plot: the standard Vertical/Horizontal pair for each band the
+            # group covers, plus any extra plots the engineer added. A slot with nothing
+            # uploaded is dropped so no caption prints over an empty frame.
+            kept = []
+            for img in group.get("images") or []:
+                p = img_paths.get(img["key"])
+                if not (p and os.path.exists(p)):
+                    continue
+                custom = _img_boxes.get(img["key"])
+                img["img"] = _fit(tpl, p, custom or _box("img_vertical", code), exact=bool(custom))
+                kept.append(img)
+            group["images"] = kept
+        # Extra test-setup pictures the engineer added: an empty slot (label typed but
+        # nothing uploaded, or the row left untouched) prints nothing at all.
+        _extras = []
+        for photo in context.get("re_extra_photos") or []:
+            p = img_paths.get(photo["key"])
+            if not (p and os.path.exists(p)):
+                continue
+            custom = _img_boxes.get(photo["key"])
+            photo["img"] = _fit(tpl, p, custom or _box(photo["key"], code), exact=bool(custom))
+            _extras.append(photo)
+        context["re_extra_photos"] = _extras
     tpl.render(context, autoescape=True)
     
     if code == "RE":
@@ -388,6 +1287,10 @@ def render(code, context, img_keys, img_paths, output_path):
         paginate_generic_datasheet(tpl.docx)
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
+    if code == "RE":
+        # RE reference-format corrections (runs LAST: it strips the signature border
+        # that _add_image_borders adds, and owns the spec-table column/section layout).
+        _re_finalize(tpl.docx, context)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

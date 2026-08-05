@@ -200,14 +200,21 @@
         var cx = Math.min(Math.max(ox + dx, 0), r.width);
         var cy = Math.min(Math.max(oy + dy, 0), r.height);
         var rawW = Math.abs(cx - ax), rawH = Math.abs(cy - ay);
-        var w = rawW, h = w / ratio;
-        if (h > rawH) { h = rawH; w = h * ratio; }
-        if (w < MIN) { w = MIN; h = w / ratio; }
         // keep inside the image measured from the fixed anchor
         var availW = (kind === "nw" || kind === "sw") ? ax : (r.width - ax);
         var availH = (kind === "nw" || kind === "ne") ? ay : (r.height - ay);
-        if (w > availW) { w = availW; h = w / ratio; }
-        if (h > availH) { h = availH; w = h * ratio; }
+        var w, h;
+        if (S.freeCrop) {
+          // free-hand: width and height follow the pointer independently (no ratio lock)
+          w = Math.max(MIN, Math.min(rawW, availW));
+          h = Math.max(MIN, Math.min(rawH, availH));
+        } else {
+          w = rawW; h = w / ratio;
+          if (h > rawH) { h = rawH; w = h * ratio; }
+          if (w < MIN) { w = MIN; h = w / ratio; }
+          if (w > availW) { w = availW; h = w / ratio; }
+          if (h > availH) { h = availH; w = h * ratio; }
+        }
         var nx = (kind === "nw" || kind === "sw") ? ax - w : ax;
         var ny = (kind === "nw" || kind === "ne") ? ay - h : ay;
         S.sel = { x: nx, y: ny, w: w, h: h };
@@ -264,6 +271,11 @@
 
   function sizePreview() {
     var ratio = S.ratio || (16 / 9), pw, ph, ss = 2;
+    // free-hand crop: preview the crop's OWN aspect, not the document-box ratio,
+    // so what you see is what the cropped image actually looks like.
+    if (S.freeCrop && S.mode === "crop" && S.sel && S.sel.w > 0 && S.sel.h > 0) {
+      ratio = S.sel.w / S.sel.h;
+    }
     if (ratio >= 1) { pw = PREVMAX; ph = Math.round(PREVMAX / ratio); }
     else { ph = PREVMAX; pw = Math.round(PREVMAX * ratio); }
     els.prev.width = pw * ss; els.prev.height = ph * ss;   // 2x backing store -> crisp preview
@@ -302,7 +314,9 @@
       : "Original — adjust the frame";
     els.hint.textContent = (m === "fit")
       ? "The full image is kept; the width is preserved and the height is stretched to fill."
-      : "Drag inside the frame to move; drag a corner to resize.";
+      : (S.freeCrop
+         ? "Drag inside the frame to move; drag any corner to resize freely (no fixed ratio)."
+         : "Drag inside the frame to move; drag a corner to resize.");
     if (m === "crop" && (!S.sel || S.sel.w < 2)) setDefaultSel();
     renderSel(); renderPreview();
   }
@@ -311,7 +325,7 @@
     S.angle = 0; S.sel = null; S.drag = null;
     S.wCm = S.boxCm[0]; S.hCm = S.boxCm[1]; S.ratio = S.boxRatio;
     els.wcm.value = fmtCm(S.wCm); els.hcm.value = fmtCm(S.hCm);
-    setMode("crop");
+    setMode("fit");
     renderWork();
   }
 
@@ -344,6 +358,17 @@
     }
     var isPng = (S.file.type === "image/png");
     var cb = S.onApply, sizeCm = { w: S.wCm, h: S.hCm };
+    if (S.freeCrop && S.mode === "crop" && S.sel && S.sel.w > 0 && S.sel.h > 0) {
+      // A free-hand crop has its own aspect. Fit it INSIDE the slot width, deriving
+      // the height from the crop so the picture is placed un-stretched (the generator
+      // sets both dimensions exactly). A tall/portrait crop is capped so it can never
+      // grow past the printable page height. Override either value in Shape W/H.
+      var MAX_H_CM = 24;                       // safe printable height on A4 portrait
+      var aspect = S.sel.w / S.sel.h;
+      var fw = S.wCm, fh = S.wCm / aspect;
+      if (fh > MAX_H_CM) { fh = MAX_H_CM; fw = MAX_H_CM * aspect; }
+      sizeCm = { w: Math.round(fw * 100) / 100, h: Math.round(fh * 100) / 100 };
+    }
     out.toBlob(function (blob) {
       var f = new File([blob], baseName(S.file.name) + "_edited." + (isPng ? "png" : "jpg"),
                        { type: blob.type || (isPng ? "image/png" : "image/jpeg") });
@@ -362,14 +387,16 @@
     if (!opts || !opts.file) return;
     mount();
     var box = opts.boxMM || [150, 90];
-    var boxCm = [Math.round(box[0]) / 10, Math.round(box[1]) / 10];
+    // mm -> cm, rounded to 2 decimals so a box like 159.2 mm stays 15.92 cm (not 15.9)
+    var boxCm = [Math.round(box[0] * 10) / 100, Math.round(box[1] * 10) / 100];
     var sizeCm = (opts.sizeCm && opts.sizeCm[0] > 0 && opts.sizeCm[1] > 0) ? opts.sizeCm : boxCm;
     var wCm = sizeCm[0], hCm = sizeCm[1];
     S = { file: opts.file, box: box, boxCm: boxCm, boxRatio: boxCm[0] / boxCm[1], onApply: opts.onApply,
           angle: 0, ratio: wCm / hCm, wCm: wCm, hCm: hCm, sel: null, drag: null,
-          mode: "crop", natural: null, work: null };
+          mode: "fit", natural: null, work: null,
+          freeCrop: !!opts.freeCrop };   // true -> corner drags are NOT ratio-locked
     els.wcm.value = fmtCm(wCm); els.hcm.value = fmtCm(hCm);
-    setMode("crop");
+    setMode("fit");   // default to "Set image to frame" (keep whole image, no crop)
     var img = new Image();
     img.onload = function () { S.natural = img; renderWork(); els.ov.classList.add("open"); };
     img.onerror = function () { alert("Could not load the image for editing."); };
@@ -405,5 +432,34 @@
     img.src = URL.createObjectURL(opts.file);
   }
 
-  window.DSImageEditor = { open: open, autoFit: autoFit };
+  // Keep the WHOLE image and STRETCH it to the box ratio (width preserved, height
+  // stretched to fill) — the silent equivalent of the modal's "Set image to frame".
+  // Hands back (file, sizeCm) so the caller also locks the document size (e.g. 15.92 x
+  // 9.5 cm). Used to conform an image on upload so nothing is cropped away.
+  function autoFrame(opts) {
+    if (!opts || !opts.file) { if (opts && opts.onApply) opts.onApply(null); return; }
+    var box = opts.boxMM || [150, 90];
+    var boxCm = [Math.round(box[0] * 10) / 100, Math.round(box[1] * 10) / 100];
+    var ratio = boxRatioOf(box);
+    var isPng = (opts.file.type === "image/png");
+    var img = new Image();
+    img.onload = function () {
+      var nw = img.naturalWidth, nh = img.naturalHeight;
+      if (!nw || !nh) { if (opts.onApply) opts.onApply(opts.file, boxCm); return; }
+      var OW = nw, OH = Math.max(1, Math.round(nw / ratio));
+      var out = document.createElement("canvas");
+      out.width = OW; out.height = OH;
+      out.getContext("2d").drawImage(img, 0, 0, nw, nh, 0, 0, OW, OH);   // stretch whole image
+      out.toBlob(function (blob) {
+        if (!blob) { if (opts.onApply) opts.onApply(opts.file, boxCm); return; }
+        var f = new File([blob], baseName(opts.file.name) + "_frame." + (isPng ? "png" : "jpg"),
+                         { type: blob.type || (isPng ? "image/png" : "image/jpeg") });
+        if (opts.onApply) opts.onApply(f, boxCm);
+      }, isPng ? "image/png" : "image/jpeg", 0.95);
+    };
+    img.onerror = function () { if (opts.onApply) opts.onApply(opts.file, boxCm); };
+    img.src = URL.createObjectURL(opts.file);
+  }
+
+  window.DSImageEditor = { open: open, autoFit: autoFit, autoFrame: autoFrame };
 })();

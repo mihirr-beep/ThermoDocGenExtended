@@ -86,14 +86,11 @@
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
           <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
-          <div class="flex items-center gap-2">
-            <button type="button" onclick="generateREGroupsFromVoltages()"
-                    title="Create one group per value in 'EUT Input Voltage & Frequency' (semicolon-separated). Replaces the current groups."
-                    class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate Groups from Voltages</button>
-            <button type="button" onclick="addREGroup()"
-                    title="Add another measurement group manually. Each group has its own label, plots and table."
-                    class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">+ Add Group</button>
-          </div>
+          {# ICES + FCC are seeded automatically; this adds any further group (its own
+             label, plot slots and data table). #}
+          <button type="button" onclick="addREGroup()"
+                  title="Add another measurement group with its own label, plots and data table"
+                  class="text-xs px-3 py-1.5 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-semibold">+ Add Group</button>
         </div>
         <div id="meas-records"></div>
       </section>
@@ -311,7 +308,8 @@
                     <div id="derived-{{ f.key }}" class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 text-sm">&mdash;</div>
                     <input type="hidden" name="{{ f.key }}">
                   </div>
-                {% elif not f.computed %}{{ render_field(f, prefill, today) }}{% endif %}
+                {# split_group fields (per-day sections) render together below, not here #}
+                {% elif not f.computed and not f.split_group %}{{ render_field(f, prefill, today) }}{% endif %}
               {% endfor %}
 
             {% elif it.type == 'field' %}
@@ -319,9 +317,32 @@
 
             {% elif it.type == 'textarea' and it.key == 'test_procedure' %}
               <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
-                <p class="text-xs text-gray-500 mb-1">Standard test procedure; read-only.</p>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-sm font-medium text-gray-700">{{ it.label }}</label>
+                  {% if code == 'RE' %}
+                  {# Edit lets the engineer override the standard wording. Once edited, the
+                     text stops being regenerated from Product Standard / EUT Configuration /
+                     Frequency Range until they press Reset. #}
+                  <div class="flex items-center gap-2">
+                    <button type="button" id="procEditBtn" onclick="toggleProcedureEdit()"
+                            title="Edit the test procedure text"
+                            class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">
+                      <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit</button>
+                    <button type="button" id="procResetBtn" onclick="resetProcedure()"
+                            title="Discard your edits and rebuild the standard text"
+                            class="hidden text-xs px-2 py-1 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">&#8634; Reset</button>
+                  </div>
+                  {% endif %}
+                </div>
+                <p class="text-xs text-gray-500 mb-1" id="{{ it.key }}_hint">Standard test procedure; read-only{% if code == 'RE' %} &mdash; use <strong>Edit</strong> to change it{% endif %}.</p>
                 <input type="hidden" name="{{ it.key }}" id="{{ it.key }}" value="{{ prefill.get(it.key, '') }}">
+                {% if code == 'RE' %}
+                {# Sticky flag: survives a draft reload so a manual edit is never silently
+                   overwritten by the auto-generated wording. #}
+                <input type="hidden" name="{{ it.key }}_manual" id="{{ it.key }}_manual" value="{{ prefill.get(it.key ~ '_manual', '') }}">
+                <textarea id="{{ it.key }}_edit" rows="14"
+                          class="hidden w-full px-3 py-2 border border-emerald-400 rounded-lg text-sm leading-relaxed font-mono"></textarea>
+                {% endif %}
                 <div id="{{ it.key }}_view"
                      class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm leading-relaxed"
                      style="white-space: pre-line;">{{ prefill.get(it.key, '') }}</div>
@@ -512,6 +533,86 @@
           <div id="surge-tv-preview" class="overflow-x-auto"></div>
         </div>
         {% endif %}
+        {# Sections flagged upload_table get a table whose COLUMNS come from the uploaded
+           file: importing a CSV/TXT replaces the headings and the rows wholesale, so any
+           layout the instrument produces is accepted. It can also be filled by hand. #}
+        {% if sec.upload_table %}
+        {% set _ut = sec.upload_table %}
+        <div class="md:col-span-2 mt-4 pt-4 border-t border-dashed border-gray-300">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-semibold text-gray-700">{{ _ut.label or 'Data table' }}
+              <span class="text-xs font-normal text-gray-500">(<span id="colcount-{{ _ut.key }}">{{ (_ut.default_headers or [])|length or 3 }}</span> columns)</span></span>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="importUploadTable('{{ _ut.key }}')"
+                      title="Upload a CSV or TXT file; its first row becomes the column headings and the rest become rows"
+                      class="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Upload CSV / TXT</button>
+              <button type="button" onclick="addMeasColumn('{{ _ut.key }}')"
+                      class="text-xs px-2 py-1 border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50">+ Add Column</button>
+              <button type="button" onclick="addRow('{{ _ut.key }}')"
+                      class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add Row</button>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mb-2">Upload the instrument's file and the table below is rebuilt from it &mdash; first row as headings, the rest as data. Headings stay editable, and the table is left out of the document entirely if it has no data.</p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs border border-gray-200">
+              <thead class="bg-gray-50"><tr id="head-{{ _ut.key }}"></tr></thead>
+              <tbody id="rows-{{ _ut.key }}"></tbody>
+            </table>
+          </div>
+          <script type="application/json" id="seed-{{ _ut.key }}">{{ {'headers': (prefill.get(_ut.key ~ '__headers') or _ut.default_headers or ['Column 1','Column 2','Column 3']), 'rows': (prefill.get(_ut.key ~ '__rows') or [])}|tojson }}</script>
+        </div>
+        {% endif %}
+        {# Rows recorded per test day: the value cell in the document's TEST SPECIFICATION
+           table is split into the chosen number of sections. Each row is independent
+           (Ambient can be 2 sections while Test Date is 3). The underlying fields stay
+           in the schema (so prefill/context are unchanged) but render grouped here
+           instead of scattered through the grid above. #}
+        {% if sec.split_rows %}
+        <div class="mt-4 pt-4 border-t border-dashed border-gray-300 space-y-4">
+          {% for row in sec.split_rows %}
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end js-split-row" data-base="{{ row.base }}">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ row.label }} &ndash; sections</label>
+              <select name="{{ row.base }}_sections" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                {% for n in ['1','2','3'] %}<option {{ 'selected' if (prefill.get(row.base ~ '_sections') or '1') == n }}>{{ n }}</option>{% endfor %}
+              </select>
+            </div>
+            {% for d in [1, 2, 3] %}
+            {% set _n = row.base if d == 1 else row.base ~ '_' ~ d %}
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ row.label }} &ndash; Day {{ d }}{% if d > 1 %} <span class="text-[10px] font-normal text-gray-400">(optional)</span>{% endif %}</label>
+              <input type="{{ 'date' if row.type == 'date' else 'text' }}" name="{{ _n }}"
+                     value="{{ prefill.get(_n, '') or '' }}"{% if row.type == 'date' %} max="{{ today }}"{% endif %}
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {# Sections flagged allow_extra_images in the schema get an open-ended list of
+           further pictures, each with its own label, appended after the fixed slots. #}
+        {% if sec.allow_extra_images %}
+        <div class="mt-6 pt-5 border-t border-dashed border-gray-300">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-semibold text-gray-700">Additional pictures</span>
+            <button type="button" onclick="addExtraPhoto()"
+                    class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">+ Add picture</button>
+          </div>
+          <p class="text-xs text-gray-500 mb-3">Optional &mdash; use these for any test-setup picture beyond the four standard slots above. Each picture prints with the label you type, and the &ldquo;Photo&nbsp;N:&nbsp;&rdquo; number is added for you so the whole section stays in sequence (don't type one &mdash; it gets resequenced anyway). Slots with no upload are skipped.</p>
+          <div id="extra-photos" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+          <template id="tpl-extra-photo">
+            <div class="extra-photo relative border border-gray-200 rounded-lg p-3 bg-gray-50">
+              <button type="button" onclick="removeExtraPhoto(this)" title="Remove this picture"
+                      class="absolute top-2 right-2 text-red-500 hover:text-red-700 font-bold leading-none text-lg">&times;</button>
+              <label class="block text-xs font-medium text-gray-600 mb-1 pr-6">Picture</label>
+              <input type="file" name="re_extra_photo_%%I%%" accept="image/*" class="w-full text-xs">
+              <input type="text" name="re_extra_photo_caption_%%I%%" placeholder="Label, e.g. RE test setup_Vertical_30MHz - 1GHz"
+                     class="mt-2 w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
+            </div>
+          </template>
+        </div>
+        {% endif %}
       </section>
       {% endif %}
       {% endif %}
@@ -544,6 +645,11 @@
             {% endfor %}
           </select>
         </div>
+        {% if code == 'RE' %}
+        <button type="button" id="draftDocxBtn" onclick="downloadDraftDocx()"
+                title="Generate the Word document from the form as it stands and download it. Nothing is submitted."
+                class="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow">Generate Datasheet</button>
+        {% endif %}
         <button type="submit" id="genBtn" class="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow">Send to Peer Review</button>
       </div>
     </div>
@@ -551,6 +657,18 @@
 </div>
 
 {% if code == 'RE' %}
+{# One extra measurement plot: %%G%% = group index, %%N%% = slot number within the group. #}
+<template id="tpl-meas-extra-img">
+  <div class="meas-extra-img relative border border-gray-200 rounded-lg p-2 bg-gray-50">
+    <button type="button" onclick="removeMeasExtraImage(this)" title="Remove this plot"
+            class="absolute top-1 right-2 text-red-500 hover:text-red-700 font-bold leading-none">&times;</button>
+    <label class="block text-2xs font-bold text-gray-600 mb-1 pr-5">Additional plot</label>
+    <input type="file" name="meas_img_extra_%%G%%_%%N%%" accept="image/*" class="w-full text-xs">
+    <input type="text" name="meas_img_extra_caption_%%G%%_%%N%%" placeholder="Title, e.g. RE plot_Vertical_Peak_1GHz - 6GHz"
+           class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
+  </div>
+</template>
+
 <template id="tpl-meas-record">
 <div class="meas-record bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4" data-idx="%%I%%">
   <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
@@ -563,69 +681,89 @@
   </div>
   
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <!-- Vertical Plot -->
-    <div class="border border-gray-200 bg-white rounded-lg p-3">
-      <label class="block text-xs font-bold text-gray-700 mb-1">Vertical Polarisation Plot (156&times;93 mm)</label>
+    {# Vertical + Horizontal plot per frequency band. The second pair only appears for a
+       band this group actually covers: FCC is specified over both bands, so with Both
+       selected it gets four slots; ICES/CISPR only has 30MHz-1GHz limits and keeps two.
+       syncREMeasSlots() shows/hides the second pair and writes the band into each label. #}
+    <!-- Vertical Plot - band 1 -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3 js-meas-slot" data-slot="v1">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Vertical Polarisation Plot <span class="js-band font-normal text-gray-500"></span></label>
       <input type="file" name="meas_img_vertical_%%I%%" accept="image/*" class="w-full text-xs">
       <input type="text" name="meas_img_vertical_caption_%%I%%" placeholder="Vertical plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
     </div>
-    
-    <!-- Horizontal Plot -->
-    <div class="border border-gray-200 bg-white rounded-lg p-3">
-      <label class="block text-xs font-bold text-gray-700 mb-1">Horizontal Polarisation Plot (156&times;93 mm)</label>
+
+    <!-- Horizontal Plot - band 1 -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3 js-meas-slot" data-slot="h1">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Horizontal Polarisation Plot <span class="js-band font-normal text-gray-500"></span></label>
       <input type="file" name="meas_img_horizontal_%%I%%" accept="image/*" class="w-full text-xs">
       <input type="text" name="meas_img_horizontal_caption_%%I%%" placeholder="Horizontal plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
     </div>
-    
-    <!-- Measurement Table -->
-    <div class="md:col-span-2 border border-gray-200 bg-white rounded-lg p-3">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-bold text-gray-700">Measurement Data (7 Columns)</span>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="importData('meas_table_%%I%%')" class="text-2xs px-2 py-0.5 border border-blue-200 text-blue-600 rounded hover:bg-blue-50">Import CSV / TXT</button>
-          <button type="button" onclick="addRow('meas_table_%%I%%')" class="text-2xs px-2 py-0.5 border rounded hover:bg-gray-50">+ Add Row</button>
-        </div>
-      </div>
-      
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs border border-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="p-1 text-left">Frequency (MHz)</th>
-              <th class="p-1 text-left">Polarization</th>
-              <th class="p-1 text-left">EUT Angle (deg)</th>
-              <th class="p-1 text-left">Antenna Height (cm)</th>
-              <th class="p-1 text-left">(QP) EMI (dBuV/m)</th>
-              <th class="p-1 text-left">QP Limit (dBuV/m)</th>
-              <th class="p-1 text-left">(QP) Margin (dB)</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="rows-meas_table_%%I%%"></tbody>
-        </table>
-      </div>
-      
-      <template id="tpl-meas_table_%%I%%">
-        <tr>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c0[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c1[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c2[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c3[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c4[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c5[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5"><input name="meas_table_%%I%%__c6[]" class="w-full px-1 py-0.5 border rounded"></td>
-          <td class="p-0.5 text-center"><button type="button" onclick="delRow(this)" class="text-red-500 font-bold">&times;</button></td>
-        </tr>
-      </template>
+
+    <!-- Vertical Plot - band 2 (FCC with both ranges) -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3 js-meas-slot hidden" data-slot="v2">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Vertical Polarisation Plot <span class="js-band font-normal text-gray-500"></span></label>
+      <input type="file" name="meas_img_vertical_b2_%%I%%" accept="image/*" class="w-full text-xs">
+      <input type="text" name="meas_img_vertical_b2_caption_%%I%%" placeholder="Vertical plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
     </div>
+
+    <!-- Horizontal Plot - band 2 (FCC with both ranges) -->
+    <div class="border border-gray-200 bg-white rounded-lg p-3 js-meas-slot hidden" data-slot="h2">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Horizontal Polarisation Plot <span class="js-band font-normal text-gray-500"></span></label>
+      <input type="file" name="meas_img_horizontal_b2_%%I%%" accept="image/*" class="w-full text-xs">
+      <input type="text" name="meas_img_horizontal_b2_caption_%%I%%" placeholder="Horizontal plot caption" class="mt-1 w-full px-2 py-1 text-xs border border-gray-300 rounded">
+    </div>
+
+    <!-- Any further plots the engineer wants to add, each with its own title -->
+    <div class="md:col-span-2 border border-dashed border-gray-300 bg-white rounded-lg p-3">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs font-bold text-gray-700">Additional plots</span>
+        <button type="button" onclick="addMeasExtraImage('%%I%%')"
+                class="text-2xs px-2 py-0.5 border border-blue-200 text-blue-600 rounded hover:bg-blue-50 font-semibold">+ Add image</button>
+      </div>
+      <p class="text-2xs text-gray-500 mb-2">Optional &mdash; any extra plot for this group. Type the title you want; the &ldquo;Figure&nbsp;N:&nbsp;&rdquo; number is added for you. Slots with no upload are skipped.</p>
+      <div class="meas-extra-imgs grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+    </div>
+
+
+    {# Data tables. A group needs one quasi-peak table for 30MHz-1GHz, and TWO tables
+       (Peak and Average) for 1GHz-6GHz because that band is limited on both detectors.
+       renderMeasTables() builds the right set whenever the Frequency Range or the group
+       label changes; each table's columns are then editable independently. #}
+    <div class="md:col-span-2 meas-tables space-y-4" data-idx="%%I%%"></div>
   </div>
 </div>
+</template>
+
+{# One data table inside a group: %%K%% is the table key (e.g. '0' or '0_2'). #}
+<template id="tpl-meas-table">
+  <div class="meas-table border border-gray-200 bg-white rounded-lg p-3" data-key="%%K%%">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs font-bold text-gray-700"><span class="js-tbl-title">Measurement Data</span>
+        <span class="font-normal text-gray-500">(<span id="colcount-meas_table_%%K%%">7</span> columns &mdash; rename a heading by typing in it)</span></span>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="importData('meas_table_%%K%%')" class="text-2xs px-2 py-0.5 border border-blue-200 text-blue-600 rounded hover:bg-blue-50">Import CSV / TXT</button>
+        <button type="button" onclick="addMeasColumn('meas_table_%%K%%')" class="text-2xs px-2 py-0.5 border border-indigo-200 text-indigo-600 rounded hover:bg-indigo-50">+ Add Column</button>
+        <button type="button" onclick="addRow('meas_table_%%K%%')" class="text-2xs px-2 py-0.5 border rounded hover:bg-gray-50">+ Add Row</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs border border-gray-200">
+        <thead class="bg-gray-50">
+          <tr id="head-meas_table_%%K%%"></tr>
+        </thead>
+        <tbody id="rows-meas_table_%%K%%"></tbody>
+      </table>
+    </div>
+    <input type="text" name="meas_table_caption_%%K%%"
+           placeholder="Table caption (leave blank for the automatic one)"
+           class="mt-2 w-full px-2 py-1 text-2xs border border-gray-300 rounded">
+  </div>
 </template>
 {% endif %}
 
 <!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
 <style>
-  #previewBtn{position:fixed;right:24px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
+  #previewBtn{position:fixed;right:96px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
     padding:12px 20px;background:#059669;color:#fff;font-weight:600;border:none;border-radius:9999px;
     box-shadow:0 10px 20px rgba(0,0,0,.25);cursor:pointer;font-size:15px;}
   #previewBtn:hover{background:#047857;}
@@ -874,6 +1012,17 @@
   }
 
   function addRow(key) {
+    // RE measurement tables have a user-controlled column count, so their rows are built
+    // to match rather than cloned from a fixed <template>.
+    if (key.indexOf('meas_table_') === 0 && typeof makeMeasTableRow === 'function') {
+      var body = document.getElementById('rows-' + key);
+      if (body) {
+        body.appendChild(makeMeasTableRow(key));
+        if (typeof syncRowDeleteButtons === 'function') syncRowDeleteButtons();
+        if (typeof triggerAutoSave === 'function') triggerAutoSave();
+      }
+      return;
+    }
     var tpl = document.getElementById('tpl-' + key);
     document.getElementById('rows-' + key).appendChild(tpl.content.cloneNode(true));
   }
@@ -1111,23 +1260,23 @@
           // RE columns (Freq, Pol, EUT Angle, Antenna Height, QP EMI, QP Limit,
           // QP Margin). A file already in 7-column form loads verbatim.
           if (key.indexOf('meas_table_') === 0) {
+            var mCols = measColumnLabels(key).length;
             tbody.innerHTML = '';
             var mn = 0;
             for (var mi = 0; mi < rows.length; mi++) {
               var mrow = rows[mi];
               if (scanNum(mrow[0]) === null) continue;   // skip header / units / blank rows
-              var vals = (mrow.length >= 12)
+              // the 12-column TDK export maps onto the 7 standard columns; anything else
+              // loads verbatim, and extra columns the engineer added are filled in order
+              var vals = (mrow.length >= 12 && mCols === 7)
                 ? [mrow[0], mrow[2], mrow[3], mrow[4], mrow[9], mrow[10], mrow[11]]
-                : [mrow[0], mrow[1], mrow[2], mrow[3], mrow[4], mrow[5], mrow[6]];
-              var mclone = tpl.content.cloneNode(true);
-              var minputs = mclone.querySelectorAll('input, select, textarea');
-              for (var mj = 0; mj < minputs.length && mj < vals.length; mj++) {
-                minputs[mj].value = String(vals[mj] == null ? '' : vals[mj]).trim();
-              }
-              tbody.appendChild(mclone);
+                : mrow.slice(0, mCols);
+              vals = vals.map(function (v) { return String(v == null ? '' : v).trim(); });
+              tbody.appendChild(makeMeasTableRow(key, vals));
               mn++;
             }
-            if (!tbody.querySelectorAll('tr').length) tbody.appendChild(tpl.content.cloneNode(true));
+            if (!tbody.querySelectorAll('tr').length) tbody.appendChild(makeMeasTableRow(key));
+            syncRowDeleteButtons();
             showMessage('Imported ' + mn + ' measurement row(s).', mn ? 'success' : 'error');
             if (typeof triggerAutoSave === 'function') triggerAutoSave();
             return;
@@ -1207,6 +1356,32 @@
     var tb = btn.closest('tbody');
     if (tb.querySelectorAll('tr').length > 1) btn.closest('tr').remove();
     if (typeof rebuildAllObsLegends === 'function') rebuildAllObsLegends();
+    syncRowDeleteButtons();
+  }
+
+  /* ---- Hide the row-delete cross when a table has only one row -------------------
+     delRow() refuses to remove the last row (a table must keep at least one), so on a
+     single-row table the cross did nothing when clicked. Hide it there instead of
+     offering a control that cannot work; it reappears as soon as a second row exists.
+     visibility (not display) keeps the actions column width steady. */
+  function syncRowDeleteButtons(root) {
+    var scope = root || document;
+    var bodies = {};
+    scope.querySelectorAll('tbody button[onclick^="delRow"]').forEach(function (btn) {
+      var tb = btn.closest('tbody');
+      if (!tb) return;
+      if (!(tb.dataset.delSyncId)) tb.dataset.delSyncId = 'ds' + (Object.keys(bodies).length + 1);
+      bodies[tb.dataset.delSyncId] = tb;
+    });
+    Object.keys(bodies).forEach(function (k) {
+      var tb = bodies[k];
+      var only = tb.querySelectorAll('tr').length <= 1;
+      tb.querySelectorAll('button[onclick^="delRow"]').forEach(function (b) {
+        b.style.visibility = only ? 'hidden' : '';
+        b.setAttribute('aria-hidden', only ? 'true' : 'false');
+        if (only) { b.tabIndex = -1; } else { b.removeAttribute('tabindex'); }
+      });
+    });
   }
 
   // ---- Generic observation legend (RS/ESD/CRF/VDIPS): one describe box per unique selected code ----
@@ -1267,6 +1442,41 @@
     var t = e.target;
     if (t && t.classList && t.classList.contains('js-obs-code')) rebuildAllObsLegends();
   });
+  // Generate the REAL .docx from the form as it stands and download it, so the
+  // engineer can check the document before sending it for peer review. Nothing is
+  // submitted: no status change, no reviewer needed, no datasheet record written.
+  function downloadDraftDocx() {
+    var btn = document.getElementById('draftDocxBtn');
+    var orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+    showMessage('Generating the Word document…', 'info');
+    fetch('/datasheet/g/{{ code }}/preview-docx', { method: 'POST', body: new FormData(document.getElementById('dsForm')) })
+      .then(function (r) {
+        var ct = r.headers.get('content-type') || '';
+        if (!r.ok || ct.indexOf('json') >= 0) {
+          return r.json().then(function (j) { throw new Error((j && j.message) || 'Could not generate the document.'); });
+        }
+        var name = 'DRAFT_datasheet.docx';
+        var cd = r.headers.get('content-disposition') || '';
+        var m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd);
+        if (m) name = decodeURIComponent(m[1].replace(/"$/, ''));
+        return r.blob().then(function (b) { return { blob: b, name: name }; });
+      })
+      .then(function (d) {
+        var url = URL.createObjectURL(d.blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = d.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        if (btn) { btn.disabled = false; btn.textContent = orig; }
+        showMessage('Draft document downloaded — nothing was submitted.', 'success');
+      })
+      .catch(function (err) {
+        if (btn) { btn.disabled = false; btn.textContent = orig; }
+        showMessage((err && err.message) || 'Could not generate the document.', 'error');
+      });
+  }
+
   document.getElementById('dsForm').addEventListener('submit', function (e) {
     e.preventDefault();
     cancelAutoSave();
@@ -1333,9 +1543,9 @@
   // Mirror datasheet_gen/generic_generator._box (aspect box the .docx fits images into)
   function imageBoxMM(key){
     var k=(key||'').toLowerCase();
-    if (k.indexOf('sign')>=0) return [40,20];
-    if (k.indexOf('photo')>=0) return [140,90];
-    return [150,90];
+    if (k.indexOf('sign')>=0) return [40,20];     // signatures stay small
+    if (k.indexOf('img_fc')>=0) return [140,52];  // functional-check captures (3 per page)
+    return [159.2,95];                            // photos + plots: 15.92 x 9.5 cm (W x H)
   }
   // Per-image document size in CM (Word-style Shape Width x Height). Falls back to
   // the slot's default box when the user hasn't set an explicit size.
@@ -1344,7 +1554,7 @@
     var w=form&&form.querySelector('[name="'+cssEsc(key+'__wcm')+'"]');
     var h=form&&form.querySelector('[name="'+cssEsc(key+'__hcm')+'"]');
     if (w&&h&&w.value&&h.value) return [parseFloat(w.value), parseFloat(h.value)];
-    var b=imageBoxMM(key); return [b[0]/10, b[1]/10];
+    var b=imageBoxMM(key); return [Math.round(b[0]*10)/100, Math.round(b[1]*10)/100];
   }
   function setImageCm(key,w,h){
     var host=inputByName(key), form=host&&host.form; if(!form) return;
@@ -1479,15 +1689,66 @@
       var secEl=document.createElement('div');
       var title=document.createElement('div'); title.style.cssText='font-weight:700;font-size:14px;margin:14px 0 6px;'; title.textContent=n+'. '+sec.title; secEl.appendChild(title);
       sec.items.forEach(function(it){
-        if (it.type==='fields') it.fields.forEach(function(f){ secEl.appendChild(renderPreviewField(f)); });
+        if (it.type==='fields') it.fields.forEach(function(f){
+          if (f.split_group) return;                 // shown as one combined line below
+          secEl.appendChild(renderPreviewField(f));
+        });
         else if (it.type==='field') secEl.appendChild(renderPreviewField(it));
         else if (it.type==='textarea') secEl.appendChild(kv(it.label, fieldVal(it.key), true));
         else if (it.type==='image') secEl.appendChild(renderPreviewImage(it.key, it.label));
         else if (it.type==='table') secEl.appendChild(renderPreviewTable(it));
         else if (it.type==='static_table'){ var d=document.createElement('div'); d.style.cssText='font-size:11px;color:#a16207;font-style:italic;margin:4px 0;'; d.textContent=(it.label?it.label+' — ':'')+'fixed grid (completed in the Word document).'; secEl.appendChild(d); }
       });
+      // Per-day rows as one line each, matching how the document splits the cell.
+      (sec.split_rows || []).forEach(function(row){
+        var sel = inputByName(row.base + '_sections');
+        var n = sel ? (parseInt(sel.value || '1', 10) || 1) : 1;
+        var vals = [];
+        for (var d = 1; d <= n; d++) vals.push(fieldVal(d === 1 ? row.base : row.base + '_' + d) || '—');
+        secEl.appendChild(kv(row.label, vals.join('   |   '), false));
+      });
+      if (sec.allow_extra_images){
+        extraPhotoSlots().forEach(function(s){ secEl.appendChild(renderPreviewImage(s.key, s.caption)); });
+      }
       doc.appendChild(secEl);
     });
+  }
+
+  /* ---- additional pictures (sections flagged allow_extra_images) --------------
+     Open-ended list of extra images, each with its own label. The slots are posted
+     as re_extra_photo_<i> / re_extra_photo_caption_<i>; the server pairs them up,
+     drops the ones with no upload and numbers the labels in document order. */
+  var extraPhotoSeq = 0;
+  function extraPhotoSlots(){
+    return Array.prototype.map.call(document.querySelectorAll('#extra-photos .extra-photo'), function(block){
+      var f = block.querySelector('input[type=file]');
+      var c = block.querySelector('input[type=text]');
+      return { key: f ? f.name : '', caption: (c && c.value.trim()) || 'Photo' };
+    }).filter(function(s){ return s.key; });
+  }
+  function addExtraPhoto(slot){
+    var host = document.getElementById('extra-photos'), tpl = document.getElementById('tpl-extra-photo');
+    if (!host || !tpl) return null;
+    // Reuse the slot's saved index on draft reload so its uploaded image still matches.
+    var idx = (slot && slot.idx != null) ? slot.idx : extraPhotoSeq;
+    extraPhotoSeq = Math.max(extraPhotoSeq, idx + 1);
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML.replace(/%%I%%/g, idx).trim();
+    var block = wrap.firstElementChild;
+    host.appendChild(block);
+    if (slot && slot.caption){
+      var c = block.querySelector('input[type=text]');
+      if (c) c.value = slot.caption;
+    }
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    return block;
+  }
+  function removeExtraPhoto(btn){
+    var block = btn.closest('.extra-photo');
+    if (!block) return;
+    block.remove();
+    if (typeof buildPreview === 'function') buildPreview();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
   function openPreview(){ buildPreview(); document.getElementById('previewModal').classList.add('open'); }
   function closePreview(){ document.getElementById('previewModal').classList.remove('open'); }
@@ -1526,6 +1787,9 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key), sizeCm:imageCm(key),
+      // RE: crop free-hand from any corner (no fixed ratio). Other datasheets keep
+      // the ratio-locked frame so their images stay uniform.
+      freeCrop: (DS_SCHEMA && DS_SCHEMA.code === 'RE'),
       onApply:function(edited, sz){ setInputFile(key, edited); if(sz&&sz.w>0&&sz.h>0) setImageCm(key, sz.w, sz.h); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
@@ -1535,9 +1799,10 @@
   function autoFitUpload(key){
     var el=inputByName(key); if(!el||!el.files||!el.files[0]){ delete originalFiles[key]; renderInlineThumb(key); return; }
     var raw=el.files[0]; originalFiles[key]=raw;
-    if(window.DSImageEditor && DSImageEditor.autoFit){
-      DSImageEditor.autoFit({ file:raw, boxMM:imageBoxMM(key), onApply:function(fitted){
-        if(fitted && fitted!==raw) setInputFile(key, fitted);
+    if(window.DSImageEditor && DSImageEditor.autoFrame){
+      DSImageEditor.autoFrame({ file:raw, boxMM:imageBoxMM(key), onApply:function(framed, sz){
+        if(framed && framed!==raw) setInputFile(key, framed);
+        if(sz && sz[0]>0 && sz[1]>0) setImageCm(key, sz[0], sz[1]);   // lock 15.92 x 9.5 by default
         renderInlineThumb(key);
       }});
     } else {
@@ -1565,16 +1830,36 @@
       dsForm.querySelectorAll('input[type=file]').forEach(wireImageInput);
       // repeatable image inputs (e.g. RE measurement plots) are inserted later ->
       // wire them the moment they appear so their Edit button is present too.
+      var _rowSyncPending = null;
       new MutationObserver(function(muts){
+        var rowsChanged = false;
         muts.forEach(function(m){
           Array.prototype.forEach.call(m.addedNodes, function(node){
             if (node.nodeType !== 1) return;
             if (node.matches && node.matches('input[type=file]')) wireImageInput(node);
             if (node.querySelectorAll) node.querySelectorAll('input[type=file]').forEach(wireImageInput);
           });
+          // rows are added/removed from many places (add row, CSV import, draft restore,
+          // group creation) - watch the DOM instead of hooking each call site
+          if (m.target && m.target.tagName === 'TBODY') rowsChanged = true;
         });
+        if (rowsChanged) {
+          clearTimeout(_rowSyncPending);
+          _rowSyncPending = setTimeout(syncRowDeleteButtons, 0);
+        }
       }).observe(dsForm, { childList:true, subtree:true });
     }
+    // upload-driven tables (RE Functional Check): build from the draft, or the defaults
+    if (typeof initUploadTables === 'function') initUploadTables();
+    syncRowDeleteButtons();
+
+    // Rebuild the extra-picture slots a saved draft had, keeping each slot's original
+    // index so the image it holds still matches. Must run BEFORE the saved-image
+    // previews below, which need the file inputs to exist.
+    (function(){
+      var DRAFT_EXTRA_PHOTOS = {{ extra_photos|tojson if extra_photos else '[]' }};
+      DRAFT_EXTRA_PHOTOS.forEach(function(s){ addExtraPhoto(s); });
+    })();
 
     // Preview each image saved in a prior draft (served by g_draft_image), so
     // reloading a draft shows the uploaded images instead of an empty file picker.
@@ -1649,13 +1934,527 @@
     return '';
   }
 
-  var PROC_RE = "The test procedure was in accordance with {S}.\n\n" +
+  var PROC_RE = "The test procedure was in accordance with {S}\n\n" +
     "For 30MHz to 1GHz, the EUT was tested in a Semi-Anechoic chamber, The EUT was placed on {SURFACE_30M} of {H_30M} height which was in turn placed on a turn table to enable 0° to 360° rotation as per standard. The distance between the edge of the EUT and receiving antenna was 3m. The receiving antenna was mounted on antenna mast to enable height variation from 1m to 4m above the ground plane.\n\n" +
     "Pre-scan (Peak) was measured by varying the azimuth angle in 15°/22.5° steps and antenna height from 1m to 4m in 1m steps in both horizontal and vertical polarization of the antenna. The measurement was carried out in max-hold mode and maximum amplitude of radiated emissions from the EUT was plotted in the graph. The dominant peaks at various frequencies, closer to and above the limit line were identified using peak search option and listed Quasi-peak measurement was carried out for the listed frequencies to get the maximized readings by rotating the turntable from 0° to 360° degree and varying the antenna height from 1m to 4m. The maximized reading was compared with the limit specified in the standard.\n\n" +
     "For 1GHz to 6GHz, the equipment was tested in a Semi-Anechoic chamber. The EUT was placed on {SURFACE_1G} of {H_1G} height which was in turn placed on a turn table to enable 0° to 360° rotation as per standard. The distance between the edge of the EUT and receiving antenna was 3m. The receiving antenna was mounted on antenna mast to enable height variation from 1 to 2m above the ground plane.\n\n" +
     "Pre-scan (Peak & Average) was measured by varying the azimuth angle in 15°/22.5° steps and antenna height fixed at 1m, in both horizontal and vertical polarization of the antenna. The measurement was carried out in max-hold mode and maximum amplitude of radiated emissions from the EUT was plotted in the graph The dominant peaks at various frequencies, closer to and above the limit line were identified using peak search option and listed. Peak and Average measurement was carried out for the listed frequencies to get the maximized readings by rotating the turntable from 0° to 360° degree and varying the antenna height from 1m to 2m. The maximized reading was compared with the limit specified in the standard.";
 
+  /* ---- Test Procedure: standard wording, with a manual override ------------------
+     setProcedure() rebuilds the text from Product Standard / EUT Configuration /
+     Frequency Range. Once the engineer edits it by hand the '_manual' flag is set and
+     that rebuilding stops, so their wording survives later changes AND a draft reload.
+     Reset clears the flag and regenerates. */
+  /* ---- Measurement Data: user-editable table COLUMNS -----------------------------
+     A group's table starts with the seven standard columns. The engineer can rename any
+     heading, add columns or remove them; the document table is generated from whatever
+     is posted (meas_table_<i>__h<j> for the headings, __c<j>[] for the values), so the
+     Word table always matches the form. Column state lives in the DOM (the heading
+     inputs) - there is no parallel array to fall out of step. */
+  var MEAS_DEFAULT_COLUMNS = [
+    'Frequency (MHz)', 'Polarization', 'EUT Angle (deg)', 'Antenna Height (cm)',
+    '(QP) EMI (dBuV/m)', 'QP Limit (dBuV/m)', '(QP) Margin (dB)'
+  ];
+  var MEAS_MAX_COLUMNS = 20;        // matches _RE_MEAS_MAX_COLS on the server
+
+  /* The dynamic-table helpers below take a table id that is ALSO the field-name base,
+     e.g. 'meas_table_0', 'meas_table_0_2' or 'fc_table'. Its DOM ids are
+     head-<id> / rows-<id> / colcount-<id>, and it posts <id>__h<j> and <id>__c<j>[].
+     That is what lets the same code drive the RE measurement tables and the Functional
+     Check upload table without either knowing about the other. */
+  function measHeadRow(tid) { return document.getElementById('head-' + tid); }
+  function measBody(tid) { return document.getElementById('rows-' + tid); }
+
+  /* ---- Upload-driven table (columns come from the file) --------------------------
+     Used by sections flagged upload_table in the schema (RE Functional Check). The
+     uploaded file decides the SHAPE: its first row becomes the column headings and the
+     remaining rows the data, so any layout the instrument exports is accepted. Reuses
+     the dynamic-table helpers, so headings stay editable and rows/columns can still be
+     added by hand afterwards. */
+  function uploadTableSeed(tid) {
+    var el = document.getElementById('seed-' + tid);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent || '{}'); } catch (e) { return null; }
+  }
+
+  function renderUploadTable(tid, headers, rows) {
+    renderMeasColumns(tid, (headers && headers.length) ? headers : ['Column 1', 'Column 2', 'Column 3']);
+    var body = measBody(tid);
+    if (!body) return;
+    body.innerHTML = '';
+    var list = (rows && rows.length) ? rows : [[]];
+    list.forEach(function (vals) { body.appendChild(makeMeasTableRow(tid, vals)); });
+    syncRowDeleteButtons();
+  }
+
+  function initUploadTables() {
+    document.querySelectorAll('[id^="seed-"]').forEach(function (el) {
+      var tid = el.id.slice('seed-'.length);
+      if (!measHeadRow(tid)) return;               // not an upload table
+      var seed = uploadTableSeed(tid) || {};
+      renderUploadTable(tid, seed.headers, seed.rows);
+    });
+  }
+
+  // Read a CSV/TXT and rebuild the table from it: row 1 = headings, rest = data.
+  function importUploadTable(tid) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.onchange = function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        try {
+          var text = String(evt.target.result || '');
+          // tab-delimited when the file has tabs and no commas (instrument .TXT exports)
+          var isTab = /\.txt$/i.test(file.name) || (text.indexOf('\t') >= 0 && text.indexOf(',') < 0);
+          var grid = isTab
+            ? text.split(/\r\n|\r|\n/).map(function (l) {
+                return (l.indexOf('\t') >= 0) ? l.split('\t') : l.trim().split(/\s{2,}/);
+              })
+            : parseCSV(text);
+          // drop fully blank lines, then trim every cell
+          grid = grid.map(function (r) { return r.map(function (c) { return String(c == null ? '' : c).trim(); }); })
+                     .filter(function (r) { return r.some(function (c) { return c !== ''; }); });
+          if (!grid.length) throw new Error('The file has no rows.');
+
+          var width = grid.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+          width = Math.max(1, Math.min(width, MEAS_MAX_COLUMNS));
+          var pad = function (r) {
+            var out = r.slice(0, width);
+            while (out.length < width) out.push('');
+            return out;
+          };
+          var headers = pad(grid[0]).map(function (h, j) { return h || ('Column ' + (j + 1)); });
+          var rows = grid.slice(1).map(pad);
+
+          renderUploadTable(tid, headers, rows);
+          triggerAutoSave();
+          showMessage('Loaded ' + rows.length + ' row(s) and ' + width + ' column(s) from ' + file.name + '.',
+                      rows.length ? 'success' : 'error');
+        } catch (err) {
+          showMessage((err && err.message) || 'Could not read that file.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  /* ---- Which data tables a group needs ------------------------------------------
+     Mirrors re_meas_group_table_specs() on the server. 30MHz-1GHz is measured
+     quasi-peak (one table); above 1GHz the limits are Peak AND Average, so that band
+     needs two. The first table keeps the un-suffixed field names so older drafts load. */
+  var MEAS_BAND_DETECTORS = {
+    '30MHz - 1GHz': [{ detector: 'Quasi-peak', tag: 'QP' }],
+    '1GHz - 6GHz':  [{ detector: 'Peak', tag: 'Peak' }, { detector: 'Average', tag: 'Avg' }]
+  };
+
+  function measDetectorHeaders(tag) {
+    return ['Frequency (MHz)', 'Polarization', 'EUT Angle (deg)', 'Antenna Height (cm)',
+            '(' + tag + ') EMI (dBuV/m)', tag + ' Limit (dBuV/m)', '(' + tag + ') Margin (dB)'];
+  }
+
+  function measTableSpecs(idx) {
+    var rec = document.querySelector('#meas-records .meas-record[data-idx="' + idx + '"]');
+    var lbl = rec ? rec.querySelector('[name="meas_label_' + idx + '"]') : null;
+    var freqEl = inputByName('frequency_range');
+    var bands = reMeasBandsFor(lbl ? lbl.value : '', freqEl ? (freqEl.value || '') : '');
+    var specs = [];
+    bands.forEach(function (band) {
+      (MEAS_BAND_DETECTORS[band] || MEAS_BAND_DETECTORS['30MHz - 1GHz']).forEach(function (d) {
+        specs.push({ detector: d.detector, tag: d.tag, band: band });
+      });
+    });
+    specs.forEach(function (s, n) { s.key = idx + (n === 0 ? '' : '_' + (n + 1)); });
+    return specs;
+  }
+
+  // Build/refresh the table set for one group, keeping the values of tables that stay.
+  function renderMeasTables(idx, savedTables) {
+    var host = document.querySelector('#meas-records .meas-record[data-idx="' + idx + '"] .meas-tables');
+    var tpl = document.getElementById('tpl-meas-table');
+    if (!host || !tpl) return;
+
+    // remember what is on screen so a band change does not lose typed data
+    var keep = {};
+    host.querySelectorAll('.meas-table').forEach(function (blk) {
+      var k = blk.getAttribute('data-key');
+      var cap = blk.querySelector('input[name^="meas_table_caption_"]');
+      keep[k] = {
+        headers: measColumnLabels('meas_table_' + k),
+        rows: Array.prototype.map.call(measBody('meas_table_' + k) ? measBody('meas_table_' + k).querySelectorAll('tr') : [],
+          function (tr) { return Array.prototype.map.call(tr.querySelectorAll('input'), function (i) { return i.value; }); }),
+        caption: cap ? cap.value : ''
+      };
+    });
+
+    host.innerHTML = '';
+    measTableSpecs(idx).forEach(function (spec) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML = tpl.innerHTML.replace(/%%K%%/g, spec.key).trim();
+      var blk = wrap.firstElementChild;
+      host.appendChild(blk);
+      var title = blk.querySelector('.js-tbl-title');
+      if (title) title.textContent = spec.detector + ' — ' + spec.band;
+
+      var saved = (savedTables && savedTables[spec.key]) || keep[spec.key] || null;
+      renderMeasColumns('meas_table_' + spec.key,
+        (saved && saved.headers && saved.headers.length) ? saved.headers
+                                                         : measDetectorHeaders(spec.tag));
+      var body = measBody('meas_table_' + spec.key);
+      var rows = (saved && saved.rows && saved.rows.length) ? saved.rows : [[]];
+      rows.forEach(function (vals) { body.appendChild(makeMeasTableRow('meas_table_' + spec.key, vals)); });
+      var cap = blk.querySelector('input[name^="meas_table_caption_"]');
+      if (cap && saved && saved.caption) cap.value = saved.caption;
+      if (cap) cap.addEventListener('input', function () { triggerAutoSave(); });
+    });
+    syncRowDeleteButtons();
+  }
+
+  // Re-sync every group's table set (Frequency Range or a group label changed).
+  function syncAllMeasTables() {
+    document.querySelectorAll('#meas-records .meas-record').forEach(function (rec) {
+      renderMeasTables(rec.getAttribute('data-idx'));
+    });
+  }
+
+  function measColumnLabels(tid) {
+    var head = measHeadRow(tid);
+    if (!head) return MEAS_DEFAULT_COLUMNS.slice();
+    return Array.prototype.map.call(head.querySelectorAll('input[type=text]'),
+                                    function (i) { return i.value; });
+  }
+
+  // Rebuild the header row (and the per-column remove buttons) from a label list.
+  function renderMeasColumns(tid, labels) {
+    var head = measHeadRow(tid);
+    if (!head) return;
+    head.innerHTML = '';
+    labels.forEach(function (label, j) {
+      var th = document.createElement('th');
+      th.className = 'p-1 text-left align-top';
+      var wrap = document.createElement('div');
+      wrap.className = 'flex items-start gap-1';
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.name = tid + '__h' + j;
+      inp.value = label;
+      inp.title = 'Column heading - type to rename it';
+      inp.className = 'w-full px-1 py-0.5 text-2xs font-bold border border-transparent hover:border-gray-300 focus:border-blue-400 rounded bg-transparent';
+      inp.addEventListener('input', function () { triggerAutoSave(); });
+      wrap.appendChild(inp);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.title = 'Remove this column';
+      del.innerHTML = '&times;';
+      del.className = 'shrink-0 text-red-500 hover:text-red-700 font-bold leading-none px-0.5';
+      del.onclick = function () { removeMeasColumn(tid, j); };
+      // a table must keep at least one column
+      if (labels.length <= 1) del.style.visibility = 'hidden';
+      wrap.appendChild(del);
+      th.appendChild(wrap);
+      head.appendChild(th);
+    });
+    head.appendChild(document.createElement('th'));   // actions column (row delete)
+    var count = document.getElementById('colcount-' + tid);
+    if (count) count.textContent = String(labels.length);
+  }
+
+  // One <tr> of value inputs matching the current column count.
+  function makeMeasTableRow(tid, values) {
+    var n = measColumnLabels(tid).length;
+    var tr = document.createElement('tr');
+    for (var j = 0; j < n; j++) {
+      var td = document.createElement('td');
+      td.className = 'p-0.5';
+      var inp = document.createElement('input');
+      inp.name = tid + '__c' + j + '[]';
+      inp.className = 'w-full px-1 py-0.5 border rounded';
+      if (values && values[j] != null) inp.value = values[j];
+      td.appendChild(inp);
+      tr.appendChild(td);
+    }
+    var act = document.createElement('td');
+    act.className = 'p-0.5 text-center';
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'text-red-500 font-bold';
+    del.setAttribute('onclick', 'delRow(this)');
+    del.innerHTML = '&times;';
+    act.appendChild(del);
+    tr.appendChild(act);
+    return tr;
+  }
+
+  // Re-shape existing rows when the column count changes, keeping the values that stay.
+  function reshapeMeasRows(tid) {
+    var body = measBody(tid);
+    if (!body) return;
+    var existing = Array.prototype.map.call(body.querySelectorAll('tr'), function (tr) {
+      return Array.prototype.map.call(tr.querySelectorAll('input'), function (i) { return i.value; });
+    });
+    body.innerHTML = '';
+    (existing.length ? existing : [[]]).forEach(function (vals) {
+      body.appendChild(makeMeasTableRow(tid, vals));
+    });
+    syncRowDeleteButtons();
+  }
+
+  function addMeasColumn(tid) {
+    var labels = measColumnLabels(tid);
+    if (labels.length >= MEAS_MAX_COLUMNS) {
+      showMessage('A measurement table can have at most ' + MEAS_MAX_COLUMNS + ' columns.', 'error');
+      return;
+    }
+    labels.push('Column ' + (labels.length + 1));
+    renderMeasColumns(tid, labels);
+    reshapeMeasRows(tid);
+    triggerAutoSave();
+  }
+
+  function removeMeasColumn(tid, col) {
+    var labels = measColumnLabels(tid);
+    if (labels.length <= 1) return;              // keep at least one column
+    labels.splice(col, 1);
+    // drop that column's values from every row before re-rendering
+    var body = measBody(tid);
+    if (body) {
+      body.querySelectorAll('tr').forEach(function (tr) {
+        var cells = tr.querySelectorAll('td');
+        if (cells[col]) tr.removeChild(cells[col]);
+      });
+    }
+    renderMeasColumns(tid, labels);
+    reshapeMeasRows(tid);
+    triggerAutoSave();
+  }
+
+  /* ---- Measurement Data: plot slots per frequency band ---------------------------
+     Mirrors re_meas_group_bands() on the server. FCC is specified over both bands, so
+     with Both ranges selected an FCC group gets a Vertical + Horizontal pair for each
+     band (4 slots). ICES/CISPR only has 30MHz-1GHz limits, so it keeps one pair. */
+  // The three standard Frequency Range options; anything else in the field is a CUSTOM
+  // range from the Test Request, and the whole datasheet is named after that text.
+  // MUST match re_custom_range() on the server.
+  var RE_STANDARD_RANGES = ['30mhz-1ghz', '1ghz-6ghz', 'both'];
+  function reCustomRange(freq) {
+    var v = String(freq == null ? '' : freq).trim();
+    if (!v) return '';
+    return (RE_STANDARD_RANGES.indexOf(v.toLowerCase().replace(/\s+/g, '')) >= 0) ? '' : v;
+  }
+
+  function reMeasBandsFor(label, freq) {
+    // A custom range is ONE band named with the engineer's own text, and it keeps the
+    // 30MHz-1GHz table structure (a single quasi-peak table) - the 1GHz-6GHz Peak/Average
+    // split never applies to it.
+    var custom = reCustomRange(freq);
+    if (custom) return [custom];
+    var s30 = (freq !== '1GHz-6GHz'), s16 = (freq !== '30MHz-1GHz');
+    var isFcc = ((label || '').toLowerCase().indexOf('fcc') >= 0);
+    var bands = [];
+    if (s30) bands.push('30MHz - 1GHz');
+    if (s16 && (isFcc || !s30)) bands.push('1GHz - 6GHz');
+    return bands.length ? bands : ['30MHz - 1GHz'];
+  }
+
+  // Auto-generated plot caption for a slot. MUST match the server's wording in
+  // _re_meas_group_images() (note the space after 'plot_' on the vertical one).
+  function reMeasDefaultCaption(n, role, band) {
+    var detector = (band === '1GHz - 6GHz') ? 'Peak & Average' : 'Peak';
+    return 'Figure ' + n + ': RE plot_' + role + '_' + detector + '_' + band;
+  }
+  // True for a caption we generated (so it may be refreshed); false once the engineer
+  // has typed their own wording, which is then left alone.
+  function reIsAutoCaption(v) {
+    return !v || /^Figure\s*\d+\s*:\s*RE plot_/i.test(v);
+  }
+
+  function syncREMeasSlots() {
+    var freqEl = inputByName('frequency_range');
+    var freq = freqEl ? (freqEl.value || '') : '';
+    var fig = 3;                       // Figures 1-2 are the Functional Check plots
+    Array.prototype.forEach.call(document.querySelectorAll('#meas-records .meas-record'), function (rec) {
+      var idx = rec.getAttribute('data-idx');
+      var lblEl = rec.querySelector('[name="meas_label_' + idx + '"]');
+      var bands = reMeasBandsFor(lblEl ? lblEl.value : '', freq);
+      [['v1', 0, 'Vertical'], ['h1', 0, 'Horizontal'],
+       ['v2', 1, 'Vertical'], ['h2', 1, 'Horizontal']].forEach(function (spec) {
+        var slot = rec.querySelector('.js-meas-slot[data-slot="' + spec[0] + '"]');
+        if (!slot) return;
+        var open = spec[1] < bands.length;
+        slot.classList.toggle('hidden', !open);
+        // disabled inputs are not submitted, so a band this group doesn't cover
+        // uploads nothing and posts no caption
+        Array.prototype.forEach.call(slot.querySelectorAll('input'), function (i) { i.disabled = !open; });
+        var note = slot.querySelector('.js-band');
+        if (note) note.textContent = open ? '(' + bands[spec[1]] + ')' : '';
+        if (!open) return;
+        var cap = slot.querySelector('input[type=text]');
+        if (cap && reIsAutoCaption(cap.value)) {
+          cap.value = reMeasDefaultCaption(fig, spec[2], bands[spec[1]]);
+        }
+        fig++;
+      });
+      fig += rec.querySelectorAll('.meas-extra-img').length;   // extras keep their place
+    });
+  }
+
+  /* ---- Measurement Data: extra plots, each with its own title -------------------- */
+  function addMeasExtraImage(idx, data) {
+    var rec = document.querySelector('#meas-records .meas-record[data-idx="' + idx + '"]');
+    var tpl = document.getElementById('tpl-meas-extra-img');
+    if (!rec || !tpl) return null;
+    var host = rec.querySelector('.meas-extra-imgs');
+    if (!host) return null;
+    // Reuse the slot's saved number on draft reload so its uploaded image still matches.
+    var n = (data && data.n != null) ? data.n
+          : host.querySelectorAll('.meas-extra-img').length;
+    while (host.querySelector('[name="meas_img_extra_' + idx + '_' + n + '"]')) n++;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML.replace(/%%G%%/g, idx).replace(/%%N%%/g, n).trim();
+    var block = wrap.firstElementChild;
+    host.appendChild(block);
+    if (data && data.caption) {
+      var c = block.querySelector('input[type=text]');
+      if (c) c.value = data.caption;
+    }
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    return block;
+  }
+
+  function removeMeasExtraImage(btn) {
+    var block = btn.closest('.meas-extra-img');
+    if (!block) return;
+    block.remove();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  /* ---- Test Setup Pictures: only the selected Frequency Range's slots ------------
+     The four template slots are (Vertical | Horizontal) x (30MHz-1GHz | 1GHz-6GHz).
+     When one range isn't selected its two slots are hidden AND disabled, so nothing is
+     uploaded or posted for a band that will not appear in the document. The visible
+     slots are renumbered Photo 1..N so the form matches the generated document, which
+     renumbers the survivors the same way. */
+  var RE_PHOTO_SLOTS = [
+    { key: 'img_photo_1', band: '30' },
+    { key: 'img_photo_2', band: '30' },
+    { key: 'img_photo_3', band: '16' },
+    { key: 'img_photo_4', band: '16' }
+  ];
+
+  function syncREPhotoSlots() {
+    var freqEl = inputByName('frequency_range');
+    var freq = freqEl ? (freqEl.value || '') : '';
+    // a custom range is one band, so only the first Vertical/Horizontal pair applies
+    var custom = reCustomRange(freq);
+    var s30 = custom ? true : (freq !== '1GHz-6GHz');
+    var s16 = custom ? false : (freq !== '30MHz-1GHz');   // blank/'Both' -> both
+    var n = 0;
+    RE_PHOTO_SLOTS.forEach(function (slot) {
+      var file = inputByName(slot.key);
+      if (!file) return;
+      var wrap = file.closest('div');
+      var cap = document.querySelector('[name="' + cssEsc(slot.key + '_caption') + '"]');
+      var open = (slot.band === '30') ? s30 : s16;
+      if (wrap) wrap.classList.toggle('hidden', !open);
+      // disabled inputs are not submitted, so a hidden slot posts neither file nor caption
+      file.disabled = !open;
+      if (cap) cap.disabled = !open;
+      if (!open) return;
+      n++;
+      // Renumber the "Photo N:" prefix, and for a custom range swap the standard band
+      // name for the custom text. Anything else the engineer typed is kept.
+      var label = wrap ? wrap.querySelector('label') : null;
+      if (label) {
+        if (!label.dataset.baseLabel) label.dataset.baseLabel = label.textContent.trim();
+        label.textContent = reApplyBandName(
+          label.dataset.baseLabel.replace(/^Photo\s*\d+\s*:/i, 'Photo ' + n + ':'), custom);
+      }
+      if (cap && /^Photo\s*\d+\s*:/i.test(cap.value || '')) {
+        cap.value = reApplyBandName(
+          cap.value.replace(/^Photo\s*\d+\s*:/i, 'Photo ' + n + ':'), custom);
+      }
+    });
+  }
+
+  // Replace a STANDARD band name with the custom range. Used on captions/labels that
+  // come from fixed template text; mirrors _re_relabel_captions_custom_range() server-side.
+  function reApplyBandName(text, custom) {
+    if (!custom) return text;
+    var out = String(text == null ? '' : text);
+    ['30MHz - 1GHz', '1GHz - 6GHz', '30MHz-1GHz', '1GHz-6GHz', '1-6GHz'].forEach(function (band) {
+      if (out.indexOf(band) >= 0) out = out.split(band).join(custom);
+    });
+    return out;
+  }
+
+  function procIsManual() {
+    var f = document.getElementById('test_procedure_manual');
+    return !!(f && f.value === '1');
+  }
+
+  function renderProcedureView() {
+    var pEl = document.getElementById('test_procedure');
+    var view = document.getElementById('test_procedure_view');
+    if (!pEl || !view) return;
+    view.innerHTML = (pEl.value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function toggleProcedureEdit() {
+    var ta = document.getElementById('test_procedure_edit');
+    var view = document.getElementById('test_procedure_view');
+    var pEl = document.getElementById('test_procedure');
+    var btn = document.getElementById('procEditBtn');
+    var reset = document.getElementById('procResetBtn');
+    var hint = document.getElementById('test_procedure_hint');
+    if (!ta || !view || !pEl) return;
+
+    if (ta.classList.contains('hidden')) {          // ---- enter edit mode
+      ta.value = pEl.value || '';
+      ta.classList.remove('hidden');
+      view.classList.add('hidden');
+      if (btn) btn.innerHTML = '&#10003; Done';
+      if (hint) hint.innerHTML = 'Editing &mdash; your wording replaces the standard text and will no longer be regenerated.';
+      ta.focus();
+    } else {                                        // ---- leave edit mode
+      pEl.value = ta.value;
+      var flag = document.getElementById('test_procedure_manual');
+      var changed = true;
+      if (flag && !procIsManual()) flag.value = '1';
+      ta.classList.add('hidden');
+      view.classList.remove('hidden');
+      renderProcedureView();
+      if (btn) btn.innerHTML = '<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+      if (reset) reset.classList.remove('hidden');
+      if (hint) hint.innerHTML = 'Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
+      if (changed && typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+
+  function resetProcedure() {
+    var flag = document.getElementById('test_procedure_manual');
+    if (flag) flag.value = '';
+    var ta = document.getElementById('test_procedure_edit');
+    var view = document.getElementById('test_procedure_view');
+    if (ta) ta.classList.add('hidden');
+    if (view) view.classList.remove('hidden');
+    var btn = document.getElementById('procEditBtn');
+    if (btn) btn.innerHTML = '<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+    var reset = document.getElementById('procResetBtn');
+    if (reset) reset.classList.add('hidden');
+    var hint = document.getElementById('test_procedure_hint');
+    if (hint) hint.innerHTML = 'Standard test procedure; read-only &mdash; use <strong>Edit</strong> to change it.';
+    setProcedure();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    if (typeof showMessage === 'function') showMessage('Test procedure reset to the standard text.', 'success');
+  }
+
   function setProcedure() {
+    // A hand-edited procedure is never overwritten by the derived wording.
+    if (procIsManual()) { renderProcedureView(); return; }
     var basicEl = inputByName('basic_standard');
     var basic = basicEl ? basicEl.value : '';
     if (!basic) {
@@ -1667,13 +2466,36 @@
     var cfg = cfgEl ? cfgEl.value : 'Tabletop';
     
     var isFloor = (cfg || '').toLowerCase().indexOf('floor') >= 0;
-    
+    var surface = isFloor ? 'insulation support' : 'non-conductive table';
+    var height  = isFloor ? '0.1 m' : '0.8 m';
+
     var txt = PROC_RE.replace('{S}', basic)
-                     .replace('{SURFACE_30M}', isFloor ? 'insulation support' : 'non-conductive table')
-                     .replace('{H_30M}', isFloor ? '0.1m' : '0.8m')
-                     .replace('{SURFACE_1G}', isFloor ? 'insulation support' : 'non-conductive table')
-                     .replace('{H_1G}', isFloor ? '0.1m' : '0.8m');
-                     
+                     .replace('{SURFACE_30M}', surface)
+                     .replace('{H_30M}', height)
+                     .replace('{SURFACE_1G}', surface)
+                     .replace('{H_1G}', height);
+
+    // Keep only the paragraphs for the selected Frequency Range. With BOTH ranges the
+    // two near-identical setup paragraphs are merged into one opening sentence.
+    var freqEl = inputByName('frequency_range');
+    var freq = freqEl ? (freqEl.value || '') : '';
+    var s30 = (freq !== '1GHz-6GHz'), s16 = (freq !== '30MHz-1GHz');
+    function procKind(p) {
+      var s = (p || '').toLowerCase();
+      if (s.indexOf('for 30mhz') === 0) return 'setup30';
+      if (s.indexOf('for 1ghz') === 0) return 'setup16';
+      if (s.indexOf('pre-scan') === 0) return (s.indexOf('average') > 0) ? 'scan16' : 'scan30';
+      return 'other';
+    }
+    var blocks = txt.split('\n\n'), keep = [];
+    if (s30 && s16) {
+      keep = blocks;          // both ranges keep their own setup + pre-scan paragraphs
+    } else {
+      var drop = s16 ? ['setup30', 'scan30'] : ['setup16', 'scan16'];
+      blocks.forEach(function (b) { if (drop.indexOf(procKind(b)) < 0) keep.push(b); });
+    }
+    txt = keep.join('\n\n');
+
     var pEl = document.getElementById('test_procedure');
     if (pEl) {
       pEl.value = txt;
@@ -1848,45 +2670,61 @@
         var cHoriz = block.querySelector('[name="meas_img_horizontal_caption_' + idx + '"]');
         if (cHoriz) cHoriz.value = data.img_horizontal_caption;
       }
+      // second-band captions (FCC over both ranges) and any extra plots the group had
+      [['img_vertical_b2_caption', 'meas_img_vertical_b2_caption_'],
+       ['img_horizontal_b2_caption', 'meas_img_horizontal_b2_caption_']].forEach(function (m) {
+        var el = block.querySelector('[name="' + m[1] + idx + '"]');
+        if (el && data[m[0]]) el.value = data[m[0]];
+      });
+      (data.extra_images || []).forEach(function (x) { addMeasExtraImage(idx, x); });
     } else {
       var groupIdx = document.querySelectorAll('#meas-records .meas-record').length - 1;
       var figVertNum = 3 + 2 * groupIdx;
       var figHorizNum = 4 + 2 * groupIdx;
       
       var cVert = block.querySelector('[name="meas_img_vertical_caption_' + idx + '"]');
-      if (cVert) cVert.value = "Figure " + figVertNum + ": RE plot_ Vertical_Peak_30MHz - 1GHz";
+      if (cVert) cVert.value = "Figure " + figVertNum + ": RE plot_Vertical_Peak_30MHz - 1GHz";
       
       var cHoriz = block.querySelector('[name="meas_img_horizontal_caption_' + idx + '"]');
       if (cHoriz) cHoriz.value = "Figure " + figHorizNum + ": RE plot_Horizontal_Peak_30MHz - 1GHz";
     }
 
-    var tbody = document.getElementById('rows-meas_table_' + idx);
-    var tplTable = document.getElementById('tpl-meas_table_' + idx);
-    if (tbody && tplTable) {
-      var rowsToFill = [];
-      if (data && data.table_rows && data.table_rows.length) {
-        rowsToFill = data.table_rows;
-      } else if (!data) {
-        if (label === 'ICES') {
-          rowsToFill = getPrefillRowsForTable('re_table1_rows');
-        } else if (label === 'FCC') {
-          rowsToFill = getPrefillRowsForTable('re_table2_rows');
+    // Build this group's data tables (one per band/detector), restoring a saved draft's
+    // headers, rows and captions for each.
+    var savedTables = null;
+    if (data && data.tables && data.tables.length) {
+      savedTables = {};
+      data.tables.forEach(function (t) {
+        savedTables[t.key] = {
+          headers: t.headers || [],
+          rows: (t.rows || []).map(function (r) {
+            return r.cells || Object.keys(r).filter(function (k) { return /^c\d+$/.test(k); })
+              .sort(function (a, b) { return Number(a.slice(1)) - Number(b.slice(1)); })
+              .map(function (k) { return r[k]; });
+          }),
+          caption: t.caption_input || ''
+        };
+      });
+    }
+    renderMeasTables(idx, savedTables);
+
+    // A brand-new ICES/FCC group starts from the seeded limit rows.
+    if (!data) {
+      var seedKey = idx;                     // the group's first table
+      var seed = (label === 'ICES') ? getPrefillRowsForTable('re_table1_rows')
+               : (label === 'FCC')  ? getPrefillRowsForTable('re_table2_rows') : [];
+      if (seed && seed.length) {
+        var body = measBody('meas_table_' + seedKey);
+        var nCols = measColumnLabels('meas_table_' + seedKey).length;
+        if (body) {
+          body.innerHTML = '';
+          seed.forEach(function (r) {
+            var vals = [];
+            for (var j = 0; j < nCols; j++) vals.push(r['c' + j] || '');
+            body.appendChild(makeMeasTableRow('meas_table_' + seedKey, vals));
+          });
+          syncRowDeleteButtons();
         }
-      }
-      
-      if (rowsToFill.length > 0) {
-        rowsToFill.forEach(function(r) {
-          var clone = tplTable.content.cloneNode(true);
-          var inputs = clone.querySelectorAll('input');
-          for (var j = 0; j < 7; j++) {
-            if (inputs[j]) {
-              inputs[j].value = r['c' + j] || '';
-            }
-          }
-          tbody.appendChild(clone);
-        });
-      } else {
-        tbody.appendChild(tplTable.content.cloneNode(true));
       }
     }
     
@@ -1894,7 +2732,16 @@
     fileInputs.forEach(function(el) {
       el.addEventListener('change', function() { autoFitUpload(el.name); });
     });
-    
+
+    // ICES vs FCC decides how many bands this group covers, so re-sync both the plot
+    // slots AND the data tables whenever the group label is edited.
+    var lblEl = block.querySelector('[name="meas_label_' + idx + '"]');
+    if (lblEl) lblEl.addEventListener('input', function () {
+      syncREMeasSlots();
+      renderMeasTables(idx);
+    });
+    syncREMeasSlots();
+
     triggerAutoSave();
     return block;
   }
@@ -1923,7 +2770,35 @@
     showMessage('Generated ' + parts.length + ' group(s) from EUT voltages.', 'success');
   }
 
+  // ---- Per-row section splits (Ambient / Humidity / Test Date / Tested by) -------
+  // Only as many value fields are open for input as the row's "number of sections"
+  // selector allows: 1 by default, 2 or 3 when the engineer picks them. Values
+  // already typed are kept (just disabled), so switching back and forth is safe.
+  var RE_SPLIT_BASES = ['ambient_temperature', 'relative_humidity', 'test_date', 'tested_by'];
+
+  function syncRESectionFields() {
+    RE_SPLIT_BASES.forEach(function (base) {
+      var sel = inputByName(base + '_sections');
+      var n = sel ? parseInt(sel.value || '1', 10) : 1;
+      if (!(n >= 1 && n <= 3)) n = 1;
+      [2, 3].forEach(function (i) {
+        var el = inputByName(base + '_' + i);
+        if (!el) return;
+        var open = (i <= n);
+        el.disabled = !open;
+        el.classList.toggle('ds-locked', !open);
+        var wrap = el.closest('div');
+        if (wrap) wrap.style.opacity = open ? '' : '0.5';
+      });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
+    RE_SPLIT_BASES.forEach(function (base) {
+      var sel = inputByName(base + '_sections');
+      if (sel) sel.addEventListener('change', syncRESectionFields);
+    });
+    syncRESectionFields();
     var prodStdEl = inputByName('product_standard');
     var classEl = inputByName('classification_col_2');
     if (prodStdEl) {
@@ -1936,6 +2811,20 @@
     var freqEl = inputByName('frequency_range');
     if (freqEl) {
       freqEl.addEventListener('change', updateREBehavior);
+      // Test Setup Pictures, the measurement plot slots AND the per-band data tables
+      // all follow the Frequency Range.
+      freqEl.addEventListener('change', syncREPhotoSlots);
+      freqEl.addEventListener('change', syncREMeasSlots);
+      freqEl.addEventListener('change', syncAllMeasTables);
+    }
+    syncREPhotoSlots();
+    // A draft saved with a hand-edited procedure reopens in that state: keep the text,
+    // show Reset, and say so instead of claiming it is the standard wording.
+    if (procIsManual()) {
+      var _pr = document.getElementById('procResetBtn');
+      if (_pr) _pr.classList.remove('hidden');
+      var _ph = document.getElementById('test_procedure_hint');
+      if (_ph) _ph.innerHTML = 'Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
     }
     var cfgEl = inputByName('eut_configuration');
     if (cfgEl) {

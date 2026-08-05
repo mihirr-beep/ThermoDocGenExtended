@@ -111,14 +111,21 @@ _MEAS_NAMES = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg
 
 
 def _measurement_records(form_data):
-    """One record per Test: label + line_rows + neutral_rows + the two plot image keys.
+    """One record per Test: label + line_rows + neutral_rows + the plot image keys.
     The form sends a hidden meas_index[] (active record indices, in order); each record i
-    uses meas_label_i, plot_line_i/plot_neutral_i and line{i}_*[] / neutral{i}_*[] fields."""
+    uses meas_label_i, line{i}_*[] / neutral{i}_*[] and four plot slots -- a Quasi-peak
+    and an Average graph for each of the Line and Neutral conductors:
+
+        plot_line_i        / plot_line_avg_i        (Line: Quasi-peak, Average)
+        plot_neutral_i     / plot_neutral_avg_i     (Neutral: Quasi-peak, Average)
+
+    The un-suffixed keys stay the Quasi-peak slots so drafts saved before the split (and
+    their already-uploaded files) keep rendering in place."""
     def keys(grp, i):
         return ["%s%s_%s[]" % (grp, i, c) for c in _MEAS_NAMES]
-    def cap(name, i, n, side):
+    def cap(name, i, n, side, detector):
         # user-entered caption REPLACES the default; blank -> the auto "Figure N: ..." caption
-        default = "Figure %d: CE plot_%s_Quasi-peak & Average_0.15MHz - 30MHz" % (n, side)
+        default = "Figure %d: CE plot_%s_%s_0.15MHz - 30MHz" % (n, side, detector)
         return _s(form_data.get("%s_caption_%s" % (name, i))) or default
     order = _list(form_data, "meas_index[]")
     records = []
@@ -133,20 +140,31 @@ def _measurement_records(form_data):
                 "line_rows": _rows(form_data, keys("line", i), _MEAS_NAMES),
                 "neutral_rows": _rows(form_data, keys("neutral", i), _MEAS_NAMES),
                 "plot_line_key": "plot_line_" + i,
+                "plot_line_avg_key": "plot_line_avg_" + i,
                 "plot_neutral_key": "plot_neutral_" + i,
-                "line_caption": cap("plot_line", i, fig, "Line"),
-                "neutral_caption": cap("plot_neutral", i, fig + 1, "Neutral"),
+                "plot_neutral_avg_key": "plot_neutral_avg_" + i,
+                "line_caption": cap("plot_line", i, fig, "Line", "Quasi-peak"),
+                "line_avg_caption": cap("plot_line_avg", i, fig + 1, "Line", "Average"),
+                "neutral_caption": cap("plot_neutral", i, fig + 2, "Neutral", "Quasi-peak"),
+                "neutral_avg_caption": cap("plot_neutral_avg", i, fig + 3, "Neutral", "Average"),
+                # further plots the engineer added to this Test, each with its own title
+                "extra_images": _ce_extra_images(form_data, f"plot_extra_{i}_"),
             })
-            fig += 2
+            fig += 4
     else:
         # legacy single-record fallback (un-indexed line_*/neutral_* fields)
         line = _rows(form_data, keys("line", ""), _MEAS_NAMES)
         neutral = _rows(form_data, keys("neutral", ""), _MEAS_NAMES)
         if line or neutral:
             records.append({"label": "", "line_rows": line, "neutral_rows": neutral,
-                            "plot_line_key": "plot_line", "plot_neutral_key": "plot_neutral",
-                            "line_caption": cap("plot_line", "", 1, "Line"),
-                            "neutral_caption": cap("plot_neutral", "", 2, "Neutral")})
+                            "plot_line_key": "plot_line",
+                            "plot_line_avg_key": "plot_line_avg",
+                            "plot_neutral_key": "plot_neutral",
+                            "plot_neutral_avg_key": "plot_neutral_avg",
+                            "line_caption": cap("plot_line", "", 1, "Line", "Quasi-peak"),
+                            "line_avg_caption": cap("plot_line_avg", "", 2, "Line", "Average"),
+                            "neutral_caption": cap("plot_neutral", "", 3, "Neutral", "Quasi-peak"),
+                            "neutral_avg_caption": cap("plot_neutral_avg", "", 4, "Neutral", "Average")})
     return records
 
 
@@ -167,6 +185,15 @@ def build_ce_context(form_data):
     ctx["measurement_records"] = _measurement_records(form_data)
     # Setup photo caption: user text replaces the default (blank -> default).
     ctx["photo_caption"] = _s(form_data.get("photo_caption")) or "Photo 1: CE test setup_Power Port"
+    # Further Test Setup pictures, each with its own title (the generator drops the
+    # slots with no upload and numbers the captions in document order).
+    ctx["ce_extra_photos"] = _ce_extra_images(form_data, "ce_extra_photo_")
+
+    # Ambient Temperature / Relative Humidity / Test Date / Tested by can each be split
+    # into 1-3 sections (one per test day), exactly as on RE. Reuses RE's helper so the
+    # two datasheets can't drift apart; the generator does the cell splitting.
+    from .generic_service import _re_row_splits
+    ctx["ce_row_splits"] = _re_row_splits(form_data)
 
     # Render classification selections as human-ticked checkboxes in the document
     # (the template uses {{r ... }} placeholders for these two fields).
@@ -380,9 +407,35 @@ def collect_ce_equipment_rows():
         cd = getattr(eq, "calibration_due_date", None)
         rows.append({
             "name": _s(eq.name), "make": _s(eq.make), "model": _s(eq.model_no),
-            "serial": _s(eq.serial_no), "cal_due": cd.isoformat() if cd else "",
+            # Equipment with no calibration due date prints 'NA', not an empty box (as RE)
+            "serial": _s(eq.serial_no), "cal_due": cd.isoformat() if cd else "NA",
         })
     return rows
+
+
+def _ce_extra_images(form_data, prefix):
+    """Extra pictures added on the CE form, each with its own title.
+
+    Posted as <prefix><n> (file) and <prefix>caption_<n> (title). The slot survives here
+    even with a blank title; the generator drops the ones with no upload. Returns
+    [{'n', 'key', 'caption'}] in slot order."""
+    cap_prefix = f"{prefix}caption_"
+    idxs = set()
+    for k in (form_data or {}):
+        if k.startswith(cap_prefix):
+            suffix = k[len(cap_prefix):]
+            if suffix.isdigit():
+                idxs.add(int(suffix))
+    return [{"n": i, "key": f"{prefix}{i}",
+             "caption": _s((form_data or {}).get(f"{cap_prefix}{i}"))}
+            for i in sorted(idxs)]
+
+
+def _ce_functional_mode_names(request_obj):
+    """'Mode A', 'Mode A, Mode B', ... from the Test Request's functional modes.
+    Imported lazily because generic_service imports from this module."""
+    from .generic_service import _re_functional_mode_names
+    return _re_functional_mode_names(request_obj)
 
 
 def _first_config_line(text):
@@ -446,7 +499,13 @@ def collect_ce_prefill(request_obj, assignment=None):
         "classification_class": class_value,
         "classification_group": _ra(request_obj, "product_group"),
         "eut_configuration": config,
-        "test_mode": _first_config_line(_functional_modes_text(request_obj) or _ra(request_obj, "test_configuration", "operation_modes")),
+        # Test Mode prints the mode NAMES ('Mode A, Mode B') derived from the Test
+        # Request's functional modes, not the descriptions typed for each one. Reuses
+        # RE's helper so the two datasheets can't drift apart; falls back to the old
+        # free text when the request has no functional modes at all.
+        "test_mode": (_ce_functional_mode_names(request_obj)
+                      or _first_config_line(_functional_modes_text(request_obj)
+                                            or _ra(request_obj, "test_configuration", "operation_modes"))),
         "eut_voltage_frequency": _fmt_supply(getattr(request_obj, "supply_vf_values", [])) if request_obj else "",
         "tested_by": tested_by,
         "tested_by_name": tested_by,

@@ -458,9 +458,9 @@ def _img_box(key, code):
         k = (key or "").lower()
         if "sign" in k:
             return (40, 20)
-        if "photo" in k:
-            return (140, 90)
-        return (150, 90)
+        if "img_fc" in k:
+            return (140, 52)
+        return (159.2, 95)
 
 
 def _image_item(key, label, form, images, code):

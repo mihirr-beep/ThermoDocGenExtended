@@ -107,7 +107,7 @@
         {
           "type": "image",
           "key": "img_figure_1",
-          "label": "Figure 1: RE_Ambient_plot_ Vertical_Peak_30MHz - 1GHz",
+          "label": "Figure 1: RE_Ambient_plot_Vertical_Peak_30MHz - 1GHz",
           "caption": true
         },
         {
@@ -116,7 +116,16 @@
           "label": "Figure 2: RE_Ambient_plot_Horizontal_Peak_30MHz - 1GHz",
           "caption": true
         }
-      ]
+      ],
+      "upload_table": {
+        "key": "fc_table",
+        "label": "Functional check data",
+        "default_headers": [
+          "Column 1",
+          "Column 2",
+          "Column 3"
+        ]
+      }
     },
     {
       "title": "RADIATED EMISSION TEST",
@@ -172,7 +181,8 @@
               "input": "text",
               "options": [
                 "30MHz-1GHz",
-                "1GHz-6GHz"
+                "1GHz-6GHz",
+                "Both"
               ],
               "default": ""
             },
@@ -366,7 +376,10 @@
               "key": "eut_configuration",
               "label": "EUT Configuration",
               "input": "select",
-              "options": ["Tabletop", "Floor standing"],
+              "options": [
+                "Tabletop",
+                "Floor standing"
+              ],
               "default": "Tabletop"
             },
             {
@@ -376,30 +389,160 @@
               "default": ""
             },
             {
+              "key": "ambient_temperature_sections",
+              "label": "Ambient Temperature - number of sections",
+              "input": "select",
+              "options": [
+                "1",
+                "2",
+                "3"
+              ],
+              "default": "1",
+              "split_group": true
+            },
+            {
               "key": "ambient_temperature",
-              "label": "Ambient Temperature (°C)",
+              "label": "Ambient Temperature (°C) - Day 1",
               "input": "text",
-              "default": ""
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "ambient_temperature_2",
+              "label": "Ambient Temperature (°C) - Day 2 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "ambient_temperature_3",
+              "label": "Ambient Temperature (°C) - Day 3 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "relative_humidity_sections",
+              "label": "Relative Humidity - number of sections",
+              "input": "select",
+              "options": [
+                "1",
+                "2",
+                "3"
+              ],
+              "default": "1",
+              "split_group": true
             },
             {
               "key": "relative_humidity",
-              "label": "Relative Humidity (%)",
+              "label": "Relative Humidity (%) - Day 1",
               "input": "text",
-              "default": ""
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "relative_humidity_2",
+              "label": "Relative Humidity (%) - Day 2 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "relative_humidity_3",
+              "label": "Relative Humidity (%) - Day 3 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "test_date_sections",
+              "label": "Test Date - number of sections",
+              "input": "select",
+              "options": [
+                "1",
+                "2",
+                "3"
+              ],
+              "default": "1",
+              "split_group": true
             },
             {
               "key": "test_date",
-              "label": "Test Date",
+              "label": "Test Date - Day 1 (DD/MM/YYYY)",
               "input": "text",
-              "default": ""
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "test_date_2",
+              "label": "Test Date - Day 2 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "test_date_3",
+              "label": "Test Date - Day 3 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "tested_by_sections",
+              "label": "Tested by - number of sections",
+              "input": "select",
+              "options": [
+                "1",
+                "2",
+                "3"
+              ],
+              "default": "1",
+              "split_group": true
             },
             {
               "key": "tested_by",
-              "label": "Tested by",
+              "label": "Tested by - Day 1",
               "input": "text",
-              "default": ""
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "tested_by_2",
+              "label": "Tested by - Day 2 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "tested_by_3",
+              "label": "Tested by - Day 3 (optional)",
+              "input": "text",
+              "default": "",
+              "split_group": true
             }
           ]
+        }
+      ],
+      "split_rows": [
+        {
+          "base": "ambient_temperature",
+          "label": "Ambient Temperature (°C)",
+          "type": "text"
+        },
+        {
+          "base": "relative_humidity",
+          "label": "Relative Humidity (%)",
+          "type": "text"
+        },
+        {
+          "base": "test_date",
+          "label": "Test Date",
+          "type": "date"
+        },
+        {
+          "base": "tested_by",
+          "label": "Tested by",
+          "type": "text"
         }
       ]
     },
@@ -494,7 +637,7 @@
         {
           "type": "table",
           "key": "re_table1_rows",
-          "label": "Table 1: RE Quasi-peak 30MHz - 1GHz (ICES)",
+          "label": "Table 1: RE_Quasi-peak_30MHz - 1GHz",
           "scan_bands": [
             [
               30,
@@ -539,7 +682,7 @@
         {
           "type": "image",
           "key": "img_figure_3",
-          "label": "Figure 3: RE plot_ Vertical_Peak_30MHz - 1GHz",
+          "label": "Figure 3: RE plot_Vertical_Peak_30MHz - 1GHz",
           "caption": true
         },
         {
@@ -551,7 +694,7 @@
         {
           "type": "table",
           "key": "re_table2_rows",
-          "label": "Table 2: RE Quasi-peak 30MHz - 1GHz (FCC)",
+          "label": "Table 2: RE_Quasi-peak_30MHz - 1GHz",
           "scan_bands": [
             [
               30,
@@ -621,16 +764,29 @@
         {
           "type": "image",
           "key": "img_photo_1",
-          "label": "Photo 1: Test Setup Image",
+          "label": "Photo 1: RE test setup_Vertical_30MHz - 1GHz",
           "caption": true
         },
         {
           "type": "image",
           "key": "img_photo_2",
-          "label": "Photo 2: Test Setup Image",
+          "label": "Photo 2: RE test setup_Horizontal_30MHz - 1GHz",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "img_photo_3",
+          "label": "Photo 3: RE test setup_Vertical_1GHz - 6GHz",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "img_photo_4",
+          "label": "Photo 4: RE test setup_Horizontal_1GHz - 6GHz",
           "caption": true
         }
-      ]
+      ],
+      "allow_extra_images": true
     },
     {
       "title": "TEST EQUIPMENT USED",

@@ -471,7 +471,12 @@ def build_context(schema, form_data):
     # <key>__wcm / <key>__hcm; stored in mm for the generator. When absent, the
     # generator falls back to that slot's default box.
     _img_boxes = {}
-    for _ik in image_keys(schema):
+    _size_keys = list(image_keys(schema))
+    if schema.get("code") == "RE":
+        # extra test-setup pictures aren't in the schema, but their size is set the
+        # same way by the image editor
+        _size_keys += [s["key"] for s in re_extra_photo_slots(form_data)]
+    for _ik in _size_keys:
         _w, _h = _s(form_data.get(_ik + "__wcm")), _s(form_data.get(_ik + "__hcm"))
         if _w and _h:
             try:
@@ -479,22 +484,47 @@ def build_context(schema, form_data):
             except ValueError:
                 pass
     ctx["_img_boxes"] = _img_boxes
+    # Upload-driven tables (columns come from the uploaded file), one per flagged section.
+    for _ut in upload_tables(schema):
+        ctx[_ut["key"]] = collect_upload_table(form_data, _ut["key"])
     if schema.get("code") == "RE":
+        re_normalize_legacy_values(ctx)          # legacy draft values -> current format
         ctx["measurement_groups"] = _re_measurement_groups(form_data)
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
         freq = _s(form_data.get("frequency_range"))
-        ctx.update(_re_test_spec_columns(freq))
-        ctx.update(_re_limit_tables(_s(form_data.get("product_standard")),
+        _prod_std = _s(form_data.get("product_standard"))
+        ctx.update(_re_test_spec_columns(freq, _prod_std))
+        ctx.update(_re_limit_tables(_prod_std,
                                     _s(form_data.get("classification_col_2")),
                                     freq))
-        # EUT Input Voltage, Ambient Temp, Relative Humidity:
-        # Single user value goes into the SELECTED frequency column; the other gets "-"
-        s30 = (freq == "30MHz-1GHz")
-        s16 = (freq == "1GHz-6GHz")
+        s30, s16 = _re_selected_ranges(freq)
         DASH = "-"
-        for base_key in ("eut_input_voltage_frequency", "ambient_temperature", "relative_humidity"):
-            val = ctx.get(base_key, "")
-            ctx[base_key + "_col_1"] = val if s30 else (DASH if s16 else val)
-            ctx[base_key + "_col_2"] = val if s16 else (DASH if s30 else val)
+        # EUT Input Voltage is band-specific: the value prints in the selected band's
+        # column ('-' in the other). Ambient Temperature / Relative Humidity are NOT
+        # band-specific — they are split per test DAY by the RE finaliser below.
+        _v = ctx.get("eut_input_voltage_frequency", "")
+        ctx["eut_input_voltage_frequency_col_1"] = _v if s30 else DASH
+        ctx["eut_input_voltage_frequency_col_2"] = _v if s16 else DASH
+        # Test Procedure: resolve the EUT-support wording from the selected EUT
+        # Configuration, then keep only the paragraphs for the selected range(s).
+        ctx["test_procedure"] = _re_filter_procedure(
+            _re_apply_support_mapping(ctx.get("test_procedure"),
+                                      form_data.get("eut_configuration")),
+            s30, s16)
+        # Per-day Test Date / Ambient / Humidity + layout metadata for the finaliser.
+        _days = _re_days(form_data)
+        ctx["test_date"] = " / ".join(d["date"] for d in _days if d["date"]) or _fmt_ddmmyyyy(ctx.get("test_date"))
+        ctx["_re_meta"] = {
+            "show_30m_1g": s30,
+            "show_1g_6g": s16,
+            # non-empty when the Test Request asked for a custom range; the finaliser
+            # renames the Test Setup photo captions to it
+            "custom_range": re_custom_range(freq),
+            "rotation_steps": _re_rotation_steps(_prod_std),
+            "basic_standard": _s(form_data.get("basic_standard")) or _s(ctx.get("basic_standard")),
+            "days": _days,
+            "row_splits": _re_row_splits(form_data),
+        }
     if schema.get("code") == "HARMONIC":
         ctx.update(_harmonic_build_context(form_data))
     if schema.get("code") == "VOLTAGEDIPS":
@@ -603,7 +633,7 @@ def _re_limit_tables(product_standard, cls, freq):
     return out
 
 
-def _re_test_spec_columns(freq):
+def _re_test_spec_columns(freq, product_standard=""):
     """Derive the Test Specification two-column values from the single selected
     Frequency Range (col_1 = 30 MHz–1 GHz, col_2 = 1 GHz–6 GHz).
 
@@ -615,8 +645,7 @@ def _re_test_spec_columns(freq):
     from .layout import human_checkbox
     from .fixed_store import get_fixed_values
     sd = (get_fixed_values("RE") or {}).get("spec_defaults", {})   # fixed values from DB
-    s30 = (freq == "30MHz-1GHz")
-    s16 = (freq == "1GHz-6GHz")
+    s30, s16 = _re_selected_ranges(freq)     # 'Both' -> both columns carry real values
     DASH = "-"
 
     def band(k1, k2, d1="", d2=""):
@@ -624,13 +653,28 @@ def _re_test_spec_columns(freq):
         return (v30 if s30 else DASH), (v16 if s16 else DASH)
 
     cols = {}
-    # real ticked/unticked checkboxes (RunsXml -> {{r ... }}), same rendering as Classification
-    cols["frequency_range_col_1"] = human_checkbox("30MHz-1GHz" if s30 else "", ["30MHz-1GHz"])
-    cols["frequency_range_col_2"] = human_checkbox("1GHz-6GHz" if s16 else "", ["1GHz-6GHz"])
+    _custom = re_custom_range(freq)
+    if _custom:
+        # Neither standard option applies, so print the requested range as plain text
+        # across the value area instead of two tick-boxes.
+        from docxtpl import RichText
+        cols["frequency_range_col_1"] = RichText(_custom)
+        cols["frequency_range_col_2"] = RichText("")
+    else:
+        # real ticked/unticked checkboxes (RunsXml -> {{r ... }}), same rendering as Classification
+        cols["frequency_range_col_1"] = human_checkbox("30MHz-1GHz" if s30 else "", ["30MHz-1GHz"])
+        cols["frequency_range_col_2"] = human_checkbox("1GHz-6GHz" if s16 else "", ["1GHz-6GHz"])
     cols["resolution_bandwidth_col_1"], cols["resolution_bandwidth_col_2"] = band("resolution_bandwidth_col_1", "resolution_bandwidth_col_2", "120k", "1M")
     cols["video_bandwidth_col_1"], cols["video_bandwidth_col_2"] = band("video_bandwidth_col_1", "video_bandwidth_col_2", "1M", "3M")
     cols["step_size_col_1"], cols["step_size_col_2"] = band("step_size_col_1", "step_size_col_2", "40k", "400k")
-    cols["turn_table_rotation_step_col_1"], cols["turn_table_rotation_step_col_2"] = band("turn_table_rotation_step_col_1", "turn_table_rotation_step_col_2", "15°", "22.5°")
+    # Turn-table rotation step: driven by the standard family (15deg CISPR / 22.5deg
+    # CFR), not by the frequency band. The value cell is split into one section per
+    # applicable family by the RE finaliser.
+    _rot = _re_rotation_steps(product_standard) or ["15°"]
+    # Both frequency columns read identically (one section per applicable family);
+    # the RE finaliser splits the row into those sections.
+    cols["turn_table_rotation_step_col_1"] = _rot[0]
+    cols["turn_table_rotation_step_col_2"] = _rot[0] if s16 else DASH
     cols["antenna_height_variation_step_for_pre_scan_mea_2"], cols["antenna_height_variation_step_for_pre_scan_mea_3"] = band("antenna_height_variation_step_for_pre_scan_mea_2", "antenna_height_variation_step_for_pre_scan_mea_3", "1", "1")
     cols["antenna_height_variation_for_final_measurement_2"], cols["antenna_height_variation_for_final_measurement_3"] = band("antenna_height_variation_for_final_measurement_2", "antenna_height_variation_for_final_measurement_3", "1-4", "1-2")
     cols["pre_scan_measurement_time_col_1"], cols["pre_scan_measurement_time_col_2"] = band("pre_scan_measurement_time_col_1", "pre_scan_measurement_time_col_2", "20", "20")
@@ -689,6 +733,72 @@ def _rs_field_strength(standard, immunity, band):
         if imm == "industrial":
             return "10V/m" if band == "low" else "3V/m"
     return ""
+
+
+def re_normalize_legacy_values(values):
+    """Coerce legacy RE values saved in older drafts to the current format, so a
+    resumed draft doesn't resurrect them (e.g. '0 - Initial state' -> '0')."""
+    if not isinstance(values, dict):
+        return values
+    v = _s(values.get("eut_modification_state"))
+    m = re.match(r"^\s*(\d+)\s*[-–—].*$", v)
+    if m:
+        values["eut_modification_state"] = m.group(1)
+    return values
+
+
+def _re_product_standard_display(raw):
+    """Map the request's product standards to the client's canonical display text
+    (admin-editable via RE.product_standard_display in the fixed-values table).
+    Drops the intake 'Other' placeholder and keeps unmapped values verbatim, so the
+    datasheet never prints just 'Other' when real standards were selected."""
+    from .fixed_store import get_fixed_values, SEED_FIXED_VALUES
+    # DB fixed-values row (admin-editable) wins; fall back to the code seed so a
+    # pre-existing DB row that predates this mapping still canonicalizes correctly.
+    mapping = ((get_fixed_values("RE") or {}).get("product_standard_display")
+               or SEED_FIXED_VALUES.get("RE", {}).get("product_standard_display", {}) or {})
+    out = []
+    for part in re.split(r"[;\n|,/&]+", _s(raw)):
+        p = part.strip()
+        if not p:
+            continue
+        key = re.sub(r"[^a-z0-9]", "", p.lower())
+        if key in ("other", "others", "pleasespecify", "otherpleasespecify"):
+            continue
+        disp = next((label for tok, label in mapping.items() if tok and tok in key), p)
+        if disp not in out:
+            out.append(disp)
+    return " & ".join(out)
+
+
+def _re_test_procedure(template, basics_text, cfg, fams):
+    """Resolve the RE test-procedure boilerplate: EUT support (non-conductive table
+    0.8 m for Tabletop / insulation support 0.1 m for Floor standing) and rotation
+    step (15deg CISPR / 22.5deg CFR / both), plus the basic standard name(s)."""
+    txt = _s(template)
+    if basics_text:
+        txt = txt.replace("<Standard name>", basics_text.replace("; ", ", "))
+    return _re_apply_support_mapping(txt, cfg)
+
+
+def _re_apply_support_mapping(text, cfg):
+    """EUT support wording follows the EUT Configuration: a non-conductive table of
+    0.8 m for Tabletop, an insulation support of 0.1 m for Floor standing. Idempotent,
+    so it also fixes text restored from an older draft."""
+    txt = _s(text)
+    if not txt:
+        return txt
+    support = ("insulation support of 0.1 m height"
+               if "floor" in _s(cfg).lower()
+               else "non-conductive table of 0.8 m height")
+    for generic in ("non-conductive table/ insulation support of 0.8/0.1m height",
+                    "non-conductive table/ insulation support of 0.8/0.1 m height",
+                    "non-conductive table of 0.8m height",
+                    "non-conductive table of 0.8 m height",
+                    "insulation support of 0.1m height",
+                    "insulation support of 0.1 m height"):
+        txt = txt.replace(generic, support)
+    return txt
 
 
 def collect_prefill(schema, request_obj, assignment):
@@ -782,7 +892,7 @@ def collect_prefill(schema, request_obj, assignment):
         elif "eut_serial" in k:
             pre[f["key"]] = serial
         elif "product_standard" in k:
-            pre[f["key"]] = standard
+            pre[f["key"]] = (_re_product_standard_display(standard) if _code == "RE" else standard) or standard
         elif k == "basic_standard":
             # Product -> Basic standard now comes from the admin-editable
             # basic_standard_map table (per test_code; emission is shared/global).
@@ -810,7 +920,10 @@ def collect_prefill(schema, request_obj, assignment):
         elif "voltage" in k and "frequency" in k:
             pre[f["key"]] = vf
         elif k == "test_mode":
-            pre[f["key"]] = test_mode
+            # RE prints the mode NAMES ('Mode A, Mode B'), not the descriptions the
+            # requester typed for each one. Other datasheets keep the full text.
+            pre[f["key"]] = (_re_functional_mode_names(request_obj) or test_mode) \
+                if _code == "RE" else test_mode
         elif _code == "CRF" and k == "immunity_test_requirement":
             v = _s(crf_spec.get("immunityTestRequirement"))
             if v:
@@ -851,7 +964,17 @@ def collect_prefill(schema, request_obj, assignment):
             side = "power" if k == "test_port_power" else "signal"
             pre[f["key"]] = "Applicable" if _s(cbl.get(side)).lower() in ("yes", "true", "1") else "Not Applicable"
         elif "modification_state" in k:
-            pre[f["key"]] = "0 - Initial state"   # manager: modification defaults to 0
+            # RE: engineers want just the state number (0), not "0 - Initial state".
+            pre[f["key"]] = "0" if _code == "RE" else "0 - Initial state"
+        elif _code == "RE" and k == "test_procedure":
+            try:
+                from .fixed_store import basic_standard as _bs
+                _basics = _bs(standard, "RE")
+            except Exception:
+                _basics = ""
+            from . import re_logic as _rl
+            pre[f["key"]] = _re_test_procedure(
+                f.get("default", ""), _basics, cfg, _rl.families(standard))
         elif k.startswith("eut_configuration"):
             if (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER", "CRF", "RS_RI", "PFMF", "ESD"):
                 if cfg in ("Tabletop", "Floor standing"):
@@ -955,10 +1078,17 @@ def collect_prefill(schema, request_obj, assignment):
                 pre[f["key"]] = '22.5°'   # 1 GHz–6 GHz band (FCC Part 15 / ANSI C63.4)
 
     if is_re:
-        # Frequency Range single-select default (from the RE test detail; else 30M-1G).
+        # Frequency Range default from the RE test detail. A CUSTOM specification on the
+        # Test Request ('From ... To ...', stored as e.g. '30 MHz to 6 GHz') is carried
+        # through verbatim and names the whole datasheet; only when the request used one
+        # of the standard options do we fall back to the 30M-1G / 1G-6G choice.
         # This drives the Test Specification columns + Test Limit tables at generation.
-        fr = _s(getattr(detail, "freq_range", "")).lower().replace(" ", "")
-        pre["frequency_range"] = "1GHz-6GHz" if ("6g" in fr) else "30MHz-1GHz"
+        _detail_fr = _s(getattr(detail, "freq_range", ""))
+        if _is_custom(_detail_fr) and re_custom_range(_detail_fr):
+            pre["frequency_range"] = _detail_fr
+        else:
+            fr = _detail_fr.lower().replace(" ", "")
+            pre["frequency_range"] = "1GHz-6GHz" if ("6g" in fr) else "30MHz-1GHz"
 
         from . import re_logic
         cls_letter = re_logic._norm_class(_ra(request_obj, "class_type")) or "B"
@@ -1048,7 +1178,7 @@ def _equipment_rows_for(code):
             "c1": _s(eq.make),
             "c2": _s(eq.model_no),
             "c3": _s(eq.serial_no),
-            "c4": cd.isoformat() if cd else "",
+            "c4": cd.isoformat() if cd else "NA",   # no calibration due date -> NA
         })
     return rows
 
@@ -1149,6 +1279,68 @@ def collect_prefill_tables(schema, request_obj, assignment):
     return out
 
 
+#: Default columns of an RE measurement-data table. The engineer can rename these or add
+#: more on the form; the document table is generated from whatever is posted.
+RE_MEAS_DEFAULT_HEADERS = (
+    "Frequency(MHz)", "Polarization", "EUT Angle(deg)", "Antenna Height(cm)",
+    "(QP) EMI(dBuV/m)", "QP Limit(dBuV/m)", "(QP) Margin(dB)",
+)
+_RE_MEAS_MAX_COLS = 20            # sanity bound; a portrait page cannot hold more
+
+
+def upload_tables(schema):
+    """The upload_table declarations in a schema, one per flagged section."""
+    out = []
+    for sec in schema.get("sections", []):
+        ut = sec.get("upload_table")
+        if ut and ut.get("key"):
+            out.append(ut)
+    return out
+
+
+def collect_upload_table(form_data, key, max_cols=None):
+    """Read one upload-driven table from the posted form.
+
+    Its shape comes from the uploaded file, so both the headings (<key>__h<j>) and the
+    values (<key>__c<j>[]) are read dynamically. Returns
+    {'headers': [...], 'rows': [{'cells': [...]}], 'has_data': bool} - has_data is False
+    when every cell is blank, so the generator can leave the table out of the document
+    rather than printing an empty grid."""
+    limit = int(max_cols or _RE_MEAS_MAX_COLS)
+    headers = []
+    for j in range(limit):
+        hk = f"{key}__h{j}"
+        if hk not in (form_data or {}):
+            break
+        headers.append(_s(form_data.get(hk)) or f"Column {j + 1}")
+    if not headers:
+        return {"headers": [], "rows": [], "has_data": False}
+
+    cols = [f"c{j}" for j in range(len(headers))]
+    arrs = {c: _list(form_data, f"{key}__{c}[]") for c in cols}
+    n = max((len(a) for a in arrs.values()), default=0)
+    rows = []
+    for r_idx in range(n):
+        cells = [(_s(arrs[c][r_idx]) if r_idx < len(arrs[c]) else "") for c in cols]
+        if any(cells):
+            rows.append({"cells": cells})
+    return {"headers": headers, "rows": rows, "has_data": bool(rows)}
+
+
+def _re_meas_table_headers(form_data, table_key):
+    """Column headers posted for one measurement table, in order (may be renamed/extended).
+
+    Returns [] when the form posted none, so the caller can supply the right default for
+    that table's detector - a Peak table must not fall back to the quasi-peak headings."""
+    out = []
+    for j in range(_RE_MEAS_MAX_COLS):
+        key = f"meas_table_{table_key}__h{j}"
+        if key not in (form_data or {}):
+            break
+        out.append(_s(form_data.get(key)) or f"Column {j + 1}")
+    return out
+
+
 def _re_measurement_groups(form_data):
     indices = _list(form_data, "meas_index[]")
     groups = []
@@ -1157,17 +1349,6 @@ def _re_measurement_groups(form_data):
         if not i_str:
             continue
         label = _s(form_data.get(f"meas_label_{i_str}"))
-        cols = [f"c{j}" for j in range(7)]
-        arrs = {c: _list(form_data, f"meas_table_{i_str}__{c}[]") for c in cols}
-        n = max((len(a) for a in arrs.values()), default=0)
-        rows = []
-        for r_idx in range(n):
-            row = {c: (_s(arrs[c][r_idx]) if r_idx < len(arrs[c]) else "") for c in cols}
-            if any(row.values()):
-                rows.append(row)
-        if not rows:
-            rows = [{"c0": "", "c1": "", "c2": "", "c3": "", "c4": "", "c5": "", "c6": ""}]
-
         img_vert_key = f"meas_img_vertical_{i_str}"
         img_horiz_key = f"meas_img_horizontal_{i_str}"
 
@@ -1175,7 +1356,7 @@ def _re_measurement_groups(form_data):
         fig_vert_num = 3 + 2 * group_idx
         fig_horiz_num = 4 + 2 * group_idx
         
-        default_vert_cap = f"Figure {fig_vert_num}: RE plot_ Vertical_Peak_30MHz - 1GHz"
+        default_vert_cap = f"Figure {fig_vert_num}: RE plot_Vertical_Peak_30MHz - 1GHz"
         default_horiz_cap = f"Figure {fig_horiz_num}: RE plot_Horizontal_Peak_30MHz - 1GHz"
 
         img_vert_cap = _s(form_data.get(f"meas_img_vertical_caption_{i_str}")) or default_vert_cap
@@ -1183,10 +1364,411 @@ def _re_measurement_groups(form_data):
 
         groups.append({
             "label": label,
+            "index": i_str,
             "img_vertical_key": img_vert_key,
             "img_horizontal_key": img_horiz_key,
             "img_vertical_caption": img_vert_cap,
             "img_horizontal_caption": img_horiz_cap,
-            "table_rows": rows
+            # second-band captions + extra plots, so a draft reload rebuilds those slots
+            "img_vertical_b2_caption": _s(form_data.get(f"meas_img_vertical_b2_caption_{i_str}")),
+            "img_horizontal_b2_caption": _s(form_data.get(f"meas_img_horizontal_b2_caption_{i_str}")),
+            "extra_images": [{"n": int(k.rsplit("_", 1)[1]), "caption": cap}
+                             for k, cap in re_meas_extra_images(form_data, i_str)],
         })
+    _re_meas_group_tables(groups, form_data)
+    _re_meas_group_images(groups, form_data)
     return groups
+
+
+#: A band's data tables. 30MHz-1GHz is measured quasi-peak, so it needs ONE table; above
+#: 1GHz the limits are Peak AND Average, so that band needs TWO.
+#: (detector name, header tag, caption tag) - the header uses the short form '(QP) EMI'
+#: while the caption spells it out, e.g. 'RE_Quasi-peak_30MHz - 1GHz' / 'RE_Avg_1-6GHz'.
+#: A custom range keeps a single quasi-peak table regardless of where it sits, so a
+#: bespoke range never silently gains the Peak/Average pair.
+_RE_BAND_DETECTORS = {
+    "30": (("Quasi-peak", "QP", "Quasi-peak"),),
+    "16": (("Peak", "Peak", "Peak"), ("Average", "Avg", "Avg")),
+    "custom": (("Quasi-peak", "QP", "Quasi-peak"),),
+}
+#: Human band text used in the table captions ('custom' uses the engineer's own text).
+_RE_BAND_CAPTION = {"30": "30MHz - 1GHz", "16": "1-6GHz"}
+
+
+def re_meas_detector_headers(tag):
+    """Default column headers for a table measured with the given detector."""
+    return ["Frequency(MHz)", "Polarization", "EUT Angle(deg)", "Antenna Height(cm)",
+            f"({tag}) EMI(dBuV/m)", f"{tag} Limit(dBuV/m)", f"({tag}) Margin(dB)"]
+
+
+def re_meas_group_table_specs(label, freq):
+    """The data tables one measurement group needs, as
+    [{'suffix', 'detector', 'tag', 'band', 'band_label'}] in document order.
+
+    A group covering only 30MHz-1GHz gets a single quasi-peak table (suffix '' - the
+    original field names, so existing drafts keep working). A group covering 1GHz-6GHz
+    gets a Peak table and an Average table."""
+    specs = []
+    for band_tag, human in re_meas_group_bands(label, freq):
+        for detector, tag, caption_tag in _RE_BAND_DETECTORS[band_tag]:
+            specs.append({
+                "detector": detector,
+                "tag": tag,
+                "caption_tag": caption_tag,
+                "band": band_tag,
+                # a custom band is named with the engineer's own text
+                "band_label": _RE_BAND_CAPTION.get(band_tag, human),
+            })
+    # first table keeps the legacy un-suffixed field names
+    for n, spec in enumerate(specs):
+        spec["suffix"] = "" if n == 0 else f"_{n + 1}"
+    return specs
+
+
+def _re_meas_group_tables(groups, form_data):
+    """Attach rec['tables'] = [{key, headers, rows, caption}] to every group.
+
+    Table numbering ("Table 1:", "Table 2:", ...) runs continuously across all groups so
+    the document reads in order."""
+    freq = _s((form_data or {}).get("frequency_range"))
+    num = 1
+    for rec in groups:
+        i_str = rec["index"]
+        tables = []
+        for spec in re_meas_group_table_specs(rec.get("label"), freq):
+            key = f"{i_str}{spec['suffix']}"
+            headers = _re_meas_table_headers(form_data, key) or re_meas_detector_headers(spec["tag"])
+            cols = [f"c{j}" for j in range(len(headers))]
+            arrs = {c: _list(form_data, f"meas_table_{key}__{c}[]") for c in cols}
+            n = max((len(a) for a in arrs.values()), default=0)
+            rows = []
+            for r_idx in range(n):
+                row = {c: (_s(arrs[c][r_idx]) if r_idx < len(arrs[c]) else "") for c in cols}
+                if any(row.values()):
+                    # 'cells' drives the template's column loop; c0..cN stay for the form
+                    row["cells"] = [row[c] for c in cols]
+                    rows.append(row)
+            if not rows:
+                blank = {c: "" for c in cols}
+                blank["cells"] = ["" for _ in cols]
+                rows = [blank]
+
+            caption = (_s(form_data.get(f"meas_table_caption_{key}"))
+                       or f"Table {num}: RE_{spec['caption_tag']}_{spec['band_label']}")
+            tables.append({
+                "key": key,
+                "detector": spec["detector"],
+                "tag": spec["tag"],
+                "band": spec["band"],
+                "band_label": spec["band_label"],
+                "headers": headers,
+                "rows": rows,
+                "caption": caption,
+                # what the engineer typed (blank = use the automatic caption). Kept
+                # separate so a draft reload does not freeze the auto caption into the box.
+                "caption_input": _s(form_data.get(f"meas_table_caption_{key}")),
+            })
+            num += 1
+        rec["tables"] = tables
+        # keep the single-table keys so older callers / the form's restore path still work
+        if tables:
+            rec["table_headers"] = tables[0]["headers"]
+            rec["table_rows"] = tables[0]["rows"]
+            rec["table_caption"] = tables[0]["caption"]
+
+
+#: Bands a measurement group needs plots for. FCC is specified over both bands (quasi-peak
+#: to 1GHz, peak/average above it), so with Both selected it needs a Vertical + Horizontal
+#: pair per band. CISPR/ICES only has 30MHz-1GHz limits, so it keeps a single pair.
+_RE_BAND_30 = ("30", "30MHz - 1GHz")
+_RE_BAND_16 = ("16", "1GHz - 6GHz")
+
+
+def re_meas_group_bands(label, freq):
+    """The bands one measurement group needs plots for, as [(tag, human label)].
+
+    A CUSTOM range is a single band named with the engineer's own text, whatever the
+    group's family - the standard 30MHz/1GHz split does not apply to it."""
+    custom = re_custom_range(freq)
+    if custom:
+        return [("custom", custom)]
+    s30, s16 = _re_selected_ranges(freq)
+    is_fcc = "fcc" in (label or "").lower()
+    bands = []
+    if s30:
+        bands.append(_RE_BAND_30)
+    if s16 and (is_fcc or not s30):
+        # Above 1GHz only applies to FCC; a non-FCC group falls back to the single
+        # selected band so it always has one pair of slots.
+        bands.append(_RE_BAND_16)
+    return bands or [_RE_BAND_30]
+
+
+def re_meas_extra_images(form_data, i_str):
+    """Extra plots the engineer added to one measurement group, each with its own title.
+    Posted as meas_img_extra_<group>_<n> / meas_img_extra_caption_<group>_<n>."""
+    prefix = f"meas_img_extra_caption_{i_str}_"
+    out = []
+    for k in (form_data or {}):
+        if k.startswith(prefix) and k[len(prefix):].isdigit():
+            n = int(k[len(prefix):])
+            out.append((n, f"meas_img_extra_{i_str}_{n}", _s(form_data.get(k))))
+    return [(key, cap) for _n, key, cap in sorted(out)]
+
+
+def _re_meas_group_images(groups, form_data):
+    """Attach rec['images'] = [{key, caption}] to every measurement group: the standard
+    Vertical/Horizontal pair per applicable band, then any extra plots the engineer added.
+    Figures are numbered continuously across all groups, starting after the two Functional
+    Check figures. The generator drops entries whose slot holds no image."""
+    freq = _s((form_data or {}).get("frequency_range"))
+    order = _list(form_data, "meas_index[]")
+    idxs = [_s(i).strip() for i in order if _s(i).strip()]
+    fig = 3                                    # Figures 1-2 are the Functional Check plots
+    for rec, i_str in zip(groups, idxs):
+        images = []
+        bands = re_meas_group_bands(rec.get("label"), freq)
+        for b, (tag, human) in enumerate(bands):
+            suffix = "" if b == 0 else "_b2"
+            # a custom range keeps quasi-peak only, so it reads 'Peak' like the low band
+            detector = "Peak & Average" if tag == "16" else "Peak"
+            for role in ("vertical", "horizontal"):
+                key = f"meas_img_{role}{suffix}_{i_str}"
+                typed = _s(form_data.get(f"meas_img_{role}{suffix}_caption_{i_str}"))
+                images.append({
+                    "key": key,
+                    "caption": typed or ("Figure %d: RE plot_%s_%s_%s"
+                                         % (fig, role.capitalize(), detector, human)),
+                })
+                fig += 1
+        for key, cap in re_meas_extra_images(form_data, i_str):
+            # The engineer's title keeps its own wording but still joins the document's
+            # Figure sequence, so the numbering stays unbroken. _re_renumber_figures()
+            # fixes the actual number after empty slots have been dropped.
+            if not cap.lower().startswith("figure"):
+                cap = f"Figure {fig}: {cap}".rstrip() if cap else f"Figure {fig}: RE plot"
+            images.append({"key": key, "caption": cap})
+            fig += 1
+        rec["images"] = images
+
+
+def _re_functional_mode_names(request_obj):
+    """RE's Test Mode = the NAMES of the Test Request's functional modes, not their
+    descriptions: 'Mode A', 'Mode A, Mode B', ... The request form asks for a number of
+    functional modes and then labels the description boxes Mode A / Mode B / ... (letters
+    from 'A'), so the names are derived from the count the same way here.
+
+    The count comes from the stored mode rows; a request that recorded only the number
+    (no rows yet) falls back to iec_emc_requests.number_of_modes. Returns '' when the
+    request has neither, so the caller keeps the old text rather than blanking the field."""
+    if request_obj is None:
+        return ""
+    rows = getattr(request_obj, "functional_modes", None) or []
+    n = len([m for m in rows if _s(getattr(m, "mode_value", ""))])
+    if not n:
+        try:
+            n = int(_s(getattr(request_obj, "number_of_modes", "")) or 0)
+        except (TypeError, ValueError):
+            n = 0
+    if n < 1:
+        return ""
+    n = min(n, 26)                        # 'Mode A'..'Mode Z'; the form caps input at 10
+    return ", ".join("Mode %s" % chr(ord("A") + i) for i in range(n))
+
+
+RE_EXTRA_PHOTO_PREFIX = "re_extra_photo_"
+
+
+def re_extra_photo_slots(form_data):
+    """The extra TEST SETUP PICTURES the engineer added on the form, beyond RE's four
+    standard (polarization x band) slots. Each slot posts a file 're_extra_photo_<i>'
+    plus its label 're_extra_photo_caption_<i>'; the slot survives here even with an
+    empty label / no upload, and render() drops the ones with no image.
+
+    Returns [{'idx': i, 'key': 're_extra_photo_<i>', 'caption': <as typed>}] in slot
+    order. Used both to rebuild the form on draft reload and to build the document
+    context (where the label gets its 'Photo N:' number)."""
+    cap_prefix = RE_EXTRA_PHOTO_PREFIX + "caption_"
+    idxs = set()
+    for k in (form_data or {}):
+        if k.startswith(cap_prefix):
+            suffix = k[len(cap_prefix):]
+            if suffix.isdigit():
+                idxs.add(int(suffix))
+    return [{"idx": i,
+             "key": f"{RE_EXTRA_PHOTO_PREFIX}{i}",
+             "caption": _s((form_data or {}).get(f"{cap_prefix}{i}"))}
+            for i in sorted(idxs)]
+
+
+def _re_extra_photos(form_data):
+    """Document-side view of re_extra_photo_slots(): the label is given a provisional
+    'Photo N:' number so it matches the caption pattern the generator recognises.
+    _re_renumber_photos() then renumbers every photo caption in document order, which
+    is what makes the extras continue after the standard slots that actually printed."""
+    out = []
+    for n, slot in enumerate(re_extra_photo_slots(form_data), start=1):
+        cap = slot["caption"]
+        if not cap.lower().startswith("photo"):
+            cap = f"Photo {n}: {cap}".rstrip()
+        out.append({"key": slot["key"], "caption": cap})
+    return out
+
+
+def _re_filter_procedure(text, s30, s16):
+    """Keep only the Test Procedure paragraphs for the selected Frequency Range, and
+    when BOTH ranges apply merge the two near-identical setup paragraphs into one
+    ('For 30MHz to 1GHz and 1GHz to 6GHz, ...'). The pre-scan paragraphs stay
+    separate because their detector + antenna-height details genuinely differ."""
+    txt = _s(text)
+    if not txt:
+        return txt
+    paras = [p for p in re.split(r"\n\s*\n", txt)]
+
+    def kind(p):
+        s = p.strip().lower()
+        if s.startswith("for 30mhz"):
+            return "setup30"
+        if s.startswith("for 1ghz"):
+            return "setup16"
+        if s.startswith("pre-scan (peak &"):
+            return "scan16"
+        if s.startswith("pre-scan"):
+            return "scan30"
+        return "other"
+
+    tagged = [(kind(p), p) for p in paras]
+    if s30 and s16:
+        # Both ranges: each frequency keeps its OWN setup + pre-scan paragraphs,
+        # under the single opening 'in accordance with' line.
+        return "\n\n".join(p.strip() for _, p in tagged if p.strip())
+
+    drop = {"setup16", "scan16"} if not s16 else {"setup30", "scan30"}
+    return "\n\n".join(p.strip() for k, p in tagged if k not in drop and p.strip())
+
+
+def _re_range_label(form_data):
+    """Human range text used in RE captions ('30MHz - 1GHz' / '1GHz - 6GHz'), or the
+    engineer's own text when the Test Request specified a custom range."""
+    freq = _s(form_data.get("frequency_range"))
+    custom = re_custom_range(freq)
+    if custom:
+        return custom
+    return "1GHz - 6GHz" if freq == "1GHz-6GHz" else "30MHz - 1GHz"
+
+
+#: The three standard Frequency Range options. Anything else in the field is a CUSTOM
+#: range carried over from the Test Request's RE custom specification (e.g. '30 MHz to
+#: 6 GHz'), and the whole datasheet is then named after that text.
+_RE_STANDARD_RANGES = {"30mhz-1ghz", "1ghz-6ghz", "both"}
+
+
+def re_custom_range(freq):
+    """The custom Frequency Range text, or '' when one of the standard options is used."""
+    v = _s(freq)
+    if not v:
+        return ""
+    return "" if v.lower().replace(" ", "") in _RE_STANDARD_RANGES else v
+
+
+def _re_selected_ranges(freq):
+    """(show_30MHz_1GHz, show_1GHz_6GHz) for the selected Frequency Range.
+    'Both' (or blank, for legacy drafts) shows both.
+
+    A CUSTOM range is one band, so it reports (True, False): the spec table keeps a
+    single value column and only one pair of photo/plot slots is produced. Its NAME comes
+    from re_custom_range(), not from the 30MHz-1GHz label."""
+    f = (freq or "").strip().lower()
+    if re_custom_range(freq):
+        return True, False
+    if f == "30mhz-1ghz":
+        return True, False
+    if f == "1ghz-6ghz":
+        return False, True
+    return True, True                      # 'Both' / unset
+
+
+def _re_rotation_steps(product_standard):
+    """Turn-table rotation step sections: 15deg for a CISPR-family basic standard,
+    22.5deg for the CFR/ANSI family, both when the standard names both."""
+    from . import re_logic
+    fams = re_logic.families(product_standard)
+    steps = []
+    if "CISPR" in fams:
+        steps.append("15°")
+    if "FCC" in fams:
+        steps.append("22.5°")
+    return steps
+
+
+#: Spec-table rows the engineer can split into 1-3 sections, with the field prefix
+#: holding each section's value (<base>, <base>_2, <base>_3).
+_RE_SPLIT_ROWS = (("ambient temperature", "ambient_temperature"),
+                  ("relative humidity", "relative_humidity"),
+                  ("test date", "test_date"),
+                  ("tested by", "tested_by"))
+
+
+def _re_row_splits(form_data):
+    """Per-row section counts (1/2/3) the engineer chose, with the values for each
+    section. Each row is independent, so Ambient can be 2 sections while Test Date
+    is 3."""
+    out = []
+    for needle, base in _RE_SPLIT_ROWS:
+        try:
+            n = int(_s(form_data.get(base + "_sections")) or 1)
+        except ValueError:
+            n = 1
+        n = max(1, min(3, n))
+        vals = []
+        for i in range(n):
+            v = _s(form_data.get(base if i == 0 else "%s_%d" % (base, i + 1)))
+            vals.append(_fmt_ddmmyyyy(v) if base == "test_date" else v)
+        out.append({"needle": needle, "values": vals})
+    return out
+
+
+def _re_days(form_data):
+    """Per-day Test Date / Ambient Temperature / Relative Humidity entries (up to 3).
+    A day is kept when any of its three values was filled in; dates print DD/MM/YYYY."""
+    days = []
+    for suffix in ("", "_2", "_3"):
+        d = _fmt_ddmmyyyy(_s(form_data.get("test_date" + suffix)))
+        t = _s(form_data.get("ambient_temperature" + suffix))
+        h = _s(form_data.get("relative_humidity" + suffix))
+        if d or t or h:
+            days.append({"date": d, "temp": t, "hum": h})
+    return days
+
+
+_DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%m/%d/%Y", "%Y/%m/%d")
+
+
+def to_iso_date(value):
+    """Normalize a date to YYYY-MM-DD for an <input type="date">, which shows blank for
+    anything else. Drafts saved while these were free-text fields hold DD/MM/YYYY, so
+    without this the value would disappear from the form. Unparseable text -> ''."""
+    v = _s(value)
+    if not v:
+        return ""
+    from datetime import datetime as _dt
+    for fmt in _DATE_FORMATS:
+        try:
+            return _dt.strptime(v, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def _fmt_ddmmyyyy(value):
+    """Normalize a date to DD/MM/YYYY; unparseable text is returned unchanged."""
+    v = _s(value)
+    if not v:
+        return ""
+    from datetime import datetime as _dt
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return _dt.strptime(v, fmt).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+    return v

@@ -97,6 +97,17 @@ SEED_FIXED_VALUES = {
         "measurement_uncertainty": "± 3.705 dB",
         "sop_reference": "IEC-SOP-507",
         "software": [{"c0": "TDK Emission Lab", "c1": "14.43"}],
+        "product_standard_display": {
+            "iec61326": "IEC 61326-1:2020",
+            "en61326": "EN 61326-1:2021",
+            "ices": "ICES-001:Issue 5:2020",
+            "subpart15b": "FCC Part 15 Subpart B:2024",
+            "part15": "FCC Part 15 Subpart B:2024",
+            "cfr": "FCC Part 15 Subpart B:2024",
+            "fcc": "FCC Part 15 Subpart B:2024",
+            "cispr11": "CISPR 11:2016",
+            "en55011": "EN 55011:2016+A2:2021"
+        },
         "spec_defaults": {
             "resolution_bandwidth_col_1": "120k", "resolution_bandwidth_col_2": "1M",
             "video_bandwidth_col_1": "1M", "video_bandwidth_col_2": "3M",
