@@ -569,7 +569,18 @@
                                         <span class="max-w-[180px] text-center text-[10px] text-gray-500">
                                             Update the datasheet based on the reviewer comments and upload the revised file.
                                         </span>
-                                        {% if 'surge' in ((assignment.test_name or '') | lower) and app_environment != 'production' %}
+                                        {% set _peer_tn = (assignment.test_name or '')|upper %}
+                                        {% if _peer_tn == 'CE' %}
+                                        <a href="/datasheet/ce/{{ assignment.id }}/form"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Edit Datasheet
+                                        </a>
+                                        {% elif _peer_tn in ['CRF','EFT','ESD','HARMONIC','PFMF','RE','RS_RI','SURGE','VOLTAGEDIPS','VOLTAGEFLICKER'] %}
+                                        <a href="/datasheet/g/{{ _peer_tn }}/{{ assignment.id }}/form"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Edit Datasheet
+                                        </a>
+                                        {% elif _peer_tn in ['RS_RI_INTERIM','RS_INTERIM'] %}
                                         <button type="button" data-test-name="{{ assignment.test_name|e }}"
                                             data-tco-id="{{ plan.tco_id|e }}"
                                             data-plan-id="{{ plan.id if plan.id is not none else '' }}"
@@ -578,25 +589,12 @@
                                             data-engineer-name="{{ (assignment.test_person_name or plan.assigned_engineer_name or '')|e }}"
                                             data-job-number="{{ (plan.job_number or '')|e }}"
                                             data-product-name="{{ (plan.product_name or plan.name or '')|e }}"
-                                            data-open-surge-datasheet="true"
-                                            onclick="openSurgeTestDataSheetFromData(this); return false;"
-                                            class="js-open-surge-datasheet inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            onclick="openTestDataSheetFromData(this); return false;"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Edit Datasheet
                                         </button>
                                         {% else %}
-                                        <button type="button"
-                                            data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
-                                            data-test-name="{{ assignment.test_name|e }}"
-                                            data-tco-id="{{ plan.tco_id|e }}"
-                                            data-peer-reviewer-id="{{ assignment.peer_reviewer_user_id if assignment.peer_reviewer_user_id is not none else '' }}"
-                                            data-peer-reviewer-name="{{ assignment.peer_reviewer_name|default('', true)|e }}"
-                                            data-datasheet-comments="{{ assignment.datasheet_comments|default('', true)|e }}"
-                                            data-datasheet-file-path="{{ assignment.datasheet_file_path|default('', true)|e }}"
-                                            data-upload-mode="edit"
-                                            onclick="openUploadDataSheetModalFromData(this)"
-                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition-all duration-200 shadow-md hover:shadow-lg">
-                                            Edit Datasheet
-                                        </button>
+                                        <span class="text-[10px] font-semibold text-gray-500">Datasheet generation unavailable</span>
                                         {% endif %}
                                         {% if assignment.datasheet_file_path %}
                                         <a href="/api/files/download?path={{ assignment.datasheet_file_path | urlencode }}"
@@ -632,13 +630,23 @@
                                             class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Generate Datasheet
                                         </a>
-                                        {% else %}
-                                        <button type="button" data-assignment-id="{{ assignment.id }}"
-                                            data-test-name="{{ assignment.test_name }}" data-tco-id="{{ plan.tco_id }}"
-                                            onclick="openUploadDataSheetModalFromData(this)"
-                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-all duration-200 shadow-md hover:shadow-lg">
-                                            Upload Datasheet
+                                        {% elif _tn in ['RS_RI_INTERIM','RS_INTERIM'] %}
+                                        <button type="button" data-test-name="{{ assignment.test_name|e }}"
+                                            data-tco-id="{{ plan.tco_id|e }}"
+                                            data-plan-id="{{ plan.id if plan.id is not none else '' }}"
+                                            data-test-name-lower="{{ ((assignment.test_name or '') | lower)|e }}"
+                                            data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
+                                            data-engineer-name="{{ (assignment.test_person_name or plan.assigned_engineer_name or '')|e }}"
+                                            data-job-number="{{ (plan.job_number or '')|e }}"
+                                            data-product-name="{{ (plan.product_name or plan.name or '')|e }}"
+                                            onclick="openTestDataSheetFromData(this); return false;"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Generate Datasheet
                                         </button>
+                                        {% else %}
+                                        <span class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200">
+                                            Datasheet generation unavailable
+                                        </span>
                                         {% endif %}
                                         {% else %}
                                         <span class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200">
@@ -851,7 +859,18 @@
                                         <span class="max-w-[180px] text-center text-[10px] text-gray-500">
                                             Review the comments and replace the datasheet if updates are needed.
                                         </span>
-                                        {% if 'surge' in ((assignment.test_name or '') | lower) and app_environment != 'production' %}
+                                        {% set _peer_tn = (assignment.test_name or '')|upper %}
+                                        {% if _peer_tn == 'CE' %}
+                                        <a href="/datasheet/ce/{{ assignment.id }}/form"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Edit Datasheet
+                                        </a>
+                                        {% elif _peer_tn in ['CRF','EFT','ESD','HARMONIC','PFMF','RE','RS_RI','SURGE','VOLTAGEDIPS','VOLTAGEFLICKER'] %}
+                                        <a href="/datasheet/g/{{ _peer_tn }}/{{ assignment.id }}/form"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            Edit Datasheet
+                                        </a>
+                                        {% elif _peer_tn in ['RS_RI_INTERIM','RS_INTERIM'] %}
                                         <button type="button" data-test-name="{{ assignment.test_name|e }}"
                                             data-tco-id="{{ plan.tco_id|e }}"
                                             data-plan-id="{{ plan.id if plan.id is not none else '' }}"
@@ -860,25 +879,12 @@
                                             data-engineer-name="{{ (assignment.test_person_name or plan.assigned_engineer_name or '')|e }}"
                                             data-job-number="{{ (plan.job_number or '')|e }}"
                                             data-product-name="{{ (plan.product_name or plan.name or '')|e }}"
-                                            data-open-surge-datasheet="true"
-                                            onclick="openSurgeTestDataSheetFromData(this); return false;"
-                                            class="js-open-surge-datasheet inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                                            onclick="openTestDataSheetFromData(this); return false;"
+                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Edit Datasheet
                                         </button>
                                         {% else %}
-                                        <button type="button"
-                                            data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
-                                            data-test-name="{{ assignment.test_name|e }}"
-                                            data-tco-id="{{ plan.tco_id|e }}"
-                                            data-peer-reviewer-id="{{ assignment.peer_reviewer_user_id if assignment.peer_reviewer_user_id is not none else '' }}"
-                                            data-peer-reviewer-name="{{ assignment.peer_reviewer_name|default('', true)|e }}"
-                                            data-datasheet-comments="{{ assignment.datasheet_comments|default('', true)|e }}"
-                                            data-datasheet-file-path="{{ assignment.datasheet_file_path|default('', true)|e }}"
-                                            data-upload-mode="edit"
-                                            onclick="openUploadDataSheetModalFromData(this)"
-                                            class="inline-flex items-center justify-center px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition-all duration-200 shadow-md hover:shadow-lg">
-                                            Edit Datasheet
-                                        </button>
+                                        <span class="text-[10px] font-semibold text-gray-500">Datasheet generation unavailable</span>
                                         {% endif %}
                                         {% if assignment.datasheet_file_path %}
                                         <a href="/api/files/download?path={{ assignment.datasheet_file_path | urlencode }}"
@@ -961,9 +967,23 @@
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">
                                 Test</th>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">
-                                TCO ID</th>
+                                <button type="button" id="peerReviewSortTcoBtn"
+                                    class="inline-flex items-center justify-center gap-1 transition-colors duration-200 hover:text-blue-700">
+                                    <span>TCO ID</span>
+                                    <span id="peerReviewSortTcoIcon" class="text-sm text-gray-400">
+                                        <i class="bi bi-sort-alpha-down"></i>
+                                    </span>
+                                </button>
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700 whitespace-nowrap">
-                                Job Number</th>
+                                <button type="button" id="peerReviewSortJobBtn"
+                                    class="inline-flex items-center justify-center gap-1 transition-colors duration-200 hover:text-blue-700">
+                                    <span>Job Number</span>
+                                    <span id="peerReviewSortJobIcon" class="text-sm text-gray-400">
+                                        <i class="bi bi-sort-alpha-down"></i>
+                                    </span>
+                                </button>
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">
                                 Engineer</th>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-700">
@@ -1240,7 +1260,6 @@
         'eftTestDataSheetModal',
         'rsInterimTestDataSheetModal',
         'rsTestDataSheetModal',
-        'uploadDataSheetModal',
         'cancelTestModal'
     ];
 
@@ -3093,86 +3112,6 @@
         </form>
     </div>
 </div>
-<!-- ==================== Upload Data Sheet Modal ==================== -->
-<div id="uploadDataSheetModal"
-    class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <!-- Modal Header -->
-        <h2 id="uploadModalTitle" class="text-2xl font-bold text-gray-800 mb-2">Upload Datasheet</h2>
-
-        <!-- Test Name Display -->
-        <p class="text-sm text-gray-600 mb-4">Test: <span id="uploadTestName" class="font-semibold"></span></p>
-        <p id="uploadModalHelperText" class="text-xs text-gray-500 mb-4">Upload the datasheet and assign a peer reviewer.</p>
-        <div id="uploadCurrentFileContainer" class="hidden mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3"></div>
-        <div id="uploadPeerReviewCommentsContainer" class="hidden mb-4 rounded-xl border border-purple-200 bg-purple-50 p-3">
-            <h3 class="text-sm font-semibold text-purple-900">Peer Review Comments</h3>
-            <div id="uploadPeerReviewCommentsContent" class="mt-3 max-h-48 overflow-y-auto rounded-xl border border-purple-100 bg-white p-3"></div>
-        </div>
-
-        <!-- Upload Form -->
-        <form id="uploadDataSheetForm" method="POST" enctype="multipart/form-data" action="/upload-datasheet">
-            <!-- Hidden Fields for Assignment and TCO ID -->
-            <input type="hidden" id="uploadAssignmentId" name="assignment_id">
-            <input type="hidden" id="uploadTcoId" name="tco_id">
-
-            <!-- File Upload Field -->
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                    Upload Datasheet (PDF) <span class="text-red-500">*</span>
-                </label>
-                <input type="file" id="datasheetFile" name="datasheet" accept=".pdf" required
-                    class="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
-            </div>
-
-            <div class="mb-4">
-                <label for="uploadPeerReviewer" class="block text-sm font-medium text-gray-700 mb-2">
-                    Assign Peer Reviewer <span class="text-red-500">*</span>
-                </label>
-                <select id="uploadPeerReviewer" name="peer_reviewer_id" required
-                    class="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
-                    <option value="">Select peer reviewer</option>
-                    {% for reviewer in peer_reviewer_options %}
-                    <option value="{{ reviewer.id }}">
-                        {{ reviewer.name }}{% if reviewer.role == 'admin' %} (Admin){% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-                {% if peer_reviewer_options %}
-                <p class="mt-2 text-xs text-gray-500">The uploader cannot assign the datasheet to themselves.</p>
-                {% else %}
-                <p class="mt-2 text-xs text-red-600">No other active lab engineer or admin is available for peer review.</p>
-                {% endif %}
-            </div>
-
-            <div class="mb-4">
-                <label for="uploadDatasheetComments" class="block text-sm font-medium text-gray-700 mb-2">
-                    Comments / Update Notes
-                </label>
-                <textarea id="uploadDatasheetComments" name="comments" rows="4"
-                    class="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    placeholder="Add uploader notes, update details, or a response to peer review comments..."></textarea>
-                <p class="mt-2 text-xs text-gray-500">Any notes added here will be visible in peer review comment history.</p>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex gap-3 justify-end">
-                <!-- Cancel Button -->
-                <button type="button" onclick="closeUploadDataSheetModal()"
-                    class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                    Cancel
-                </button>
-
-                <!-- Submit Button -->
-                <button type="submit"
-                    class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
-                    <span id="uploadDatasheetSubmitLabel">Upload</span>
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-<!-- ==================== End Upload Data Sheet Modal ==================== -->
-
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const searchInput = document.getElementById('searchInput');
@@ -3278,6 +3217,87 @@
 
             updateAssignedSortButtons();
             filterEntries(true);
+        }
+
+        /* ---- Peer Review table: sort by TCO ID / Job Number ------------------------
+           Mirrors the assigned-tests sort above and reuses its comparator. Entries whose
+           PARENT request is finished (completed / cancelled / rejected) always stay at the
+           bottom, sorted within their own group, so active work is never pushed down. */
+        const PEER_REVIEW_TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected'];
+        const peerReviewSortTcoBtn = document.getElementById('peerReviewSortTcoBtn');
+        const peerReviewSortJobBtn = document.getElementById('peerReviewSortJobBtn');
+        const peerReviewSortState = { sortBy: '', sortDir: 'asc' };
+
+        function isPeerReviewTerminal(entry) {
+            return PEER_REVIEW_TERMINAL_STATUSES.includes(
+                String(entry && entry.parent_status || '').toLowerCase().trim()
+            );
+        }
+
+        function getPeerReviewSortValue(entry, field) {
+            if (field === 'tco_id') return String(entry.tco_id || '').trim();
+            if (field === 'job_number') return String(entry.job_number || '').trim();
+            return '';
+        }
+
+        function sortPeerReviewEntries(entries) {
+            if (!Array.isArray(entries) || entries.length === 0) return entries;
+
+            const sortGroup = (group) => {
+                if (!peerReviewSortState.sortBy || group.length === 0) return group;
+                return [...group].sort((leftEntry, rightEntry) => {
+                    const comparison = compareAssignedIdentifierValues(
+                        getPeerReviewSortValue(leftEntry, peerReviewSortState.sortBy),
+                        getPeerReviewSortValue(rightEntry, peerReviewSortState.sortBy)
+                    );
+                    return peerReviewSortState.sortDir === 'desc' ? -comparison : comparison;
+                });
+            };
+
+            const active = entries.filter((entry) => !isPeerReviewTerminal(entry));
+            const finished = entries.filter(isPeerReviewTerminal);
+            return [...sortGroup(active), ...sortGroup(finished)];
+        }
+
+        function updatePeerReviewSortButtons() {
+            [
+                { field: 'tco_id', button: peerReviewSortTcoBtn, iconId: 'peerReviewSortTcoIcon' },
+                { field: 'job_number', button: peerReviewSortJobBtn, iconId: 'peerReviewSortJobIcon' }
+            ].forEach(({ field, button, iconId }) => {
+                const icon = document.getElementById(iconId);
+                if (!button || !icon) return;
+
+                const isActive = peerReviewSortState.sortBy === field;
+                const iconClass = !isActive
+                    ? 'bi bi-sort-alpha-down'
+                    : (peerReviewSortState.sortDir === 'desc'
+                        ? 'bi bi-sort-alpha-down-alt'
+                        : 'bi bi-sort-alpha-down');
+
+                icon.className = `text-sm ${isActive ? 'text-blue-600' : 'text-gray-400'}`;
+                icon.innerHTML = `<i class="${iconClass}"></i>`;
+            });
+        }
+
+        function applyPeerReviewSort(field) {
+            if (peerReviewSortState.sortBy === field) {
+                peerReviewSortState.sortDir = peerReviewSortState.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                peerReviewSortState.sortBy = field;
+                peerReviewSortState.sortDir = 'asc';
+            }
+
+            updatePeerReviewSortButtons();
+            if (typeof window.loadPeerReviewData === 'function') {
+                window.loadPeerReviewData();
+            }
+        }
+
+        if (peerReviewSortTcoBtn) {
+            peerReviewSortTcoBtn.addEventListener('click', () => applyPeerReviewSort('tco_id'));
+        }
+        if (peerReviewSortJobBtn) {
+            peerReviewSortJobBtn.addEventListener('click', () => applyPeerReviewSort('job_number'));
         }
 
         function updateResultsCount(visible, total, startIndex = 0, endIndex = 0) {
@@ -3678,7 +3698,8 @@
                     if (!result.success) {
                         throw new Error(result.error || 'Failed to load peer review data');
                     }
-                    renderPeerReviewTable(result.data || []);
+                    // apply the chosen TCO/Job sort, finished TCOs last
+                    renderPeerReviewTable(sortPeerReviewEntries(result.data || []));
                 })
                 .catch((error) => {
                     tbody.innerHTML = `
@@ -3936,21 +3957,6 @@
 </script>
 
 <script>
-    async function fetchPlannerEntryDetails(plannerId) {
-        if (!plannerId) {
-            throw new Error('Assignment ID is missing.');
-        }
-
-        const response = await fetch(`/api/planner/${plannerId}`, {
-            credentials: 'same-origin'
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-            throw new Error(result.error || 'Failed to load datasheet details');
-        }
-        return result.data || {};
-    }
-
     function ensurePeerReviewerOption(selectElement, peerReviewerId, peerReviewerName) {
         if (!selectElement) {
             return;
@@ -3982,15 +3988,6 @@
         selectElement.value = normalizedId;
     }
 
-    function ensureUploadPeerReviewerOption(peerReviewerId, peerReviewerName) {
-        const reviewerField = document.getElementById('uploadPeerReviewer');
-        if (!reviewerField) {
-            return;
-        }
-
-        ensurePeerReviewerOption(reviewerField, peerReviewerId, peerReviewerName);
-    }
-
     function ensureSurgePeerReviewerOption(peerReviewerId, peerReviewerName) {
         const reviewerField = document.getElementById('surgePeerReviewer');
         if (!reviewerField) {
@@ -3998,191 +3995,6 @@
         }
 
         ensurePeerReviewerOption(reviewerField, peerReviewerId, peerReviewerName);
-    }
-
-    function configureUploadDataSheetModal(options = {}) {
-        const assignmentField = document.getElementById('uploadAssignmentId');
-        const tcoField = document.getElementById('uploadTcoId');
-        const testNameField = document.getElementById('uploadTestName');
-        const reviewerField = document.getElementById('uploadPeerReviewer');
-        const modal = document.getElementById('uploadDataSheetModal');
-        const titleField = document.getElementById('uploadModalTitle');
-        const helperTextField = document.getElementById('uploadModalHelperText');
-        const currentFileContainer = document.getElementById('uploadCurrentFileContainer');
-        const commentsContainer = document.getElementById('uploadPeerReviewCommentsContainer');
-        const commentsContent = document.getElementById('uploadPeerReviewCommentsContent');
-        const submitLabel = document.getElementById('uploadDatasheetSubmitLabel');
-        const fileInput = document.getElementById('datasheetFile');
-        const commentsInput = document.getElementById('uploadDatasheetComments');
-
-        if (!assignmentField || !tcoField || !testNameField || !modal) {
-            return;
-        }
-
-        const assignmentId = options.assignmentId || '';
-        const testName = options.testName || '';
-        const tcoId = options.tcoId || '';
-        const peerReviewerId = options.peerReviewerId || '';
-        const peerReviewerName = options.peerReviewerName || '';
-        const datasheetComments = options.datasheetComments || '';
-        const datasheetFilePath = options.datasheetFilePath || '';
-        const mode = options.mode === 'edit' ? 'edit' : 'upload';
-        const isEditMode = mode === 'edit';
-
-        assignmentField.value = assignmentId;
-        tcoField.value = tcoId;
-        testNameField.textContent = testName;
-        if (reviewerField) {
-            ensureUploadPeerReviewerOption(peerReviewerId, peerReviewerName);
-            reviewerField.value = peerReviewerId || '';
-            reviewerField.required = true;
-        }
-        if (titleField) {
-            titleField.textContent = isEditMode ? 'Edit Datasheet' : 'Upload Datasheet';
-        }
-        if (helperTextField) {
-            helperTextField.textContent = isEditMode
-                ? 'Replace the datasheet after reviewing the peer review comments below.'
-                : 'Upload the datasheet and assign a peer reviewer.';
-        }
-        if (submitLabel) {
-            submitLabel.textContent = isEditMode ? 'Save Changes' : 'Upload';
-        }
-        if (fileInput) {
-            fileInput.value = '';
-        }
-        if (commentsInput) {
-            commentsInput.value = '';
-            commentsInput.placeholder = isEditMode
-                ? 'Add your update notes or response to the peer review comments...'
-                : 'Add uploader notes or comments...';
-        }
-        if (currentFileContainer) {
-            if (datasheetFilePath) {
-                const fileName = window.escapeHtml(datasheetFilePath.split(/[\\/]/).pop() || 'Current Datasheet');
-                currentFileContainer.innerHTML = `
-                    <p class="text-sm font-semibold text-blue-900">Current Datasheet</p>
-                    <div class="mt-2 flex items-center justify-between gap-3">
-                        <span class="min-w-0 flex-1 truncate text-xs text-blue-800">${fileName}</span>
-                        <a href="/api/files/download?path=${encodeURIComponent(datasheetFilePath)}"
-                            target="_blank" rel="noopener noreferrer"
-                            class="inline-flex items-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
-                            Open
-                        </a>
-                    </div>
-                `;
-                currentFileContainer.classList.remove('hidden');
-            } else {
-                currentFileContainer.innerHTML = '';
-                currentFileContainer.classList.add('hidden');
-            }
-        }
-        if (commentsContainer && commentsContent) {
-            if (isEditMode && datasheetComments) {
-                commentsContent.innerHTML = window.renderDatasheetCommentsHtml(datasheetComments);
-                commentsContainer.classList.remove('hidden');
-            } else {
-                commentsContent.innerHTML = '';
-                commentsContainer.classList.add('hidden');
-            }
-        }
-
-        modal.dataset.mode = mode;
-        modal.dataset.peerReviewerName = peerReviewerName;
-        modal.classList.remove('hidden');
-    }
-
-    function openUploadDataSheetModal(assignmentId, testName, tcoId) {
-        configureUploadDataSheetModal({
-            assignmentId,
-            testName,
-            tcoId
-        });
-    }
-
-    async function openUploadDataSheetModalFromData(button) {
-        if (!button) return;
-
-        const assignmentId = button.dataset.assignmentId || '';
-        const uploadMode = button.dataset.uploadMode || 'upload';
-
-        try {
-            if (uploadMode === 'edit' && assignmentId) {
-                const entry = await fetchPlannerEntryDetails(assignmentId);
-                configureUploadDataSheetModal({
-                    assignmentId: entry.id || assignmentId,
-                    testName: entry.test_name || button.dataset.testName || '',
-                    tcoId: entry.tco_id || button.dataset.tcoId || '',
-                    peerReviewerId: entry.peer_reviewer_user_id || button.dataset.peerReviewerId || '',
-                    peerReviewerName: entry.peer_reviewer_name || button.dataset.peerReviewerName || '',
-                    datasheetComments: entry.datasheet_comments || '',
-                    datasheetFilePath: entry.datasheet_file_path || '',
-                    mode: uploadMode
-                });
-                return;
-            }
-
-            configureUploadDataSheetModal({
-                assignmentId,
-                testName: button.dataset.testName || '',
-                tcoId: button.dataset.tcoId || '',
-                peerReviewerId: button.dataset.peerReviewerId || '',
-                peerReviewerName: button.dataset.peerReviewerName || '',
-                datasheetComments: button.dataset.datasheetComments || '',
-                datasheetFilePath: button.dataset.datasheetFilePath || '',
-                mode: uploadMode
-            });
-        } catch (error) {
-            if (typeof showUploadNotification === 'function') {
-                showUploadNotification(`Error: ${error.message || 'Failed to load datasheet details'}`, 'error');
-            } else {
-                window.alert(error.message || 'Failed to load datasheet details');
-            }
-        }
-    }
-
-    window.openUploadDataSheetModalFromData = openUploadDataSheetModalFromData;
-
-    function closeUploadDataSheetModal() {
-        const modal = document.getElementById('uploadDataSheetModal');
-        const form = document.getElementById('uploadDataSheetForm');
-        const currentFileContainer = document.getElementById('uploadCurrentFileContainer');
-        const commentsContainer = document.getElementById('uploadPeerReviewCommentsContainer');
-        const commentsContent = document.getElementById('uploadPeerReviewCommentsContent');
-        const commentsInput = document.getElementById('uploadDatasheetComments');
-        const titleField = document.getElementById('uploadModalTitle');
-        const helperTextField = document.getElementById('uploadModalHelperText');
-        const submitLabel = document.getElementById('uploadDatasheetSubmitLabel');
-        if (modal) {
-            modal.classList.add('hidden');
-            delete modal.dataset.mode;
-            delete modal.dataset.peerReviewerName;
-        }
-        if (form) {
-            form.reset();
-        }
-        if (currentFileContainer) {
-            currentFileContainer.innerHTML = '';
-            currentFileContainer.classList.add('hidden');
-        }
-        if (commentsContent) {
-            commentsContent.innerHTML = '';
-        }
-        if (commentsContainer) {
-            commentsContainer.classList.add('hidden');
-        }
-        if (commentsInput) {
-            commentsInput.value = '';
-        }
-        if (titleField) {
-            titleField.textContent = 'Upload Datasheet';
-        }
-        if (helperTextField) {
-            helperTextField.textContent = 'Upload the datasheet and assign a peer reviewer.';
-        }
-        if (submitLabel) {
-            submitLabel.textContent = 'Upload';
-        }
     }
 
     function showUploadNotification(message, type = 'info', onDismiss = null) {
@@ -4258,80 +4070,6 @@
         setTimeout(dismissToast, autoDismissMs);
     }
 
-    function submitDataSheet(evt = null) {
-        const form = document.getElementById('uploadDataSheetForm');
-        const modal = document.getElementById('uploadDataSheetModal');
-        if (!form) return;
-
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return;
-        }
-
-        const formData = new FormData(form);
-        const assignmentId = formData.get('assignment_id');
-        const file = formData.get('datasheet');
-
-        if (!assignmentId) {
-            showUploadNotification('Assignment ID is missing. Refresh the page and try again.', 'error');
-            return;
-        }
-
-        if (file instanceof File && file.size > 10 * 1024 * 1024) {
-            showUploadNotification('File size exceeds 10MB. Please upload a smaller file.', 'error');
-            return;
-        }
-
-        const submitBtn = evt?.submitter || form.querySelector('button[type="submit"]');
-        const originalText = submitBtn ? submitBtn.innerHTML : '';
-        const isEditMode = modal?.dataset?.mode === 'edit';
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = isEditMode
-                ? '<span class="inline-block animate-spin mr-2">...</span> Saving...'
-                : '<span class="inline-block animate-spin mr-2">...</span> Uploading...';
-        }
-
-        fetch('/upload-test-datasheet', {
-            method: 'POST',
-            body: formData,
-            credentials: 'same-origin'
-        })
-            .then(response => {
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    return response.json().then(data => ({ ok: response.ok, status: response.status, data }));
-                } else {
-                    return response.text().then(text => ({ ok: response.ok, status: response.status, data: { error: text } }));
-                }
-            })
-            .then(result => {
-                if (result.ok && result.data.success) {
-                    closeUploadDataSheetModal();
-                    showUploadNotification(
-                        isEditMode
-                            ? 'Datasheet updated and sent back for peer review.'
-                            : 'Datasheet uploaded and sent for peer review.',
-                        'success',
-                        () => location.reload()
-                    );
-                } else {
-                    const errorMsg = result.data.error || result.data.message || 'Failed to upload datasheet';
-                    showUploadNotification('Error: ' + errorMsg, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Upload error:', error);
-                showUploadNotification('An error occurred while uploading the report.', 'error');
-            })
-            .finally(() => {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
-                }
-            });
-    }
-
     // Cancel Test Modal Functions
     function openCancelTestModalFromData(button) {
         if (!button) return;
@@ -4374,18 +4112,6 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-        // Handle Upload Data Sheet Form Submission
-        const uploadDataSheetForm = document.getElementById('uploadDataSheetForm');
-        if (!uploadDataSheetForm) {
-            return;
-        }
-
-        uploadDataSheetForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            submitDataSheet(e);
-        });
-    });
     // Handle Cancel Test Form Submission
     const cancelTestForm = document.getElementById('cancelTestForm');
     if (cancelTestForm) {
@@ -4438,15 +4164,6 @@
     }
 
     // Close modals when clicking outside
-    const uploadDataSheetModal = document.getElementById('uploadDataSheetModal');
-    if (uploadDataSheetModal) {
-        uploadDataSheetModal.addEventListener('click', function (e) {
-            if (e.target === this) {
-                closeUploadDataSheetModal();
-            }
-        });
-    }
-
     const cancelTestModal = document.getElementById('cancelTestModal');
     if (cancelTestModal) {
         cancelTestModal.addEventListener('click', function (e) {

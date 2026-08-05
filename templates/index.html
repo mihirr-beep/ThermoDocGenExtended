@@ -15444,12 +15444,12 @@
         const skipReviewFlow = payload.skip_review_flow === true;
         const reportAccessRequired = payload.require_feedback_before_report_access === true;
         const reportAccessGranted = payload.report_access_granted === true || !reportAccessRequired;
-        const canProceedReport = requestStatusLower === 'draft report';
-        let disabledProceedLabel = 'Proceed Disabled';
+        const canApproveReport = payload.can_approve_report === true;
+        let disabledApproveLabel = 'Approve Disabled';
         if (requestStatusLower === 'proceed report') {
-            disabledProceedLabel = 'Proceeded';
+            disabledApproveLabel = 'Approved';
         } else if (requestStatusLower === 'completed') {
-            disabledProceedLabel = 'Completed';
+            disabledApproveLabel = 'Completed';
         }
         const comments = (plannerEntry && plannerEntry.report_comments) || '';
         const product = payload.product_name || 'Report';
@@ -15618,6 +15618,32 @@
                         </div>
                     </div>
 
+                    <!-- Requester review comment -->
+                    <div>
+                        <label for="reportReviewComment_${requestId}"
+                            class="block text-sm font-semibold text-gray-700 mb-2">
+                            Add Review Comment
+                        </label>
+                        <textarea id="reportReviewComment_${requestId}" rows="3"
+                            placeholder="Enter your comments about the draft report..."
+                            class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent resize-none"></textarea>
+                        <p id="reportReviewCommentError_${requestId}"
+                            class="hidden mt-1 text-xs text-red-600">
+                            Enter a comment before submitting.
+                        </p>
+                        <div class="mt-2 flex justify-end">
+                            <button id="submitReportReviewCommentBtn_${requestId}"
+                                onclick="submitReportReviewComment(${requestId})"
+                                class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200">
+                                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Submit
+                            </button>
+                        </div>
+                    </div>
+
                     `}
 
                 </div>
@@ -15639,24 +15665,26 @@
                             class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-all duration-200">
                             Close
                         </button>
-                        ${canProceedReport ? `
-                        <button onclick="proceedWithReport(${requestId})"
-                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-400 transition-all duration-200 shadow-md">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            Proceed
-                        </button>
-                        ` : `
-                        <button type="button" disabled
-                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg text-gray-500 bg-gray-200 cursor-not-allowed"
-                            title="Proceed is available only when status is Draft Report">
+                        ${canApproveReport ? `
+                        <button id="approveReportActionBtn_${requestId}" onclick="proceedWithReport(${requestId})"
+                            ${reportAccessGranted ? '' : 'disabled'}
+                            title="${reportAccessGranted ? 'Approve Report' : 'Submit feedback and acknowledge the report before approving'}"
+                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${reportAccessGranted ? 'text-white bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-400 shadow-md' : 'text-gray-500 bg-gray-200 cursor-not-allowed'}">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M5 13l4 4L19 7"></path>
                             </svg>
-                            ${disabledProceedLabel}
+                            Approve Report
+                        </button>
+                        ` : `
+                        <button type="button" disabled
+                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg text-gray-500 bg-gray-200 cursor-not-allowed"
+                            title="Approval is available only when the draft report is ready">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            ${disabledApproveLabel}
                         </button>
                         `}
                     </div>
@@ -15688,6 +15716,17 @@
                 id: `downloadReportActionBtn_${requestId}`,
                 enabledClasses: ['bg-emerald-100', 'hover:bg-emerald-200', 'text-emerald-600'],
                 disabledClasses: ['bg-gray-100', 'text-gray-400', 'cursor-not-allowed']
+            },
+            {
+                id: `approveReportActionBtn_${requestId}`,
+                enabledClasses: [
+                    'text-white', 'bg-gradient-to-r', 'from-emerald-500',
+                    'to-green-500', 'hover:from-emerald-600',
+                    'hover:to-green-600', 'shadow-md'
+                ],
+                disabledClasses: [
+                    'text-gray-500', 'bg-gray-200', 'cursor-not-allowed'
+                ]
             }
         ];
 
@@ -15698,6 +15737,11 @@
             button.disabled = !enabled;
             button.classList.remove(...enabledClasses, ...disabledClasses);
             button.classList.add(...(enabled ? enabledClasses : disabledClasses));
+            if (id.startsWith('approveReportActionBtn_')) {
+                button.title = enabled
+                    ? 'Approve Report'
+                    : 'Submit feedback and acknowledge the report before approving';
+            }
         });
     }
 
@@ -15844,6 +15888,47 @@
                 <p class="text-xs text-red-500">Failed to load comments</p>
             </div>
         `;
+        }
+    }
+
+    async function submitReportReviewComment(requestId) {
+        const textarea = document.getElementById(`reportReviewComment_${requestId}`);
+        const errorEl = document.getElementById(`reportReviewCommentError_${requestId}`);
+        const submitBtn = document.getElementById(`submitReportReviewCommentBtn_${requestId}`);
+        if (!textarea || !submitBtn) return;
+
+        const comment = textarea.value.trim();
+        if (!comment) {
+            if (errorEl) errorEl.classList.remove('hidden');
+            textarea.focus();
+            return;
+        }
+        if (errorEl) errorEl.classList.add('hidden');
+
+        const originalHTML = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+
+        try {
+            const response = await fetch(`/api/test-requests/${requestId}/review-comment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.success !== true) {
+                throw new Error(data.error || 'Failed to submit review comment');
+            }
+
+            textarea.value = '';
+            await loadReviewComments(requestId);
+            showToast(data.message || 'Review comment submitted successfully.', 'success');
+        } catch (error) {
+            console.error('Error submitting report review comment:', error);
+            showToast(error.message || 'Failed to submit review comment', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalHTML;
         }
     }
 
@@ -16132,24 +16217,31 @@
                 <div class="text-center py-4 text-sm text-gray-500">Loading comments...</div>
             </div>
 
-            <div class="mt-4">
+            <form id="commentsForm_${requestId}" class="mt-4"
+                onsubmit="event.preventDefault(); submitThreadComment(${requestId});">
                 <label for="commentsInput_${requestId}" class="block text-sm font-semibold text-gray-700 mb-2">Add Comment</label>
                 <textarea id="commentsInput_${requestId}" rows="3"
                     placeholder="Type your message here..."
                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:border-transparent resize-none"></textarea>
                 <p id="commentsInputError_${requestId}" class="hidden text-xs text-red-600 mt-1">Comment is required.</p>
-            </div>
 
-            <div class="mt-4 flex justify-end gap-2">
-                <button onclick="closeCommentsModal()"
-                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                    Close
-                </button>
-                <button id="commentsSubmitBtn_${requestId}" onclick="submitThreadComment(${requestId})"
-                    class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-700 hover:to-blue-700 transition-all">
-                    Send
-                </button>
-            </div>
+                <div class="mt-4 flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
+                    <button type="button" onclick="closeCommentsModal()"
+                        class="inline-flex items-center justify-center px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                        Close
+                    </button>
+                    <button type="submit" id="commentsSubmitBtn_${requestId}"
+                        title="Submit comment"
+                        style="background-color: #2563eb; color: #ffffff;"
+                        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-blue-700 font-semibold shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 transition-colors">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span>Submit</span>
+                    </button>
+                </div>
+            </form>
         `;
 
         overlay.appendChild(modal);

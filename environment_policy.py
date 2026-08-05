@@ -56,6 +56,10 @@ def resolve_application_environment(
 
 
 def datasheet_generation_enabled(environment_name: object) -> bool:
-    """Return whether assigned-test datasheets may be generated in-app."""
+    """Return whether assigned-test datasheets may be generated in-app.
 
-    return _normalize_environment_name(environment_name) != PRODUCTION_ENVIRONMENT
+    Generation is part of the standard workflow in every environment.
+    ``environment_name`` remains accepted to keep the policy API stable.
+    """
+
+    return True

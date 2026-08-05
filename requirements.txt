@@ -19,3 +19,7 @@ python-dateutil==2.9.0.post0
 cryptography==49.0.0
 docxtpl==0.20.2
 Pillow==12.2.0
+openai-agents==0.18.2
+pinecone==9.1.0
+logfire==4.37.0
+docxcompose==2.2.0

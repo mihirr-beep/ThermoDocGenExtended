@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # Single source of truth for the visible application version.
-APP_VERSION = '1.4'
+APP_VERSION = '1.5'
 
 # Change this when you want to switch the whole app between testing/production
 # without setting environment variables in the shell.
@@ -140,6 +140,38 @@ def _job_number_sort_key(item):
         _natural_sort_parts(job_number),
         str(fallback_value or ''),
     )
+
+
+#: Statuses that are finished/closed. Requests in one of these sort to the END of every
+#: list so active work stays at the top.
+TERMINAL_REQUEST_STATUSES = ('completed', 'cancelled', 'rejected')
+
+
+def _is_terminal_request_status(status):
+    return str(status or '').strip().lower() in TERMINAL_REQUEST_STATUSES
+
+
+def _terminal_last(items, status_of=lambda item: getattr(item, 'status', None)):
+    """Re-order a list so terminal (completed/cancelled/rejected) items come last,
+    preserving the existing relative order inside each group (stable partition)."""
+    active, terminal = [], []
+    for item in items:
+        (terminal if _is_terminal_request_status(status_of(item)) else active).append(item)
+    return active + terminal
+
+
+def _planner_filters(request_id, tco_id):
+    """Dual filter for the planner entries belonging to one parent request: match on
+    test_request_id OR tco_id. Entries created through different paths link by only one
+    of the two, and querying a single column silently missed them - which is what let
+    parent request status drift out of sync with its planner entries.
+
+    Returns a list of criteria for ``PlannerEntry.query.filter(db.or_(*...))``.
+    """
+    filters = [PlannerEntry.test_request_id == request_id]
+    if tco_id:
+        filters.append(PlannerEntry.tco_id == tco_id)
+    return filters
 
 
 REQUEST_IDENTIFIER_SORT_FIELDS = {'tco_id', 'job_number'}
@@ -1204,6 +1236,14 @@ def _report_access_requires_feedback(test_request):
     )
 
 
+def _report_is_approvable_status(status) -> bool:
+    """Return whether a report status represents a draft awaiting approval."""
+    normalized_status = ' '.join(
+        str(status or '').strip().casefold().replace('_', ' ').split()
+    )
+    return normalized_status in {'draft report', 'report uploaded'}
+
+
 def _has_report_access_grant(request_id, planner_entry):
     """Check if user has been granted access to view/download report."""
     if not planner_entry or not request_id:
@@ -2027,6 +2067,124 @@ This is an automated notification from the Test Request Management System.
                         assigned_engineer.email)
         except Exception as exc:
             logger.error('Failed to send plan update notification: %s', exc)
+
+    def send_completion_notification(test_request: EMCRequest, completed_by: str) -> None:
+        """Notify the requester (cc all admins) that their TCO is complete.
+
+        Best-effort: never raises into the caller, so a mail failure cannot roll back or
+        break the completion itself - it is only logged.
+        """
+        requester_email = (test_request.requester_email or '').strip()
+        if not requester_email:
+            logger.warning(
+                'No requester email on request %s; skipping completion notification.',
+                test_request.id)
+            return
+
+        # cc the admins, but never the requester twice (a requester can also be an admin)
+        _seen_emails = {requester_email.lower()}
+        admin_recipients = []
+        for _admin in User.query.filter_by(role='admin', is_active=True).all():
+            _admin_email = (_admin.email or '').strip()
+            if _admin_email and _admin_email.lower() not in _seen_emails:
+                _seen_emails.add(_admin_email.lower())
+                admin_recipients.append(_admin_email)
+
+        try:
+            selected_tests = _get_active_selected_test_labels(test_request)
+            tests_display = ', '.join(selected_tests) if selected_tests else 'No tests selected'
+
+            tco_display = test_request.tco_id or f'REQ-{test_request.id}'
+            completed_on = get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
+
+            rows = [
+                ('TCO ID', tco_display),
+                ('Job Number', test_request.job_number or 'N/A'),
+                ('Product Name', test_request.product_name or 'N/A'),
+                ('Manufacturer', test_request.manufacturer or 'N/A'),
+                ('Model Number', test_request.model_number or 'N/A'),
+                ('Tests', tests_display),
+                ('Completed By', completed_by or 'Laboratory Administrator'),
+                ('Completed On', f'{completed_on} IST'),
+            ]
+            detail_rows = ''.join(
+                '<tr>'
+                f'<td style="padding:8px 12px;color:#6b7280;font-weight:bold;width:170px;">{label}</td>'
+                f'<td style="padding:8px 12px;color:#111827;">{value}</td>'
+                '</tr>'
+                for label, value in rows
+            )
+
+            html_body = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:640px;margin:0 auto;padding:24px;">
+    <div style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:#fff;padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+        <h1 style="margin:0;font-size:22px;">Test Completed Successfully</h1>
+        <p style="margin:8px 0 0;opacity:.9;">Your EMI/EMC test request has been completed</p>
+    </div>
+    <div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;">
+        <p>Dear {test_request.requester_name or 'User'},</p>
+        <p>All tests for your EMI/EMC request have been executed, the report has been
+           reviewed and approved, and the request is now closed.</p>
+        <table style="width:100%;border-collapse:collapse;background:#f0fdf4;border-left:4px solid #10b981;margin:16px 0;">
+            {detail_rows}
+        </table>
+        <p style="margin-bottom:4px;"><strong>Next steps</strong></p>
+        <ul style="margin-top:0;">
+            <li>The final report is available in the system.</li>
+            <li>You can download and review the complete test documentation.</li>
+            <li>Contact the lab if you have questions about the results.</li>
+        </ul>
+        <p>Thank you for choosing our laboratory for your EMI/EMC testing.</p>
+    </div>
+    <div style="background:#f9fafb;padding:16px;text-align:center;color:#6b7280;font-size:12px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
+        Automated notification from the Test Request Management System. Please do not reply.
+    </div>
+</body>
+</html>
+"""
+            plain_lines = [
+                'Test Completed Successfully', '',
+                'All tests for your EMI/EMC request have been executed, the report has been',
+                'reviewed and approved, and the request is now closed.', '',
+            ]
+            plain_lines += [f'{label}: {value}' for label, value in rows]
+            plain_lines += [
+                '', 'Next steps:',
+                '- The final report is available in the system.',
+                '- You can download and review the complete test documentation.',
+                '- Contact the lab if you have questions about the results.',
+                '', 'Automated notification from the Test Request Management System.',
+            ]
+            plain_body = '\n'.join(plain_lines)
+
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = (
+                f'Test Completed: {test_request.product_name or "Unnamed Product"} '
+                f'(TCO: {tco_display})'
+            )
+            msg['From'] = formataddr(
+                (flask_app.config['SMTP_FROM_NAME'], flask_app.config['SMTP_FROM_EMAIL']))
+            msg['To'] = requester_email
+            if admin_recipients:
+                msg['Cc'] = ', '.join(admin_recipients)
+
+            msg.attach(MIMEText(plain_body, 'plain', 'utf-8'))
+            msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+            recipients = [requester_email] + admin_recipients
+            with smtplib.SMTP(flask_app.config['SMTP_SERVER'], flask_app.config['SMTP_PORT'], timeout=10) as server:
+                server.sendmail(
+                    flask_app.config['SMTP_FROM_EMAIL'], recipients, msg.as_string())
+
+            logger.info(
+                'Completion notification sent for request %s to %s and %d admin(s)',
+                test_request.id, requester_email, len(admin_recipients))
+        except Exception as exc:  # noqa: BLE001 - completion must not fail on mail errors
+            logger.error(
+                'Failed to send completion notification for request %s: %s',
+                test_request.id, exc)
 
     def send_more_info_notification(test_request: EMCRequest, comments: str, reviewed_by: str) -> None:
         """Send professional HTML email notification to requester when more information is needed."""
@@ -3956,6 +4114,10 @@ Please do not reply to this email.
     from datasheet_gen import register_datasheet_gen
     register_datasheet_gen(flask_app)
 
+    # NL search over lab data (admin "Ask the Lab Data" tool - see nlp_search/)
+    from nlp_search import register_nlp_search
+    register_nlp_search(flask_app)
+
     # Import and register authentication routes
     from auth_routes import auth_bp
     flask_app.register_blueprint(auth_bp)
@@ -4431,6 +4593,9 @@ Please do not reply to this email.
                 )
             else:
                 sorted_requests = sorted(filtered_request_rows, key=_job_number_sort_key)
+            # Finished work (completed / cancelled / rejected) goes to the end of the list,
+            # after whichever sort was applied, so active requests stay on top.
+            sorted_requests = _terminal_last(sorted_requests)
             total_sorted_requests = len(sorted_requests)
             start_index = (page - 1) * per_page
             end_index = start_index + per_page
@@ -4866,6 +5031,16 @@ Please do not reply to this email.
             entry.updated_at = get_ist_now()
             db.session.commit()
 
+            # On approval (status now 'datasheet_uploaded') index the datasheet
+            # into the vector store for NL document search - AFTER commit, async,
+            # best-effort (never blocks the response or breaks on missing keys).
+            if entry.status == 'datasheet_uploaded':
+                try:
+                    from nlp_search import ingest as _nlp_ingest
+                    _nlp_ingest.ingest_async(flask_app, entry.id)
+                except Exception:
+                    pass
+
             return jsonify({
                 'success': True,
                 'message': message,
@@ -4918,6 +5093,16 @@ Please do not reply to this email.
 
             db.session.commit()
 
+            # On approval (status now 'datasheet_uploaded') index the datasheet
+            # into the vector store for NL document search - AFTER commit, async,
+            # best-effort (never blocks the response or breaks on missing keys).
+            if entry.status == 'datasheet_uploaded':
+                try:
+                    from nlp_search import ingest as _nlp_ingest
+                    _nlp_ingest.ingest_async(flask_app, entry.id)
+                except Exception:
+                    pass
+
             logger.info(
                 f'Peer review approved for planner entry {planner_id} '
                 f'by user {current_user.id} ({current_user.username})'
@@ -4958,7 +5143,8 @@ Please do not reply to this email.
                 EMCRequest.job_number.label('job_number'),
                 EMCRequest.product_name,
                 EMCRequest.requester_name,
-                EMCRequest.id.label('actual_request_id')
+                EMCRequest.id.label('actual_request_id'),
+                EMCRequest.status.label('parent_status')
             ).join(
                 EMCRequest,
                 PlannerEntry.test_request_id == EMCRequest.id
@@ -4975,13 +5161,20 @@ Please do not reply to this email.
                     PlannerEntry.peer_reviewer_user_id == current_user.id
                 )
 
-            results = query.all()
+            all_results = query.all()
 
-            logger.info(f'Found {len(results)} peer review entries')
+            # Entries whose PARENT request is finished sort to the end of the list.
+            results = _terminal_last(all_results, status_of=lambda row: row.parent_status)
+            _terminal_count = len(all_results) - len(
+                [r for r in all_results if not _is_terminal_request_status(r.parent_status)])
+
+            logger.info(
+                f'Found {len(results)} peer review entries '
+                f'(active: {len(results) - _terminal_count}, finished: {_terminal_count})')
 
             # Serialize the entries
             result = []
-            for entry, actual_tco_id, job_number, product_name, requester_name, actual_request_id in results:
+            for entry, actual_tco_id, job_number, product_name, requester_name, actual_request_id, parent_status in results:
                 # Log for debugging
                 logger.info(f'Peer review entry: id={entry.id}, '
                             f'planner_tco={entry.tco_id}, '
@@ -5032,6 +5225,8 @@ Please do not reply to this email.
                     'requester_name': requester_name,
                     'test_person_name': entry.test_person_name,
                     'engineer_user_id': entry.engineer_user_id,
+                    # parent request status - the peer-review table sorts finished TCOs last
+                    'parent_status': parent_status or '',
                     'start_date': entry.start_date.isoformat() if entry.start_date else None,
                     'end_date': entry.end_date.isoformat() if entry.end_date else None,
                     'total_hours': entry.total_hours,
@@ -6956,10 +7151,8 @@ Please do not reply to this email.
             )
             return None
 
-    def _build_test_request_word_export(request_data: dict):
-        """Legacy wrapper that now delegates to the active Rev1 template exporter."""
-        return _build_test_request_word_export_rev1(request_data)
-
+    def _build_generic_test_request_word_export(request_data: dict):
+        """Build a self-contained DOCX when the branded template cannot be used."""
         doc = DocxDocument()
         request_title = request_data.get('tco_id') or f"Request {request_data.get('id', 'N/A')}"
         effective_date = _resolve_request_effective_date(request_data)
@@ -7154,11 +7347,13 @@ Please do not reply to this email.
     def _get_active_trf_template_path() -> str:
         """Resolve the active Rev1 TRF template path."""
         candidate_paths = [
+            flask_app.config.get('TRF_TEMPLATE_PATH'),
+            os.environ.get('TRF_TEMPLATE_PATH'),
             os.path.join(flask_app.root_path, 'word_templates', 'EMI EMC TRF_Draft - Rev1.docx'),
             r'c:\Users\saimounik.chandavolu\Downloads\EMI EMC TRF_Draft - Rev1.docx',
         ]
         for path in candidate_paths:
-            if path and os.path.exists(path):
+            if path and os.path.isfile(path):
                 return path
         return ''
 
@@ -7515,6 +7710,23 @@ Please do not reply to this email.
             logger.warning('Rev1 TRF export detail: %s', exc)
             return None
 
+    def _build_test_request_word_export_with_fallback(
+        request_data: dict,
+        request_id=None,
+    ):
+        """Use the branded TRF export, falling back to a generic DOCX."""
+        document_stream = _build_test_request_word_export_rev1(request_data)
+        if document_stream is not None:
+            return document_stream
+
+        logger.warning(
+            'Falling back to the generic test request DOCX export '
+            '(request_id=%s) because the active TRF template is unavailable '
+            'or could not be populated.',
+            request_id if request_id is not None else request_data.get('id')
+        )
+        return _build_generic_test_request_word_export(request_data)
+
     @flask_app.route('/api/test-requests/<int:request_id>/download-form-docx', methods=['GET'])
     @login_required
     def download_test_request_form_docx(request_id):
@@ -7539,9 +7751,10 @@ Please do not reply to this email.
                 test_request, 'selected_tests_for_development', None
             )
 
-            document_stream = _build_test_request_word_export_rev1(request_data)
-            if document_stream is None:
-                raise RuntimeError('Active TRF template is unavailable or export failed')
+            document_stream = _build_test_request_word_export_with_fallback(
+                request_data,
+                request_id
+            )
             filename_seed = test_request.tco_id or f"REQ-{test_request.id}"
             safe_filename_seed = re.sub(
                 r'[^A-Za-z0-9._-]+', '_', filename_seed).strip('_')
@@ -7556,7 +7769,7 @@ Please do not reply to this email.
                 download_name=download_name
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 'Error exporting test request form (request_id=%s): %s',
                 request_id,
                 e
@@ -7569,7 +7782,16 @@ Please do not reply to this email.
     @flask_app.route('/api/test-requests/tco/<tco_id>', methods=['GET'])
     @login_required
     def get_test_request_by_tco(tco_id):
-        """Get a test request by TCO ID."""
+        """Look up a test request by TCO number to PREFILL a new request form.
+
+        Any logged-in user may look up any TCO, not just the person who raised it -
+        engineers routinely start a new request from an existing TCO's product details.
+        To keep that safe, this is a prefill payload only:
+          * tco_id / job_number are stripped, so submitting creates fresh identifiers
+            instead of writing into someone else's TCO;
+          * requester fields are blanked, so they come from the logged-in user;
+          * the review comment thread is never included.
+        """
         try:
             normalized_tco_id = (tco_id or '').strip()
             if not normalized_tco_id:
@@ -7578,29 +7800,29 @@ Please do not reply to this email.
                     'error': 'TCO ID is required'
                 }), 400
 
-            # Get the test request by TCO ID
+            # Open lookup by TCO number (no per-user permission check - see docstring).
             test_request = get_request_by_tco_id(normalized_tco_id)
 
             if not test_request:
                 return jsonify({
                     'success': False,
-                    'error': 'Test request not found or you do not have permission to view it'
-                }), 404
-
-            if not _can_access_iec_request(
-                test_request,
-                allow_lab_engineer=True,
-                require_assigned_lab_engineer=True
-            ):
-                return jsonify({
-                    'success': False,
-                    'error': 'Test request not found or you do not have permission to view it'
+                    'error': 'Test request not found'
                 }), 404
 
             request_data = _build_request_payload(
                 test_request,
                 include_review_thread=False
             )
+
+            # Drop the identifiers so the form creates a NEW TCO/Job on submit.
+            request_data.pop('tco_id', None)
+            request_data.pop('job_number', None)
+
+            # Clear requester details; the form fills these from the logged-in user.
+            for _field in ('requester_name', 'requester_email', 'requester_phone',
+                           'requester_contact', 'company_name'):
+                if _field in request_data:
+                    request_data[_field] = ''
 
             logger.debug(
                 'Fetched request by TCO=%s (id=%s, selected_tests=%s)',
@@ -11258,7 +11480,8 @@ Please do not reply to this email.
         }
 
         test_plans.sort(key=lambda plan: (
-            1 if plan['status'] == 'Completed' else 0,
+            # completed AND cancelled/rejected plans sort after everything active
+            1 if _is_terminal_request_status(plan['status']) else 0,
             *_job_number_sort_key(plan),
         ))
         return test_plans, statistics
@@ -13669,6 +13892,14 @@ Please do not reply to this email.
                 f"Report uploaded for request {request_id}. "
                 f"Updated {len(planner_entries)} planner entries + test request status."
             )
+
+            # This request skips report review, so uploading the report completes the TCO -
+            # tell the requester (and admins) straight away.
+            if skips_report_review:
+                send_completion_notification(
+                    test_request=test_request,
+                    completed_by=current_user.username
+                )
         except Exception as e:
             db.session.rollback()
             logger.error(
@@ -13693,6 +13924,113 @@ Please do not reply to this email.
             'updated_planner_entries': len(planner_entries)
         })
 
+    @flask_app.route('/api/test-requests/<int:request_id>/generate-test-report', methods=['POST'])
+    @login_required
+    def generate_test_report(request_id):
+        """Consolidate all approved datasheets of a TCO into one 'Test Report' .docx
+        and route it through the same report-approval flow as an uploaded report."""
+        if current_user.role not in ['admin', 'lab_engineer']:
+            return jsonify({'success': False, 'error': 'Not authorized'}), 403
+
+        from werkzeug.utils import secure_filename
+        from utils.test_report_builder import build_consolidated_test_report
+
+        test_request = _get_request_or_404(request_id)
+        skips_report_review = _request_skips_report_review(test_request)
+
+        entries = PlannerEntry.query.filter_by(
+            test_request_id=request_id
+        ).order_by(
+            PlannerEntry.start_date.asc(),
+            PlannerEntry.start_time.asc(),
+            PlannerEntry.id.asc()
+        ).all()
+        if not entries:
+            return jsonify({'success': False, 'error': 'No planner entries found for this test request'}), 404
+
+        # Collect approved datasheet .docx files (skip cancelled entries), in schedule order.
+        datasheets = []
+        for entry in entries:
+            if str(entry.status or '').strip().lower() == 'cancelled':
+                continue
+            path = entry.datasheet_file_path
+            if path and os.path.exists(path) and path.lower().endswith('.docx'):
+                datasheets.append({'path': path, 'title': entry.test_name or 'Datasheet'})
+        if not datasheets:
+            return jsonify({
+                'success': False,
+                'error': 'No approved datasheet documents found to consolidate. Approve the datasheets first.'
+            }), 400
+
+        payload = request.get_json(silent=True) or {}
+        comments = str(payload.get('comments') or request.form.get('comments') or '').strip()
+        if not comments:
+            comments = f'Consolidated Test Report generated from {len(datasheets)} approved datasheet(s).'
+
+        now = get_ist_now()
+        upload_dir = os.path.join(
+            current_app.config.get('UPLOAD_FOLDER', 'uploads'), 'reports', str(request_id)
+        )
+        ts = now.strftime('%Y%m%d_%H%M%S')
+        safe_tco = secure_filename(str(test_request.tco_id or f'REQ-{request_id}'))
+        output_path = os.path.join(upload_dir, f'{safe_tco}_Test_Report_{ts}.docx')
+
+        meta = {
+            'tco_id': test_request.tco_id,
+            'job_number': test_request.job_number,
+            'product_name': test_request.product_name,
+            'manufacturer': test_request.manufacturer,
+            'model_number': test_request.model_number,
+            'date': now.strftime('%d %b %Y'),
+        }
+        try:
+            _, merged_count = build_consolidated_test_report(datasheets, output_path, meta)
+        except Exception as exc:
+            logger.error('Consolidated Test Report generation failed for request %s: %s', request_id, exc)
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({'success': False, 'error': 'Failed to generate the consolidated Test Report'}), 500
+
+        # Route it into the SAME report-approval flow as an uploaded report.
+        for entry in entries:
+            entry.report_file_path = output_path
+            entry.report_comments = comments
+            entry.report_uploaded_at = now
+            entry.report_uploaded_by = current_user.id
+            if entry.status != 'cancelled':
+                entry.status = 'completed' if skips_report_review else 'report_uploaded'
+            entry.updated_at = now
+        test_request.status = 'Completed' if skips_report_review else 'Draft Report'
+        test_request.updated_at = now
+
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.error('DB commit failed for generate_test_report request %s: %s', request_id, exc)
+            return jsonify({'success': False, 'error': f'Database error: {str(exc)}'}), 500
+
+        # Same terminal state as upload_report: a request that skips report review is
+        # complete once the report exists, so notify from here too.
+        if skips_report_review:
+            send_completion_notification(
+                test_request=test_request,
+                completed_by=current_user.username
+            )
+
+        new_status = 'Completed' if skips_report_review else 'Draft Report'
+        return jsonify({
+            'success': True,
+            'message': (
+                f'Consolidated Test Report generated from {merged_count} datasheet(s). '
+                + ('Developmental Assistance request completed.' if skips_report_review
+                   else 'It is now in the report approval flow (Draft Report).')
+            ),
+            'new_status': new_status,
+            'file_path': output_path,
+            'datasheet_count': merged_count
+        })
+
     @flask_app.route('/api/test-requests/<int:request_id>/admin-sign-off', methods=['POST'])
     @login_required
     def admin_sign_off(request_id):
@@ -13712,15 +14050,35 @@ Please do not reply to this email.
                 return jsonify({'success': True, 'message': 'Report is already in Admin Sign Off'})
 
             if test_request.status != 'Proceed Report':
-                return jsonify({'success': False, 'error': 'Move report to Proceed Report before sending to Admin Sign Off'}), 400
+                # FALLBACK for a parent whose status lagged behind its planner entries:
+                # if the entries themselves show the report already progressed, allow the
+                # transition instead of blocking the user on a stale parent status.
+                planner_entries = PlannerEntry.query.filter(
+                    db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+                ).all()
+                planner_can_proceed = any(
+                    entry.status in ('Proceed Report', 'Admin Sign Off', 'Completed')
+                    for entry in planner_entries
+                    if entry.status != 'cancelled'
+                )
+                if not planner_can_proceed:
+                    return jsonify({'success': False, 'error': 'Move report to Proceed Report before sending to Admin Sign Off'}), 400
+
+                current_app.logger.warning(
+                    "Admin sign-off for request %s: parent status %r did not match "
+                    "'Proceed Report', but its planner entries allowed the transition. "
+                    "Forcing the status update.",
+                    request_id, test_request.status
+                )
 
             test_request.status = 'Admin Sign Off'
             test_request.reviewed_by = current_user.username
             test_request.reviewed_at = get_ist_now()
 
-            # Also update all planner entries for this request.
-            planner_entries = PlannerEntry.query.filter_by(
-                test_request_id=request_id).all()
+            # Also update all planner entries for this request (dual filter).
+            planner_entries = PlannerEntry.query.filter(
+                db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+            ).all()
             for entry in planner_entries:
                 if entry.status != 'cancelled':
                     entry.status = 'Admin Sign Off'
@@ -13739,6 +14097,95 @@ Please do not reply to this email.
             return jsonify({'success': True, 'message': 'Report signed off successfully'})
         except Exception as e:
             db.session.rollback()
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @flask_app.route('/api/test-requests/<int:request_id>/resync-status', methods=['POST'])
+    @login_required
+    def resync_request_status(request_id):
+        """Force-recompute a parent request's status from its planner entries (admin only).
+
+        Repair tool for records whose parent status is stuck out of sync with the actual
+        planner entry states. Uses the same dual filter and the same derivation as
+        _update_parent_request_datasheet_status, so the result is what the live flow
+        would have produced.
+        """
+        if current_user.role != 'admin':
+            return jsonify({'success': False, 'error': 'Only admin can resync request status'}), 403
+
+        test_request = _get_request_or_404(request_id)
+
+        try:
+            all_entries = PlannerEntry.query.filter(
+                db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+            ).all()
+
+            old_status = test_request.status
+
+            if not all_entries:
+                return jsonify({
+                    'success': True,
+                    'message': 'No planner entries found. Parent status unchanged.',
+                    'old_status': old_status,
+                    'new_status': old_status,
+                    'planner_entries_count': 0
+                })
+
+            active_entries = [e for e in all_entries if e.status != 'cancelled']
+            if not active_entries:
+                active_entries = all_entries
+
+            all_terminal = all(
+                entry.status in ('cancelled', 'datasheet_uploaded')
+                for entry in active_entries
+            )
+            has_peer_review_entries = any(
+                entry.status == 'Peer Review' for entry in active_entries
+            )
+            has_datasheet_uploaded_with_file = any(
+                entry.status == 'datasheet_uploaded' and bool(entry.datasheet_file_path)
+                for entry in active_entries
+            )
+            all_datasheet_uploaded_have_file = all(
+                bool(entry.datasheet_file_path)
+                for entry in active_entries
+                if entry.status == 'datasheet_uploaded'
+            )
+
+            if (
+                all_terminal
+                and has_datasheet_uploaded_with_file
+                and all_datasheet_uploaded_have_file
+            ):
+                test_request.status = 'Datasheet Uploaded'
+            elif has_peer_review_entries:
+                test_request.status = 'Peer Review'
+            elif test_request.status not in (
+                'Assigned Lab Engineer',
+                'Update plan',
+                'Test Plan Approved',
+                'Draft Report',
+                'Datasheet Uploaded',
+                'Peer Review'
+            ):
+                test_request.status = 'Test Plan Approved'
+
+            db.session.commit()
+
+            current_app.logger.info(
+                "Resync status for request %s by admin %s: %r -> %r",
+                request_id, current_user.username, old_status, test_request.status
+            )
+
+            return jsonify({
+                'success': True,
+                'message': f'Status resynced from {len(all_entries)} planner entries.',
+                'old_status': old_status,
+                'new_status': test_request.status,
+                'planner_entries_count': len(all_entries)
+            })
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error('Error resyncing request %s status: %s', request_id, e)
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @flask_app.route('/api/test-requests/<int:request_id>/report-access-feedback', methods=['POST'])
@@ -13829,13 +14276,28 @@ Please do not reply to this email.
 
         from flask import send_file
 
-        file_path = planner_entry.report_file_path
+        # report_file_path may be stored relative to the app root; resolve it the same way
+        # view_report does, otherwise the download 404s even though the file exists.
+        file_path = os.path.normpath(planner_entry.report_file_path)
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(flask_app.root_path, file_path)
+
         if not os.path.exists(file_path):
+            current_app.logger.error(
+                'Report file not found on disk: %s (stored path: %s)',
+                file_path, planner_entry.report_file_path
+            )
             return jsonify({'success': False, 'error': 'File not found on disk'}), 404
+
+        # Reports are uploaded as PDF or Word; send the matching type so a .docx is not
+        # downloaded with a .pdf content type.
+        _ext = os.path.splitext(file_path)[1].lower()
+        _mime = ('application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                 if _ext == '.docx' else 'application/pdf')
 
         return send_file(
             file_path,
-            mimetype='application/pdf',
+            mimetype=_mime,
             as_attachment=True,   # â† triggers download
             download_name=os.path.basename(file_path)
         )
@@ -13896,25 +14358,67 @@ Please do not reply to this email.
     @login_required
     def proceed_report(request_id):
         test_request = _get_request_or_404(request_id)
+        if not _can_access_review_thread(test_request):
+            return jsonify({
+                'success': False,
+                'error': 'You do not have permission to approve this report'
+            }), 403
         try:
             current_status = (test_request.status or '').strip().lower()
-            if current_status != 'draft report':
+            if not _report_is_approvable_status(current_status):
+                # FALLBACK for a parent whose status lagged behind its planner entries:
+                # if an entry already holds a draft report in an approvable state, allow
+                # the transition rather than blocking on the stale parent status.
+                planner_entries = PlannerEntry.query.filter(
+                    db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+                ).all()
+                planner_has_draft_report = any(
+                    entry.report_file_path
+                    and _report_is_approvable_status((entry.status or '').strip().lower())
+                    for entry in planner_entries
+                    if entry.status != 'cancelled'
+                )
+                if not planner_has_draft_report:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Report approval is allowed only when the draft report is ready.'
+                    }), 400
+
+                current_app.logger.warning(
+                    "Proceed report for request %s: parent status %r was not approvable, "
+                    "but its planner entries held a draft report. Forcing the status update.",
+                    request_id, test_request.status
+                )
+
+            planner_entry = PlannerEntry.query.filter(
+                db.or_(*_planner_filters(test_request.id, test_request.tco_id)),
+                PlannerEntry.report_file_path != None
+            ).first()
+            if (
+                planner_entry
+                and _report_access_requires_feedback(test_request)
+                and not _has_report_access_grant(request_id, planner_entry)
+            ):
                 return jsonify({
                     'success': False,
-                    'error': 'Proceed Report is allowed only when status is Draft Report.'
-                }), 400
+                    'error': 'Submit feedback and acknowledge the report before approving it.'
+                }), 403
 
             test_request.status = 'Proceed Report'
 
-            # Also update all planner entries for this request.
-            planner_entries = PlannerEntry.query.filter_by(
-                test_request_id=request_id).all()
+            # Also update all planner entries for this request (dual filter).
+            planner_entries = PlannerEntry.query.filter(
+                db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+            ).all()
             for entry in planner_entries:
                 entry.status = 'Proceed Report'
                 entry.updated_at = get_ist_now()
 
             db.session.commit()
-            return jsonify({'success': True, 'message': 'Report marked as Proceed Report'})
+            return jsonify({
+                'success': True,
+                'message': 'Report approved successfully'
+            })
         except Exception as e:
             db.session.rollback()
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -13955,9 +14459,24 @@ Please do not reply to this email.
             file_path = os.path.join(flask_app.root_path, file_path)
 
         if not os.path.exists(file_path):
-            app.logger.error(f'Report file not found on disk: {file_path}')
+            # 'app' is not defined at module scope - this used to raise NameError and
+            # return a 500 instead of the intended 404.
+            current_app.logger.error(
+                'Report file not found on disk: %s (stored path: %s)',
+                file_path, planner_entry.report_file_path
+            )
             return jsonify({'success': False, 'error': 'Report file not found on disk'}), 404
 
+        # A consolidated Test Report is a .docx, which browsers can't render inline —
+        # serve it as a download; PDFs still open inline.
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.docx':
+            return send_file(
+                file_path,
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                as_attachment=True,
+                download_name=os.path.basename(file_path)
+            )
         return send_file(
             file_path,
             mimetype='application/pdf',
@@ -13988,6 +14507,16 @@ Please do not reply to this email.
             has_report = os.path.exists(file_path)
 
         comments = _get_combined_review_comment_thread(test_request)
+        report_access_required = _report_access_requires_feedback(test_request)
+        report_access_granted = (
+            not report_access_required
+            or (
+                planner_entry is not None
+                and _has_report_access_grant(request_id, planner_entry)
+            )
+        )
+        current_status = (test_request.status or '').strip().lower()
+        can_approve_report = _report_is_approvable_status(current_status)
 
         entry_data = None
         if planner_entry:
@@ -14006,6 +14535,9 @@ Please do not reply to this email.
             'status': test_request.status,
             'service_types': _extract_service_types(test_request),
             'skip_review_flow': _request_skips_report_review(test_request),
+            'require_feedback_before_report_access': report_access_required,
+            'report_access_granted': report_access_granted,
+            'can_approve_report': can_approve_report,
             'planner_entries': [entry_data] if entry_data else [],
             'review_comments': comments,
         })
@@ -14052,12 +14584,6 @@ Please do not reply to this email.
         r'\Desktop\EMI EMC\Report automation inputs\Format Templates'
         r'\02_Test Datasheet\Surge\IEC-FRM-510 Surge Data Sheet.docx'
     )
-    ALLOWED_EXTENSIONS = {'pdf', 'docx', 'xlsx', 'doc', 'xls'}
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-    def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
     def _datasheet_text(value, default=''):
         """Normalize values before writing them into DOCX cells."""
         if value is None:
@@ -14224,11 +14750,16 @@ Please do not reply to this email.
                 return
 
     def _update_parent_request_datasheet_status(assignment):
-        """Update parent request status after a datasheet is generated or uploaded."""
+        """Update parent request status after a datasheet is generated or uploaded.
+
+        Queries planner entries by BOTH test_request_id and tco_id (dual filter), so
+        entries linked to the parent by only one of the two are still considered -
+        missing them is what left parent status out of sync.
+        """
         db.session.flush()
 
-        all_entries = PlannerEntry.query.filter_by(
-            test_request_id=assignment.test_request_id
+        all_entries = PlannerEntry.query.filter(
+            db.or_(*_planner_filters(assignment.test_request_id, assignment.tco_id))
         ).all()
 
         if not all_entries:
@@ -14668,174 +15199,6 @@ Please do not reply to this email.
                 'message': 'An error occurred while sending the Surge datasheet for peer review'
             }), 500
 
-    @flask_app.route('/upload-test-datasheet', methods=['POST'])
-    @login_required
-    def upload_test_datasheet():
-        try:
-            assignment_id_str = request.form.get('assignment_id')
-            tco_id = request.form.get('tco_id')
-            comments = request.form.get('comments', '')
-            peer_reviewer_id = request.form.get('peer_reviewer_id')
-
-            current_app.logger.info(
-                f"Upload request - Assignment ID: {assignment_id_str}, TCO ID: {tco_id}")
-            current_app.logger.info(f"Form data: {request.form}")
-            current_app.logger.info(f"Files: {request.files}")
-
-            if not assignment_id_str:
-                return jsonify({'success': False, 'message': 'Assignment ID is required'}), 400
-
-            # Convert assignment_id to integer
-            try:
-                assignment_id = int(assignment_id_str)
-            except (ValueError, TypeError) as e:
-                current_app.logger.error(
-                    f"Invalid assignment_id format: {assignment_id_str} - {e}")
-                return jsonify({'success': False, 'message': 'Invalid Assignment ID format'}), 400
-
-            if 'datasheet' not in request.files:
-                logger.error("No file in request")
-                return jsonify({
-                    'success': False,
-                    'message': 'No file uploaded',
-                    'debug_info': {
-                        'form_data': dict(request.form),
-                        'files': list(request.files.keys())
-                    }
-                }), 400
-
-            file = request.files['datasheet']
-
-            if file.filename == '':
-                return jsonify({'success': False, 'message': 'No file selected'}), 400
-
-            if not allowed_file(file.filename):
-                return jsonify({'success': False, 'message': 'Invalid file type. Allowed: PDF, DOCX, XLSX, DOC, XLS'}), 400
-
-            # Get the assignment
-            assignment = db.session.get(PlannerEntry, assignment_id)
-            if not assignment:
-                return jsonify({'success': False, 'message': 'Assignment not found'}), 404
-
-            parent_request = db.session.get(
-                EMCRequest,
-                assignment.test_request_id
-            ) if assignment.test_request_id else None
-
-            if parent_request and not _can_access_iec_request(
-                parent_request,
-                allow_lab_engineer=True,
-                require_assigned_lab_engineer=True
-            ):
-                return jsonify({'success': False, 'message': 'Access denied'}), 403
-
-            if (
-                current_user.role == 'lab_engineer'
-                and assignment.engineer_user_id
-                and assignment.engineer_user_id != current_user.id
-            ):
-                return jsonify({'success': False, 'message': 'You can only upload datasheets for your own assignments'}), 403
-
-            effective_peer_reviewer_id = peer_reviewer_id
-            if (
-                not str(peer_reviewer_id or '').strip()
-                and str(assignment.status or '').strip().casefold() == 'peer review'
-                and getattr(assignment, 'peer_reviewer_user_id', None)
-            ):
-                effective_peer_reviewer_id = str(assignment.peer_reviewer_user_id)
-
-            peer_reviewer, reviewer_error = _resolve_peer_reviewer(
-                effective_peer_reviewer_id,
-                current_user.id
-            )
-            if reviewer_error:
-                return jsonify({'success': False, 'message': reviewer_error}), 400
-
-            # Create upload directory if it doesn't exist
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-            # Generate unique filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            original_filename = secure_filename(file.filename)
-            safe_tco_id = secure_filename(str(tco_id or 'TCO'))
-            safe_test_name = secure_filename(str(assignment.test_name or 'test'))
-            filename = f"{safe_tco_id}_{safe_test_name}_{timestamp}_{original_filename}"
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-            # Save the file
-            file.save(filepath)
-
-            previous_status = str(assignment.status or '').strip().casefold()
-            existing_comment_thread = str(
-                assignment.datasheet_comments or ''
-            ).strip()
-
-            # Update assignment with file info and actual test execution times
-            assignment.datasheet_file_path = filepath
-            uploaded_at = get_ist_now()
-            assignment.datasheet_uploaded_at = uploaded_at
-            assignment.datasheet_uploaded_by = current_user.id
-            assignment.peer_reviewer_user_id = peer_reviewer.id
-            assignment.peer_review_assigned_at = uploaded_at
-            if previous_status == 'peer review' and existing_comment_thread:
-                resubmission_note = (
-                    f"[{uploaded_at.strftime('%d %b %Y, %I:%M %p')} | "
-                    f"{current_user.username} | Datasheet Re-uploaded]\n"
-                    "Updated datasheet submitted after peer review comments."
-                )
-                if comments:
-                    resubmission_note = (
-                        f"{resubmission_note}\n\nUploader Notes:\n{comments.strip()}"
-                    )
-                assignment.datasheet_comments = (
-                    f"{existing_comment_thread}\n\n{resubmission_note}"
-                )
-            else:
-                assignment.datasheet_comments = comments
-            assignment.status = 'Peer Review'
-
-            # Keep the existing scheduled time window on the assignment.
-            if not assignment.completion_date:
-                assignment.completion_date = assignment.end_date or uploaded_at.date()
-
-            _update_parent_request_datasheet_status(assignment)
-
-            db.session.commit()
-
-            current_app.logger.info(
-                f"Datasheet uploaded successfully for assignment {assignment_id}. "
-                f"Completion date: {assignment.completion_date}"
-            )
-
-            return jsonify({
-                'success': True,
-                'message': f'Data sheet uploaded successfully and assigned to {peer_reviewer.username} for peer review',
-                'filename': filename,
-                'test_duration_hours': assignment.total_hours,
-                'peer_reviewer_name': peer_reviewer.username
-            })
-
-        except ValueError as ve:
-            db.session.rollback()
-            current_app.logger.error(
-                f"Validation error uploading datasheet: {str(ve)}")
-            return jsonify({'success': False, 'message': f'Validation error: {str(ve)}'}), 400
-        except FileNotFoundError as fe:
-            db.session.rollback()
-            current_app.logger.error(f"File error uploading datasheet: {str(fe)}")
-            return jsonify({'success': False, 'message': 'File system error: Unable to save file'}), 500
-        except PermissionError as pe:
-            db.session.rollback()
-            current_app.logger.error(
-                f"Permission error uploading datasheet: {str(pe)}")
-            return jsonify({'success': False, 'message': 'Server permission error: Cannot save file'}), 500
-        except Exception as e:
-            db.session.rollback()
-            current_app.logger.error(f"Error uploading datasheet: {str(e)}")
-            import traceback
-            current_app.logger.error(traceback.format_exc())
-            return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
-
     @flask_app.route('/cancel-test-assignment', methods=['POST'])
     @login_required
     def cancel_test_assignment():
@@ -14916,6 +15279,9 @@ Please do not reply to this email.
                 EMCRequest.submitted_at.desc(),
                 EMCRequest.created_at.desc()
             ).all()
+
+            # Finished work goes to the end of the approval list.
+            at_review_requests = _terminal_last(at_review_requests)
 
             test_plans = []
             for request in at_review_requests:
@@ -15043,26 +15409,35 @@ Please do not reply to this email.
             test_request.reviewed_by = current_user.username
             test_request.reviewed_at = get_ist_now()
 
-            # Update all planner entries for this request to completed
-            planner_entries = PlannerEntry.query.filter_by(
-                test_request_id=request_id).all()
+            # Update all planner entries for this request to completed (dual filter).
+            planner_entries = PlannerEntry.query.filter(
+                db.or_(*_planner_filters(test_request.id, test_request.tco_id))
+            ).all()
             for entry in planner_entries:
                 entry.status = 'completed'
                 entry.updated_at = get_ist_now()
 
-            # Append admin sign-off note to review comment thread if provided.
+            # Append the completion note to the review comment thread if provided.
             if note:
                 _append_review_comment_entry(
                     test_request=test_request,
-                    comment=f'[Admin Sign Off] {note}',
+                    comment=f'[Completion] {note}',
                     username=current_user.username,
                     role=current_user.role
                 )
 
             db.session.commit()
+
+            # The TCO is now complete - notify the requester and admins.
+            send_completion_notification(
+                test_request=test_request,
+                completed_by=current_user.username
+            )
+
             return jsonify({
                 'success': True,
-                'message': 'Report signed off successfully. Status updated to Completed.'
+                'message': ('Report signed off successfully. Status updated to Completed. '
+                            'Notification email sent to the requester and admins.')
             })
 
         except Exception as e:
