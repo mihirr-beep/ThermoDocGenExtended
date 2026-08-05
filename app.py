@@ -11378,10 +11378,15 @@ Please do not reply to this email.
                         if a['status'] == 'datasheet_uploaded'
                     )
                     # âœ… FIX: Only show upload button if report not already uploaded
+                    # Also require that EVERY test selected on the request has an
+                    # assignment: the consolidated report covers all of them, so a
+                    # selected-but-never-scheduled test must not let it be generated
+                    # early (remaining_tests holds exactly those).
                     show_upload_report = (
                         all_terminal
                         and has_datasheet_uploaded_with_file
                         and all_datasheet_uploaded_have_file
+                        and not remaining_tests
                         and not report_already_uploaded
                     )
 
@@ -13927,13 +13932,18 @@ Please do not reply to this email.
     @flask_app.route('/api/test-requests/<int:request_id>/generate-test-report', methods=['POST'])
     @login_required
     def generate_test_report(request_id):
-        """Consolidate all approved datasheets of a TCO into one 'Test Report' .docx
-        and route it through the same report-approval flow as an uploaded report."""
+        """Build the IEC-FRM-516 EMI EMC Test Report for this request and route it
+        through the same report-approval flow as an uploaded report.
+
+        The report is generated from the DATA of the approved datasheets
+        (datasheet_records.form_json / images_json) rather than by concatenating
+        their .docx files - see report_gen/."""
         if current_user.role not in ['admin', 'lab_engineer']:
             return jsonify({'success': False, 'error': 'Not authorized'}), 403
 
         from werkzeug.utils import secure_filename
-        from utils.test_report_builder import build_consolidated_test_report
+        from report_gen import build_request_test_report
+        from report_gen.registry import FORM_NO as REPORT_FORM_NO
 
         test_request = _get_request_or_404(request_id)
         skips_report_review = _request_skips_report_review(test_request)
@@ -13948,24 +13958,28 @@ Please do not reply to this email.
         if not entries:
             return jsonify({'success': False, 'error': 'No planner entries found for this test request'}), 404
 
-        # Collect approved datasheet .docx files (skip cancelled entries), in schedule order.
-        datasheets = []
-        for entry in entries:
-            if str(entry.status or '').strip().lower() == 'cancelled':
-                continue
-            path = entry.datasheet_file_path
-            if path and os.path.exists(path) and path.lower().endswith('.docx'):
-                datasheets.append({'path': path, 'title': entry.test_name or 'Datasheet'})
-        if not datasheets:
+        # The report is built from the saved datasheet FORM DATA, so require that
+        # at least one non-cancelled test has a submitted datasheet record.
+        from datasheet_gen import records as datasheet_records
+        active_entries = [
+            entry for entry in entries
+            if str(entry.status or '').strip().lower() != 'cancelled'
+        ]
+        with_data = [
+            entry for entry in active_entries
+            if datasheet_records.get_record_for_assignment(entry.id)
+        ]
+        if not with_data:
             return jsonify({
                 'success': False,
-                'error': 'No approved datasheet documents found to consolidate. Approve the datasheets first.'
+                'error': ('No submitted datasheet data found for this request. '
+                          'Complete and approve the datasheets first.')
             }), 400
 
         payload = request.get_json(silent=True) or {}
         comments = str(payload.get('comments') or request.form.get('comments') or '').strip()
         if not comments:
-            comments = f'Consolidated Test Report generated from {len(datasheets)} approved datasheet(s).'
+            comments = f'EMI EMC Test Report generated from {len(with_data)} approved datasheet(s).'
 
         now = get_ist_now()
         upload_dir = os.path.join(
@@ -13975,21 +13989,24 @@ Please do not reply to this email.
         safe_tco = secure_filename(str(test_request.tco_id or f'REQ-{request_id}'))
         output_path = os.path.join(upload_dir, f'{safe_tco}_Test_Report_{ts}.docx')
 
-        meta = {
-            'tco_id': test_request.tco_id,
-            'job_number': test_request.job_number,
-            'product_name': test_request.product_name,
-            'manufacturer': test_request.manufacturer,
-            'model_number': test_request.model_number,
-            'date': now.strftime('%d %b %Y'),
-        }
         try:
-            _, merged_count = build_consolidated_test_report(datasheets, output_path, meta)
+            _, report_summary = build_request_test_report(
+                test_request, entries, output_path, now=now)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
-            logger.error('Consolidated Test Report generation failed for request %s: %s', request_id, exc)
+            logger.error('EMI EMC Test Report generation failed for request %s: %s', request_id, exc)
             import traceback
             logger.error(traceback.format_exc())
-            return jsonify({'success': False, 'error': 'Failed to generate the consolidated Test Report'}), 500
+            return jsonify({'success': False, 'error': 'Failed to generate the EMI EMC Test Report'}), 500
+
+        merged_count = len(report_summary.get('tests') or [])
+        logger.info(
+            'EMI EMC Test Report for request %s: tests=%s dropped=%s images=%d '
+            'extra_blocks=%d skipped=%s',
+            request_id, report_summary.get('tests'),
+            report_summary.get('dropped_sections'), report_summary.get('images', 0),
+            report_summary.get('extra_blocks', 0), report_summary.get('skipped'))
 
         # Route it into the SAME report-approval flow as an uploaded report.
         for entry in entries:
@@ -14019,16 +14036,34 @@ Please do not reply to this email.
             )
 
         new_status = 'Completed' if skips_report_review else 'Draft Report'
+        notes = []
+        if report_summary.get('dropped_sections'):
+            notes.append('Not tested (section omitted): '
+                         + ', '.join(report_summary['dropped_sections']) + '.')
+        if report_summary.get('tests_without_data'):
+            notes.append('No saved datasheet data, section left blank: '
+                         + ', '.join(report_summary['tests_without_data']) + '.')
         return jsonify({
             'success': True,
             'message': (
-                f'Consolidated Test Report generated from {merged_count} datasheet(s). '
-                + ('Developmental Assistance request completed.' if skips_report_review
-                   else 'It is now in the report approval flow (Draft Report).')
+                f'EMI EMC Test Report ({REPORT_FORM_NO}) generated for '
+                f'{merged_count} test(s). '
+                + ('Developmental Assistance request completed. ' if skips_report_review
+                   else 'It is now in the report approval flow (Draft Report). ')
+                + 'Open it in Word once to let the table of contents and page '
+                  'numbers calculate.'
+                + ((' ' + ' '.join(notes)) if notes else '')
             ),
             'new_status': new_status,
             'file_path': output_path,
-            'datasheet_count': merged_count
+            'datasheet_count': merged_count,
+            'report': {
+                'tests': report_summary.get('tests'),
+                'omitted': report_summary.get('dropped_sections'),
+                'without_data': report_summary.get('tests_without_data'),
+                'images': report_summary.get('images'),
+                'extra_blocks': report_summary.get('extra_blocks'),
+            },
         })
 
     @flask_app.route('/api/test-requests/<int:request_id>/admin-sign-off', methods=['POST'])

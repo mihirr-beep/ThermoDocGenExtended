@@ -804,7 +804,7 @@
                                     <button
                                         onclick="generateTestReport('{{ test_plan.id }}', '{{ test_plan.tco_id }}')"
                                         class="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
-                                        title="Generate a consolidated Test Report from all approved datasheets">
+                                        title="Generate the EMI EMC Test Report (IEC-FRM-516) from the approved datasheet data of every test on this request">
                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
@@ -1765,7 +1765,7 @@
         document.getElementById('adminDownloadReportBtn').onclick = () => {
             const a = document.createElement('a');
             a.href = downloadUrl;
-            a.download = _adminReportFilePath.split('/').pop();
+            a.download = fileBaseName(_adminReportFilePath);
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -2038,7 +2038,7 @@
         // For Office documents and other files, trigger download
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = filePath.split('/').pop();
+        link.download = fileBaseName(filePath);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2056,7 +2056,7 @@
         } else {
             const link = document.createElement('a');
             link.href = downloadUrl;
-            link.download = filePath.split('/').pop();
+            link.download = fileBaseName(filePath);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -2234,7 +2234,7 @@
                                             </svg>
                                             <div>
                                                 <p class="text-sm font-semibold text-gray-900">Datasheet File</p>
-                                                <p class="text-xs text-gray-600">${escapeHtml(entry.datasheet_file_path.split('/').pop())}</p>
+                                                <p class="text-xs text-gray-600">${escapeHtml(fileBaseName(entry.datasheet_file_path))}</p>
                                             </div>
                                         </div>
                                         <a href="/api/files/download?path=${encodeURIComponent(entry.datasheet_file_path)}" 
@@ -3346,6 +3346,16 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Stored file paths are absolute and OS-native, so on Windows they use
+    // backslashes. Splitting on '/' alone returns the WHOLE path, which then
+    // becomes an invalid download filename (it contains ':' and '\') and the
+    // browser refuses the download. Split on both separators.
+    function fileBaseName(path) {
+        if (!path) return '';
+        const parts = String(path).split(/[\\/]/);
+        return parts[parts.length - 1] || String(path);
     }
 
     function formatDateValue(value) {
@@ -6597,10 +6607,12 @@
     // ============================================================
 
     function generateTestReport(requestId, tcoId) {
-        if (!confirm('Generate a consolidated Test Report from all approved datasheets for '
+        if (!confirm('Generate the EMI EMC Test Report (IEC-FRM-516) for '
             + (tcoId || 'this TCO')
-            + '?\n\nIt will enter the report approval flow (Draft Report → Proceed → Admin Sign Off → Completed).')) return;
-        if (typeof showToast === 'function') showToast('Generating consolidated Test Report...', 'info');
+            + '?\n\nIt is built from the approved datasheet data of every test on this '
+            + 'request, and will enter the report approval flow '
+            + '(Draft Report → Proceed → Admin Sign Off → Completed).')) return;
+        if (typeof showToast === 'function') showToast('Generating EMI EMC Test Report...', 'info');
         fetch(`/api/test-requests/${requestId}/generate-test-report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
