@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}AI Usage & Cost — Admin{% endblock %}
+
+{% block content %}
+<style>
+  .nlpu-wrap{max-width:960px;margin:0 auto;padding:26px 18px 60px;}
+  .nlpu-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+  .nlpu-h1{font-size:24px;font-weight:700;color:#0f172a;margin:0;}
+  .nlpu-sub{font-size:13px;color:#64748b;margin-top:3px;}
+  .nlpu-back{font-size:13px;font-weight:600;color:#4f46e5;text-decoration:none;border:1px solid #e5e7eb;border-radius:10px;padding:8px 12px;background:#fff;white-space:nowrap;}
+  .nlpu-back:hover{background:#f5f3ff;}
+  .nlpu-seg{display:inline-flex;background:#eef2f7;border-radius:12px;padding:4px;gap:2px;margin-bottom:8px;}
+  .nlpu-seg button{border:none;background:transparent;color:#475569;font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px;cursor:pointer;}
+  .nlpu-seg button.on{background:#fff;color:#4f46e5;box-shadow:0 1px 3px rgba(15,23,42,.12);}
+  .nlpu-range{font-size:12px;color:#94a3b8;margin:2px 0 18px;}
+  .nlpu-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:10px;}
+  @media(max-width:720px){.nlpu-cards{grid-template-columns:repeat(2,1fr);}}
+  .nlpu-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px 18px;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+  .nlpu-card .lab{font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+  .nlpu-card .val{font-size:26px;font-weight:700;color:#0f172a;margin-top:6px;line-height:1.1;word-break:break-word;}
+  .nlpu-card .hint{font-size:11.5px;color:#94a3b8;margin-top:4px;}
+  .nlpu-card.cost .val{color:#4f46e5;}
+  .nlpu-split{font-size:12.5px;color:#475569;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:10px 14px;margin:6px 0 22px;}
+  .nlpu-split b{color:#0f172a;}
+  .nlpu-sec{font-size:14px;font-weight:700;color:#0f172a;margin:22px 0 10px;}
+  .nlpu-tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;font-size:13px;}
+  .nlpu-tbl th{background:#0f172a;color:#fff;text-align:left;padding:9px 12px;font-weight:600;font-size:12px;}
+  .nlpu-tbl td{padding:9px 12px;border-top:1px solid #eef2f7;color:#1e293b;}
+  .nlpu-tbl tr:nth-child(even) td{background:#f8fafc;}
+  .nlpu-tbl td.r,.nlpu-tbl th.r{text-align:right;}
+  .nlpu-mono{font-family:ui-monospace,Consolas,monospace;}
+  .nlpu-ans{margin-top:4px;}
+  .nlpu-ans summary{cursor:pointer;font-size:11px;color:#4f46e5;font-weight:600;}
+  .nlpu-ans>div{margin-top:4px;color:#475569;font-size:12px;white-space:pre-wrap;background:#f8fafc;border:1px solid #eef2f7;border-radius:8px;padding:6px 8px;}
+  .nlpu-bar{height:7px;border-radius:5px;background:linear-gradient(90deg,#8b5cf6,#4f46e5);min-width:2px;}
+  .nlpu-bartrack{background:#eef2f7;border-radius:5px;width:110px;display:inline-block;vertical-align:middle;}
+  .nlpu-msg{background:#fff;border:1px dashed #cbd5e1;border-radius:14px;padding:26px;text-align:center;color:#64748b;font-size:13.5px;}
+  .nlpu-foot{font-size:11.5px;color:#94a3b8;margin-top:18px;line-height:1.6;}
+  .nlpu-spin{display:inline-block;width:16px;height:16px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:nlpu-rot .7s linear infinite;vertical-align:middle;}
+  @keyframes nlpu-rot{to{transform:rotate(360deg);}}
+</style>
+
+<div class="nlpu-wrap">
+  <div class="nlpu-head">
+    <div>
+      <h1 class="nlpu-h1">AI Usage &amp; Cost</h1>
+      <div class="nlpu-sub">Cost, token usage and a full audit log of every question asked to the “Ask the Lab Data” assistant.</div>
+    </div>
+    <a class="nlpu-back" href="{{ url_for('admin_approval') }}">&larr; Back to Admin</a>
+  </div>
+
+  <div class="nlpu-seg" id="nlpu-seg">
+    <button data-days="1" class="on">Today</button>
+    <button data-days="7">Last 7 days</button>
+    <button data-days="30">Last 30 days</button>
+  </div>
+  <div class="nlpu-range" id="nlpu-range"></div>
+
+  <div id="nlpu-content"></div>
+
+  <div class="nlpu-foot">
+    Every question is logged to the <span class="nlpu-mono">nlp_search_audit</span> table (who asked,
+    question, answer, route, tokens, latency). Cost is <b>estimated</b> from the logged token counts at
+    <span class="nlpu-mono">gpt-4o-mini</span> pricing ($0.15 / $0.60 per 1M input / output tokens) —
+    the assistant is very cheap, so totals are typically a few cents. Full request traces are also in
+    Langfuse. Times shown in your local timezone.
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var seg = document.getElementById('nlpu-seg'),
+      rangeEl = document.getElementById('nlpu-range'),
+      content = document.getElementById('nlpu-content');
+  var current = 1;
+
+  function money(v){
+    if (v == null) return '—';
+    if (v === 0) return '$0.00';
+    return v < 0.01 ? '$' + v.toFixed(6) : '$' + v.toFixed(4);
+  }
+  function num(v){ return (v || 0).toLocaleString('en-US'); }
+  function esc(s){ var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+  function tstr(ts){ if(!ts) return '—'; try { return new Date(ts).toLocaleString(); } catch(e){ return ts; } }
+  function routeCell(route){
+    var map = { database:['#1e40af','#dbeafe','Database'], documents:['#9a3412','#ffedd5','Documents'], both:['#5b21b6','#ede9fe','DB + Docs'] };
+    var m = map[route]; if (!m) return '<span style="color:#94a3b8">—</span>';
+    return '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;color:' + m[0] + ';background:' + m[1] + '">' + m[2] + '</span>';
+  }
+
+  function card(lab, val, hint, cls){
+    return '<div class="nlpu-card ' + (cls || '') + '"><div class="lab">' + lab + '</div>' +
+           '<div class="val">' + val + '</div>' + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+  }
+
+  function render(d){
+    if (!d.success){ content.innerHTML = '<div class="nlpu-msg">' + esc(d.message || 'Could not load usage.') + '</div>'; rangeEl.textContent = ''; return; }
+    var t = d.totals;
+    rangeEl.textContent = 'Showing ' + d.range.label + '  ·  ' + d.range.from + ' → ' + d.range.to;
+    if (d.stale) rangeEl.textContent += '   ·   ⚠ ' + (d.notice || 'showing last loaded data');
+    else if (d.cached) rangeEl.textContent += '   ·   cached';
+
+    var html = '<div class="nlpu-cards">' +
+      card('Total cost', money(t.cost), null, 'cost') +
+      card('Total tokens', num(t.total_tokens), null) +
+      card('Requests', num(t.requests), null) +
+      card('Avg cost / request', money(t.avg_cost_per_request), null) +
+      '</div>';
+
+    html += '<div class="nlpu-split">Tokens &nbsp;—&nbsp; Input: <b>' + num(t.input_tokens) +
+            '</b>&nbsp;&nbsp;·&nbsp;&nbsp; Output: <b>' + num(t.output_tokens) + '</b></div>';
+
+    // per question (what the user asked for): each input, when, route, cost
+    html += '<div class="nlpu-sec">Per question (audit log)</div>';
+    var reqs = d.by_request || [];
+    if (!reqs.length){ html += '<div class="nlpu-msg">No questions asked in this period.</div>'; }
+    else {
+      html += '<table class="nlpu-tbl"><tr><th style="width:140px">Time</th><th style="width:104px">User</th><th>Question &amp; answer</th><th style="width:104px">Route</th><th class="r" style="width:74px">Tokens</th><th class="r" style="width:90px">Cost</th></tr>';
+      reqs.forEach(function(x){
+        var qa = '<div>' + esc(x.question || '') + '</div>';
+        if (x.answer) qa += '<details class="nlpu-ans"><summary>answer</summary><div>' + esc(x.answer) + '</div></details>';
+        if (x.success === false) qa += '<div style="color:#b91c1c;font-size:11px;margin-top:3px">failed</div>';
+        html += '<tr><td style="white-space:nowrap">' + esc(tstr(x.timestamp)) + '</td>' +
+                '<td>' + esc(x.user || '—') + '</td>' +
+                '<td>' + qa + '</td>' +
+                '<td>' + routeCell(x.route) + '</td>' +
+                '<td class="r">' + num(x.tokens) + '</td>' +
+                '<td class="r">' + money(x.cost) + '</td></tr>';
+      });
+      html += '</table>';
+      if (reqs.length >= 100) html += '<div class="nlpu-range">Showing the 100 most recent questions.</div>';
+    }
+
+    // by model
+    html += '<div class="nlpu-sec">By model</div>';
+    if (!d.by_model.length){ html += '<div class="nlpu-msg">No model usage in this period.</div>'; }
+    else {
+      html += '<table class="nlpu-tbl"><tr><th>Model</th><th class="r">Calls</th><th class="r">Input</th><th class="r">Output</th><th class="r">Total tokens</th><th class="r">Cost</th></tr>';
+      d.by_model.forEach(function(m){
+        html += '<tr><td class="nlpu-mono">' + esc(m.model) + '</td><td class="r">' + num(m.calls) +
+                '</td><td class="r">' + num(m.input) + '</td><td class="r">' + num(m.output) +
+                '</td><td class="r">' + num(m.total) + '</td><td class="r">' + money(m.cost) + '</td></tr>';
+      });
+      html += '</table>';
+    }
+
+    // by day (with a simple cost bar)
+    html += '<div class="nlpu-sec">By day</div>';
+    if (!d.by_day.length){ html += '<div class="nlpu-msg">No activity in this period.</div>'; }
+    else {
+      var maxCost = Math.max.apply(null, d.by_day.map(function(x){ return x.cost || 0; }).concat([0.0000001]));
+      html += '<table class="nlpu-tbl"><tr><th>Date</th><th class="r">Tokens</th><th class="r">Cost</th><th>&nbsp;</th></tr>';
+      d.by_day.forEach(function(x){
+        var pct = Math.max(2, Math.round((x.cost || 0) / maxCost * 100));
+        html += '<tr><td>' + esc(x.date) + '</td><td class="r">' +
+                num(x.tokens) + '</td><td class="r">' + money(x.cost) +
+                '</td><td><span class="nlpu-bartrack"><span class="nlpu-bar" style="width:' + pct + '%"></span></span></td></tr>';
+      });
+      html += '</table>';
+    }
+    content.innerHTML = html;
+  }
+
+  function load(days){
+    current = days;
+    Array.prototype.forEach.call(seg.querySelectorAll('button'), function(b){
+      b.classList.toggle('on', String(b.getAttribute('data-days')) === String(days));
+    });
+    content.innerHTML = '<div class="nlpu-msg"><span class="nlpu-spin"></span> &nbsp;Loading usage from Langfuse…</div>';
+    rangeEl.textContent = '';
+    fetch('{{ url_for("nlp_search.usage_data") }}?days=' + days, { credentials: 'same-origin' })
+      .then(function(r){ return r.json(); })
+      .then(render)
+      .catch(function(){ content.innerHTML = '<div class="nlpu-msg">Network error loading usage.</div>'; });
+  }
+
+  seg.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    load(parseInt(b.getAttribute('data-days'), 10) || 1);
+  });
+  load(1);   // default: today
+})();
+</script>
+{% endblock %}
