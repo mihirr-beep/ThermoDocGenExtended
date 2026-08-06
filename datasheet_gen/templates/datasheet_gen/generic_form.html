@@ -1517,7 +1517,11 @@
     cancelAutoSave();
     var btn = this, orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Saving...';
-    fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: new FormData(document.getElementById('dsForm')) })
+    var fd = new FormData(document.getElementById('dsForm'));
+    // an explicit save is worth the full projection into the reporting tables;
+    // the autosave timer above deliberately isn't (see records.upsert_record)
+    fd.append('_full_save', '1');
+    fetch('/datasheet/g/{{ code }}/save-draft', { method: 'POST', body: fd })
       .then(function (r) { return r.json(); })
       .then(function (res) {
         btn.disabled = false; btn.textContent = orig;

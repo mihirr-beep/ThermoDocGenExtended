@@ -4838,6 +4838,32 @@ Please do not reply to this email.
             formatted_entry
         )
 
+    def _record_datasheet_transition(
+        entry: PlannerEntry,
+        to_status: str,
+        comment: str = ''
+    ) -> None:
+        """Record a review decision in the datasheet audit trail.
+
+        The note appended to datasheet_comments above stays - it is what the UI
+        renders - but it is free text, so "which datasheets were rejected, by
+        whom, and why" could not be answered from it. This writes the same
+        decision as a row. Best-effort: the review action has already happened.
+        """
+        try:
+            # land the review decision first. record_transition rolls its own
+            # session back if the audit write fails, and the decision is still
+            # pending in that same session - committing here keeps a failed
+            # audit write from quietly undoing an approval.
+            db.session.commit()
+            from datasheet_gen.projection import record_transition
+            record_transition(
+                entry.id, to_status, actor=current_user, comment=comment,
+                decided=to_status in ('Approved', 'Rejected'))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                'Datasheet transition not recorded for entry %s: %s', entry.id, exc)
+
     def _generate_final_datasheet_after_peer_review(
         entry: PlannerEntry
     ) -> tuple[bool, str, str | None]:
@@ -4977,6 +5003,9 @@ Please do not reply to this email.
                 action_label
             )
             _update_parent_request_datasheet_status(entry)
+            _record_datasheet_transition(
+                entry, 'Approved',
+                comment_text or 'Datasheet approved during peer review.')
             return True, 'Peer review approved successfully', 200
 
         if normalized_action == 'reject':
@@ -4991,6 +5020,7 @@ Please do not reply to this email.
                 action_label
             )
             _update_parent_request_datasheet_status(entry)
+            _record_datasheet_transition(entry, 'Rejected', comment_text)
             return True, 'Peer review rejected and sent back to engineer', 200
 
         _append_datasheet_peer_review_comment(
@@ -4999,6 +5029,7 @@ Please do not reply to this email.
             current_user.username,
             'COMMENT'
         )
+        _record_datasheet_transition(entry, 'Peer Review', comment_text)
         return True, 'Peer review comment added successfully', 200
 
     @flask_app.route('/api/planner/<int:planner_id>/peer-review-action', methods=['POST'])

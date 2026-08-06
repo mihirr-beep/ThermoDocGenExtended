@@ -252,7 +252,11 @@ def save_draft_ce():
         if not _can_access(assignment):
             return jsonify(success=False, message="Access denied"), 403
         images = _save_images(files, assignment_id)
-        R.upsert_record(assignment, "CE", form_data, images, R.DRAFT, user=current_user)
+        # the Save Draft button marks its save; the autosave timer does not, and
+        # only pays for the header projection (records.upsert_record)
+        full = bool(form_data.pop("_full_save", None))
+        R.upsert_record(assignment, "CE", form_data, images, R.DRAFT,
+                        user=current_user, full_projection=full)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
@@ -410,6 +414,12 @@ def generate_ce():
         try:
             R.upsert_record(assignment, "CE", form_data, images, R.SUBMITTED,
                             generated_file_path=output_path, user=current_user)
+            # freeze what the reviewer is being asked to look at, and start the
+            # audit trail for this review
+            from .projection import record_transition
+            record_transition(assignment.id, "Peer Review", actor=current_user,
+                              from_status="Draft", snapshot=True, submitted=True,
+                              comment="Sent to %s for peer review." % reviewer.username)
         except Exception as exc:  # noqa: BLE001
             db.session.rollback()
             current_app.logger.error("CE datasheet record save failed: %s", exc)

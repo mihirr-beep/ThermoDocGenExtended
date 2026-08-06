@@ -34,7 +34,7 @@ import json
 import re
 from datetime import date, datetime
 
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 
 from . import form_extract as FX
 from .registry import REGISTRY, normalize_code
@@ -289,33 +289,83 @@ def _images_payload(form, images):
 # header
 # --------------------------------------------------------------------------
 
-def _identity(entry, request):
-    """Denormalised identity columns, so most questions need no join."""
-    def _u(uid):
-        if not uid:
-            return None
-        try:
-            from models import db, User
-            u = db.session.get(User, uid)
-            return u.username if u else None
-        except Exception:
-            return None
+class EntryFields:
+    """A planner entry's fields, captured before a commit expired them.
 
-    return {
+    SQLAlchemy expires every loaded object on commit, so reading
+    ``entry.test_request_id`` after the record is saved silently costs another
+    SELECT. The write path snapshots what the projection needs beforehand and
+    passes this instead; everything downstream still just uses getattr.
+    """
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+_USERS = {}
+_USERS_TTL_S = 300
+
+
+def _usernames(ids):
+    """{user_id: username} for the ids given - one query, then cached.
+
+    Only used to denormalise a name onto the header so that "what did Krishna
+    test last week" needs no join. Names change rarely; a five minute window is
+    the same bargain fixed_store already makes for the admin values.
+    """
+    import time
+    now = time.time()
+    want = {i for i in ids if i}
+    have = {i: v for i, (v, t) in _USERS.items()
+            if i in want and now - t < _USERS_TTL_S}
+    missing = want - set(have)
+    if missing:
+        from models import db
+        try:
+            rows = db.session.execute(
+                text("SELECT id, username FROM users WHERE id IN :ids")
+                .bindparams(bindparam("ids", expanding=True)),
+                {"ids": sorted(missing)}).all()
+            for uid, name in rows:
+                _USERS[uid] = (name, now)
+                have[uid] = name
+        except Exception:  # noqa: BLE001 - a missing display name is not fatal
+            pass
+    return have
+
+
+def invalidate_user_cache():
+    _USERS.clear()
+
+
+def _identity(entry, request):
+    """Denormalised identity columns, so most questions need no join.
+
+    Columns that only the request can supply are OMITTED rather than set to
+    None when no request was passed. Omitted means "leave whatever is there":
+    the autosave tier does not fetch the request, and must not blank out what
+    a previous full save recorded.
+    """
+    names = _usernames((getattr(entry, "engineer_user_id", None),
+                        getattr(entry, "peer_reviewer_user_id", None)))
+    out = {
         "tco_id": getattr(entry, "tco_id", None),
-        "job_number": getattr(request, "job_number", None),
-        "product_name": getattr(request, "product_name", None),
-        "eut_class": getattr(request, "class_type", None),
-        "engineer_name": (_u(getattr(entry, "engineer_user_id", None))
+        "engineer_name": (names.get(getattr(entry, "engineer_user_id", None))
                           or getattr(entry, "test_person_name", None)),
-        "peer_reviewer_name": _u(getattr(entry, "peer_reviewer_user_id", None)),
+        "peer_reviewer_name": names.get(getattr(entry, "peer_reviewer_user_id", None)),
     }
+    if request is not None:
+        out["job_number"] = getattr(request, "job_number", None)
+        out["product_name"] = getattr(request, "product_name", None)
+        out["eut_class"] = getattr(request, "class_type", None)
+    return out
 
 
 # planner_entries.status is the workflow truth; datasheet.status is DERIVED from
-# it plus the record status. Never written independently - see the plan, §3.
+# it. Never written independently - see the plan, §3.
 _STATUS_FROM_ENTRY = {
     "peer review": "Peer Review",
+    "in_progress": "Draft",
     "datasheet_uploaded": "Approved",
     "report_uploaded": "Approved",
     "completed": "Approved",
@@ -323,6 +373,14 @@ _STATUS_FROM_ENTRY = {
 
 
 def derive_status(entry, record):
+    """Where this datasheet stands, from the entry that owns the workflow.
+
+    The entry wins over the record. A rejected datasheet keeps its record at
+    'Submitted' - the engineer did submit it - while the entry goes back to
+    'in_progress', and it is a draft again. Reading the record first would call
+    that Peer Review and hide every rejection. The record only decides when the
+    entry says nothing recognisable.
+    """
     entry_status = str(getattr(entry, "status", "") or "").strip().lower()
     mapped = _STATUS_FROM_ENTRY.get(entry_status)
     if mapped:
@@ -332,7 +390,7 @@ def derive_status(entry, record):
     return "Draft"
 
 
-def _header_values(db, record, entry, request, form, images):
+def _header_values(db, record, entry, request, form, images, with_images=True):
     code = normalize_code(record.get("test_code") or "")
     cols, date_cols = _describe(db, "datasheet")
     vals = {
@@ -344,9 +402,12 @@ def _header_values(db, record, entry, request, form, images):
     }
     vals.update(_identity(entry, request))
 
+    # product_name and eut_class stay reserved even when no request was passed
+    # to supply them: the generic loop below would find nothing in the form and
+    # blank out what an earlier full save recorded
     reserved = set(vals) | {"id", "revision_no", "submitted_at", "decided_at",
                             "reviewer_user_id", "created_at", "updated_at",
-                            "images_json", "result"}
+                            "images_json", "result", "product_name", "eut_class"}
     # every column is written, including the ones the form left blank: this is
     # an UPSERT, so a field the engineer has since cleared must go back to NULL
     # rather than keep the value from the previous save
@@ -358,7 +419,7 @@ def _header_values(db, record, entry, request, form, images):
         vals["result"] = (FX.value(form, "overall_result")
                           or FX.value(form, "result")
                           or FX.value(form, "met_performance_criteria") or None)
-    if "images_json" in cols:
+    if with_images and "images_json" in cols:
         payload = _images_payload(form, images)
         vals["images_json"] = json.dumps(payload, ensure_ascii=False) if payload else None
     if "reviewer_user_id" in cols:
@@ -386,31 +447,36 @@ def _upsert(db, table, values, key):
 # public API
 # --------------------------------------------------------------------------
 
-def project_header(record, entry, request=None):
-    """Cheap tier: upsert ONLY the header row. One round trip.
+def project_header(record, entry, request=None, with_images=True):
+    """Cheap tier: upsert ONLY the header row. One statement, one commit.
 
-    Safe to call on every autosave - it carries what people actually query
-    (who, which test, which job, status, result, dates) without touching the
-    child rows, which only become interesting once a datasheet is submitted.
-    Returns the datasheet id, or None.
+    Cheap enough to run on every autosave - it carries what people actually
+    query (who, which test, which job, status, result, conditions, dates)
+    without touching the child rows, which only become interesting once the
+    engineer stops typing. Deliberately does not read the new id back: that
+    would double the cost of the tier whose whole point is being cheap.
+
+    ``with_images`` is False when the caller skipped merging the stored images
+    and so does not know the full set; the column is then left as it was rather
+    than being overwritten with a partial one. Returns True if a row was written.
     """
     from models import db
     if not record or not record.get("planner_entry_id"):
-        return None
+        return False
     form = _parse(record.get("form_json"))
     images = _parse(record.get("images_json"))
-    values = _header_values(db, record, entry, request, form, images)
-    if not values.get("planner_entry_id"):
-        return None
+    values = _header_values(db, record, entry, request, form, images,
+                            with_images=with_images)
     _upsert(db, "datasheet", values, "planner_entry_id")
     db.session.commit()
-    return _datasheet_id(db, record["planner_entry_id"])
+    return True
 
 
-def project(record, entry, request=None):
+def project(record, entry, request=None, with_images=True):
     """Full projection: header + per-test spec + all child rows.
 
-    Runs at save/submit and in the backfill, not on autosave. Idempotent.
+    Runs at an explicit save, at submit, and in the backfill - never on the
+    autosave timer. Idempotent.
     Returns {"datasheet_id": int, "rows": {table: n}} or None.
     """
     from models import db
@@ -422,7 +488,8 @@ def project(record, entry, request=None):
     form = _parse(record.get("form_json"))
     images = _parse(record.get("images_json"))
 
-    values = _header_values(db, record, entry, request, form, images)
+    values = _header_values(db, record, entry, request, form, images,
+                            with_images=with_images)
     _upsert(db, "datasheet", values, "planner_entry_id")
     # read back inside the same transaction - one commit for the whole
     # projection, so a failure half way through leaves nothing behind
@@ -565,6 +632,111 @@ def _project_legend(db, did, code, form):
             "(datasheet_id, grid_scope, code, description, sort_order) "
             "VALUES (:d, :s, :c, :x, :o)"), payload)
     return len(payload)
+
+
+# --------------------------------------------------------------------------
+# audit trail
+# --------------------------------------------------------------------------
+# Until now the only record of a peer review was a timestamped paragraph
+# appended to planner_entries.datasheet_comments - human-readable and
+# machine-useless. "Which datasheets were rejected, by whom, and why" could not
+# be answered. These two writes make that a query.
+
+def record_transition(planner_entry_id, to_status, actor=None, comment="",
+                      snapshot=False, submitted=False, decided=False,
+                      from_status=None):
+    """Append one row to a datasheet's status history; optionally freeze it.
+
+    ``snapshot`` also copies the current form into ``datasheet_revision`` under
+    the next revision number, so what the reviewer saw survives the engineer's
+    next edit. Used when a datasheet is sent for review - the revision IS the
+    thing under review.
+
+    A rejection records ``to_status='Rejected'`` here while the datasheet goes
+    back to 'Draft': both are true, and the difference is the point. The
+    current state is a draft the engineer must fix; the history says why it is
+    one. Best-effort - an audit write must not fail the review action itself.
+    """
+    from models import db
+    try:
+        row = db.session.execute(text(
+            "SELECT id, status, revision_no FROM `datasheet` WHERE planner_entry_id=:p"),
+            {"p": planner_entry_id}).first()
+        if row is None:
+            return False
+        did, revision = row[0], int(row[2] or 1)
+        # the caller overrides where the projection has already moved on: a
+        # submit projects the record before recording the transition, so by now
+        # datasheet.status reads 'Peer Review' and cannot say what it left
+        from_status = from_status or row[1]
+
+        if snapshot:
+            _snapshot_revision(db, did, planner_entry_id, revision, from_status, actor)
+
+        db.session.execute(text(
+            "INSERT INTO datasheet_status_history (datasheet_id, revision_no, "
+            "from_status, to_status, actor_user_id, actor_name, actor_role, "
+            "comment, created_at) VALUES (:d, :r, :f, :t, :ui, :un, :ur, :c, NOW())"),
+            {"d": did, "r": revision, "f": from_status, "t": to_status,
+             "ui": getattr(actor, "id", None),
+             "un": (getattr(actor, "username", None) or "")[:200] or None,
+             "ur": (getattr(actor, "role", None) or "")[:30] or None,
+             "c": (comment or "").strip() or None})
+
+        sets = ["status=:s"]
+        params = {"s": _CURRENT_STATUS.get(to_status, to_status), "d": did}
+        if submitted:
+            sets.append("submitted_at=NOW()")
+        if decided:
+            sets.append("decided_at=NOW()")
+            params["rv"] = getattr(actor, "id", None)
+            sets.append("reviewer_user_id=:rv")
+        db.session.execute(text("UPDATE `datasheet` SET %s WHERE id=:d"
+                                % ", ".join(sets)), params)
+        db.session.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        return False
+
+
+# what a transition leaves the datasheet in, where that differs from the
+# transition's own name
+_CURRENT_STATUS = {"Rejected": "Draft"}
+
+
+def _snapshot_revision(db, did, planner_entry_id, revision, status, actor):
+    """Freeze the current form as revision N, then move the datasheet to N+1.
+
+    The snapshot is taken from datasheet_records, not from the projection: it
+    has to be able to restore the datasheet exactly, and only form_json can.
+    """
+    rec = db.session.execute(text(
+        "SELECT form_json, images_json, result, test_date, created_by_user_id "
+        "FROM datasheet_records WHERE planner_entry_id=:p"),
+        {"p": planner_entry_id}).first()
+    if rec is None:
+        return
+    head = db.session.execute(text(
+        "SELECT ambient_temperature, relative_humidity, required_performance_criteria, "
+        "met_performance_criteria, tested_by, deviation FROM `datasheet` WHERE id=:d"),
+        {"d": did}).first()
+    db.session.execute(text(
+        "INSERT INTO datasheet_revision (datasheet_id, revision_no, status, form_json, "
+        "images_json, result, test_date, ambient_temperature, relative_humidity, "
+        "required_performance_criteria, met_performance_criteria, tested_by, deviation, "
+        "created_by_user_id, submitted_at, created_at) "
+        "VALUES (:d, :r, :st, :fj, :ij, :res, :td, :amb, :rh, :rpc, :mpc, :tb, :dev, "
+        ":u, NOW(), NOW()) ON DUPLICATE KEY UPDATE form_json=VALUES(form_json), "
+        "images_json=VALUES(images_json), submitted_at=VALUES(submitted_at)"),
+        {"d": did, "r": revision, "st": status, "fj": rec[0], "ij": rec[1],
+         "res": rec[2], "td": rec[3], "u": getattr(actor, "id", None) or rec[4],
+         "amb": head[0] if head else None, "rh": head[1] if head else None,
+         "rpc": head[2] if head else None, "mpc": head[3] if head else None,
+         "tb": head[4] if head else None, "dev": head[5] if head else None})
+    db.session.execute(text(
+        "UPDATE `datasheet` SET revision_no=:r WHERE id=:d"),
+        {"r": revision + 1, "d": did})
 
 
 def delete_projection(planner_entry_id):

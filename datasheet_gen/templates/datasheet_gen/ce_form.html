@@ -1031,7 +1031,11 @@
     cancelAutoSave();   // explicit save supersedes any pending debounce
     const btn = this, orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Saving...';
-    fetch('/datasheet/ce/save-draft', { method: 'POST', body: new FormData(document.getElementById('ceForm')) })
+    const fd = new FormData(document.getElementById('ceForm'));
+    // an explicit save is worth the full projection into the reporting tables;
+    // the autosave timer above deliberately isn't (see records.upsert_record)
+    fd.append('_full_save', '1');
+    fetch('/datasheet/ce/save-draft', { method: 'POST', body: fd })
       .then(r => r.json())
       .then(res => {
         btn.disabled = false; btn.textContent = orig;
