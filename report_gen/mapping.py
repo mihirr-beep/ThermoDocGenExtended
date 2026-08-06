@@ -17,6 +17,12 @@ for a live request and for a fixture.
 import re
 
 from . import docx_tools as T
+# The pure form-extraction helpers live in datasheet_gen: they are datasheet
+# knowledge, and keeping them there stops this package and datasheet_gen from
+# importing each other. See datasheet_gen/form_extract.py.
+from datasheet_gen.form_extract import (            # noqa: F401 - re-exported
+    _val, band_values, observation_tables, observation_legend,
+    table_rows, equipment_rows, _ce_arrays)
 
 # --------------------------------------------------------------------------
 # label normalisation / key resolution
@@ -106,31 +112,6 @@ def resolve_key(code, label, index):
             if best is None or abs(len(sn) - len(n)) < abs(len(best[0]) - len(n)):
                 best = (sn, key)
     return best[1] if best else None
-
-
-def _val(form, key):
-    v = form.get(key)
-    if isinstance(v, list):
-        for x in v:
-            if x not in (None, ""):
-                return str(x).strip()
-        return ""
-    return "" if v is None else str(v).strip()
-
-
-def band_values(form, key):
-    """(col_1, col_2) for a band-split field, e.g. RE's 30M-1G / 1G-6G columns.
-
-    Handles both naming conventions the generated schemas use: ``x_col_1`` /
-    ``x_col_2`` and ``x_2`` / ``x_3``.
-    """
-    base = re.sub(r"(_col_[12]|_[23])$", "", key)
-    for a, b in (("_col_1", "_col_2"), ("_2", "_3")):
-        v1, v2 = _val(form, base + a), _val(form, base + b)
-        if v1 or v2:
-            return v1, v2
-    v = _val(form, base) or _val(form, key)
-    return v, v
 
 
 # --------------------------------------------------------------------------
@@ -442,160 +423,9 @@ def _write(cell, value):
 # TEST OBSERVATION
 # --------------------------------------------------------------------------
 
-def _obs_rows_from_matrix(matrix):
-    """[[label, *cells], ...] from an EFT/SURGE {'cols', 'rows'} matrix."""
-    if not matrix:
-        return []
-    return [[r.get("label", "")] + list(r.get("cells") or [])
-            for r in matrix.get("rows") or []]
-
-
-def observation_tables(code, form):
-    """Ordered [(hint, rows)] for a test's observation grids.
-
-    ``hint`` is a substring that identifies which report table the rows belong
-    to (the report labels its grids "Power Line:", "AC Power Line:", etc.), and
-    ``rows`` are row-lists ready for ``fill_table_rows``. Returns [] for a test
-    whose grid is a single fixed table.
-    """
-    from datasheet_gen import generic_service as gs
-
-    if code == "EFT":
-        return [("power", _obs_rows_from_matrix(gs._eft_obs(form, "power"))),
-                ("signal", _obs_rows_from_matrix(gs._eft_obs(form, "signal")))]
-    if code == "SURGE":
-        return [("ac", _obs_rows_from_matrix(gs._surge_obs(form, "ac"))),
-                ("dc", _obs_rows_from_matrix(gs._surge_obs(form, "dc"))),
-                ("signal", _obs_rows_from_matrix(gs._surge_obs(form, "signal")))]
-    if code == "VOLTAGEDIPS":
-        out = []
-        for kind, hint in (("dips", "dips"), ("intr", "interrupt")):
-            rows = []
-            for grp in gs._vdips_groups(form, kind):
-                for r in grp.get("rows") or []:
-                    rows.append([r.get("pct", ""), r.get("dur", ""), r.get("obs", "")])
-            out.append((hint, rows))
-        return out
-    if code == "ESD":
-        return [("indirect", _esd_rows(form, "ind", 8, named=False)),
-                ("direct", _esd_rows(form, "dir", 3, named=True)),
-                ("air", _esd_rows(form, "air", 3, named=True))]
-    if code == "RS_RI":
-        return [("", _rs_rows(form))]
-    if code == "PFMF":
-        return [("", _pfmf_rows(form))]
-    if code == "CRF":
-        return [("power", _crf_rows(form, "power")),
-                ("signal", _crf_rows(form, "signal"))]
-    return []
-
-
-_ESD_INDIRECT_POINTS = ["HCP (0°)", "HCP (90°)", "HCP (180°)", "HCP (270°)",
-                        "VCP (0°)", "VCP (90°)", "VCP (180°)", "VCP (270°)"]
-
-
-def _esd_rows(form, prefix, count, named):
-    """ESD observation rows: S.No, test point, then the 6 test-level cells."""
-    rows = []
-    for i in range(1, count + 1):
-        if named:
-            point = _val(form, "%s_r%d_name" % (prefix, i))
-        else:
-            point = _ESD_INDIRECT_POINTS[i - 1] if i - 1 < len(_ESD_INDIRECT_POINTS) else ""
-        cells = [_val(form, "%s_r%d_c%d" % (prefix, i, c)) for c in range(1, 7)]
-        if not point and not any(cells):
-            continue
-        rows.append([str(i), point] + cells)
-    return rows
-
-
-def _rs_rows(form):
-    """RS observation: frequency band, test level, dwell, then 8 angle cells."""
-    bands = [("f_80_to_1000", "80 to 1000"), ("f_1000_to_6000", "1000 to 6000"),
-             ("f_ism", "ISM Band(1)")]
-    rows = []
-    for base, label in bands:
-        level = _val(form, base + "_col_1")
-        dwell = _val(form, base + "_col_2")
-        cells = [_val(form, "%s_col_%d" % (base, c)) for c in range(3, 11)]
-        if not level and not dwell and not any(cells):
-            continue
-        rows.append([label, level, dwell] + cells)
-    return rows
-
-
-def _pfmf_rows(form):
-    """PFMF observation: field strength, power frequency, then 7 orientations."""
-    rows = []
-    for base, freq in (("pf_50", "50 Hz"), ("pf_60", "60 Hz")):
-        strength = _val(form, base + "_col_1")
-        cells = [_val(form, "%s_col_%d" % (base, c)) for c in range(3, 10)]
-        if not strength and not any(cells):
-            continue
-        rows.append([strength, _val(form, base + "_col_2") or freq] + cells)
-    return rows
-
-
-def _crf_rows(form, side):
-    """CRF observation rows for one port, from the schema's row-loop table."""
-    key = "test_observation_rows"
-    cols = [form.get("%s__c%d[]" % (key, i)) or [] for i in range(5)]
-    cols = [c if isinstance(c, list) else [c] for c in cols]
-    n = max((len(c) for c in cols), default=0)
-    rows = []
-    for i in range(n):
-        row = [str(cols[j][i]).strip() if i < len(cols[j]) else "" for j in range(5)]
-        if not any(row):
-            continue
-        port = row[1].lower()
-        is_signal = "signal" in port
-        if (side == "signal") != is_signal:
-            continue
-        rows.append(row)
-    return rows
-
-
-def observation_legend(code, form):
-    """[(code, description)] for the A/B/C/D legend under an observation grid."""
-    prefixes = {"EFT": "eft_obs_legend", "SURGE": "surge_obs_legend",
-                "PFMF": "pfmf_obs_legend"}
-    base = prefixes.get(code, "obs_legend")
-    codes = form.get(base + "_code[]") or []
-    descs = form.get(base + "_desc[]") or []
-    codes = codes if isinstance(codes, list) else [codes]
-    descs = descs if isinstance(descs, list) else [descs]
-    out, seen = [], set()
-    for i, c in enumerate(codes):
-        c = str(c or "").strip()
-        if c and c not in seen:
-            seen.add(c)
-            out.append((c, str(descs[i]).strip() if i < len(descs) else ""))
-    return out
-
-
 # --------------------------------------------------------------------------
 # generic repeating tables
 # --------------------------------------------------------------------------
-
-def table_rows(form, key, ncols):
-    """Rows of a datasheet repeating table (``key__c0[]`` .. ``key__cN[]``)."""
-    cols = [form.get("%s__c%d[]" % (key, i)) or [] for i in range(ncols)]
-    cols = [c if isinstance(c, list) else [c] for c in cols]
-    n = max((len(c) for c in cols), default=0)
-    rows = []
-    for i in range(n):
-        row = [str(cols[j][i]).strip() if i < len(cols[j]) else "" for j in range(ncols)]
-        if any(row):
-            rows.append(row)
-    return rows
-
-
-def equipment_rows(code, form):
-    """TEST EQUIPMENT USED rows: name, make, model, serial, calibration due."""
-    if code == "CE":
-        return _ce_arrays(form, "eq_", ["name", "make", "model", "serial", "cal_due"])
-    return table_rows(form, "test_equipment_used_rows", 5)
-
 
 def software_rows(code, form, test_name):
     """SOFTWARE USED rows. The report adds a leading 'Test Name' column that the
@@ -605,19 +435,6 @@ def software_rows(code, form, test_name):
     else:
         rows = table_rows(form, "software_used_rows", 2)
     return [[test_name] + r[:2] for r in rows]
-
-
-def _ce_arrays(form, prefix, names):
-    """Rows from the bespoke CE form's parallel ``prefix+name[]`` arrays."""
-    cols = [form.get(prefix + n + "[]") or [] for n in names]
-    cols = [c if isinstance(c, list) else [c] for c in cols]
-    n = max((len(c) for c in cols), default=0)
-    rows = []
-    for i in range(n):
-        row = [str(cols[j][i]).strip() if i < len(cols[j]) else "" for j in range(len(names))]
-        if any(row):
-            rows.append(row)
-    return rows
 
 
 # --------------------------------------------------------------------------
