@@ -148,16 +148,18 @@ def ce_form(assignment_id):
     prefill = collect_ce_prefill(_parent_request(assignment), assignment)
     # Resume a saved draft/record: scalar values the engineer already entered win
     # over the DB auto-fill, so re-opening the form continues where they left off.
-    draft = R.draft_form(assignment.id)
+    # One fetch, three uses - see the note in records.form_from_record.
+    record = R.get_record_for_assignment(assignment.id)
+    draft = R.form_from_record(record)
     draft_status = ""
     if draft:
-        rec = R.get_record_for_assignment(assignment.id)
-        draft_status = (rec or {}).get("status", "")
+        draft_status = (record or {}).get("status", "")
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 prefill[k] = v
     # {field_key: basename} so the form can preview each draft image on reload
-    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(assignment.id).items()
+    saved_images = {k: os.path.basename(p)
+                    for k, p in R.images_from_record(record).items()
                     if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/ce_form.html",

@@ -106,17 +106,23 @@ def g_form(code, assignment_id):
     if not _can_access(a):
         abort(403)
     schema = load_schema(code)
-    pre = gs.collect_prefill(schema, _parent_request(a), a)
+    # fetched once and reused below: each call re-queries the request AND
+    # lazy-loads its child collections again
+    parent = _parent_request(a)
+    pre = gs.collect_prefill(schema, parent, a)
 
     # Resume a saved draft/record: scalar entries win over auto-fill, and saved
     # table rows are injected back into the schema so the grids render as left.
-    draft = R.draft_form(a.id)
+    # The record is fetched ONCE here and its form/images derived from it -
+    # draft_form / get_record_for_assignment / draft_images would otherwise each
+    # re-read the same row (and its 3-6.5 KB form_json) from a remote database.
+    record = R.get_record_for_assignment(a.id)
+    draft = R.form_from_record(record)
     draft_status = ""
     measurement_groups = []
     extra_photos = []
     if draft:
-        rec = R.get_record_for_assignment(a.id)
-        draft_status = (rec or {}).get("status", "")
+        draft_status = (record or {}).get("status", "")
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 pre[k] = v
@@ -172,15 +178,17 @@ def g_form(code, assignment_id):
 
     # Prefill repeating tables (equipment / RE Test Limits / software) from the
     # request + derivations, but only where the engineer has no saved draft rows.
-    prefill_tables = gs.collect_prefill_tables(schema, _parent_request(a), a)
+    prefill_tables = gs.collect_prefill_tables(schema, parent, a)
     if prefill_tables:
         for sec in schema.get("sections", []):
             for it in sec.get("items", []):
                 if it.get("type") == "table" and not it.get("rows") and prefill_tables.get(it["key"]):
                     it["rows"] = prefill_tables[it["key"]]
     # {field_key: basename} of images saved in a prior draft, so the form can show
-    # a preview of each on reload (served by g_draft_image below).
-    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(a.id).items()
+    # a preview of each on reload (served by g_draft_image below). Derived from
+    # the record already fetched above - no second query.
+    saved_images = {k: os.path.basename(p)
+                    for k, p in R.images_from_record(record).items()
                     if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/generic_form.html",

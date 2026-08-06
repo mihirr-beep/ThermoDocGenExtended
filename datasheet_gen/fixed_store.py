@@ -255,18 +255,50 @@ def _seed_if_empty(app):
 
 
 # ==========================================================================
+# Read-through cache
+# ==========================================================================
+# These two tables are tiny (4 and 15 rows) and admin-edited perhaps monthly,
+# but they are read repeatedly while building ONE datasheet form - measured at
+# 3x datasheet_fixed_values + 4x basic_standard_map per page load. Against a
+# remote database that is 7 needless round trips on every form open, so they
+# are cached in-process and invalidated explicitly when an admin saves.
+_CACHE = {}
+_CACHE_TTL_S = 300
+
+
+def _cached(key, loader):
+    import time
+    hit = _CACHE.get(key)
+    if hit is not None and (time.time() - hit[0]) < _CACHE_TTL_S:
+        return hit[1]
+    value = loader()
+    _CACHE[key] = (time.time(), value)
+    return value
+
+
+def invalidate_cache():
+    """Drop the cached fixed values / standard map. Call after an admin edit."""
+    _CACHE.clear()
+
+
+# ==========================================================================
 # Accessors (read side — used by service / generic_service / routes)
 # ==========================================================================
 def get_fixed_values(test_code):
     """Return the fixed-values dict for a datasheet code (DB first, seed fallback)."""
     code = (test_code or "").upper()
-    try:
-        row = DatasheetFixedValue.query.filter_by(test_code=code).first()
-        if row is not None:
-            return row.values()
-    except Exception:
-        pass
-    return dict(SEED_FIXED_VALUES.get(code, {}))
+
+    def _load():
+        try:
+            row = DatasheetFixedValue.query.filter_by(test_code=code).first()
+            if row is not None:
+                return row.values()
+        except Exception:
+            pass
+        return dict(SEED_FIXED_VALUES.get(code, {}))
+
+    # copy on the way out: callers mutate the dict they get back
+    return dict(_cached(("fixed", code), _load))
 
 
 def _norm(s):
@@ -276,7 +308,12 @@ def _norm(s):
 def _map_rows(test_code):
     """Active mapping rows for a datasheet: its own rows if any, else the shared
     (NULL test_code) emission rows. Falls back to the in-code seed if the DB is
-    unavailable."""
+    unavailable. Cached - see the note above _CACHE."""
+    return _cached(("map", (test_code or "").upper() or None),
+                   lambda: _map_rows_uncached(test_code))
+
+
+def _map_rows_uncached(test_code):
     code = (test_code or "").upper() or None
     try:
         rows = []

@@ -1136,17 +1136,20 @@ def _apply_db_fixed_scalars(pre, schema):
         pre[key] = val
 
 
-def _equipment_rows_for(code):
-    """Test Equipment Used rows from the Equipment Master tagged for this test
-    code, as generic-table rows ({c0..c4}). Equipment is selected by the
-    Equipment.test_name text column (a comma-separated list of codes, e.g.
-    'RE,CE'); the exact code token must be present (avoids loose substring hits)."""
+def equipment_candidates(code):
+    """Every Equipment Master row tagged for this test code - instruments AND
+    software together.
+
+    Equipment and Software Used were two separate queries against the same table
+    with the same filter; on a remote database that is a wasted round trip on
+    every form load. Callers fetch this once and hand it to both row-builders.
+    """
     code = (code or "").upper()
     if not code:
         return []
     try:
         from models import db, Equipment
-        candidates = Equipment.query.filter(
+        return Equipment.query.filter(
             Equipment.status.in_(["Active", "Available"]),
             Equipment.test_name.isnot(None),
             db.or_(Equipment.test_name.ilike(f"%{code}%"),
@@ -1155,6 +1158,18 @@ def _equipment_rows_for(code):
         ).order_by(Equipment.sl_no.asc(), Equipment.name.asc()).all()
     except Exception:
         return []
+
+
+def _equipment_rows_for(code, candidates=None):
+    """Test Equipment Used rows from the Equipment Master tagged for this test
+    code, as generic-table rows ({c0..c4}). Equipment is selected by the
+    Equipment.test_name text column (a comma-separated list of codes, e.g.
+    'RE,CE'); the exact code token must be present (avoids loose substring hits)."""
+    code = (code or "").upper()
+    if not code:
+        return []
+    if candidates is None:
+        candidates = equipment_candidates(code)
     rows = []
     for eq in candidates:
         tn = eq.test_name or ""
@@ -1183,21 +1198,19 @@ def _equipment_rows_for(code):
     return rows
 
 
-def _software_rows_for(code):
-    """Prefill 'Software Used' rows from the Equipment Master for a given test code."""
-    try:
-        from models import db, Equipment
-        candidates = Equipment.query.filter(
-            Equipment.status.in_(["Active", "Available"]),
-            Equipment.type.isnot(None),
-            db.func.lower(Equipment.type).in_(["software", "application", "tool"]),
-            Equipment.test_name.isnot(None),
-            db.or_(Equipment.test_name.ilike(f"%{code}%"),
-                   Equipment.test_name.ilike(f"%,{code}%"),
-                   Equipment.test_name.ilike(f"%{code},%")),
-        ).order_by(Equipment.sl_no.asc(), Equipment.name.asc()).all()
-    except Exception:
-        candidates = []
+_SOFTWARE_TYPES = ("software", "application", "tool")
+
+
+def _software_rows_for(code, candidates=None):
+    """Prefill 'Software Used' rows from the Equipment Master for a given test code.
+
+    Shares the equipment_candidates() fetch with _equipment_rows_for and filters
+    to the software types here, rather than issuing a second near-identical query.
+    """
+    if candidates is None:
+        candidates = equipment_candidates(code)
+    candidates = [c for c in candidates
+                  if str(getattr(c, "type", "") or "").lower().strip() in _SOFTWARE_TYPES]
     rows = []
     for sw in candidates:
         tn = sw.test_name or ""
@@ -1227,16 +1240,22 @@ def collect_prefill_tables(schema, request_obj, assignment):
     from the (standard family x class) combination, and Software Used defaults."""
     code = (schema.get("code") or "").upper()
     out = {}
+    # one Equipment Master query, shared by the equipment and software tables
+    eq_candidates = None
     for sec in schema["sections"]:
         for it in sec["items"]:
             if it.get("type") == "table":
                 key = it.get("key")
-                if "equipment" in key.lower():
-                    rows = _equipment_rows_for(code)
+                low = key.lower()
+                if "equipment" in low or "software" in low:
+                    if eq_candidates is None:
+                        eq_candidates = equipment_candidates(code)
+                if "equipment" in low:
+                    rows = _equipment_rows_for(code, eq_candidates)
                     if rows:
                         out[key] = rows
-                elif "software" in key.lower():
-                    rows = _software_rows_for(code)
+                elif "software" in low:
+                    rows = _software_rows_for(code, eq_candidates)
                     if rows:
                         out[key] = rows
     # Software Used is a fixed constant per datasheet — take it from the DB

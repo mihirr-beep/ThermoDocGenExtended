@@ -351,26 +351,43 @@ def upsert_record(assignment, test_code, form_data, images, status,
     return merged_images
 
 
-def draft_images(assignment_id):
-    """{field: path} of images previously saved for this assignment (for reuse)."""
-    rec = get_record_for_assignment(assignment_id)
-    if rec and rec.get("images_json"):
+# --------------------------------------------------------------------------
+# Reading a draft back
+# --------------------------------------------------------------------------
+# form_from_record / images_from_record take an ALREADY-FETCHED row. The form
+# routes need the record, its form and its images together, and fetching the
+# row once instead of three times removes two round trips per page load - which
+# matters because the row carries a 3-6.5 KB form_json blob and the database is
+# remote. draft_form/draft_images remain for callers that only need one thing.
+
+def form_from_record(record):
+    """The saved form_data dict held by an already-fetched record, or {}."""
+    if record and record.get("form_json"):
         try:
-            return json.loads(rec["images_json"])
+            return json.loads(record["form_json"])
         except (ValueError, TypeError):
             pass
     return {}
+
+
+def images_from_record(record):
+    """{field: path} of images held by an already-fetched record, or {}."""
+    if record and record.get("images_json"):
+        try:
+            return json.loads(record["images_json"])
+        except (ValueError, TypeError):
+            pass
+    return {}
+
+
+def draft_images(assignment_id):
+    """{field: path} of images previously saved for this assignment (for reuse)."""
+    return images_from_record(get_record_for_assignment(assignment_id))
 
 
 def draft_form(assignment_id):
     """The last-saved form_data dict for this assignment, or {}."""
-    rec = get_record_for_assignment(assignment_id)
-    if rec and rec.get("form_json"):
-        try:
-            return json.loads(rec["form_json"])
-        except (ValueError, TypeError):
-            pass
-    return {}
+    return form_from_record(get_record_for_assignment(assignment_id))
 
 
 def delete_record_for_assignment(assignment_id):
