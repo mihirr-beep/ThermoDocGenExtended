@@ -45,9 +45,45 @@ TEST_CODES = (
     "VOLTAGE_DIPS",  # Voltage dips / interruptions   (planner: VoltageDips)
 )
 
+# Request code -> the spelling the PLANNER uses for the same test. This is the
+# drift TEST_CODE_CANON exists to bridge, reproduced here rather than hidden:
+# four tests are spelled differently on the two sides, and RS_INTERIM has no
+# planner counterpart at all - it is requested but never scheduled.
+PLANNER_NAME = {
+    "CE": "CE", "RE": "RE", "ESD": "ESD", "EFT": "EFT", "CRF": "CRF",
+    "SURGE": "Surge",
+    "RS": "RS_RI",
+    "HARMONIC": "Harmonic",
+    "FLICKER": "VoltageFlicker",
+    "POWER_FREQ": "PFMF",
+    "VOLTAGE_DIPS": "VoltageDips",
+    "RS_INTERIM": None,
+}
+
+# The request's child rows. Without these the datasheet form opens with empty
+# EUT identity, no standards and no supply voltages - it works, but there is
+# nothing to look at. Values copied in shape from a real request.
+SERVICE_TYPES = ("Compliance",)
+PRODUCT_STANDARDS = (
+    "IEC 61326-1 : 2020",
+    "EN 61326-1 : 2021",
+    "FCC Subpart 15B : 2024",
+    "ICES-001 Issue 5 : 2020",
+)
+SUPPLY_VF = (
+    '{"voltage": "230", "frequency": "50", "notes": "n/a"}',
+    '{"voltage": "120", "frequency": "60", "notes": "n/a"}',
+)
+FUNCTIONAL_MODES = ("Normal operating mode",)
+SERIAL_NUMBERS = ("FSES-2026-0001",)
+
 DEFAULT_TCO = "IEC-EMC-010"
 DEFAULT_JOB = "TFS-EMC-2026-010"
 DEFAULT_ENGINEER = 7          # Kondababu Arjilli; --engineer to change
+
+_CHILD_TABLES = ("iec_emc_request_service_types", "iec_emc_request_product_standards",
+                 "iec_emc_request_supply_vf", "iec_emc_request_functional_modes",
+                 "iec_emc_request_serial_numbers")
 
 
 def _now():
@@ -95,11 +131,16 @@ def delete(app, tco):
                 print("Nothing to delete - no request with tco_id %s." % tco)
                 return
             rid = row[0]
+            cur.execute("DELETE FROM planner_entries WHERE test_request_id = %s", (rid,))
+            planners = cur.rowcount
+            for child in _CHILD_TABLES:
+                cur.execute("DELETE FROM `%s` WHERE request_id = %%s" % child, (rid,))
             cur.execute("DELETE FROM iec_emc_request_tests WHERE request_id = %s", (rid,))
             n = cur.rowcount
             cur.execute("DELETE FROM iec_emc_requests WHERE id = %s", (rid,))
         conn.commit()
-        print("Deleted request %s (id=%s) and its %d test rows." % (tco, rid, n))
+        print("Deleted request %s (id=%s): %d tests, %d planner entries, child rows."
+              % (tco, rid, n, planners))
     finally:
         conn.close()
 
@@ -117,6 +158,10 @@ def create(app, tco, job, engineer_id):
             existing = cur.fetchone()
             if existing:
                 rid = existing[0]
+                cur.execute("DELETE FROM planner_entries WHERE test_request_id = %s",
+                            (rid,))
+                for child in _CHILD_TABLES:
+                    cur.execute("DELETE FROM `%s` WHERE request_id = %%s" % child, (rid,))
                 cur.execute("DELETE FROM iec_emc_request_tests WHERE request_id = %s",
                             (rid,))
                 cur.execute(
@@ -162,6 +207,44 @@ def create(app, tco, job, engineer_id):
                 "  assigned_engineer_name, planned_start_date, planned_end_date,"
                 "  created_at, updated_at"
                 ") VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", rows)
+
+            # The request's child rows - what the datasheet form prefills from.
+            for table, column, values in (
+                    ("iec_emc_request_service_types", "service_type", SERVICE_TYPES),
+                    ("iec_emc_request_product_standards", "standard_value",
+                     PRODUCT_STANDARDS),
+                    ("iec_emc_request_supply_vf", "value_text", SUPPLY_VF),
+                    ("iec_emc_request_functional_modes", "mode_value",
+                     FUNCTIONAL_MODES),
+                    ("iec_emc_request_serial_numbers", "serial_number",
+                     SERIAL_NUMBERS)):
+                cur.executemany(
+                    "INSERT INTO `%s` (request_id, `%s`, sort_order) "
+                    "VALUES (%%s,%%s,%%s)" % (table, column),
+                    [(rid, v, i) for i, v in enumerate(values)])
+
+            # PLANNER ENTRIES. This is the step that makes the datasheet form
+            # reachable: the form route is /datasheet/g/<code>/<assignment_id>,
+            # and assignment_id is a planner_entries.id. A request with tests
+            # but no planner rows shows "Assign Test First" and nothing opens.
+            planner_rows = []
+            for code in TEST_CODES:
+                name = PLANNER_NAME.get(code)
+                if not name:
+                    continue        # RS_INTERIM is requested but never scheduled
+                planner_rows.append((
+                    eng_name, eng_id, eng_id, name, tco, rid,
+                    today, today, "09:00:00", "17:00:00", 8.0,
+                    "Seeded assignment for datasheet form testing",
+                    "test", 0, "in_progress", now, now))
+            cur.executemany(
+                "INSERT INTO planner_entries ("
+                "  test_person_name, engineer_user_id, created_by_user_id,"
+                "  test_name, tco_id, test_request_id, start_date, end_date,"
+                "  start_time, end_time, total_hours, event_description,"
+                "  event_type, is_all_day, status, created_at, updated_at"
+                ") VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                planner_rows)
         conn.commit()
 
         with conn.cursor() as cur:
@@ -170,10 +253,25 @@ def create(app, tco, job, engineer_id):
                 "FROM iec_emc_request_tests t WHERE t.request_id = %s "
                 "ORDER BY t.test_code", (rid,))
             got = cur.fetchall()
-        print("  %d tests, every one selected and assigned to %s (id=%s):"
+        print("  %d tests, every one selected and assigned to %s (id=%s)."
               % (len(got), eng_name, eng_id))
-        for code, sel, who in got:
-            print("     %-14s selected=%s  %s" % (code, sel, who))
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, test_name, status FROM planner_entries "
+                        "WHERE test_request_id = %s ORDER BY id", (rid,))
+            entries = cur.fetchall()
+        print("  %d scheduled - open any of these to fill the datasheet form:"
+              % len(entries))
+        for pid, name, status in entries:
+            # CE is excluded from the generic form route (_valid() refuses it)
+            # and has its own at /datasheet/ce/<id>/form - it predates the
+            # schema-driven forms and still uses its own template.
+            url = ("/datasheet/ce/%d/form" % pid if name.upper() == "CE"
+                   else "/datasheet/g/%s/%d/form" % (name.lower(), pid))
+            print("     %-15s %-34s (%s)" % (name, url, status))
+        skipped = [c for c in TEST_CODES if not PLANNER_NAME.get(c)]
+        if skipped:
+            print("  not scheduled (no planner counterpart): %s" % ", ".join(skipped))
         return rid
     except Exception:
         conn.rollback()
