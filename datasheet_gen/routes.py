@@ -183,6 +183,39 @@ def ce_form(assignment_id):
                 prefill["modifications"] = modifications
         except Exception:  # noqa: BLE001 - a lost grid must not blank the form
             pass
+
+    # MEASUREMENT DATA. The form builds these client-side - one repeated block
+    # per Test, each with its own index - and the page always started with a
+    # single empty one, so a refresh wiped the measurement tables off the screen
+    # even though every meas_* key was still in form_json.
+    #
+    # addTest(label, data) could already restore them: it takes saved column
+    # headings, rows and captions. Nothing ever called it with a draft. So the
+    # records are rebuilt here with service._measurement_records - the same
+    # function the document generator uses, which already knows how the indexed
+    # keys pair up - and handed to the template to replay.
+    #
+    # Rows are passed as their `cells` arrays rather than the dicts: makeMeasRow
+    # fills positionally against the column headings actually rendered, so a
+    # table the engineer narrowed to two columns comes back with two.
+    meas_records = []
+    if draft:
+        try:
+            from .service import _measurement_records
+            for rec in _measurement_records(draft) or []:
+                meas_records.append({
+                    "label": rec.get("label") or "",
+                    "line_headers": rec.get("line_headers") or [],
+                    "neutral_headers": rec.get("neutral_headers") or [],
+                    "line_rows": [r.get("cells") or []
+                                  for r in (rec.get("line_rows") or [])],
+                    "neutral_rows": [r.get("cells") or []
+                                     for r in (rec.get("neutral_rows") or [])],
+                    "line_caption": rec.get("line_caption") or "",
+                    "neutral_caption": rec.get("neutral_caption") or "",
+                })
+        except Exception:  # noqa: BLE001 - fall back to one empty Test
+            meas_records = []
     # {field_key: basename} so the form can preview each draft image on reload
     saved_images = {k: os.path.basename(p)
                     for k, p in R.images_from_record(record).items()
@@ -193,6 +226,7 @@ def ce_form(assignment_id):
         tco_id=assignment.tco_id or "",
         test_name=assignment.test_name or "CE",
         prefill=prefill,
+        meas_records=meas_records,
         draft_status=draft_status,
         saved_images=saved_images,
         reviewers=_reviewer_candidates(),

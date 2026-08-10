@@ -1588,7 +1588,15 @@
       });
     }
 
-    addTest();   // start with one empty Measurement Data Test
+    // Replay the Measurement Data Tests a saved draft had - labels, column
+    // headings, rows and any caption the engineer typed. Only when there is no
+    // draft does the page start with one empty Test, which is what it used to
+    // do unconditionally, losing the tables on every refresh.
+    (function () {
+      var saved = {{ meas_records|tojson }};
+      if (saved && saved.length) { saved.forEach(function (r) { addTest(r.label, r); }); }
+      else { addTest(); }
+    })();
 
     // Re-create the additional Test Setup picture slots a saved draft had, keeping each
     // slot's original index so the image already stored under that name still shows.
