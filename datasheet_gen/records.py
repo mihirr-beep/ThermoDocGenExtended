@@ -304,6 +304,26 @@ def upsert_record(assignment, test_code, form_data, images, status,
         merged_images.update(_stored_images(assignment.id))
         merged_images.update(posted)
 
+    # MERGE onto what is already stored, rather than replacing it.
+    #
+    # The browser does not post the whole form. buildDraftFormData skips every
+    # `el.disabled` input, and the datasheets disable whole sections as a matter
+    # of course - the split-row day boxes, conditional blocks, anything greyed
+    # out. Writing form_json wholesale therefore DELETED every disabled field on
+    # each save, and the engineer saw those boxes empty on the next refresh with
+    # nothing to explain it. The generic_form comment about a day "starting
+    # empty" after the section count is lowered and raised is the same
+    # mechanism, noticed in one place and general everywhere.
+    #
+    # Merging makes the rule: a save may change a field, and may clear one - an
+    # empty box still posts, as "" - but can never delete a field it did not
+    # mention. Costs one indexed read of the row about to be written.
+    #
+    # Arrays are replaced, not appended: a grid that loses a row posts the
+    # shorter list and the shorter list wins, which is what deleting a row must
+    # mean.
+    form_data = dict(_stored_form(assignment.id), **(form_data or {}))
+
     common = _extract_common(form_data)
     uid = getattr(user, "id", None)
     now = _ist_now()
@@ -384,6 +404,19 @@ def _stored_images(assignment_id):
             text("SELECT images_json FROM datasheet_records WHERE planner_entry_id = :pid"),
             {"pid": assignment_id}).first()
         return json.loads(row[0]) if row and row[0] else {}
+    except Exception:  # noqa: BLE001 - a lost merge must not block the save
+        return {}
+
+
+def _stored_form(assignment_id):
+    """The form as last saved, so a partial post can be merged onto it."""
+    from models import db
+    try:
+        row = db.session.execute(
+            text("SELECT form_json FROM datasheet_records WHERE planner_entry_id = :pid"),
+            {"pid": assignment_id}).first()
+        stored = json.loads(row[0]) if row and row[0] else {}
+        return stored if isinstance(stored, dict) else {}
     except Exception:  # noqa: BLE001 - a lost merge must not block the save
         return {}
 
