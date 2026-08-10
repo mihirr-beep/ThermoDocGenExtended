@@ -157,6 +157,32 @@ def ce_form(assignment_id):
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 prefill[k] = v
+
+        # The loop above restores SCALARS only - every repeating table on this
+        # form posts as "name[]" and was therefore skipped, so the equipment and
+        # modification rows an engineer typed were saved into form_json and then
+        # never shown again. The generic datasheets rebuild their grids from the
+        # schema; CE has no schema, so it is done explicitly here.
+        #
+        # service._rows already pairs these arrays into the exact row shape the
+        # template loops over - it is what the document generator uses - so the
+        # pairing rule lives in one place rather than two.
+        try:
+            from .service import _rows
+            equipment = _rows(
+                draft,
+                ["eq_name[]", "eq_make[]", "eq_model[]", "eq_serial[]", "eq_cal_due[]"],
+                ["name", "make", "model", "serial", "cal_due"])
+            if equipment:
+                prefill["equipment"] = equipment
+            modifications = _rows(
+                draft,
+                ["mod_state[]", "mod_description[]", "mod_fitted_by[]", "mod_date[]"],
+                ["state", "description", "fitted_by", "date"])
+            if modifications:
+                prefill["modifications"] = modifications
+        except Exception:  # noqa: BLE001 - a lost grid must not blank the form
+            pass
     # {field_key: basename} so the form can preview each draft image on reload
     saved_images = {k: os.path.basename(p)
                     for k, p in R.images_from_record(record).items()

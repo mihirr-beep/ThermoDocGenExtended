@@ -126,6 +126,26 @@ def g_form(code, assignment_id):
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 pre[k] = v
+
+        # The observation legend is SAVED but was never handed back. The form
+        # posts it as obs_legend_code[] / obs_legend_desc[] - two parallel
+        # arrays - while the template seeds the legend widget from
+        # prefill['obs_legend'], a key nothing ever set. So an engineer typed a
+        # description, saved, refreshed, and found the box empty again, with the
+        # text sitting in form_json the whole time.
+        #
+        # The loop above cannot do it: those keys end in "[]" and are skipped,
+        # and the shape the widget wants is [{code, desc}], not two lists.
+        # form_extract.observation_legend already pairs them up for the document
+        # generator, so the same function is reused here rather than a second
+        # copy of the pairing rule.
+        try:
+            from .form_extract import observation_legend
+            legend = observation_legend(code, draft)
+            if legend:
+                pre["obs_legend"] = [{"code": c, "desc": d} for c, d in legend]
+        except Exception:  # noqa: BLE001 - a lost legend must not blank the form
+            pass
         if code in ("RE", "RS_RI", "SURGE", "HARMONIC", "VOLTAGEFLICKER",
                     "VOLTAGEDIPS", "CRF", "PFMF"):
             # A draft saved before the format corrections must not resurrect legacy

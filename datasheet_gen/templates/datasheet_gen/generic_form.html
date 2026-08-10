@@ -80,6 +80,11 @@
     <a href="{{ url_for('assigned_test') }}" class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">&larr; Back</a>
   </div>
 
+  {# The saved observation legend, for EVERY legend host on this page. Four
+     hosts carried their own seed block and six did not, so on those six a
+     description the engineer typed was stored in form_json and then never
+     shown again. rebuildObsLegend falls back to this one. #}
+  <script type="application/json" id="obs-legend-seed-all">{{ prefill.get('obs_legend', [])|tojson }}</script>
   <form id="dsForm" enctype="multipart/form-data" class="space-y-6">
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
@@ -1549,7 +1554,13 @@
   });
   document.addEventListener('DOMContentLoaded', function () {
     __obsLegendHosts().forEach(function (host) {
-      var seedEl = document.getElementById(host.id + '-seed');
+      // Four hosts ship their own "<id>-seed" block; six never did, so a saved
+      // legend could not come back on those datasheets no matter what the
+      // server prefilled. #obs-legend-seed-all is the fallback every host
+      // shares, and it means a legend host added later restores by default
+      // instead of silently losing text.
+      var seedEl = document.getElementById(host.id + '-seed')
+                || document.getElementById('obs-legend-seed-all');
       if (seedEl) {
         try {
           var seed = JSON.parse(seedEl.textContent || '[]');
