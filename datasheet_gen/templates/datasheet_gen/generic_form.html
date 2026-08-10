@@ -3606,7 +3606,20 @@
     if (!silent && typeof showMessage === 'function') showMessage('Observation tables built from the selected Test Voltage.', 'success');
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
-  var surgeLegendComments = {};
+  // Seeded from the saved draft, the way EFT and PFMF are. It was left empty
+  // here, so SURGE could only ever show SURGE_LEGEND_DEFAULTS: the code with a
+  // standard wording appeared filled and every description the engineer typed
+  // himself came back blank, with the text sitting in
+  // surge_obs_legend_desc[] in form_json.
+  var surgeLegendComments = (function () {
+    var out = {};
+    try {
+      ({{ prefill.get('surge_obs_legend', [])|tojson }} || []).forEach(function (row) {
+        if (row && row.code) out[row.code] = row.desc || '';
+      });
+    } catch (e) {}
+    return out;
+  })();
   function surgeUniqueObsCodes() {
     var host = document.getElementById('surge-obs-records'); if (!host) return [];
     var seen = {};
