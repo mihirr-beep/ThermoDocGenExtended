@@ -60,38 +60,44 @@ from .ledger import Ledger
 # Set NLP_SINGLE_AUTHOR=1 to run the collapsed variant and re-measure.
 USE_DOMAIN_WORKERS = os.environ.get("NLP_SINGLE_AUTHOR", "") != "1"
 
-# gpt-4o-mini, chosen for cost. Measured per question, cache-adjusted:
-# ~$0.0015 against ~$0.025 on gpt-4o - roughly 17x, which at this lab's
-# volume is the difference between $1 and $30 a month.
+# gpt-5-nano, chosen on measured accuracy at a price that is not the deciding
+# factor. Three questions gpt-4o-mini gets wrong or nearly wrong, same prompts,
+# same data, same afternoon:
 #
-# WHAT IS AND IS NOT KNOWN ABOUT THE ACCURACY COST OF THIS CHOICE:
+#   question                    truth   gpt-4o-mini      gpt-5-nano
+#   most-used instruments       4,4,3   nine tied at 4   correct
+#   requested tests unfilled    78      12               78
+#   requested, never scheduled  64      64               64
 #
-#   gpt-4o, WITH today's fixes, on the 8 complex questions:  16/16 over two
-#   runs, 0 wrong.
-#   gpt-4o-mini, WITHOUT them, measured earlier:             4-7/8, and it
-#   got both of the hard questions wrong every time.
-#   gpt-4o-mini, WITH them:                                  NOT MEASURED.
+# mini lost the first one to the datasheet_equipment -> equipment fan-out,
+# which RELATIONSHIPS warns about and run_sql now reports; and on the second it
+# ignored a reviewed figure of 78 that was already computed and sitting in its
+# prompt. nano heeded both.
 #
-# That last line is the one that matters and it is blank. The fixes - lab
-# rules, declared join paths, pre-computed metric rows - all replace
-# reasoning the model had to do with facts handed to it directly, and that
-# is worth more to a weaker model than a stronger one, so mini's number has
-# probably moved. Probably. Nobody has run it.
+# Cost, measured on those three - which are deliberately the HARD ones, so this
+# is an upper bound: $0.00497 a question, about $1.50 a month at 300 questions.
+# Its input is a third of mini's and its cached rate a tenth, which pays for a
+# lot of reasoning.
 #
-# To find out (~$0.15 and about four minutes):
-#     python -m nlp_search.evals --suite useful --repeat 2
-# and against the gpt-4o baseline for comparison:
-#     NLP_SEARCH_MODEL=gpt-4o python -m nlp_search.evals --suite useful --repeat 2
+# THE PRICE IS PAID IN LATENCY, NOT DOLLARS. The hard question took 129 seconds
+# against mini's 16. That drove two other changes: the ledger's time budget
+# (60s would have cut this question off mid-work) and the chat panel, which
+# showed three dots with no sense of progress.
 #
-# Until then, treat "mini is fine now" as a hope rather than a finding. The
-# questions to watch are the multi-domain ones - job_completeness,
-# never_scheduled, equipment_by_usage - because those are where the weaker
-# model failed before.
+# Reasoning effort is deliberately NOT set. 'low' answered the hard question
+# 82 instead of 78; 'minimal' stopped it acting at all - it ran the SQL and
+# then replied "do you want me to proceed?". The reasoning tokens ARE the
+# correct answer. NLP_REASONING_EFFORT overrides if you want to re-measure.
 #
-# Set NLP_SEARCH_MODEL=gpt-4o to switch back, per question or per
-# deployment. Nothing else needs to change.
-DEFAULT_MODEL = "gpt-4o-mini"
+# NLP_SEARCH_MODEL switches models per question or per deployment; gpt-4o-mini
+# and gpt-4o both still work and neither is sent a reasoning parameter.
+DEFAULT_MODEL = "gpt-5-nano"
 MAX_TURNS = 16
+# Wall-clock budget for one question, handed to the Ledger. 60s was fine
+# for gpt-4o-mini; a reasoning model spends that much thinking, and the
+# question this default was chosen FOR took 129s. Raised so the budget
+# stops runaways rather than stopping normal work.
+DEADLINE_S = int(os.environ.get("NLP_DEADLINE_S", "180"))
 MAX_QUESTION_CHARS = 2000
 
 _INSTRUCTIONS = """You are the EMC Test Lab data assistant for Thermo Fisher's test-plan and
@@ -453,10 +459,14 @@ def _build_orchestrator(db_params, ledger, model=None, kind=intent.DATA,
         instructions += intent.SCHEMA_DIRECTIVE.format(
             code_hint=(" and test_code=%r" % code_hint) if code_hint else "")
 
+    chosen = model or os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL)
+    from .model_settings import for_model
+    settings = for_model(chosen)
     return Agent(
         name="EMC Lab Data Assistant",
         instructions=instructions,
-        model=model or os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL),
+        model=chosen,
+        **({"model_settings": settings} if settings else {}),
         tools=tools)
 
 
@@ -617,7 +627,7 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True):
 
     from . import audit
     model_name = os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL)
-    ledger = Ledger()
+    ledger = Ledger(deadline_s=DEADLINE_S)
     t0 = time.time()
     trace_id = None
     # Route before retrieving. A question about WHERE something is recorded is

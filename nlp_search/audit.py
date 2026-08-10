@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS nlp_search_audit (
 PRICING = {
     "gpt-4o-mini": (0.15, 0.60, 0.075),
     "gpt-4o": (2.50, 10.0, 1.25),
+    # The GPT-5 tier. Two things about it differ from the 4o tier and both
+    # matter here. The cached rate is a TENTH of input rather than a half,
+    # which suits a pipeline where 68% of input is cached; and output is
+    # dear - $2.00 against gpt-4o-mini's $0.60 - which only shows up on the
+    # bill if the model emits reasoning tokens, since those bill as output.
+    "gpt-5-mini": (0.25, 2.00, 0.025),
+    "gpt-5-nano": (0.05, 0.40, 0.005),
+    "gpt-5": (1.25, 10.00, 0.125),
     "gpt-4.1": (2.00, 8.00, 0.50),
     "gpt-4.1-mini": (0.40, 1.60, 0.10),
     "gpt-4.1-nano": (0.10, 0.40, 0.025),

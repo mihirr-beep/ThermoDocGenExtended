@@ -31,7 +31,7 @@ def _full_catalog():
     return catalog_prompt_text(None)
 
 # Follows the orchestrator - see DEFAULT_MODEL there for why.
-DEFAULT_WORKER_MODEL = "gpt-4o-mini"
+DEFAULT_WORKER_MODEL = "gpt-5-nano"
 
 _WORKER_INSTRUCTIONS = """You are the {title} specialist for a Thermo Fisher EMC test lab.
 
@@ -314,12 +314,16 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
         if block:
             instructions += block
 
+    chosen = model or os.environ.get("NLP_WORKER_MODEL",
+                                     os.environ.get("NLP_SEARCH_MODEL",
+                                                    DEFAULT_WORKER_MODEL))
+    from .model_settings import for_model
+    settings = for_model(chosen)
     return Agent(
         name="%s specialist" % domain,
         instructions=instructions,
-        model=model or os.environ.get("NLP_WORKER_MODEL",
-                                      os.environ.get("NLP_SEARCH_MODEL",
-                                                     DEFAULT_WORKER_MODEL)),
+        model=chosen,
+        **({"model_settings": settings} if settings else {}),
         tools=[lab_metric, describe_table, sample_rows, profile_column,
                run_sql, list_values, resolve_entity, read_grid])
 

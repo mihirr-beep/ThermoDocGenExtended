@@ -996,6 +996,14 @@
       .labai-chip:hover{background:#f5f3ff;}
       .labai-dots span{display:inline-block;width:6px;height:6px;margin:0 1px;background:#94a3b8;border-radius:50%;animation:labai-blink 1.2s infinite both;}
       .labai-dots span:nth-child(2){animation-delay:.2s;} .labai-dots span:nth-child(3){animation-delay:.4s;}
+      /* A reasoning model can take two minutes on a hard question. Three
+         static dots for that long reads as a hung page, so the wait says what
+         it is doing and how long it has been going. */
+      .labai-wait{display:flex;align-items:center;gap:8px;}
+      .labai-wait-txt{font-size:12px;color:#64748b;}
+      .labai-wait-el{font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums;}
+      .labai-wait.slow .labai-wait-txt{color:#b45309;}
+      .labai-note{margin-top:8px;font-size:11px;color:#94a3b8;line-height:1.45;}
       @keyframes labai-blink{0%,80%,100%{opacity:.3;}40%{opacity:1;}}
     </style>
     <button id="labai-fab" title="Ask the Lab Data" aria-label="Ask the Lab Data">
@@ -1013,6 +1021,8 @@
       <div class="labai-body" id="labai-body">
         <div class="labai-empty" id="labai-empty">
           Ask about requests, datasheets, statuses, assignments — or what a generated datasheet says.
+          <div class="labai-note">Answers are checked against the database before you see them, so a
+          question can take 20&ndash;60 seconds.</div>
           <div class="labai-chips">
             <button class="labai-chip">How many datasheets are waiting for peer review?</button>
             <button class="labai-chip">List all EMC requests with their status</button>
@@ -1128,12 +1138,50 @@
           if(role==='user'){ b.textContent=text; } else { renderAnswer(b, text); }
           w.appendChild(b); body.appendChild(w); scrollDown(); return w;
         }
+        // Staged, because the honest expectation changes as the wait grows.
+        // Measured on the current model: a simple question lands in ~20s, a
+        // cross-domain one took 129s. Anything past ~150s is a real problem and
+        // says so rather than pretending.
+        var WAIT_STAGES = [
+          {at:   0, text: 'Reading your question…'},
+          {at:   4, text: 'Querying the lab database…'},
+          {at:  12, text: 'Working through it — this can take up to a minute.'},
+          {at:  35, text: 'Still going. Multi-part questions take longer.'},
+          {at:  75, text: 'Still working — checking the answer against the rows.'},
+          {at: 150, text: 'Taking longer than usual. It has not failed; you can keep waiting or reload.', slow: true}
+        ];
         function typing(){
           var w=document.createElement('div'); w.className='labai-msg a';
           var b=document.createElement('div'); b.className='labai-bub';
+          var wrap=document.createElement('div'); wrap.className='labai-wait';
           var d=document.createElement('span'); d.className='labai-dots';
           d.appendChild(document.createElement('span')); d.appendChild(document.createElement('span')); d.appendChild(document.createElement('span'));
-          b.appendChild(d); w.appendChild(b); body.appendChild(w); scrollDown(); return w;
+          var txt=document.createElement('span'); txt.className='labai-wait-txt';
+          var el=document.createElement('span'); el.className='labai-wait-el';
+          wrap.appendChild(d); wrap.appendChild(txt); wrap.appendChild(el);
+          b.appendChild(wrap); w.appendChild(b); body.appendChild(w); scrollDown();
+          var t0=Date.now(), stage=-1;
+          function tick(){
+            var secs=Math.floor((Date.now()-t0)/1000);
+            el.textContent = secs < 1 ? '' : (secs < 60 ? secs+'s'
+                             : Math.floor(secs/60)+'m '+(secs%60)+'s');
+            for (var i=WAIT_STAGES.length-1; i>=0; i--){
+              if (secs >= WAIT_STAGES[i].at){
+                if (stage !== i){
+                  stage = i;
+                  txt.textContent = WAIT_STAGES[i].text;
+                  wrap.classList.toggle('slow', !!WAIT_STAGES[i].slow);
+                }
+                break;
+              }
+            }
+          }
+          tick();
+          var iv=setInterval(tick, 1000);
+          // the caller removes this element; stop the timer with it
+          var origRemove = w.remove.bind(w);
+          w.remove = function(){ clearInterval(iv); origRemove(); };
+          return w;
         }
         function routeBadge(route){
           // route is now the worker(s) that did the work: "datasheets",
