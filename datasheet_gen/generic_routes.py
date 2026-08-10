@@ -140,10 +140,19 @@ def g_form(code, assignment_id):
         # generator, so the same function is reused here rather than a second
         # copy of the pairing rule.
         try:
-            from .form_extract import observation_legend
+            from .form_extract import LEGEND_PREFIX, observation_legend
             legend = observation_legend(code, draft)
             if legend:
-                pre["obs_legend"] = [{"code": c, "desc": d} for c, d in legend]
+                payload = [{"code": c, "desc": d} for c, d in legend]
+                # Under BOTH names. Most datasheets seed from prefill
+                # ['obs_legend']; EFT and PFMF have their own legend widget and
+                # read the namespaced key instead. Setting only the bare one
+                # left those two looking like the legend had never been saved,
+                # which is exactly what it looked like.
+                pre["obs_legend"] = payload
+                prefixed = LEGEND_PREFIX.get(code)
+                if prefixed:
+                    pre[prefixed] = payload
         except Exception:  # noqa: BLE001 - a lost legend must not blank the form
             pass
         if code in ("RE", "RS_RI", "SURGE", "HARMONIC", "VOLTAGEFLICKER",

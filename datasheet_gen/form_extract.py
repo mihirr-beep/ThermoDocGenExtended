@@ -196,11 +196,18 @@ def _crf_rows(form, side):
     return rows
 
 
+# Three datasheets namespace their legend fields; everything else uses the
+# bare name. Exported because the form route needs the SAME mapping to hand a
+# saved legend back - EFT and PFMF read prefill['<prefix>'], not
+# prefill['obs_legend'], and seeding the wrong key looks exactly like the
+# legend was never saved.
+LEGEND_PREFIX = {"EFT": "eft_obs_legend", "SURGE": "surge_obs_legend",
+                 "PFMF": "pfmf_obs_legend"}
+
+
 def observation_legend(code, form):
     """[(code, description)] for the A/B/C/D legend under an observation grid."""
-    prefixes = {"EFT": "eft_obs_legend", "SURGE": "surge_obs_legend",
-                "PFMF": "pfmf_obs_legend"}
-    base = prefixes.get(code, "obs_legend")
+    base = LEGEND_PREFIX.get(code, "obs_legend")
     codes = form.get(base + "_code[]") or []
     descs = form.get(base + "_desc[]") or []
     codes = codes if isinstance(codes, list) else [codes]
