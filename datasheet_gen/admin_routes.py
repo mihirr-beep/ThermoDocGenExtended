@@ -17,7 +17,8 @@ from flask import (Blueprint, request, jsonify, render_template, redirect,
 from flask_login import login_required, current_user
 
 from models import db
-from .fixed_store import DatasheetFixedValue, BasicStandardMap, get_fixed_values
+from .fixed_store import (DatasheetFixedValue, BasicStandardMap,
+                          get_fixed_values, invalidate_cache)
 
 datasheet_admin_bp = Blueprint("datasheet_admin", __name__)
 
@@ -213,6 +214,7 @@ def save_datasheet(code):
     row.values_json = json.dumps(parsed, ensure_ascii=False)
     row.updated_by = getattr(current_user, "id", None)
     db.session.commit()
+    invalidate_cache()   # admin edited a cached table
     flash(f"Saved {code} values.", "success")
     return redirect(url_for("datasheet_admin.config_datasheet", code=code))
 
@@ -256,6 +258,7 @@ def add_map():
         active=True,
     ))
     db.session.commit()
+    invalidate_cache()   # admin edited a cached table
     flash("Mapping added.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))
 
@@ -274,6 +277,7 @@ def update_map(mid):
     m.active = bool(request.form.get("active"))
     # test_code / is_default / sort_order are managed internally — left unchanged
     db.session.commit()
+    invalidate_cache()   # admin edited a cached table
     flash("Mapping updated.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))
 
@@ -286,5 +290,6 @@ def delete_map(mid):
     if m is not None:
         db.session.delete(m)
         db.session.commit()
+        invalidate_cache()   # admin edited a cached table
         flash("Mapping row deleted.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))

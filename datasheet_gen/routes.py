@@ -148,16 +148,18 @@ def ce_form(assignment_id):
     prefill = collect_ce_prefill(_parent_request(assignment), assignment)
     # Resume a saved draft/record: scalar values the engineer already entered win
     # over the DB auto-fill, so re-opening the form continues where they left off.
-    draft = R.draft_form(assignment.id)
+    # One fetch, three uses - see the note in records.form_from_record.
+    record = R.get_record_for_assignment(assignment.id)
+    draft = R.form_from_record(record)
     draft_status = ""
     if draft:
-        rec = R.get_record_for_assignment(assignment.id)
-        draft_status = (rec or {}).get("status", "")
+        draft_status = (record or {}).get("status", "")
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 prefill[k] = v
     # {field_key: basename} so the form can preview each draft image on reload
-    saved_images = {k: os.path.basename(p) for k, p in R.draft_images(assignment.id).items()
+    saved_images = {k: os.path.basename(p)
+                    for k, p in R.images_from_record(record).items()
                     if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/ce_form.html",
@@ -250,7 +252,11 @@ def save_draft_ce():
         if not _can_access(assignment):
             return jsonify(success=False, message="Access denied"), 403
         images = _save_images(files, assignment_id)
-        R.upsert_record(assignment, "CE", form_data, images, R.DRAFT, user=current_user)
+        # the Save Draft button marks its save; the autosave timer does not, and
+        # only pays for the header projection (records.upsert_record)
+        full = bool(form_data.pop("_full_save", None))
+        R.upsert_record(assignment, "CE", form_data, images, R.DRAFT,
+                        user=current_user, full_projection=full)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
@@ -408,6 +414,12 @@ def generate_ce():
         try:
             R.upsert_record(assignment, "CE", form_data, images, R.SUBMITTED,
                             generated_file_path=output_path, user=current_user)
+            # freeze what the reviewer is being asked to look at, and start the
+            # audit trail for this review
+            from .projection import record_transition
+            record_transition(assignment.id, "Peer Review", actor=current_user,
+                              from_status="Draft", snapshot=True, submitted=True,
+                              comment="Sent to %s for peer review." % reviewer.username)
         except Exception as exc:  # noqa: BLE001
             db.session.rollback()
             current_app.logger.error("CE datasheet record save failed: %s", exc)

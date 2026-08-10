@@ -281,26 +281,43 @@ def can_view(record, user):
 # --------------------------------------------------------------------------
 
 def upsert_record(assignment, test_code, form_data, images, status,
-                  generated_file_path=None, user=None):
+                  generated_file_path=None, user=None, full_projection=None):
     """Insert or update the single datasheet record for this assignment.
 
     Draft images accumulate across saves; a submit merges in any prior draft
-    images too (so the engineer needn't re-attach on every save).
+    images too (so the engineer needn't re-attach on every save). That merge is
+    the only reason to read the row first, so it is skipped when no new image
+    was posted - which is every autosave after the uploads are done, and the
+    row carries a 3-6.5 KB form_json blob over a remote connection.
+
+    After the record is committed the queryable tables are refreshed from it,
+    in two tiers: the header alone (one statement) unless ``full_projection``
+    asks for everything, which submits and explicit saves do. See projection.py.
     """
     from models import db
-    existing = get_record_for_assignment(assignment.id)
 
+    # merge the stored images only when this save actually brought new ones;
+    # otherwise images_json is left exactly as it is (see the UPDATE clause)
+    posted = {k: v for k, v in (images or {}).items() if v}
     merged_images = {}
-    if existing and existing.get("images_json"):
-        try:
-            merged_images.update(json.loads(existing["images_json"]))
-        except (ValueError, TypeError):
-            pass
-    merged_images.update({k: v for k, v in (images or {}).items() if v})
+    if posted:
+        merged_images.update(_stored_images(assignment.id))
+        merged_images.update(posted)
 
     common = _extract_common(form_data)
     uid = getattr(user, "id", None)
     now = _ist_now()
+    # read off the assignment BEFORE the commit below: SQLAlchemy expires every
+    # loaded object on commit, so the projection would otherwise re-SELECT it
+    entry_fields = {
+        "id": assignment.id,
+        "tco_id": getattr(assignment, "tco_id", None),
+        "test_request_id": getattr(assignment, "test_request_id", None),
+        "engineer_user_id": getattr(assignment, "engineer_user_id", None),
+        "peer_reviewer_user_id": getattr(assignment, "peer_reviewer_user_id", None),
+        "test_person_name": getattr(assignment, "test_person_name", None),
+        "status": getattr(assignment, "status", None),
+    }
     # normalise to the documented result ENUM ('Pass'/'Fail'/'Incomplete');
     # unknown/blank -> NULL (the raw value is preserved in form_json regardless)
     result = {"PASS": "Pass", "FAIL": "Fail", "INCOMPLETE": "Incomplete"}.get(
@@ -321,7 +338,9 @@ def upsert_record(assignment, test_code, form_data, images, status,
         "status": status,
         "form_json": json.dumps(form_data, ensure_ascii=False, default=str),
         "images_json": json.dumps(merged_images, ensure_ascii=False),
-        "generated_file_path": generated_file_path or (existing or {}).get("generated_file_path"),
+        # a blank one must not wipe the path a previous save recorded, hence
+        # the COALESCE below rather than a read-then-write here
+        "generated_file_path": generated_file_path,
         "created_by_user_id": uid,
         "now": now,
     }
@@ -342,35 +361,107 @@ def upsert_record(assignment, test_code, form_data, images, status,
            eut_serial_number=VALUES(eut_serial_number), test_date=VALUES(test_date),
            result=VALUES(result), tested_by_name=VALUES(tested_by_name),
            tested_by_user_id=VALUES(tested_by_user_id), status=VALUES(status),
-           form_json=VALUES(form_json), images_json=VALUES(images_json),
+           form_json=VALUES(form_json), """ + (
+           "images_json=VALUES(images_json), " if posted else "") + """
            generated_file_path=COALESCE(VALUES(generated_file_path), generated_file_path),
            updated_at=VALUES(updated_at)
     """)
     db.session.execute(sql, params)
     db.session.commit()
+
+    _refresh_projection(entry_fields, params,
+                        full=(status == SUBMITTED if full_projection is None
+                              else full_projection),
+                        images_known=bool(posted))
     return merged_images
+
+
+def _stored_images(assignment_id):
+    """{field: path} already recorded for this assignment. One narrow read."""
+    from models import db
+    try:
+        row = db.session.execute(
+            text("SELECT images_json FROM datasheet_records WHERE planner_entry_id = :pid"),
+            {"pid": assignment_id}).first()
+        return json.loads(row[0]) if row and row[0] else {}
+    except Exception:  # noqa: BLE001 - a lost merge must not block the save
+        return {}
+
+
+def _refresh_projection(entry_fields, params, full, images_known):
+    """Reflect the just-saved record into the queryable tables.
+
+    Best-effort and in its own transaction, after form_json is already
+    committed: form_json is the source of truth, so a projection failure must
+    never fail a save the engineer has been told succeeded. It can always be
+    rebuilt with ``python -m datasheet_gen.projection``.
+
+    Built from the parameters we just wrote rather than by reading the row back,
+    so the header tier costs exactly one extra statement. The parent request is
+    fetched only for a full projection - it supplies three columns that never
+    change, and the autosave tier must not spend a round trip on them.
+    """
+    from models import db
+    try:
+        from . import projection as P
+        entry = P.EntryFields(**entry_fields)
+        request = None
+        if full and entry_fields.get("test_request_id"):
+            from models import EMCRequest
+            request = db.session.get(EMCRequest, entry_fields["test_request_id"])
+        record = dict(params)
+        if full:
+            P.project(record, entry, request, with_images=images_known)
+        else:
+            P.project_header(record, entry, request, with_images=images_known)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        try:
+            from flask import current_app
+            current_app.logger.warning(
+                "datasheet projection skipped for entry %s: %s",
+                entry_fields.get("id"), exc)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# --------------------------------------------------------------------------
+# Reading a draft back
+# --------------------------------------------------------------------------
+# form_from_record / images_from_record take an ALREADY-FETCHED row. The form
+# routes need the record, its form and its images together, and fetching the
+# row once instead of three times removes two round trips per page load - which
+# matters because the row carries a 3-6.5 KB form_json blob and the database is
+# remote. draft_form/draft_images remain for callers that only need one thing.
+
+def form_from_record(record):
+    """The saved form_data dict held by an already-fetched record, or {}."""
+    if record and record.get("form_json"):
+        try:
+            return json.loads(record["form_json"])
+        except (ValueError, TypeError):
+            pass
+    return {}
+
+
+def images_from_record(record):
+    """{field: path} of images held by an already-fetched record, or {}."""
+    if record and record.get("images_json"):
+        try:
+            return json.loads(record["images_json"])
+        except (ValueError, TypeError):
+            pass
+    return {}
 
 
 def draft_images(assignment_id):
     """{field: path} of images previously saved for this assignment (for reuse)."""
-    rec = get_record_for_assignment(assignment_id)
-    if rec and rec.get("images_json"):
-        try:
-            return json.loads(rec["images_json"])
-        except (ValueError, TypeError):
-            pass
-    return {}
+    return images_from_record(get_record_for_assignment(assignment_id))
 
 
 def draft_form(assignment_id):
     """The last-saved form_data dict for this assignment, or {}."""
-    rec = get_record_for_assignment(assignment_id)
-    if rec and rec.get("form_json"):
-        try:
-            return json.loads(rec["form_json"])
-        except (ValueError, TypeError):
-            pass
-    return {}
+    return form_from_record(get_record_for_assignment(assignment_id))
 
 
 def delete_record_for_assignment(assignment_id):
@@ -395,6 +486,13 @@ def delete_record_for_assignment(assignment_id):
         {"pid": assignment_id},
     )
     db.session.commit()
+    # nothing links the projection back to datasheet_records, so a discarded
+    # draft would otherwise leave its projected rows behind as orphans
+    try:
+        from . import projection as P
+        P.delete_projection(assignment_id)
+    except Exception:  # noqa: BLE001 - the record itself is already gone
+        pass
     return True
 
 
