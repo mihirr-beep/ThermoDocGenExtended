@@ -85,6 +85,11 @@
      description the engineer typed was stored in form_json and then never
      shown again. rebuildObsLegend falls back to this one. #}
   <script type="application/json" id="obs-legend-seed-all">{{ prefill.get('obs_legend', [])|tojson }}</script>
+  {# EFT and SURGE build their TEST OBSERVATION matrix in the browser, with the
+     columns taken from the selected Test Voltage, so the server cannot render
+     it. This is what was saved last time - columns, row labels and the filled
+     cells - so the first build can reproduce it instead of starting blank. #}
+  <script type="application/json" id="obs-matrix-seed">{{ obs_matrix_seed|default({})|tojson }}</script>
   <form id="dsForm" enctype="multipart/form-data" class="space-y-6">
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
@@ -1442,6 +1447,33 @@
   var __OBS_LEGEND_DEFAULTS = {
     'A': 'No degradation was observed during the test based on the parameters monitored.'
   };
+  // ---- Saved TEST OBSERVATION matrix (EFT / SURGE) ----------------------
+  // These two build their grid in the browser, with the columns derived from
+  // the selected Test Voltage, and the page rebuilt it from scratch on every
+  // load - so a filled matrix came back empty even though every cell was in
+  // form_json. This is last save's grid; the FIRST build reproduces it, and
+  // anything after that (a Test Voltage change, or the Generate button) builds
+  // fresh, which is what those actions are supposed to do.
+  var __OBS_SEED = (function () {
+    try { return JSON.parse((document.getElementById('obs-matrix-seed') || {}).textContent || '{}') || {}; }
+    catch (e) { return {}; }
+  })();
+  var __obsSeedActive = true;
+  function __obsSavedCell(kind, ri, ci) {
+    if (!__obsSeedActive) return '';
+    var k = __OBS_SEED[kind];
+    return (k && k.cells && k.cells[ri + '__c' + ci]) || '';
+  }
+  function __obsSeedCols(kind) {
+    var k = __obsSeedActive && __OBS_SEED[kind];
+    return (k && k.cols && k.cols.length) ? k.cols : null;
+  }
+  function __obsSeedRows(kind) {
+    var k = __obsSeedActive && __OBS_SEED[kind];
+    return (k && k.rows && k.rows.length) ? k.rows : null;
+  }
+  function __obsSeedDone() { __obsSeedActive = false; }
+
   function __obsLegendHosts() { return document.querySelectorAll('[data-legend-prefix]'); }
   function __obsCodesInScope(host) {
     var seen = {};
@@ -3471,10 +3503,12 @@
   }
   // D is a permanent failure, so it has no numbered sub-cases.
   var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
-  function surgeObsCell(name) {
+  function surgeObsCell(name, val) {
     var s = '<select name="' + name + '" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:52px">';
-    s += '<option value=""></option>';
-    SURGE_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
+    s += '<option value=""' + (!val ? ' selected' : '') + '></option>';
+    SURGE_OBS_OPTS.forEach(function (o) {
+      s += '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>';
+    });
     return s + '</select>';
   }
   function surgePowerMatrix(kind, title, rows) {
@@ -3496,7 +3530,7 @@
     html += '</tr></thead><tbody>';
     rows.forEach(function (rl, ri) {
       html += '<tr><td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(rl) + '<input type="hidden" name="surge_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '"></td>';
-      for (var ci = 0; ci < ncol; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_' + kind + '_' + ri + '__c' + ci) + '</td>'; }
+      for (var ci = 0; ci < ncol; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_' + kind + '_' + ri + '__c' + ci, __obsSavedCell(kind, ri, ci)) + '</td>'; }
       html += '</tr>';
     });
     html += '</tbody></table></div></div>';
@@ -3515,13 +3549,25 @@
     html += '</tr></thead><tbody>';
     for (var ri = 0; ri < 3; ri++) {
       html += '<tr><td class="p-1 border border-gray-200"><input name="surge_obs_signal_row_' + ri + '" placeholder="signal line name" class="px-1 py-0.5 border rounded" style="width:120px"></td>';
-      for (var ci = 0; ci < cols.length; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_signal_' + ri + '__c' + ci) + '</td>'; }
+      for (var ci = 0; ci < cols.length; ci++) { html += '<td class="p-0.5 border border-gray-200">' + surgeObsCell('surge_obs_signal_' + ri + '__c' + ci, __obsSavedCell('signal', ri, ci)) + '</td>'; }
       html += '</tr>';
     }
     html += '</tbody></table></div></div>';
     return html;
   }
   function generateSurgeObservation(silent) {
+    var _shost = document.getElementById('surge-obs-records');
+    var _sac = __obsSeedCols('ac'), _sdc = __obsSeedCols('dc'), _ssig = __obsSeedCols('signal');
+    if (_shost && silent && (_sac || _sdc || _ssig)) {
+      var _sh = '';
+      if (_sac) _sh += surgePowerMatrix('ac', 'AC Power Line', __obsSeedRows('ac') || []);
+      if (_sdc) _sh += surgePowerMatrix('dc', 'DC Power Line', __obsSeedRows('dc') || []);
+      if (_ssig) _sh += surgeSignalTable();
+      _shost.innerHTML = _sh;
+      __obsSeedDone();
+      if (typeof rebuildSurgeLegend === 'function') rebuildSurgeLegend();
+      return;
+    }
     var host = document.getElementById('surge-obs-records'); if (!host) return;
     var lv = surgeTVLevels(), pPow = surgePortTested('test_port_power'), pSig = surgePortTested('test_port_signal');
     if (!lv || (!pPow && !pSig)) { if (!silent && typeof showMessage === 'function') showMessage('Select Product Standard + Immunity and a Test Port first.', 'error'); return; }
@@ -3755,7 +3801,11 @@
       html += '<tr>';
       if (editableRows) html += '<td class="p-1 border border-gray-200"><input name="eft_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '" placeholder="signal line name" class="w-full px-1 py-1 border rounded"></td>';
       else html += '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(rl) + '<input type="hidden" name="eft_obs_' + kind + '_row_' + ri + '" value="' + esc(rl) + '"></td>';
-      cols.forEach(function (c, ci) { html += '<td class="p-1 border border-gray-200">' + eftObsCell('eft_obs_' + kind + '_' + ri + '__c' + ci) + '</td>'; });
+      cols.forEach(function (c, ci) {
+        html += '<td class="p-1 border border-gray-200">'
+             + eftObsCell('eft_obs_' + kind + '_' + ri + '__c' + ci,
+                          __obsSavedCell(kind, ri, ci)) + '</td>';
+      });
       html += '</tr>';
     });
     html += '</tbody></table></div></div>';
@@ -3763,6 +3813,19 @@
   }
   function generateEftObservation(silent) {
     var host = document.getElementById('eft-obs-records'); if (!host) return;
+    // A saved grid wins on the first build, and bypasses the Test Voltage
+    // guard below on purpose: the engineer's cells must come back even if the
+    // voltage fields that originally shaped the columns are no longer set.
+    var _sp = __obsSeedCols('power'), _ss = __obsSeedCols('signal');
+    if (silent && (_sp || _ss)) {
+      var seeded = '';
+      if (_sp) seeded += eftObsTable('power', _sp, __obsSeedRows('power') || EFT_COUPLING_PATHS, false);
+      if (_ss) seeded += eftObsTable('signal', _ss, __obsSeedRows('signal') || ['', '', ''], true);
+      host.innerHTML = seeded;
+      __obsSeedDone();
+      rebuildEftLegend();
+      return;
+    }
     var pPow = eftPortTested('power'), pSig = eftPortTested('signal');
     if (!eftKind() || (!pPow && !pSig)) { if (!silent) showMessage('Select Product Standard + Immunity and a Test Port first.', 'error'); return; }
     if (!silent && host.querySelector('.eft-obs-cell') && !confirm('Rebuild the observation tables from the current Test Voltage? Any filled observations will be cleared.')) return;

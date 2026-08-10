@@ -280,6 +280,7 @@ def g_form(code, assignment_id):
         code=code, schema=schema, prefill=pre,
         assignment_id=a.id, tco_id=a.tco_id or "", test_name=a.test_name or code,
         draft_status=draft_status, saved_images=saved_images,
+        obs_matrix_seed=_obs_matrix_seed(code, draft),
         measurement_groups=measurement_groups,
         extra_photos=extra_photos,
         reviewers=_reviewer_candidates(),
@@ -287,6 +288,60 @@ def g_form(code, assignment_id):
         entry_status=a.status,
         today=datetime.now().strftime("%Y-%m-%d"),
     )
+
+
+# EFT and SURGE do not render their TEST OBSERVATION grid from the schema. The
+# schema declares a fixed table, but the page throws it away and builds a
+# matrix whose COLUMNS come from the selected Test Voltage - so the shape is
+# only known in the browser, and it posts under its own names:
+#
+#     <prefix>_obs_<kind>_cols          the column headings, joined
+#     <prefix>_obs_<kind>_row_<ri>      each row's label
+#     <prefix>_obs_<kind>_<ri>__c<ci>   one cell
+#
+# Those are scalars, so nothing in the "[]" grid restore touched them, and the
+# page rebuilt the matrix from Test Voltage on every load - blank, every time.
+# The cells were in form_json all along.
+_OBS_MATRIX_PREFIX = {"EFT": "eft", "SURGE": "surge"}
+_OBS_MATRIX_SEP = {"EFT": ",", "SURGE": "|"}
+
+
+def _obs_matrix_seed(code, draft):
+    """{kind: {cols, rows, cells}} for the dynamically built observation grids."""
+    prefix = _OBS_MATRIX_PREFIX.get((code or "").upper())
+    if not prefix or not draft:
+        return {}
+    sep = _OBS_MATRIX_SEP.get(code.upper(), ",")
+    head = prefix + "_obs_"
+    seed = {}
+    for key, value in draft.items():
+        if not key.startswith(head) or not isinstance(value, str):
+            continue
+        rest = key[len(head):]
+        if rest.endswith("_cols"):
+            kind = rest[:-len("_cols")]
+            seed.setdefault(kind, {})["cols"] = [c for c in value.split(sep) if c != ""]
+        elif "_row_" in rest:
+            kind, _, idx = rest.partition("_row_")
+            if idx.isdigit():
+                seed.setdefault(kind, {}).setdefault("rows", {})[int(idx)] = value
+        elif "__c" in rest:
+            body, _, col = rest.partition("__c")
+            kind, _, row = body.rpartition("_")
+            if row.isdigit() and col.isdigit() and value:
+                seed.setdefault(kind, {}).setdefault(
+                    "cells", {})["%s__c%s" % (row, col)] = value
+
+    out = {}
+    for kind, data in seed.items():
+        rows = data.get("rows") or {}
+        out[kind] = {
+            "cols": data.get("cols") or [],
+            # a dict keyed by index -> a dense list, so a gap cannot shift labels
+            "rows": [rows.get(i, "") for i in range(max(rows) + 1)] if rows else [],
+            "cells": data.get("cells") or {},
+        }
+    return out
 
 
 def _read_generic_payload():
