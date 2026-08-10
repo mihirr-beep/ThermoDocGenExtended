@@ -120,11 +120,68 @@ def g_form(code, assignment_id):
         for k, v in draft.items():
             if not k.endswith("[]") and isinstance(v, str) and v.strip():
                 pre[k] = v
-        if code == "RE":
+        if code in ("RE", "RS_RI", "SURGE", "HARMONIC", "VOLTAGEFLICKER",
+                    "VOLTAGEDIPS", "CRF", "PFMF"):
             # A draft saved before the format corrections must not resurrect legacy
             # values (e.g. EUT Modification state '0 - Initial state').
             from .generic_service import re_normalize_legacy_values
             re_normalize_legacy_values(pre)
+        if code == "SURGE":
+            # ... and its procedure's first line names the BASIC standard, not the product
+            # standards an older draft stored there.
+            from .generic_service import surge_normalize_procedure
+            surge_normalize_procedure(pre)
+        if code == "HARMONIC":
+            # same for HARMONIC, keyed off the Basic Standard the form is showing
+            from .generic_service import normalize_procedure_basic, harmonic_normalize_values
+            normalize_procedure_basic(pre)
+            # ... and the mains supply / Test Mode rules, which a saved draft would
+            # otherwise override with what it stored before those rules existed.
+            harmonic_normalize_values(pre, _parent_request(a))
+        if code == "VOLTAGEFLICKER":
+            # the other mains-supply datasheet: same supply / Test Mode rules
+            from .generic_service import flicker_normalize_values
+            flicker_normalize_values(pre, _parent_request(a))
+        if code == "CRF":
+            # TEST OBSERVATION mirrors the Test Specification: show the derived row(s) on
+            # the form too, so the engineer sees what the document will carry and has an
+            # Observation dropdown to fill even on a draft that saved no rows.
+            from .generic_service import (_crf_build_context, _re_functional_mode_names,
+                                          crf_normalize_procedure_breaks)
+            # a CRLF draft would show (and then re-save) the tripled blank lines
+            crf_normalize_procedure_breaks(pre)
+            _crows = (_crf_build_context(draft) or {}).get("test_observation_rows")
+            if _crows:
+                for _sec in schema.get("sections", []):
+                    for _it in _sec.get("items", []):
+                        if _it.get("key") == "test_observation_rows":
+                            _it["rows"] = _crows
+            _cm = _re_functional_mode_names(_parent_request(a))
+            if _cm:
+                pre["test_mode"] = _cm
+            # extra Test Setup pictures come back on a draft reload, keeping each slot's
+            # index so the image already stored under that name still shows
+            from .generic_service import re_extra_photo_slots
+            extra_photos = re_extra_photo_slots(draft)
+        if code == "PFMF":
+            # extra Test Setup pictures survive a draft reload, and Test Mode shows the
+            # mode NAMES rather than the description the requester typed
+            from .generic_service import re_extra_photo_slots, _re_functional_mode_names
+            extra_photos = re_extra_photo_slots(draft)
+            _pm = _re_functional_mode_names(_parent_request(a))
+            if _pm:
+                pre["test_mode"] = _pm
+        if code == "VOLTAGEDIPS":
+            # a draft still holding '<Standard name>' gets the basic standard, and Test
+            # Mode becomes the mode NAMES - both would otherwise survive the draft overlay.
+            from .generic_service import (normalize_procedure_basic, _DERIVED_BASIC_STANDARDS,
+                                          _re_functional_mode_names)
+            normalize_procedure_basic(
+                pre, (pre.get("basic_standard") or "").strip()
+                or _DERIVED_BASIC_STANDARDS.get("VOLTAGEDIPS", ""))
+            _vm = _re_functional_mode_names(_parent_request(a))
+            if _vm:
+                pre["test_mode"] = _vm
         for sec in schema.get("sections", []):
             for it in sec.get("items", []):
                 if it.get("type") != "table":
@@ -144,9 +201,17 @@ def g_form(code, assignment_id):
             from .generic_service import _re_measurement_groups, re_extra_photo_slots
             measurement_groups = _re_measurement_groups(draft)
             extra_photos = re_extra_photo_slots(draft)
+        elif code == "SURGE":
+            # extra Test Setup pictures come back on a draft reload, keeping each slot's
+            # index so the image already stored under that name still shows
+            from .generic_service import re_extra_photo_slots
+            extra_photos = re_extra_photo_slots(draft)
         elif code == "HARMONIC":
-            from .generic_service import _harmonic_build_context
+            # both: the harmonic measurement / limit rows AND the extra pictures. These were
+            # briefly two branches, and the first one shadowed the second.
+            from .generic_service import _harmonic_build_context, re_extra_photo_slots
             pre.update(_harmonic_build_context(draft))
+            extra_photos = re_extra_photo_slots(draft)
             measurement_groups = []
         else:
             measurement_groups = []
@@ -332,7 +397,9 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
     Shared by 'send to peer review' (initial generation) and the post-approval
     'generate final' regeneration so both produce an identical document."""
     parent = _parent_request(a)
-    ctx = gs.build_context(schema, form_data)
+    # the request is passed through so values that only it knows (SURGE's named Functional
+    # Modes -> Test Mode) are resolved even when regenerating from an older draft
+    ctx = gs.build_context(schema, form_data, request_obj=parent)
     ikeys = gs.image_keys(schema)
     images = _save_generic_images(ikeys, a.id)
     # reuse any image saved in an earlier draft that wasn't re-uploaded now

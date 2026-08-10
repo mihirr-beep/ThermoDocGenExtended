@@ -199,9 +199,27 @@
 
     <!-- 7. TEST PROCEDURE -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 class="text-lg font-bold text-gray-900 mb-4">8. Test Procedure</h2>
-      <p class="text-xs text-gray-500 mb-1">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only.</p>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-gray-900">8. Test Procedure</h2>
+        {# Edit lets the engineer override the standard wording. Once edited, the text stops
+           being regenerated from Basic Standard / EUT Configuration until they press Reset. #}
+        <div class="flex items-center gap-2">
+          <button type="button" id="procEditBtn" onclick="toggleProcedureEdit()"
+                  title="Edit the test procedure text"
+                  class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">
+            <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit</button>
+          <button type="button" id="procResetBtn" onclick="resetProcedure()"
+                  title="Discard your edits and rebuild the standard text"
+                  class="hidden text-xs px-2 py-1 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">&#8634; Reset</button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mb-1" id="test_procedure_hint">Auto-set from <strong>EUT Configuration</strong> (section 4); read-only &mdash; use <strong>Edit</strong> to change it.</p>
       <input type="hidden" name="test_procedure" id="test_procedure" value="{{ prefill.test_procedure }}">
+      {# Sticky flag: survives a draft reload so a manual edit is never silently overwritten
+         by the auto-generated wording. #}
+      <input type="hidden" name="test_procedure_manual" id="test_procedure_manual" value="{{ prefill.get('test_procedure_manual', '') }}">
+      <textarea id="test_procedure_edit" rows="14"
+                class="hidden w-full px-3 py-2 border border-emerald-400 rounded-lg text-sm leading-relaxed font-mono"></textarea>
       <div id="test_procedure_view"
            class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm leading-relaxed"
            style="white-space: pre-line;">{{ prefill.test_procedure }}</div>
@@ -357,60 +375,36 @@
     </div>
     <button type="button" onclick="removeTest(this)" class="text-xs px-2 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 mt-6">Remove Test</button>
   </div>
+  {# Two plot groups, matching the reference datasheet: one plot per conductor carrying
+     both detector traces, each followed by ITS OWN full 8-column table, so each prints as
+     image -> "Figure N:" -> table -> "Table N:". #}
+  {% for _g in [
+       {'stem': 'line',    'side': 'Line',    'det': 'Quasi-peak &amp; Average'},
+       {'stem': 'neutral', 'side': 'Neutral', 'det': 'Quasi-peak &amp; Average'} ] %}
   <div class="border border-gray-200 rounded-xl p-4 mb-4">
     <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Line plot &ndash; Quasi-peak (15.92 &times; 9.5 cm, W &times; H)</label>
-      <input type="file" name="plot_line_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-      <input type="text" name="plot_line_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
-    </div>
-    <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Line plot &ndash; Average (15.92 &times; 9.5 cm, W &times; H)</label>
-      <input type="file" name="plot_line_avg_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-      <input type="text" name="plot_line_avg_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ _g.side }} plot &ndash; {{ _g.det }} (15.92 &times; 9.5 cm, W &times; H)</label>
+      <input type="file" name="plot_{{ _g.stem }}_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <input type="text" name="plot_{{ _g.stem }}_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
     </div>
     <div class="flex items-center justify-between mb-2">
-      <h3 class="text-sm font-semibold text-gray-600">Table 1 - Line (Quasi-peak &amp; Average)</h3>
+      <h3 class="text-sm font-semibold text-gray-600">Table &ndash; {{ _g.side }} ({{ _g.det }})
+        <span class="text-xs font-normal text-gray-500">(<span id="colcount-{{ _g.stem }}%%I%%">8</span> columns &mdash; rename a heading by typing in it)</span></h3>
       <div class="flex items-center gap-2">
-        <button type="button" onclick="importData('line%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
-        <button type="button" onclick="addRow('line%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+        <button type="button" onclick="importData('{{ _g.stem }}%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak &amp; Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
+        <button type="button" onclick="addMeasColumn('{{ _g.stem }}%%I%%')" title="Add another column to this table" class="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">+ Add column</button>
+        <button type="button" onclick="addRow('{{ _g.stem }}%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
       </div>
     </div>
     <div class="overflow-x-auto">
     <table class="w-full text-xs border border-gray-200">
-      <thead class="bg-gray-50"><tr>
-        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
-        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
-      <tbody id="rows-line%%I%%"></tbody>
+      {# Header cells are rendered by renderMeasColumns() so columns can be added/renamed #}
+      <thead class="bg-gray-50"><tr id="head-{{ _g.stem }}%%I%%"></tr></thead>
+      <tbody id="rows-{{ _g.stem }}%%I%%"></tbody>
     </table>
     </div>
   </div>
-  <div class="border border-gray-200 rounded-xl p-4">
-    <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Neutral plot &ndash; Quasi-peak (15.92 &times; 9.5 cm, W &times; H)</label>
-      <input type="file" name="plot_neutral_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-      <input type="text" name="plot_neutral_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
-    </div>
-    <div class="mb-3">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Neutral plot &ndash; Average (15.92 &times; 9.5 cm, W &times; H)</label>
-      <input type="file" name="plot_neutral_avg_%%I%%" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-      <input type="text" name="plot_neutral_avg_caption_%%I%%" placeholder="Image name / caption (optional)" class="w-full mt-1 px-2 py-1 text-sm border border-gray-300 rounded">
-    </div>
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-sm font-semibold text-gray-600">Table 2 - Neutral (Quasi-peak &amp; Average)</h3>
-      <div class="flex items-center gap-2">
-        <button type="button" onclick="importData('neutral%%I%%')" title="Import measurement data from a CSV or TXT file. A full instrument sweep (0.15-30 MHz) is auto-reduced to the worst-case Q-peak & Average per band; a ready 8-column table loads as-is." class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">Import CSV / TXT</button>
-        <button type="button" onclick="addRow('neutral%%I%%')" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
-      </div>
-    </div>
-    <div class="overflow-x-auto">
-    <table class="w-full text-xs border border-gray-200">
-      <thead class="bg-gray-50"><tr>
-        <th class="p-1">Frequency (MHz)</th><th class="p-1">Q-peak (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th>
-        <th class="p-1 border-l-2 border-gray-300">Frequency (MHz)</th><th class="p-1">Average (dB&micro;V)</th><th class="p-1">Limit (dB&micro;V)</th><th class="p-1">Margin (dB)</th><th></th></tr></thead>
-      <tbody id="rows-neutral%%I%%"></tbody>
-    </table>
-    </div>
-  </div>
+  {% endfor %}
   <div class="mt-4 pt-4 border-t border-dashed border-gray-300">
     <div class="flex items-center justify-between mb-1">
       <span class="text-sm font-semibold text-gray-700">Additional images / graphs for this Test</span>
@@ -578,18 +572,82 @@
     }, 1500);
   }
 
+  /* ---- Measurement Data tables: editable columns ---------------------------------
+     The eight standard columns are only defaults. The engineer can rename any heading and
+     append more, so headings and values are posted POSITIONALLY:
+        meas_<key>__h<j>     the heading of column j     (key = line0 / neutral0 / ...)
+        meas_<key>__c<j>[]   that column's values, one entry per row
+     The server reads these into headers + rows[].cells, which drive the docxtpl column
+     loop in the .docx, and still fills the legacy qp_freq/qp/... names from the first
+     eight so a draft saved before this feature keeps rendering. */
   var MEAS_COLS = ['qp_freq','qp','qp_limit','qp_margin','avg_freq','avg','avg_limit','avg_margin'];
+  var MEAS_DEFAULT_HEADERS = ['Frequency (MHz)','Q-peak (dBµV)','Limit (dBµV)','Margin (dB)',
+                              'Frequency (MHz)','Average (dBµV)','Limit (dBµV)','Margin (dB)'];
+  var MEAS_MAX_COLUMNS = 12;   // matches _CE_MEAS_MAX_COLS on the server
   function isMeasKey(k){ return /^(line|neutral)/.test(k); }   // measurement group keys are line{i}/neutral{i}
-  // Build one 8-column measurement <tr> for group key (e.g. "line0"); values optional.
-  function makeMeasRow(grpKey, values) {
-    var tr = document.createElement('tr');
-    MEAS_COLS.forEach(function (c) {
-      var td = document.createElement('td');
-      td.className = 'p-1' + (c === 'avg_freq' ? ' border-l-2 border-gray-300' : '');
+  function measHeadRow(key){ return document.getElementById('head-' + key); }
+  function measBody(key){ return document.getElementById('rows-' + key); }
+
+  // Current headings, read straight off the header inputs (so a rename is picked up).
+  function measColumnLabels(key) {
+    var head = measHeadRow(key);
+    if (!head) return MEAS_DEFAULT_HEADERS.slice();
+    var got = Array.prototype.map.call(head.querySelectorAll('input[type=text]'),
+                                       function (i) { return i.value; });
+    return got.length ? got : MEAS_DEFAULT_HEADERS.slice();
+  }
+
+  // Rebuild the header row (editable headings + per-column remove buttons) from a list.
+  function renderMeasColumns(key, labels) {
+    var head = measHeadRow(key);
+    if (!head) return;
+    head.innerHTML = '';
+    labels.forEach(function (label, j) {
+      var th = document.createElement('th');
+      // keep the visual divide where the Average half starts on the standard 8-column table
+      th.className = 'p-1 align-top' + (j === 4 && labels.length >= 8 ? ' border-l-2 border-gray-300' : '');
+      var wrap = document.createElement('div');
+      wrap.className = 'flex items-start gap-1';
       var inp = document.createElement('input');
-      inp.name = grpKey + '_' + c + '[]';
+      inp.type = 'text';
+      inp.name = 'meas_' + key + '__h' + j;
+      inp.value = label;
+      inp.title = 'Column heading - type to rename it';
+      inp.className = 'w-full px-1 py-0.5 text-xs font-bold border border-transparent hover:border-gray-300 focus:border-blue-400 rounded bg-transparent';
+      inp.addEventListener('input', function () { triggerAutoSave(); });
+      wrap.appendChild(inp);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.title = 'Remove this column';
+      del.innerHTML = '&times;';
+      del.className = 'shrink-0 text-red-500 hover:text-red-700 font-bold leading-none px-0.5';
+      del.onclick = function () { removeMeasColumn(key, j); };
+      if (labels.length <= 1) del.style.visibility = 'hidden';   // keep at least one column
+      wrap.appendChild(del);
+      th.appendChild(wrap);
+      head.appendChild(th);
+    });
+    head.appendChild(document.createElement('th'));   // actions column (row delete)
+    var count = document.getElementById('colcount-' + key);
+    if (count) count.textContent = String(labels.length);
+  }
+
+  // Build one measurement <tr> for group key (e.g. "line0"), sized to the current columns.
+  // `values` may be an array of cell values, or the legacy dict keyed by MEAS_COLS.
+  function makeMeasRow(grpKey, values) {
+    var labels = measColumnLabels(grpKey);
+    var vals;
+    if (Array.isArray(values)) vals = values;
+    else if (values) vals = MEAS_COLS.map(function (c) { return values[c] != null ? values[c] : ''; });
+    else vals = [];
+    var tr = document.createElement('tr');
+    labels.forEach(function (_label, j) {
+      var td = document.createElement('td');
+      td.className = 'p-1' + (j === 4 && labels.length >= 8 ? ' border-l-2 border-gray-300' : '');
+      var inp = document.createElement('input');
+      inp.name = 'meas_' + grpKey + '__c' + j + '[]';
       inp.className = 'w-full px-1 py-1 border rounded';
-      if (values && values[c] != null) inp.value = values[c];
+      if (vals[j] != null) inp.value = vals[j];
       td.appendChild(inp); tr.appendChild(td);
     });
     var td = document.createElement('td'); td.className = 'p-1';
@@ -597,6 +655,49 @@
     b.onclick = function () { delRow(b); };
     td.appendChild(b); tr.appendChild(td);
     return tr;
+  }
+
+  // Re-shape the existing rows when the column count changes, keeping the values that stay.
+  function reshapeMeasRows(key) {
+    var body = measBody(key);
+    if (!body) return;
+    var existing = Array.prototype.map.call(body.querySelectorAll('tr'), function (tr) {
+      return Array.prototype.map.call(tr.querySelectorAll('input'), function (i) { return i.value; });
+    });
+    body.innerHTML = '';
+    (existing.length ? existing : [[]]).forEach(function (vals) {
+      body.appendChild(makeMeasRow(key, vals));
+    });
+    syncRowDeleteButtons();
+  }
+
+  function addMeasColumn(key) {
+    var labels = measColumnLabels(key);
+    if (labels.length >= MEAS_MAX_COLUMNS) {
+      showMessage('A measurement table can have at most ' + MEAS_MAX_COLUMNS + ' columns.', 'error');
+      return;
+    }
+    labels.push('Column ' + (labels.length + 1));
+    renderMeasColumns(key, labels);
+    reshapeMeasRows(key);
+    triggerAutoSave();
+  }
+
+  function removeMeasColumn(key, col) {
+    var labels = measColumnLabels(key);
+    if (labels.length <= 1) return;              // a table must keep one column
+    labels.splice(col, 1);
+    // drop that column's values from every row before re-rendering
+    var body = measBody(key);
+    if (body) {
+      Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
+        var inputs = tr.querySelectorAll('input');
+        if (inputs[col]) inputs[col].closest('td').remove();
+      });
+    }
+    renderMeasColumns(key, labels);
+    reshapeMeasRows(key);
+    triggerAutoSave();
   }
   function addRow(key) {
     var tbody = document.getElementById('rows-' + key);
@@ -635,9 +736,8 @@
           const rowData = rows[i];
           if (rowData.length === 0 || (rowData.length === 1 && rowData[0] === '')) continue;
           if (meas) {
-            var vals = {};
-            MEAS_COLS.forEach(function (c, j) { vals[c] = (rowData[j] || '').trim(); });
-            tbody.appendChild(makeMeasRow(key, vals));
+            // pass the CSV row positionally so a table with extra columns imports fully
+            tbody.appendChild(makeMeasRow(key, rowData.map(function (v) { return (v || '').trim(); })));
           } else {
             const clone = tpl.content.cloneNode(true);
             const inputs = clone.querySelectorAll('input, select, textarea');
@@ -880,9 +980,8 @@
             for (var r = isHeader ? 1 : 0; r < rows.length; r++) {
               var rd = rows[r];
               if (!rd.length || (rd.length === 1 && (rd[0] || '') === '')) continue;
-              var vals = {};
-              MEAS_COLS.forEach(function (c, j) { vals[c] = (rd[j] || '').trim(); });
-              tb.appendChild(makeMeasRow(key, vals)); n++;
+              // positional, so a table the engineer widened imports all of its columns
+              tb.appendChild(makeMeasRow(key, rd.map(function (v) { return (v || '').trim(); }))); n++;
             }
             if (!tb.querySelectorAll('tr').length) tb.appendChild(makeMeasRow(key));
             showMessage('Imported ' + n + ' row(s).', n ? 'success' : 'error');
@@ -1268,19 +1367,39 @@
   // Default figure caption shown (pre-filled) in the plot caption box — the same
   // name the document uses when the box is left blank. Position-based so the figure
   // numbers stay correct as Tests are added/removed.
-  function ceCaptionDefault(side, detector, n){
-    return "Figure " + n + ": CE plot_" + side + "_" + detector + "_0.15MHz - 30MHz";
+  /* ---- Frequency Range -> caption band ------------------------------------------
+     A custom specification entered on the Test Request ('1 kHz to 6 GHz') flows into the
+     Frequency Range field and names every figure/table in the datasheet. Anything that is
+     just CE's standard band keeps the '0.15MHz - 30MHz' caption spelling.
+     MUST match ce_custom_range() / ce_caption_band() on the server. */
+  var CE_STANDARD_RANGES = ['150khz-30mhz', '0.15mhz-30mhz'];
+  var CE_CAPTION_BAND = '0.15MHz - 30MHz';
+  function ceCustomRange(freq){
+    var v = String(freq == null ? '' : freq).trim();
+    if (!v) return '';
+    if (v.toLowerCase().indexOf('standard') >= 0) return '';   // 'As per the standard'
+    return (CE_STANDARD_RANGES.indexOf(v.toLowerCase().replace(/\s+/g, '')) >= 0) ? '' : v;
   }
-  // Matches a default caption so renumbering can rewrite it. The "Quasi-peak & Average"
-  // spelling is the pre-split default and is still matched, so a draft saved before the
-  // detectors were separated is re-captioned instead of keeping the old combined name.
-  var CE_CAP_RE = /^Figure \d+: CE plot_(Line|Neutral)_(Quasi-peak|Average|Quasi-peak & Average)_0\.15MHz - 30MHz$/;
-  // Each Test carries four plots — Quasi-peak and Average for Line, then for Neutral.
+  function ceCaptionBand(){
+    var el = document.querySelector('[name="frequency_range"]');
+    return ceCustomRange(el ? el.value : '') || CE_CAPTION_BAND;
+  }
+  function ceCaptionDefault(side, detector, n){
+    return "Figure " + n + ": CE plot_" + side + "_" + detector + "_" + ceCaptionBand();
+  }
+  // True for a caption we generated (so renumbering may refresh it); false once the
+  // engineer has typed their own wording, which is then left alone. Accepts any band text
+  // so switching Frequency Range re-labels our own captions, and still accepts the
+  // pre-split "Quasi-peak & Average" default from older drafts.
+  function ceIsAutoCaption(v){
+    return /^Figure \d+: CE plot_(Line|Neutral)_(Quasi-peak|Average|Quasi-peak & Average)_.+$/.test(v);
+  }
+  // Each Test carries two plot groups — one plot per conductor showing both detectors —
+  // and each group has its OWN data table, keyed by `stem` + the record index.
+  // MUST stay in step with _CE_PLOT_GROUPS on the server.
   var CE_PLOT_SLOTS = [
-    { field: 'plot_line_caption_',        side: 'Line',    detector: 'Quasi-peak' },
-    { field: 'plot_line_avg_caption_',    side: 'Line',    detector: 'Average'    },
-    { field: 'plot_neutral_caption_',     side: 'Neutral', detector: 'Quasi-peak' },
-    { field: 'plot_neutral_avg_caption_', side: 'Neutral', detector: 'Average'    }
+    { stem: 'line',    field: 'plot_line_caption_',    side: 'Line',    detector: 'Quasi-peak & Average' },
+    { stem: 'neutral', field: 'plot_neutral_caption_', side: 'Neutral', detector: 'Quasi-peak & Average' }
   ];
   // Re-number the plot caption boxes to match each Test's position. Only boxes that
   // are empty or still hold a default caption are touched — user-typed names are kept.
@@ -1292,7 +1411,7 @@
         var el = rec.querySelector('input[name="' + slot.field + rec.dataset.idx + '"]');
         if (!el) return;
         var v = el.value.trim();
-        if (v === '' || CE_CAP_RE.test(v)) {
+        if (v === '' || ceIsAutoCaption(v)) {
           el.value = ceCaptionDefault(slot.side, slot.detector, CE_PLOT_SLOTS.length * p + s + 1);
         }
       });
@@ -1350,8 +1469,15 @@
     wrap.innerHTML = tpl.innerHTML.replace(/%%I%%/g, idx).trim();
     var block = wrap.firstElementChild;
     document.getElementById('meas-records').appendChild(block);
-    if (data && data.line_rows && data.line_rows.length) fillMeasureRows('line' + idx, data.line_rows); else addRow('line' + idx);
-    if (data && data.neutral_rows && data.neutral_rows.length) fillMeasureRows('neutral' + idx, data.neutral_rows); else addRow('neutral' + idx);
+    // Headings first for every one of the four tables: makeMeasRow() sizes each row from
+    // the rendered header row, so the columns must exist before any data row is built.
+    CE_PLOT_SLOTS.forEach(function (slot) {
+      var tid = slot.stem + idx;
+      var saved = data && data[slot.stem + '_headers'];
+      renderMeasColumns(tid, (saved && saved.length) ? saved : MEAS_DEFAULT_HEADERS.slice());
+      var rows = data && data[slot.stem + '_rows'];
+      if (rows && rows.length) fillMeasureRows(tid, rows); else addRow(tid);
+    });
     if (label != null) { var le = block.querySelector('[name="meas_label_' + idx + '"]'); if (le) le.value = label; }
     // pre-fill any user-supplied captions (draft restore), else the position default
     if (data) {
@@ -1557,7 +1683,71 @@
     "graph. The dominant peaks at various frequencies, closer to and/or above the limit line, were "+
     "identified and listed. Quasi-peak and Average measured frequencies are compared with the limit "+
     "specified in the standard.";
+  /* ---- Test Procedure: derived text, with a manual override -----------------------
+     setProcedure() rebuilds the wording from Basic Standard + EUT Configuration. Once
+     the engineer edits it by hand, test_procedure_manual sticks at '1' and the derived
+     text is never written over it again until they press Reset. */
+  function procIsManual(){
+    var f=document.getElementById('test_procedure_manual');
+    return !!(f && f.value==='1');
+  }
+  // Paint the read-only view from the submitted value (escaped, LISN header bolded).
+  function renderProcedureView(){
+    var pEl=document.getElementById('test_procedure');
+    var view=document.getElementById('test_procedure_view');
+    if(!pEl||!view) return;
+    var esc=(pEl.value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    esc=esc.replace('LISN (Voltage Method):','<strong>LISN (Voltage Method):</strong>');
+    view.innerHTML=esc;                                   // white-space:pre-line keeps breaks
+  }
+  function toggleProcedureEdit(){
+    var ta=document.getElementById('test_procedure_edit');
+    var view=document.getElementById('test_procedure_view');
+    var pEl=document.getElementById('test_procedure');
+    var btn=document.getElementById('procEditBtn');
+    var reset=document.getElementById('procResetBtn');
+    var hint=document.getElementById('test_procedure_hint');
+    if(!ta||!view||!pEl) return;
+    if(ta.classList.contains('hidden')){                  // ---- enter edit mode
+      ta.value=pEl.value||'';
+      ta.classList.remove('hidden');
+      view.classList.add('hidden');
+      if(btn) btn.innerHTML='&#10003; Done';
+      if(hint) hint.innerHTML='Editing &mdash; your wording replaces the standard text and will no longer be regenerated.';
+      ta.focus();
+    } else {                                              // ---- leave edit mode
+      pEl.value=ta.value;
+      var flag=document.getElementById('test_procedure_manual');
+      if(flag) flag.value='1';
+      ta.classList.add('hidden');
+      view.classList.remove('hidden');
+      renderProcedureView();
+      if(btn) btn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+      if(reset) reset.classList.remove('hidden');
+      if(hint) hint.innerHTML='Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
+      if(typeof triggerAutoSave==='function') triggerAutoSave();
+    }
+  }
+  function resetProcedure(){
+    var flag=document.getElementById('test_procedure_manual');
+    if(flag) flag.value='';
+    var ta=document.getElementById('test_procedure_edit');
+    var view=document.getElementById('test_procedure_view');
+    if(ta) ta.classList.add('hidden');
+    if(view) view.classList.remove('hidden');
+    var btn=document.getElementById('procEditBtn');
+    if(btn) btn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+    var reset=document.getElementById('procResetBtn');
+    if(reset) reset.classList.add('hidden');
+    var hint=document.getElementById('test_procedure_hint');
+    if(hint) hint.innerHTML='Auto-set from <strong>EUT Configuration</strong> (section 4); read-only &mdash; use <strong>Edit</strong> to change it.';
+    setProcedure();
+    if(typeof triggerAutoSave==='function') triggerAutoSave();
+    if(typeof showMessage==='function') showMessage('Test procedure reset to the standard text.','success');
+  }
   function setProcedure(){
+    // A hand-edited procedure is never overwritten by the derived wording.
+    if(procIsManual()){ renderProcedureView(); return; }
     var cfg=(val('eut_configuration')||'').toLowerCase();
     var basic=(val('basic_standard')||'').trim() || 'the applicable basic standard';
     var isFloor=cfg.indexOf('floor')>=0;   // Tabletop -> wooden table @0.8m ; Floor -> insulation support @0.1m
@@ -1565,12 +1755,7 @@
                 .replace('{SURFACE}', isFloor ? 'an insulation support' : 'a wooden table')
                 .replace('{H}', isFloor ? '0.1m' : '0.8m');
     var hid=document.getElementById('test_procedure');       if(hid)  hid.value=txt;          // submitted value (plain)
-    var view=document.getElementById('test_procedure_view');
-    if(view){                                                                                 // read-only display
-      var esc=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      esc=esc.replace('LISN (Voltage Method):','<strong>LISN (Voltage Method):</strong>');    // bold header
-      view.innerHTML=esc;                                                                     // white-space:pre-line keeps breaks
-    }
+    renderProcedureView();                                                                    // read-only display
   }
   function syncBasicStandard(){
     var b=deriveBasic(val('product_standard'));
@@ -1593,6 +1778,19 @@
     if(cfg) cfg.addEventListener('change', setProcedure);
     var ps=q('product_standard');
     if(ps) ps.addEventListener('input', syncBasicStandard);   // Basic Standard + procedure follow Product Standard
+    // Editing Frequency Range re-labels every auto-generated plot caption, so a custom
+    // range from the Test Request names the figures the moment it lands in the field.
+    var fr=document.querySelector('[name="frequency_range"]');
+    if(fr) fr.addEventListener('input', function(){ renumberCaptions(); triggerAutoSave(); });
+    // A draft whose procedure was hand-edited comes back with the flag set: show Reset and
+    // say so, rather than looking like untouched standard text. syncBasicStandard() below
+    // still runs, but setProcedure() bails out early on a manual procedure.
+    if (procIsManual()) {
+      var _pr = document.getElementById('procResetBtn');
+      if (_pr) _pr.classList.remove('hidden');
+      var _ph = document.getElementById('test_procedure_hint');
+      if (_ph) _ph.innerHTML = 'Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
+    }
     syncBasicStandard();   // also derive once on load: keeps Basic Standard consistent with Product Standard
                            // even when a stale saved draft carried an old value (e.g. "Sysmex")
   });

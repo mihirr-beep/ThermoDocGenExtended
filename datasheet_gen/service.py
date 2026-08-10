@@ -109,62 +109,208 @@ def _rows(form_data, keys, names):
 
 _MEAS_NAMES = ["qp_freq", "qp", "qp_limit", "qp_margin", "avg_freq", "avg", "avg_limit", "avg_margin"]
 
+#: The standard headings of a CE measurement table, in _MEAS_NAMES order. The engineer can
+#: rename these and append more columns on the form; these are only the defaults.
+CE_MEAS_DEFAULT_HEADERS = ["Frequency (MHz)", "Q-peak (dBµV)", "Limit (dBµV)", "Margin (dB)",
+                           "Frequency (MHz)", "Average (dBµV)", "Limit (dBµV)", "Margin (dB)"]
+#: Hard cap so a runaway column count can't produce an unprintable table.
+_CE_MEAS_MAX_COLS = 12
+
+
+def _ce_meas_headers(form_data, tid):
+    """Column headings posted for one measurement table (meas_<tid>__h<j>), in order.
+
+    Returns [] when the form posted none - meaning a draft saved before columns became
+    editable - so the caller falls back to the standard headings."""
+    out = []
+    for j in range(_CE_MEAS_MAX_COLS):
+        key = "meas_%s__h%d" % (tid, j)
+        if key not in (form_data or {}):
+            break
+        out.append(_s((form_data or {}).get(key)) or "Column %d" % (j + 1))
+    return out
+
+
+def _ce_meas_rows(form_data, tid, ncols):
+    """Rows posted for one measurement table as meas_<tid>__c<j>[], one list per column.
+
+    Each row carries 'cells' (what the template's column loop iterates) plus the legacy
+    _MEAS_NAMES keys for its first 8 values, so anything still reading r.qp_freq keeps
+    working. Blank rows are dropped."""
+    cols = ["c%d" % j for j in range(ncols)]
+    arrs = {c: _list(form_data, "meas_%s__%s[]" % (tid, c)) for c in cols}
+    n = max((len(a) for a in arrs.values()), default=0)
+    rows = []
+    for r in range(n):
+        cells = [_s(arrs[c][r]) if r < len(arrs[c]) else "" for c in cols]
+        if not any(cells):
+            continue
+        row = {"cells": cells}
+        for j, name in enumerate(_MEAS_NAMES):
+            row[name] = cells[j] if j < len(cells) else ""
+        rows.append(row)
+    return rows
+
+
+def _ce_meas_table(form_data, tid, legacy_rows):
+    """(headers, rows) for one CE measurement table.
+
+    Prefers the dynamic-column fields; falls back to the fixed 8-column fields a draft
+    saved before this feature would still carry, so no measurement data is ever lost on
+    reload. A table always renders at least one (blank) row so the grid is visible."""
+    headers = _ce_meas_headers(form_data, tid) or list(CE_MEAS_DEFAULT_HEADERS)
+    rows = _ce_meas_rows(form_data, tid, len(headers))
+    if not rows and legacy_rows:
+        # legacy shape: dicts keyed by _MEAS_NAMES -> add 'cells' in that same order
+        rows = []
+        for lr in legacy_rows:
+            row = dict(lr)
+            row["cells"] = [_s(lr.get(n)) for n in _MEAS_NAMES]
+            rows.append(row)
+        headers = list(CE_MEAS_DEFAULT_HEADERS)
+    if not rows:
+        rows = [{"cells": ["" for _ in headers],
+                 **{n: "" for n in _MEAS_NAMES}}]
+    return headers, rows
+
+#: CE's standard conducted-emission band, used when the Test Request says
+#: 'As per the standard' (or carries no frequency range at all).
+CE_STANDARD_RANGE = "150 kHz - 30 MHz"
+#: How that band is spelled inside figure/table captions.
+CE_CAPTION_BAND = "0.15MHz - 30MHz"
+#: Every standard spelling a caption might already carry, so a custom range can replace it.
+CE_CAPTION_BANDS = ("0.15MHz - 30MHz", "0.15MHz-30MHz", "150 kHz - 30 MHz", "150kHz-30MHz")
+
+
+def ce_request_range(freq):
+    """The Frequency Range to show on the datasheet, given the CE test detail's value.
+
+    A real custom specification is used verbatim; 'As per the standard' and blanks fall
+    back to CE's standard band. Mirrors what RE does with its own detail value."""
+    v = _s(freq)
+    # 'As per the standard' is a marker, not a range - the datasheet must not print it.
+    return v if (v and "standard" not in v.lower()) else CE_STANDARD_RANGE
+
+
+def ce_custom_range(freq):
+    """The custom Frequency Range text, or '' when the standard band is in force.
+
+    Drives the caption naming: when this is non-empty every '0.15MHz - 30MHz' in a
+    figure/table caption is replaced by it, exactly as RE does for its bands."""
+    v = _s(freq)
+    if not v:
+        return ""
+    flat = v.lower().replace(" ", "")
+    standard = {CE_STANDARD_RANGE.lower().replace(" ", ""),
+                CE_CAPTION_BAND.lower().replace(" ", "")}
+    return "" if (flat in standard or "standard" in v.lower()) else v
+
+
+def ce_caption_band(form_data):
+    """The band label to build figure captions with: the custom range when one was
+    entered on the Test Request, otherwise CE's standard caption spelling."""
+    return ce_custom_range((form_data or {}).get("frequency_range")) or CE_CAPTION_BAND
+
+
+#: A measurement caption WE generated, in any spelling this datasheet has ever used. Such a
+#: caption is regenerated rather than honoured, so a draft that autosaved an older wording
+#: (e.g. '..._Line_Quasi-peak_...' from when the detectors had separate plots) does not
+#: freeze it into the document. A caption the engineer actually typed does not match, so it
+#: is always kept. The form's ceIsAutoCaption() applies the same rule.
+_CE_AUTO_CAPTION = re.compile(
+    r"^(?:Figure|Table)\s+\d+\s*:\s*CE[ _]", re.I)
+
+
+def ce_is_auto_caption(text):
+    """True when `text` is one of our generated measurement captions."""
+    return bool(_CE_AUTO_CAPTION.match(_s(text).strip()))
+
+
+#: The plot groups a Test carries, in document order. Each is ONE image followed by its own
+#: full 8-column table, exactly as the reference datasheet lays it out: one plot per
+#: conductor carrying both detector traces, and one grid holding both detectors' data.
+#:     (variable stem, form field / table id stem, side, detector)
+_CE_PLOT_GROUPS = (
+    ("line",    "line",    "Line",    "Quasi-peak & Average"),
+    ("neutral", "neutral", "Neutral", "Quasi-peak & Average"),
+)
+
 
 def _measurement_records(form_data):
-    """One record per Test: label + line_rows + neutral_rows + the plot image keys.
-    The form sends a hidden meas_index[] (active record indices, in order); each record i
-    uses meas_label_i, line{i}_*[] / neutral{i}_*[] and four plot slots -- a Quasi-peak
-    and an Average graph for each of the Line and Neutral conductors:
+    """One record per Test, laid out as the reference datasheet does: the Test label, then
+    for EACH plot an image, its "Figure N:" caption, its own data table and that table's
+    "Table N:" caption.
 
-        plot_line_i        / plot_line_avg_i        (Line: Quasi-peak, Average)
-        plot_neutral_i     / plot_neutral_avg_i     (Neutral: Quasi-peak, Average)
+    The form sends a hidden meas_index[] (active record indices, in order). Each record i
+    carries two such groups - one plot for the Line conductor and one for Neutral, each
+    showing both the Quasi-peak and Average traces:
 
-    The un-suffixed keys stay the Quasi-peak slots so drafts saved before the split (and
-    their already-uploaded files) keep rendering in place."""
+        plot_line_i     (Line, Quasi-peak & Average)
+        plot_neutral_i  (Neutral, Quasi-peak & Average)
+
+    with a table per group under meas_<stem><i>__h<j> / __c<j>[], holding the full 8
+    columns (Q-peak half + Average half).
+
+    Figure/Table numbers are provisional here; the generator renumbers both in document
+    order once the groups that print nothing have been dropped."""
+    band = ce_caption_band(form_data)   # custom Frequency Range, else '0.15MHz - 30MHz'
+
     def keys(grp, i):
         return ["%s%s_%s[]" % (grp, i, c) for c in _MEAS_NAMES]
-    def cap(name, i, n, side, detector):
-        # user-entered caption REPLACES the default; blank -> the auto "Figure N: ..." caption
-        default = "Figure %d: CE plot_%s_%s_0.15MHz - 30MHz" % (n, side, detector)
-        return _s(form_data.get("%s_caption_%s" % (name, i))) or default
+
+    def cap(kind, name, i, n, side, detector):
+        # A caption the engineer TYPED replaces the default. One we generated ourselves is
+        # rebuilt instead, so a stale wording saved in a draft cannot outlive it.
+        if kind == "Figure":
+            default = "Figure %d: CE plot_%s_%s_%s" % (n, side, detector, band)
+            field = "%s_caption_%s" % (name, i)
+        else:
+            default = "Table %d: CE_%s_%s_%s" % (n, side, detector, band)
+            field = "meas_table_caption_%s%s" % (name, i)
+        saved = _s(form_data.get(field))
+        return default if (not saved or ce_is_auto_caption(saved)) else saved
+
+    def build(i, fig, tbl):
+        """The image+table groups for record `i`, numbered from fig/tbl."""
+        out = {}
+        for n, (stem, tid, side, detector) in enumerate(_CE_PLOT_GROUPS):
+            # a draft saved while the table was a fixed 8-column grid posted line{i}_qp_freq[]
+            # and friends; those feed the same grid so no measurement data is lost on reload
+            legacy = _rows(form_data, keys(tid, i), _MEAS_NAMES)
+            headers, rows = _ce_meas_table(form_data, tid + i, legacy)
+            out["plot_%s_key" % stem] = "plot_%s_%s" % (stem, i) if i else "plot_%s" % stem
+            out["%s_headers" % stem] = headers
+            out["%s_rows" % stem] = rows
+            out["%s_caption" % stem] = cap("Figure", "plot_" + stem, i, fig + n, side, detector)
+            out["%s_table_caption" % stem] = cap("Table", tid, i, tbl + n, side, detector)
+            # a group prints only when it has an image or some data of its own; the two
+            # quasi-peak groups always print, matching the reference layout
+            out["has_%s_data" % stem] = any(any(r.get("cells") or []) for r in rows)
+        return out
+
     order = _list(form_data, "meas_index[]")
     records = []
-    fig = 1
+    n_groups = len(_CE_PLOT_GROUPS)
+    fig = tbl = 1
     if order:
         for i in order:
             i = _s(i).strip()
             if not i:
                 continue
-            records.append({
-                "label": _s(form_data.get("meas_label_" + i)),
-                "line_rows": _rows(form_data, keys("line", i), _MEAS_NAMES),
-                "neutral_rows": _rows(form_data, keys("neutral", i), _MEAS_NAMES),
-                "plot_line_key": "plot_line_" + i,
-                "plot_line_avg_key": "plot_line_avg_" + i,
-                "plot_neutral_key": "plot_neutral_" + i,
-                "plot_neutral_avg_key": "plot_neutral_avg_" + i,
-                "line_caption": cap("plot_line", i, fig, "Line", "Quasi-peak"),
-                "line_avg_caption": cap("plot_line_avg", i, fig + 1, "Line", "Average"),
-                "neutral_caption": cap("plot_neutral", i, fig + 2, "Neutral", "Quasi-peak"),
-                "neutral_avg_caption": cap("plot_neutral_avg", i, fig + 3, "Neutral", "Average"),
-                # further plots the engineer added to this Test, each with its own title
-                "extra_images": _ce_extra_images(form_data, f"plot_extra_{i}_"),
-            })
-            fig += 4
+            rec = {"label": _s(form_data.get("meas_label_" + i)),
+                   # further plots the engineer added to this Test, each with its own title
+                   "extra_images": _ce_extra_images(form_data, f"plot_extra_{i}_")}
+            rec.update(build(i, fig, tbl))
+            records.append(rec)
+            fig += n_groups
+            tbl += n_groups
     else:
         # legacy single-record fallback (un-indexed line_*/neutral_* fields)
-        line = _rows(form_data, keys("line", ""), _MEAS_NAMES)
-        neutral = _rows(form_data, keys("neutral", ""), _MEAS_NAMES)
-        if line or neutral:
-            records.append({"label": "", "line_rows": line, "neutral_rows": neutral,
-                            "plot_line_key": "plot_line",
-                            "plot_line_avg_key": "plot_line_avg",
-                            "plot_neutral_key": "plot_neutral",
-                            "plot_neutral_avg_key": "plot_neutral_avg",
-                            "line_caption": cap("plot_line", "", 1, "Line", "Quasi-peak"),
-                            "line_avg_caption": cap("plot_line_avg", "", 2, "Line", "Average"),
-                            "neutral_caption": cap("plot_neutral", "", 3, "Neutral", "Quasi-peak"),
-                            "neutral_avg_caption": cap("plot_neutral_avg", "", 4, "Neutral", "Average")})
+        probe = build("", 1, 1)
+        if any(probe["has_%s_data" % g[0]] for g in _CE_PLOT_GROUPS):
+            rec = {"label": "", "extra_images": []}
+            rec.update(probe)
+            records.append(rec)
     return records
 
 
@@ -194,6 +340,11 @@ def build_ce_context(form_data):
     # two datasheets can't drift apart; the generator does the cell splitting.
     from .generic_service import _re_row_splits
     ctx["ce_row_splits"] = _re_row_splits(form_data)
+
+    # A custom Frequency Range from the Test Request renames the captions that carry the
+    # standard band in fixed template text (the two 'Table N: CE_..._0.15MHz - 30MHz'
+    # headings). Measurement figure captions are already built with it above.
+    ctx["ce_custom_range"] = ce_custom_range(form_data.get("frequency_range"))
 
     # Render classification selections as human-ticked checkboxes in the document
     # (the template uses {{r ... }} placeholders for these two fields).
@@ -515,7 +666,12 @@ def collect_ce_prefill(request_obj, assignment=None):
         "sop_reference": _cefv.get("sop_reference", "IEC-SOP-505"),
         "test_port": "Power Line",            # editable
         "coupling_method": "LISN",            # editable
-        "frequency_range": _s(getattr(ce, "freq_range", "")) if ce and getattr(ce, "freq_range", "") else "150 kHz - 30 MHz",
+        # Frequency Range comes from the CE test detail on the Test Request. A CUSTOM
+        # specification ('From ... To ...', stored as e.g. '1 kHz to 6 GHz') is carried
+        # through verbatim and names the whole datasheet; 'As per the standard' (or a blank
+        # detail) falls back to CE's standard band. Without the _is_custom filter the
+        # datasheet printed the literal words "As per the standard" as its frequency range.
+        "frequency_range": ce_request_range(getattr(ce, "freq_range", "") if ce else ""),
         "resolution_bandwidth": "9K",
         "step_size": "4K",
         "detector": "Quasi-peak",

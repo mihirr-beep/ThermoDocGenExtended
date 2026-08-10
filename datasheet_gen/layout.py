@@ -98,6 +98,22 @@ def human_checkbox(value, options, size=22):
     return rt
 
 
+def exact_checkbox(value, options, size=22):
+    """Render options as checkboxes, ticking the ones LISTED in `value`.
+
+    `value` is a separated list ('0°, 90°, 270°'); each entry must equal an option exactly.
+    human_checkbox() cannot be used for these: it matches on substrings, so a value of just
+    '0°' would also tick '90°' and '180°' because '0°' is a substring of both.
+    """
+    picked = {p.strip().lower() for p in re.split(r"[,;/|]|\band\b", str(value or "")) if p.strip()}
+    rt = RunsXml()
+    for i, opt in enumerate(options):
+        rt.add(_box_run(str(opt).strip().lower() in picked, size))
+        sep = "    " if i < len(options) - 1 else ""
+        rt.add(_label_run(" " + str(opt) + sep, size))
+    return rt
+
+
 def cumulative_checkbox(level, options, size=22):
     """Tick every option up to and including `level` (options given in ascending
     order). Used for Surge / EFT test-voltage rows where the level is DERIVED from
@@ -194,6 +210,584 @@ def _keep_row(tr_obj):
     for cell in tr_obj.cells:
         for cp in cell.paragraphs:
             _keep_with_next(cp)
+
+
+def fit_picture_block(doc, heading, floor_mm=70, safety=0.97):
+    """Shrink a picture section's images just enough that the whole section fits one page.
+
+    Two 95mm photos plus a heading and two captions come to slightly MORE than the text area,
+    so Word splits the section - the heading and first photo on one page, the second photo on
+    the next. Keeping them together needs less content, and the only compressible part is the
+    images. Each is scaled by the same factor (aspect preserved) and never below `floor_mm`
+    tall, so a section that could only fit by becoming unreadable is left to split instead.
+
+    `safety` trims the target a little below the measured text area, because the estimate is
+    a few mm optimistic - Word's real area is smaller than page-minus-margins-minus-chrome.
+    Returns the scale applied (1.0 when nothing was needed).
+    """
+    section = doc.sections[0]
+    usable = int(_ce_usable_height(section) * safety)
+    width = section.page_width.twips - section.left_margin.twips - section.right_margin.twips
+    pm = {p._p: p for p in doc.paragraphs}
+
+    block, want = [], False
+    for el in doc.element.body.iterchildren():
+        if el.tag != qn("w:p"):
+            continue
+        p = pm.get(el)
+        if p is None:
+            continue
+        style = (p.style.name or "") if p.style is not None else ""
+        if style.startswith("Heading"):
+            if want:
+                break
+            want = heading.upper() in (p.text or "").upper()
+            if want:
+                block.append(p)
+            continue
+        if want:
+            block.append(p)
+    if not block:
+        return 1.0
+
+    exts = [e for p in block for e in p._p.iter(qn("wp:extent"))]
+    if not exts:
+        return 1.0
+    total = sum(_ce_para_height(p, width) for p in block)
+    if total <= usable:
+        return 1.0
+
+    img_total = sum(int(e.get("cy") or 0) // _EMU_PER_TWIP for e in exts)
+    other = total - img_total
+    if img_total <= 0:
+        return 1.0
+    scale = (usable - other) / float(img_total)
+    floor_twips = int(floor_mm * 56.7)
+    smallest = min(int(e.get("cy") or 0) // _EMU_PER_TWIP for e in exts)
+    if scale <= 0 or smallest * scale < floor_twips:
+        return 1.0                       # cannot fit without going too small; let it split
+    for e in exts:
+        cx, cy = int(e.get("cx") or 0), int(e.get("cy") or 0)
+        e.set("cx", str(max(1, int(cx * scale))))
+        e.set("cy", str(max(1, int(cy * scale))))
+        # the shape's own extent must track the drawing's, or Word crops it
+        parent = e.getparent()
+        for sp in parent.iter(qn("a:ext")) if parent is not None else ():
+            sp.set("cx", str(max(1, int(int(sp.get("cx") or 0) * scale))))
+            sp.set("cy", str(max(1, int(int(sp.get("cy") or 0) * scale))))
+    return scale
+
+
+def collapse_blank_runs(doc):
+    """Collapse runs of consecutive empty paragraphs to a single one.
+
+    Template spacers add up: SURGE's TEST SETUP PICTURES carried three of them, ~13mm, which
+    was the difference between its two photos fitting on one page and spilling onto a second.
+    Table-aware - a table between two blanks breaks the run, so the single spacer that
+    separates a table from the next heading survives. (CE does this inline in
+    ce_finalize_layout; this is the same rule for the schema-driven datasheets.)"""
+    body = doc.element.body
+    w_p = qn("w:p")
+    prev_blank = False
+    removed = 0
+    for el in list(body):
+        if el.tag != w_p:
+            prev_blank = False
+            continue
+        txt = "".join(t.text or "" for t in el.iter(qn("w:t"))).strip()
+        has_img = el.findall(".//" + qn("w:drawing")) or el.findall(".//" + qn("w:pict"))
+        has_sectpr = el.find(".//" + qn("w:sectPr")) is not None
+        blank = (not txt) and (not has_img) and (not has_sectpr)
+        if blank and prev_blank:
+            body.remove(el)
+            removed += 1
+        else:
+            prev_blank = blank
+    return removed
+
+
+def _ce_strip_blanks_before_breaks(doc):
+    """Delete the empty spacer paragraphs that sit immediately before a forced page break.
+
+    On a fresh page such a spacer contributes nothing, but when the PREVIOUS page is
+    exactly full it does not fit on it either - so it flows onto a page of its own, and the
+    forced break then starts the real content on the page after that. The reader sees a
+    blank sheet. That is what put an empty page 4 between 1.5 AMBIENT (which now fills page
+    3 exactly) and 2 CONDUCTED EMISSION TEST.
+
+    Must run AFTER every page_break_before has been assigned, so it sees them all.
+    """
+    removed = 0
+    for p in list(doc.paragraphs):
+        if p.paragraph_format.page_break_before:
+            before = len(p._p.getparent().findall(qn("w:p")))
+            _remove_blank_spacers_before(p)
+            removed += before - len(p._p.getparent().findall(qn("w:p")))
+    return removed
+
+
+def _ce_tune_plot_spacing(doc, label_gap_pt=0, caption_gap_pt=10):
+    """Tighten the gap above a plot and open one below its caption.
+
+    Two spacing problems the reference layout does not have:
+
+      * a "Line:" / "Neutral:" label sat ~22pt above its plot, because the label inherits
+        the document default spacing (~8pt after, 1.08 line spacing). The label belongs TO
+        the image directly beneath it, so its space_after goes to `label_gap_pt`.
+      * a "Figure N:" caption sat flush against the table below it - something in the
+        pipeline zeroes space_after on caption paragraphs, overriding the Caption style's
+        own 10pt. Restored to `caption_gap_pt` wherever a table follows the caption.
+
+    Only paragraphs in those two positions are touched, so nothing else moves.
+    """
+    from docx.shared import Pt as _Pt
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    label = re.compile(r"^(line|neutral)\s*:$", re.I)
+    seq = list(body.iterchildren())
+    tightened = opened = 0
+    for i, el in enumerate(seq):
+        if el.tag != qn("w:p"):
+            continue
+        p = pm.get(el)
+        if p is None:
+            continue
+        nxt = seq[i + 1] if i + 1 < len(seq) else None
+        if nxt is None:
+            continue
+        txt = (_text(p) or "").strip()
+        nxt_p = pm.get(nxt) if nxt.tag == qn("w:p") else None
+        # label immediately above its plot -> pull the plot up to it
+        if label.match(txt) and nxt_p is not None and _has_image(nxt_p):
+            p.paragraph_format.space_after = _Pt(label_gap_pt)
+            nxt_p.paragraph_format.space_before = _Pt(0)
+            tightened += 1
+        # "Figure N:" caption immediately above its data table -> give the table room
+        elif nxt.tag == qn("w:tbl") and txt.upper().startswith("FIGURE ") and ":" in txt:
+            p.paragraph_format.space_after = _Pt(caption_gap_pt)
+            opened += 1
+    return tightened, opened
+
+
+def _ce_table_header(tbl):
+    """The table's header row as one lowercased string, for matching."""
+    try:
+        return " ".join((c.text or "").strip() for c in tbl.rows[0].cells).lower()
+    except (IndexError, AttributeError):
+        return ""
+
+
+def _ce_center_table(tbl, vertical=True):
+    """Centre every cell's content horizontally (and vertically, to match the rest of the
+    document, whose cells already carry vAlign=center)."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    for row in tbl.rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if not vertical:
+                continue
+            tcPr = cell._tc.get_or_add_tcPr()
+            if tcPr.find(qn("w:vAlign")) is None:
+                va = tcPr.makeelement(qn("w:vAlign"), {})
+                va.set(qn("w:val"), "center")
+                tcPr.append(va)
+
+
+#: Which CE tables get centred content, matched on their header row. "frequency (mhz)"
+#: alone is ambiguous - it opens BOTH the Test Limits grid and the Measurement Data grid -
+#: so each entry names a second word that only its own table carries.
+_CE_CENTERED_TABLES = (
+    ("voltage limits",),                 # 2.3 TEST LIMITS
+    ("q-peak", "margin"),                # 2.5 MEASUREMENT DATA (Line and Neutral)
+    ("equipment name", "calibration"),   # 2.7 TEST EQUIPMENT USED
+    ("software name", "software version"),  # 2.8 SOFTWARE USED
+    ("modification state",),             # 1.2 EUT MODIFICATION RECORD
+)
+
+
+def _ce_center_tables(doc):
+    """Centre the content of the CE tables that the reference layout shows centred."""
+    n = 0
+    for tbl in doc.tables:
+        hdr = _ce_table_header(tbl)
+        if not hdr:
+            continue
+        if any(all(w in hdr for w in words) for words in _CE_CENTERED_TABLES):
+            _ce_center_table(tbl)
+            n += 1
+    return n
+
+
+def _ce_fill_empty_cells(doc, header_words, placeholder="-"):
+    """Put `placeholder` in every empty cell of the matched table, so a partly-filled row
+    reads as "nothing recorded" rather than looking unfinished.
+
+    Only rows that carry SOME content are touched: a wholly empty spare row is left alone
+    rather than filled with a line of dashes. The header row is never touched.
+    """
+    filled = 0
+    for tbl in doc.tables:
+        hdr = _ce_table_header(tbl)
+        if not hdr or not all(w in hdr for w in header_words):
+            continue
+        for row in tbl.rows[1:]:
+            cells = list(row.cells)
+            if not any((c.text or "").strip() for c in cells):
+                continue                       # untouched blank row
+            for cell in cells:
+                if (cell.text or "").strip():
+                    continue
+                p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+                if p.runs:
+                    p.runs[0].text = placeholder
+                    for extra in p.runs[1:]:
+                        extra.text = ""
+                else:
+                    p.add_run(placeholder)
+                filled += 1
+    return filled
+
+
+def _ce_drop_empty_image_slots(doc):
+    """Remove the placeholder paragraph of a 1.4/1.5 plot slot that had no upload.
+
+    The template pairs each "Line:" / "Neutral:" label with a paragraph holding
+    {{ func_line }} / {{ ambient_neutral }} / ... . When the engineer uploads nothing those
+    render as an empty string, leaving a full-height empty paragraph behind. Four of them
+    (Functional Check + Ambient) are enough to push the tail of section 1 past the bottom
+    of the page, producing a page that LOOKS blank - and because section 2 forces its own
+    page break, the reader sees a blank sheet between 1.5 AMBIENT and 2 CONDUCTED EMISSION
+    TEST. Matched only where the paragraph directly above is a bare "Line:"/"Neutral:"
+    label, so a slot that DID get an image (its paragraph holds a drawing, hence is not
+    empty) and ordinary spacing elsewhere are both untouched.
+    """
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    label = re.compile(r"^(line|neutral)\s*:$", re.I)
+    prev_label = False
+    dropped = 0
+    for el in list(body.iterchildren()):
+        if el.tag != qn("w:p"):
+            prev_label = False
+            continue
+        p = pm.get(el)
+        if p is None:
+            continue
+        txt = (_text(p) or "").strip()
+        blank = (not txt) and not _has_image(p)
+        if blank and prev_label:
+            body.remove(el)
+            dropped += 1
+            prev_label = False       # only the one slot paragraph per label
+            continue
+        prev_label = bool(label.match(txt))
+    return dropped
+
+
+#: One 11pt single-spaced line, in twips.
+_CE_LINE_TWIPS = 240
+#: Vertical cell padding a table row adds on top of its text.
+_CE_CELL_PAD_TWIPS = 60
+
+
+def _ce_text_twips(text, size_pt=11):
+    """Rendered width of `text` in twips, from real Arial metrics."""
+    if not text:
+        return 0
+    from .generic_generator import _text_width_em
+    return int(_text_width_em(text) * size_pt * 20)
+
+
+#: EMU per twip (914400 EMU/inch / 1440 twips/inch).
+_EMU_PER_TWIP = 635
+
+
+def _para_spacing(p):
+    """(space_before, space_after) in twips, falling back to the paragraph's STYLE.
+
+    Most paragraphs set no spacing of their own and inherit it - the Caption style carries
+    10pt after. Reading only the direct formatting counted those as 0 and under-estimated a
+    picture block by ~7mm, which was enough to make a section that does not fit look as
+    though it does."""
+    out = []
+    for attr in ("space_before", "space_after"):
+        v = getattr(p.paragraph_format, attr, None)
+        if v is None:
+            style = p.style
+            seen = 0
+            while style is not None and seen < 5:      # guard against a style cycle
+                v = getattr(style.paragraph_format, attr, None)
+                if v is not None:
+                    break
+                style = getattr(style, "base_style", None)
+                seen += 1
+        out.append(v.twips if v is not None else 0)
+    return out[0], out[1]
+
+
+def _ce_para_height(p, width_twips):
+    """Estimated laid-out height of a body paragraph, including wrapping and spacing.
+
+    A paragraph holding an inline image is as tall as the image, not as a line of text -
+    without this a 95mm plot is counted as ~4mm and any section containing one is judged to
+    fit when it cannot."""
+    before, after = _para_spacing(p)
+
+    img = 0
+    for ext in p._p.iter(qn("wp:extent")):
+        img = max(img, int(ext.get("cy") or 0) // _EMU_PER_TWIP)
+    if img:
+        return img + before + after
+
+    txt = (_text(p) or "").strip()
+    lines = 1
+    if txt and width_twips > 0:
+        w = _ce_text_twips(txt)
+        lines = max(1, -(-w // width_twips))          # ceil
+    lines += len(_soft_breaks(p))                     # manual line breaks add lines
+    if (p.style.name or "").startswith("Heading") and not after:
+        after = 120                                   # heading styles carry ~6pt after
+    return lines * _CE_LINE_TWIPS + before + after
+
+
+def _ce_cell_size_pt(tc, default=11.0):
+    """Font size of a cell's text in points, read from w:sz (half-points).
+
+    Rows whose values were shrunk to fit (RE and RS_RI drop the split rows to as little as
+    7pt) are correspondingly shorter; assuming 11pt everywhere over-estimated a 21-row spec
+    table by ~30%, which was enough to make it look taller than a page when it is not."""
+    sizes = [int(s.get(qn("w:val")) or 0) for s in tc.iter(qn("w:sz"))]
+    sizes = [s / 2.0 for s in sizes if s]
+    return max(sizes) if sizes else default
+
+
+def _ce_table_height(tbl):
+    """Estimated laid-out height of a table: per row, the larger of its declared height
+    and the tallest wrapped cell, measured at each cell's real font size."""
+    el = tbl._tbl
+    grid = el.find(qn("w:tblGrid"))
+    cols = [int(g.get(qn("w:w")) or 0) for g in grid.findall(qn("w:gridCol"))] if grid is not None else []
+    total = 0
+    for tr in el.findall(qn("w:tr")):
+        trPr = tr.find(qn("w:trPr"))
+        declared = 0
+        if trPr is not None:
+            h = trPr.find(qn("w:trHeight"))
+            if h is not None:
+                declared = int(h.get(qn("w:val")) or 0)
+        tallest = _CE_LINE_TWIPS
+        gi = 0
+        for tc in tr.findall(qn("w:tc")):
+            span = 1
+            gs = tc.find(qn("w:tcPr") + "/" + qn("w:gridSpan"))
+            if gs is not None:
+                span = max(1, int(gs.get(qn("w:val")) or 1))
+            cw = sum(cols[gi:gi + span]) if cols else 0
+            gi += span
+            txt = "".join(t.text or "" for t in tc.iter(qn("w:t"))).strip()
+            if not txt:
+                continue
+            pt = _ce_cell_size_pt(tc)
+            lines = 1
+            if cw > 0:
+                lines = max(1, -(-_ce_text_twips(txt, pt) // cw))
+            tallest = max(tallest, int(lines * pt * 20))
+        total += max(declared, tallest + _CE_CELL_PAD_TWIPS)
+    return total
+
+
+def _ce_usable_height(section):
+    """Height available to BODY text on one page, in twips.
+
+    Not simply page minus margins: this template's running header (logo + title block) is
+    far taller than the top margin, so Word pushes body text down to
+    header_distance + header_height and shrinks the text area accordingly. Measured in
+    Word, body text starts ~94pt below the top margin - ignoring that over-estimates the
+    usable height by ~33mm and the caller then fails to break where it must.
+    """
+    page = section.page_height.twips
+    top = section.top_margin.twips
+    bottom = section.bottom_margin.twips
+    width = section.page_width.twips - section.left_margin.twips - section.right_margin.twips
+
+    def part_height(part, distance):
+        if part is None:
+            return 0
+        h = 0
+        try:
+            for p in part.paragraphs:
+                h += _ce_para_height(p, width)
+            for tb in part.tables:
+                h += _ce_table_height(tb)
+        except (AttributeError, KeyError):
+            return 0
+        return (distance.twips if distance is not None else 0) + h
+
+    top_used = max(top, part_height(getattr(section, "header", None), section.header_distance))
+    bottom_used = max(bottom, part_height(getattr(section, "footer", None), section.footer_distance))
+    return max(1, page - top_used - bottom_used)
+
+
+def _ce_break_overflowing_subsections(doc, stop_heading="test procedure", slack=1.10):
+    """Give a sub-section its own page when it would otherwise straddle a page break.
+
+    keep-with-next is not enough for a sub-section whose body is a TABLE: Word will break a
+    table BETWEEN rows no matter what keepNext says on the cell paragraphs (2.3 TEST LIMITS
+    was landing with its heading, its sentence and the two header rows on one page and the
+    three data rows on the next). The only reliable remedy is an explicit page break, so
+    this measures each sub-section and forces one when it will not fit in the space left.
+
+    Runs from the last top-level section up to `stop_heading`; pass None to cover every
+    sub-section to the end of the document (CE stops early because its tail already carries
+    explicit breaks; RS_RI has no such tail and wants the lot). `slack` over-estimates
+    heights slightly, so a borderline block breaks early rather than splitting.
+    """
+    section = doc.sections[0]
+    usable = int(_ce_usable_height(section) / slack)
+    width = int(section.page_width.twips - section.left_margin.twips - section.right_margin.twips)
+
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    tm = {t._tbl: t for t in doc.tables}
+
+    # the span: from the LAST Heading 1 that starts a page, to stop_heading
+    seq = list(body.iterchildren())
+    start = None
+    for i, el in enumerate(seq):
+        if el.tag == qn("w:p"):
+            p = pm.get(el)
+            if p is not None and (p.style.name or "").startswith("Heading 1"):
+                start = i
+    if start is None:
+        return 0
+    end = len(seq)
+    if stop_heading:
+        for i in range(start + 1, len(seq)):
+            el = seq[i]
+            if el.tag == qn("w:p"):
+                p = pm.get(el)
+                if p is not None and (_text(p) or "").strip().lower() == stop_heading:
+                    end = i
+                    break
+
+    # group [heading, ...members] at each Heading 2; anything before the first one belongs
+    # to the section heading itself
+    groups, cur = [], []
+    for el in seq[start:end]:
+        if el.tag == qn("w:p"):
+            p = pm.get(el)
+            if p is not None and (p.style.name or "").startswith("Heading 2"):
+                groups.append(cur)
+                cur = [el]
+                continue
+        cur.append(el)
+    groups.append(cur)
+
+    def height(group):
+        h = 0
+        for el in group:
+            if el.tag == qn("w:p"):
+                p = pm.get(el)
+                if p is not None:
+                    h += _ce_para_height(p, width)
+            elif el.tag == qn("w:tbl"):
+                tb = tm.get(el)
+                if tb is not None:
+                    h += _ce_table_height(tb)
+        return h
+
+    used, breaks = 0, 0
+    for gi, group in enumerate(groups):
+        h = height(group)
+        head = pm.get(group[0]) if group and group[0].tag == qn("w:p") else None
+        is_sub = bool(head and (head.style.name or "").startswith("Heading 2"))
+        # gi == 0 is the section heading's own group: it always starts the page
+        if gi and is_sub and used + h > usable:
+            if h <= usable:
+                head.paragraph_format.page_break_before = True
+                used = h
+                breaks += 1
+                continue
+            used = (used + h) % usable      # too tall for any page: let it split, resync
+            continue
+        used += h
+    return breaks
+
+
+def _ce_keep_subsections(doc, max_lines=14):
+    """Keep each Heading-2 sub-section whole: if it cannot fit in the space left on the
+    page, Word moves the ENTIRE block to the next page instead of splitting it.
+
+    Same intent as RE's _re_keep_subsections, but a CE sub-section is often mostly TABLE
+    (2.3 TEST LIMITS is a heading, one sentence and a 4-row grid), and paragraph
+    keep-with-next says nothing about a table. So for every table in the block this also:
+      * marks each row cantSplit, so no single row breaks across pages, and
+      * sets keepNext on every row but the last, so the table cannot break BETWEEN rows.
+
+    Blocks taller than `max_lines` are skipped: gluing something that cannot fit a page
+    makes Word give up and split it anyway, having first wasted the page above it.
+    Counts a table row as one line, which is what a one-line cell occupies.
+    """
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    tm = {t._tbl: t for t in doc.tables}
+
+    # split the body into [heading, ...members] blocks at every Heading 1/2
+    blocks, cur = [], None
+    for el in body.iterchildren():
+        if el.tag == qn("w:p"):
+            p = pm.get(el)
+            if p is None:
+                continue
+            style = p.style.name or ""
+            if style.startswith("Heading 1"):
+                cur = None                      # a top-level section starts a fresh page anyway
+                continue
+            if style.startswith("Heading 2"):
+                cur = [el]
+                blocks.append(cur)
+                continue
+        if cur is not None and el.tag in (qn("w:p"), qn("w:tbl")):
+            cur.append(el)
+
+    glued = 0
+    for block in blocks:
+        # estimated height, and bail out on anything that owns a whole page already
+        lines, has_img = 0, False
+        for el in block:
+            if el.tag == qn("w:p"):
+                p = pm.get(el)
+                if p is not None and _has_image(p):
+                    has_img = True
+                lines += 1
+            else:
+                tb = tm.get(el)
+                lines += len(tb.rows) if tb is not None else 3
+        if has_img or lines > max_lines:
+            continue                            # image blocks are paginated separately
+
+        for i, el in enumerate(block):
+            last = (i == len(block) - 1)
+            if el.tag == qn("w:p"):
+                p = pm.get(el)
+                if p is None:
+                    continue
+                p.paragraph_format.keep_together = True
+                if not last:
+                    p.paragraph_format.keep_with_next = True
+            else:
+                tb = tm.get(el)
+                if tb is None:
+                    continue
+                rows = tb.rows
+                for r in rows:
+                    _row_cant_split(r)
+                # bind row->row; the final row is left free unless the block continues
+                for r in (rows[:-1] if last else rows):
+                    _keep_row(r)
+        glued += 1
+    return glued
 
 
 def page_break_before_top_sections(doc):
@@ -387,6 +981,10 @@ def ce_finalize_layout(doc):
     #    next page; one blank is enough separation.
     #    Table-aware: a table (or any non-paragraph) between two blanks breaks the
     #    run, so the single spacer between a table and the next heading is kept.
+    # 0a) An un-uploaded 1.4/1.5 plot slot leaves a full-height empty paragraph; enough of
+    #     them spill the end of section 1 onto a sheet with nothing visible on it.
+    _ce_drop_empty_image_slots(doc)
+
     body = doc.element.body
     w_p = qn("w:p")
     prev_blank = False
@@ -415,6 +1013,16 @@ def ce_finalize_layout(doc):
     for p in doc.paragraphs:
         p.paragraph_format.keep_with_next = False
 
+    # 2b) Bind every short sub-section (heading + text + its table) into one unit, so a
+    #     block that no longer fits moves whole to the next page rather than splitting -
+    #     2.3 TEST LIMITS used to break between its heading and the middle of its grid.
+    #     Runs after the reset above (which only clears) and before the explicit tail
+    #     groups below (which only add), so neither fights the other.
+    _ce_keep_subsections(doc)
+    # 2c) keep-with-next cannot stop Word breaking a TABLE between rows, so measure each
+    #     sub-section of section 2 and force a page break where one would straddle.
+    _ce_break_overflowing_subsections(doc)
+
     # 3) Group the tail of the datasheet into discrete keep-together blocks, each
     #    of which fits on one page, and let Word FLOW them (no forced page breaks,
     #    which double up into blank pages when the previous page is full). A block
@@ -433,8 +1041,6 @@ def ce_finalize_layout(doc):
     a0 = find(lambda t: t == "test procedure")                       # procedure (2.4)
     c0 = find(lambda t: t == "test setup pictures")                  # photo (2.6) + equipment (2.7)
     d0 = find(lambda t: t == "software used")                        # software (2.8) + result (2.9)
-    fig1s = [k for k in range(len(paras)) if texts[k].startswith("figure 1")]
-    fig2s = [k for k in range(len(paras)) if texts[k].startswith("figure 2")]
 
     def glue(start, end):
         """Bind [start, end) into one keep-together block: keep_together stops any
@@ -450,26 +1056,49 @@ def ce_finalize_layout(doc):
         for k in range(start, last - 1):
             paras[k].paragraph_format.keep_with_next = True
 
-    # Measurement records (one per Test), laid out like the reference: the Test Procedure
-    # keeps its own page, then EACH Figure+Table pair gets its own page. Per record the
-    # label sits two paragraphs above its "Figure 1" caption (label, image, caption).
-    m0 = find(lambda t: t == "measurement data")      # 2.5 heading (stays with Figure 1)
-    n = min(len(fig1s), len(fig2s))
-    if a0 is not None and n:
-        glue(a0, m0 if m0 is not None else max(0, fig1s[0] - 2))   # 2.4 Test Procedure: its own page
+    # 2.5 Measurement Data, one record per Test.
+    #
+    # This used to assume each record held exactly TWO plots and paginate by pairing the
+    # "Figure 1" and "Figure 2" captions, giving each pair its own page. A record now
+    # carries up to four (Quasi-peak + Average, for Line and for Neutral) plus any extra
+    # images, so that pairing matched the wrong paragraphs - the forced break landed on the
+    # Line Average plot instead of the Neutral one and stranded a lone "Table 2:" caption
+    # on a page of its own.
+    #
+    # Detector-agnostic instead: force a page break only at each RECORD, glue every image
+    # to the caption beneath it, and let the images flow. A figure whose caption will not
+    # fit below it moves down as a unit, so nothing is ever orphaned, whatever the count.
+    m0 = find(lambda t: t == "measurement data")      # 2.5 heading
+    end_meas = c0 if c0 is not None else len(paras)
+    start_meas = m0 if m0 is not None else 0
+
+    def _is_caption(t):
+        return bool(re.match(r"^(figure|table|photo)\s+\d+\s*:", t))
+
+    # A record begins at its label: the only non-empty, non-caption, non-heading, image-free
+    # body paragraph in the measurement region.
+    labels = [k for k in range(start_meas + 1, end_meas)
+              if texts[k] and not _is_caption(texts[k])
+              and not (paras[k].style.name or "").startswith("Heading")
+              and not _has_image(paras[k])]
+
+    if a0 is not None:
+        glue(a0, start_meas if m0 is not None else (labels[0] if labels else end_meas))
     if m0 is not None:
-        paras[m0].paragraph_format.page_break_before = True        # 2.5 + Figure 1 begin a new page
-    for k in range(n):
-        label_k = max(0, fig1s[k] - 2)
-        pn_img = fig2s[k] - 1                         # plot_neutral image (above the Figure 2 caption)
-        nxt = (fig1s[k + 1] - 2) if (k + 1) < n else c0
-        first_with_heading = (k == 0 and m0 is not None)
-        a_start = m0 if first_with_heading else label_k
-        glue(a_start, pn_img)                         # Figure 1 + Table 1 -> its own page
-        glue(pn_img, nxt)                             # Figure 2 + Table 2 -> its own page
-        if not first_with_heading:
-            paras[label_k].paragraph_format.page_break_before = True   # Fig1/Fig3 block -> new page
-        paras[pn_img].paragraph_format.page_break_before = True        # Fig2/Fig4 block -> new page
+        paras[m0].paragraph_format.page_break_before = True   # 2.5 starts a fresh page
+        paras[m0].paragraph_format.keep_with_next = True      # ... with its first record
+    for j, lk in enumerate(labels):
+        if j:                                  # the first record shares 2.5's page
+            paras[lk].paragraph_format.page_break_before = True
+        paras[lk].paragraph_format.keep_with_next = True      # label stays with its plot
+    # Every plot keeps the caption that follows it; the caption itself stays free so the
+    # next figure may start a new page.
+    for k in range(start_meas, end_meas):
+        if _has_image(paras[k]):
+            paras[k].paragraph_format.keep_together = True
+            paras[k].paragraph_format.keep_with_next = True
+        elif _is_caption(texts[k]):
+            paras[k].paragraph_format.keep_together = True
 
     glue(c0, d0)                # Group C: 2.6 photo + 2.7 equipment
     glue(d0, None)              # Group D: 2.8 software + 2.9 result
@@ -502,10 +1131,19 @@ def ce_finalize_layout(doc):
             paras[hk].paragraph_format.keep_with_next = True
             paras[hk].paragraph_format.keep_together = True
             paras[k].paragraph_format.keep_together = True
-        amb = find(lambda t: t == "ambient")          # 1.5 Ambient -> its own page (after the 1.4 plots)
-        if amb is not None:
-            paras[amb].paragraph_format.page_break_before = True
-            paras[amb].paragraph_format.keep_with_next = True
+
+    # 1.5 Ambient always begins a new page, so the first page ends after 1.4 Functional
+    # Check. Outside the `if func_imgs` above on purpose: with no plots uploaded anywhere in
+    # section 1 there are no image paragraphs to detect, and Ambient still has to start its
+    # own page. This no longer risks a blank sheet, because the empty placeholder paragraphs
+    # that used to overflow the page are dropped in step 0a.
+    amb = find(lambda t: t == "ambient")
+    if amb is not None:
+        amb_end = sec2 if sec2 is not None else len(paras)
+        paras[amb].paragraph_format.page_break_before = True
+        paras[amb].paragraph_format.keep_with_next = True
+        for k in range(amb, amb_end):
+            paras[k].paragraph_format.keep_together = True
 
     # 5) Glue each table to the "Table N:" / "Figure N:" caption that sits BELOW it.
     #    A table has no keep-with-next of its own, so when it lands at the bottom of a
@@ -527,6 +1165,12 @@ def ce_finalize_layout(doc):
                 pPr = OxmlElement("w:pPr"); cp.insert(0, pPr)
             if pPr.find(qn("w:keepNext")) is None:
                 pPr.append(OxmlElement("w:keepNext"))
+
+    # 6) LAST: every page_break_before is now assigned, so drop the empty spacers sitting
+    #    just before them. A spacer that will not fit on a full page flows onto one of its
+    #    own, and the forced break then pushes the real content to the page after - a blank
+    #    sheet in the middle of the document.
+    _ce_strip_blanks_before_breaks(doc)
 
 
 # --------------------------------------------------------------------------

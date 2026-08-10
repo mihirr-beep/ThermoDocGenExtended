@@ -156,8 +156,13 @@ def _vdips_build_context(form_data):
         _s(form_data.get("time_between_dips_interruptions")), ["10 sec", "Custom"])
     ctx["phase_angle"] = human_checkbox(
         _s(form_data.get("phase_angle")), ["0° & 180°", "0° – 360° in 45° steps"])
-    ctx["eut_configuration"] = human_checkbox(
-        _s(form_data.get("eut_configuration")), ["Tabletop", "Floor standing"])
+    # EUT Configuration prints ONE option per cell: the row carries two value cells, and
+    # putting both options in the first crowds them into half the row. Mirrors RS_RI.
+    _cfg = _s(form_data.get("eut_configuration"))
+    ctx["eut_configuration_col_1"] = human_checkbox(_cfg, ["Tabletop"])
+    ctx["eut_configuration_col_2"] = human_checkbox(_cfg, ["Floor standing"])
+    # kept for compatibility with the single combined placeholder
+    ctx["eut_configuration"] = human_checkbox(_cfg, ["Tabletop", "Floor standing"])
 
     # Derived Test Level columns (3 dips + 1 interruption); the 3rd dip is shown
     # twice in the doc's merged spec table, so the template repeats tl_d2_*.
@@ -179,6 +184,125 @@ def _vdips_build_context(form_data):
     ctx["res_crit"] = [_s(x) for x in _list(form_data, "vdips_req_criteria[]")]
     ctx["res_met"] = [_s(x) for x in _list(form_data, "vdips_met_criteria[]")]
     return ctx
+
+
+#: CRF Test Ports, in the order the document lists them.
+_CRF_PORTS = ("Power Line", "Signal Line")
+
+
+def _crf_ports(form_data):
+    """The Test Port(s) chosen in the Test Specification, as canonical names.
+
+    Normally one; a value naming both is honoured so the document can carry a row and a
+    picture for each. Returns [] when nothing is selected, which leaves the observation
+    table and the pictures exactly as the engineer left them."""
+    raw = _s((form_data or {}).get("test_port")).lower()
+    return [p for p in _CRF_PORTS if p.lower() in raw]
+
+
+def _crf_freq_mhz(text):
+    """The Frequency Range spec value as the observation table words it, in MHz:
+    '150 kHz - 80 MHz' -> '0.15 to 80'. Anything that isn't a two-ended numeric range
+    (e.g. 'ISM Band') is passed through untouched."""
+    t = _s(text)
+    if not t:
+        return ""
+    parts = re.split(r"\s*(?:-|–|—|to)\s*", t, maxsplit=1)
+    if len(parts) != 2:
+        return t
+    out = []
+    for part in parts:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*(k|M|G)?Hz", part, re.I)
+        if not m:
+            return t
+        val = float(m.group(1))
+        unit = (m.group(2) or "M").upper()
+        mhz = val / 1000.0 if unit == "K" else (val * 1000.0 if unit == "G" else val)
+        out.append(("%f" % mhz).rstrip("0").rstrip("."))
+    return "%s to %s" % (out[0], out[1])
+
+
+def crf_normalize_procedure_breaks(values):
+    """One blank line between the procedure's paragraphs, in place.
+
+    A draft saved from the browser stores CRLF, and each '\\r\\n' renders as TWO <w:br/>
+    in the document - so the '\\r\\n\\r\\n' before 'Power Line:' printed as three blank
+    lines instead of one. Normalising to '\\n' and collapsing runs of blank lines fixes
+    both the stored value and anything pasted in later. Idempotent."""
+    if not isinstance(values, dict):
+        return values
+    txt = _s(values.get("test_procedure"))
+    if not txt:
+        return values
+    txt = txt.replace("\r\n", "\n").replace("\r", "\n")
+    values["test_procedure"] = re.sub(r"\n{3,}", "\n\n", txt)
+    return values
+
+
+#: Test Level checkbox labels. The STORED value is the bare number ('3') - the observation
+#: table's 'Test Level (Vrms)' column needs it that way - so the unit lives in the label.
+_CRF_TEST_LEVELS = (("1", "1 Vrms"), ("3", "3 Vrms"), ("10", "10 Vrms"), ("Custom", "Custom___"))
+
+
+def _crf_spec_checkboxes(form_data):
+    """The Test Specification's ticked-box cells, as the reference document draws them.
+
+    Test Port, Coupling Method, Test Level and EUT Configuration each occupy TWO cells -
+    one option group per cell - so every row reads as a pair of boxes rather than a list
+    crowded into half the row. Test Level repeats in both, matching the reference, since
+    one level applies to whichever port was tested."""
+    from .layout import human_checkbox, RunsXml, _box_run, _label_run
+    out = {}
+    _g = lambda k: _s((form_data or {}).get(k))
+
+    out["immunity_test_requirement"] = human_checkbox(
+        _g("immunity_test_requirement"), ["Basic", "Industrial", "Controlled", "Custom"])
+    out["frequency_range"] = human_checkbox(
+        _g("frequency_range"), ["150kHz-80MHz", "150kHz-230MHz", "Custom___"])
+
+    out["test_port_col_1"] = human_checkbox(_g("test_port"), ["Power Line"])
+    out["test_port_col_2"] = human_checkbox(_g("test_port"), ["Signal Line"])
+    out["coupling_method_col_1"] = human_checkbox(_g("coupling_method"), ["CDN"])
+    out["coupling_method_col_2"] = human_checkbox(_g("coupling_method"), ["EM Clamp"])
+    out["eut_configuration_col_1"] = human_checkbox(_g("eut_configuration"), ["Tabletop"])
+    out["eut_configuration_col_2"] = human_checkbox(_g("eut_configuration"), ["Floor standing"])
+
+    # Test Level: two boxes per line, so the cell reads
+    #   [ ] 1 Vrms [x] 3 Vrms
+    #   [ ] 10 Vrms [ ] Custom___
+    chosen = _g("test_level")
+    rt = RunsXml()
+    for i, (value, label) in enumerate(_CRF_TEST_LEVELS):
+        rt.add(_box_run(chosen == value))
+        rt.add(_label_run(" " + label + ("    " if i % 2 == 0 else "")))
+        if i == 1:
+            rt.add('<w:r><w:br/></w:r>')
+    out["test_level_col_1"] = rt
+    out["test_level_col_2"] = RunsXml(str(rt))
+    return out
+
+
+def _crf_build_context(form_data):
+    """CRF docx context.
+
+    The TEST OBSERVATION table is not free-form: every column except Observation is
+    dictated by the Test Specification, and the row exists per Test Port selected there.
+    The engineer's Observation letter is carried over by position, so choosing A/B/C/D
+    survives a change of port or level."""
+    out = _crf_spec_checkboxes(form_data)
+    ports = _crf_ports(form_data)
+    if not ports:
+        return out
+    freq = _crf_freq_mhz(form_data.get("frequency_range"))
+    level = _s(form_data.get("test_level"))
+    coupling = _s(form_data.get("coupling_method"))
+    posted = _list(form_data, "test_observation_rows__c4[]")
+    rows = []
+    for i, port in enumerate(ports):
+        rows.append({"c0": freq, "c1": port, "c2": level, "c3": coupling,
+                     "c4": _s(posted[i]) if i < len(posted) else ""})
+    out["test_observation_rows"] = rows
+    return out
 
 
 def _eft_obs(form_data, kind):
@@ -268,13 +392,30 @@ def _surge_build_context(form_data):
     ctx["test_port_power"] = human_checkbox("Power Line" if p_appl else "", ["Power Line"])
     ctx["test_port_signal"] = human_checkbox("Signal Line" if s_appl else "", ["Signal Line"])
 
-    # Test Voltage (kV): cumulative checkboxes for tested ports; "Not Applicable" otherwise.
-    ctx["tv_cm_power"] = cumulative_checkbox(_s(form_data.get("surge_tv_cm_power")), POWER) if p_appl else _plain("Not Applicable")
-    ctx["tv_dm_power"] = cumulative_checkbox(_s(form_data.get("surge_tv_dm_power")), POWER) if p_appl else _plain("Not Applicable")
-    ctx["tv_cm_signal"] = cumulative_checkbox(_s(form_data.get("surge_tv_cm_signal")), SIGNAL) if s_appl else _plain("Not Applicable")
-    ctx["tv_dm_signal"] = cumulative_checkbox(_s(form_data.get("surge_tv_dm_signal")), SIGNAL) if s_appl else _plain("Not Applicable")
+    # Test Voltage (kV): the voltage options are always SHOWN, with 'NA' ticked when the
+    # port was not tested - rather than replacing the whole cell with the words "Not
+    # Applicable", which lost the reader's view of what the options were.
+    POWER_NA = POWER + ["NA"]
+    SIGNAL_NA = SIGNAL + ["NA"]
 
-    ctx["coupling_phases"] = human_checkbox(
+    def _tv(value, options_na, applicable):
+        # cumulative: every option up to the level reached is ticked. 'NA' sits last, so a
+        # real voltage never ticks it, and when the port is untested only 'NA' is ticked.
+        return (cumulative_checkbox(_s(value), options_na) if applicable
+                else human_checkbox("NA", options_na))
+
+    ctx["tv_cm_power"] = _tv(form_data.get("surge_tv_cm_power"), POWER_NA, p_appl)
+    ctx["tv_dm_power"] = _tv(form_data.get("surge_tv_dm_power"), POWER_NA, p_appl)
+    ctx["tv_cm_signal"] = _tv(form_data.get("surge_tv_cm_signal"), SIGNAL_NA, s_appl)
+    ctx["tv_dm_signal"] = _tv(form_data.get("surge_tv_dm_signal"), SIGNAL_NA, s_appl)
+    # which ports were tested -> the finaliser drops the observation block of an untested one
+    ctx["_surge_ports"] = {"power": p_appl, "signal": s_appl}
+
+    # All four phases are ticked unless the engineer unticks some on the form. exact_checkbox
+    # rather than human_checkbox: the latter matches substrings, so '0°' alone would also
+    # tick '90°' and '180°'.
+    from .layout import exact_checkbox as _exact
+    ctx["coupling_phases"] = _exact(
         _s(form_data.get("coupling_phases")) or "0°, 90°, 180°, 270°", ["0°", "90°", "180°", "270°"])
     ctx["repetition_rate"] = human_checkbox(
         _s(form_data.get("repetition_rate")) or "60 Sec", ["60 Sec", "Custom"])
@@ -288,6 +429,32 @@ def _surge_build_context(form_data):
     ctx["surge_obs_ac"] = _surge_obs(form_data, "ac")
     ctx["surge_obs_dc"] = _surge_obs(form_data, "dc")
     ctx["surge_obs_signal"] = _surge_obs(form_data, "signal")
+
+    # Ambient / Humidity / Test Date / Tested by split into 1-3 per-day sections, as on RE
+    # and CE. The field bases are the same, so RE's collector is reused verbatim; the
+    # finaliser splits the value cell.
+    ctx["_surge_meta"] = {"row_splits": _re_row_splits(form_data)}
+    # Extra Test Setup pictures the engineer added, each with its own label. Shares RE's
+    # slot naming (re_extra_photo_<n>) so the form repeater, the image-save allowlist and the
+    # generator's resolver all work unchanged.
+    ctx["re_extra_photos"] = _re_extra_photos(form_data)
+
+    # Met Performance Criteria = the WORST code observed anywhere in the three matrices,
+    # reported as a bare letter (a B2 counts as B). A hand-picked value on the form wins, so
+    # the engineer can still override what was derived.
+    _obs_cells = [c for _k in ("surge_obs_ac", "surge_obs_dc", "surge_obs_signal")
+                  for _row in (ctx.get(_k) or {}).get("rows", []) for c in (_row.get("cells") or [])]
+    ctx["met_performance_criteria"] = (_s(form_data.get("met_performance_criteria"))
+                                       or worst_performance_code(_obs_cells))
+    # The procedure is written against the basic standard, not the product standards; this
+    # also corrects a draft saved before that was true. Then drop the block of any port that
+    # was not tested, so a Signal-Line paragraph cannot describe a test that never ran.
+    ctx["test_procedure"] = _surge_filter_procedure(
+        _surge_first_line_basic(
+            _s(form_data.get("test_procedure")) or _s(ctx.get("test_procedure")),
+            _DERIVED_BASIC_STANDARDS.get("SURGE", "")),
+        p_appl, s_appl)
+
     codes = _list(form_data, "surge_obs_legend_code[]")
     descs = _list(form_data, "surge_obs_legend_desc[]")
     legend, seen = [], set()
@@ -298,6 +465,23 @@ def _surge_build_context(form_data):
             legend.append({"code": code, "desc": _s(descs[i]) if i < len(descs) else ""})
     ctx["surge_obs_legend"] = legend
     return ctx
+
+
+def _pfmf_methods(form_data):
+    """Which coil-orientation column groups the TEST OBSERVATION table keeps.
+
+    Test Method is 'Proximity method' (0/90/180/270), 'Immersion method' (X/Y/Z) or
+    'Both'. Returns the set of group names; an unset value keeps both, so a half-filled
+    draft still shows the whole table rather than losing columns."""
+    v = _s((form_data or {}).get("test_method")).lower()
+    if not v or "both" in v:
+        return {"proximity", "immersion"}
+    out = set()
+    if "proximity" in v:
+        out.add("proximity")
+    if "immersion" in v:
+        out.add("immersion")
+    return out or {"proximity", "immersion"}
 
 
 def _pfmf_build_context(form_data):
@@ -406,8 +590,14 @@ def _rs_ri_build_context(form_data):
     }
 
 
-def build_context(schema, form_data):
-    """Map the posted form into the docxtpl context for this schema."""
+def build_context(schema, form_data, request_obj=None):
+    """Map the posted form into the docxtpl context for this schema.
+
+    `request_obj` is the parent Test Request, when the caller has it. A few values can only
+    be resolved from the request rather than from the form - SURGE's Test Mode needs the
+    named Functional Modes - and passing it lets a datasheet regenerated from an older draft
+    pick those up instead of keeping whatever the draft happened to store. Optional, so
+    callers without a request (the preview script) still work."""
     ctx = {}
     # scalar fields (incl. those inside 'fields' groups); images set by the generator
     for f in iter_scalar_fields(schema):
@@ -472,7 +662,7 @@ def build_context(schema, form_data):
     # generator falls back to that slot's default box.
     _img_boxes = {}
     _size_keys = list(image_keys(schema))
-    if schema.get("code") == "RE":
+    if schema.get("code") in ("RE", "SURGE", "HARMONIC", "CRF", "PFMF"):
         # extra test-setup pictures aren't in the schema, but their size is set the
         # same way by the image editor
         _size_keys += [s["key"] for s in re_extra_photo_slots(form_data)]
@@ -525,20 +715,142 @@ def build_context(schema, form_data):
             "days": _days,
             "row_splits": _re_row_splits(form_data),
         }
+    if schema.get("code") == "RS_RI":
+        # Per-band, per-day sections for Ambient / Humidity / Test Date / Tested by. The
+        # finaliser splits the matching value CELL, so both bands stay on the same row.
+        ctx["_rs_ri_meta"] = {"row_splits": _rs_ri_row_splits(form_data)}
+        # EUT Configuration prints as two ticked boxes, one per option, the way Frequency
+        # Range already does - a cross on the one chosen and an empty box on the other.
+        from .layout import human_checkbox as _hcb
+        _cfg = _s(form_data.get("eut_configuration")) or _s(ctx.get("eut_configuration"))
+        ctx["eut_configuration_col_1"] = _hcb(_cfg, ["Tabletop"])
+        ctx["eut_configuration_col_2"] = _hcb(_cfg, ["Floor standing"])
+        # ... and the procedure's EUT-support wording follows that choice: a non-conductive
+        # table of 0.8 m for Tabletop, an insulation support of 0.1 m for Floor standing.
+        # The template ships the combined "0.8/0.1m" placeholder; the mapping is idempotent
+        # so a draft saved with either wording is corrected too.
+        ctx["test_procedure"] = _re_apply_support_mapping(ctx.get("test_procedure"), _cfg)
+        # A draft saved before the rule below holds '0 - Initial state'; the spec row shows
+        # the state NUMBER only, so normalise whatever the draft carries.
+        re_normalize_legacy_values(ctx)
+        # TEST OBSERVATION's "Dwell time (s)" column carries the unit in its heading, so the
+        # cell holds the bare number. The form mirrors it that way now, but a draft saved
+        # earlier holds the Test-Specification wording ("3 seconds") - strip it here so
+        # regenerating an old draft is corrected too.
+        for _k in list(ctx):
+            if re.match(r"^f_\d+_to_\d+_col_2$", _k):
+                _m = re.search(r"-?\d+(?:\.\d+)?", _s(ctx.get(_k)))
+                ctx[_k] = _m.group(0) if _m else ""
     if schema.get("code") == "HARMONIC":
         ctx.update(_harmonic_build_context(form_data))
+        # The procedure's opening sentence mirrors the Basic Standard row, so a draft that
+        # stored the product standards there (or an older basic standard) is corrected.
+        normalize_procedure_basic(ctx)
+        # HARMONIC is always run on the mains supply, so 230 V, 50 Hz is THE value, not a
+        # fallback for a blank: it overwrites whatever the form posts. Needed here as well
+        # as on the form because generate-final re-renders from the STORED draft, which can
+        # still carry a request's multi-supply text ('230 V, 50 Hz; 120 V, 60 Hz').
+        # The spec row shows the state NUMBER only; a draft saved before that rule holds
+        # '0 - Initial state'. Applied on the FULL context - eut_modification_state comes
+        # from the scalar loop above, not from _harmonic_build_context.
+        re_normalize_legacy_values(ctx)
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed for each. Only the Test Request knows them, so this needs the
+        # request the caller passes in; drafts saved before this keep working.
+        _normalize_mains_and_modes(ctx, request_obj)
+        # EUT support: a wooden table at 0.8m height for Tabletop, an insulation support at
+        # 0.1m height for Floor standing - whichever the spec table shows.
+        ctx["test_procedure"] = _harmonic_apply_support_mapping(
+            ctx.get("test_procedure"), ctx.get("eut_configuration"))
+        # The harmonic-current RESULT grids print 'NA' in an empty cell rather than leaving
+        # a blank box: the imported measurement rows and the Average/Maximum results.
+        _harmonic_fill_na(ctx.get("harmonic_rows"))
+        _harmonic_fill_na(ctx.get("avgmax_rows"))
+        # Ambient / Humidity / Test Date / Tested by split into 1-3 per-day sections; the
+        # field bases match RE's, so its collector is reused. The finaliser splits the cell.
+        ctx["_harmonic_meta"] = {"row_splits": _re_row_splits(form_data)}
+        # Extra Test Setup pictures, sharing RE's slot naming so the form repeater, the
+        # image-save allowlist and the generator's resolver all work unchanged.
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
     if schema.get("code") == "VOLTAGEDIPS":
         ctx.update(_vdips_build_context(form_data))
+        # The spec row shows the state NUMBER only; a draft saved before that rule holds
+        # '0 - Initial state'. Applied on the FULL context.
+        re_normalize_legacy_values(ctx)
+        # The procedure's opening sentence names the BASIC standard, replacing the
+        # '<Standard name>' placeholder a draft may still carry.
+        normalize_procedure_basic(
+            ctx, _s(ctx.get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get("VOLTAGEDIPS", ""))
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed for each.
+        if request_obj is not None:
+            _vmodes = _re_functional_mode_names(request_obj)
+            if _vmodes:
+                ctx["test_mode"] = _vmodes
+        # Ambient / Humidity / Test Date / Tested by split into the 1-3 per-day sections
+        # the engineer chose; the finaliser divides the value cell.
+        ctx["_vdips_meta"] = {"row_splits": _re_row_splits(form_data)}
     if schema.get("code") == "EFT":
         ctx.update(_eft_build_context(form_data))
     if schema.get("code") == "SURGE":
         ctx.update(_surge_build_context(form_data))
+        # The spec row shows the state NUMBER only; a draft saved before that holds
+        # '0 - Initial state'. Applied here, on the FULL context - eut_modification_state is
+        # set by the scalar loop above, not by _surge_build_context.
+        re_normalize_legacy_values(ctx)
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed for each. Only the Test Request knows them, so this needs the
+        # request that the caller passes in; drafts saved before this keep working.
+        if request_obj is not None:
+            _modes = _re_functional_mode_names(request_obj)
+            if _modes:
+                ctx["test_mode"] = _modes
     if schema.get("code") == "PFMF":
         ctx.update(_pfmf_build_context(form_data))
+        # The spec row shows the modification state NUMBER only.
+        re_normalize_legacy_values(ctx)
+        # Test Mode prints the mode NAMES ('Mode A, Mode B').
+        if request_obj is not None:
+            _pmodes = _re_functional_mode_names(request_obj)
+            if _pmodes:
+                ctx["test_mode"] = _pmodes
+        # TEST OBSERVATION keeps only the chosen Test Method's coil columns, and the
+        # per-day sections go on their existing rows; both are applied by the finaliser.
+        ctx["_pfmf_meta"] = {"methods": _pfmf_methods(form_data),
+                             "row_splits": _re_row_splits(form_data)}
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
     if schema.get("code") == "ESD":
         ctx.update(_esd_build_context(form_data))
     if schema.get("code") == "RS_RI":
         ctx.update(_rs_ri_build_context(form_data))
+    if schema.get("code") == "CRF":
+        ctx.update(_crf_build_context(form_data))
+        # The spec row shows the modification state NUMBER only.
+        re_normalize_legacy_values(ctx)
+        # Test Mode prints the mode NAMES ('Mode A, Mode B').
+        if request_obj is not None:
+            _cmodes = _re_functional_mode_names(request_obj)
+            if _cmodes:
+                ctx["test_mode"] = _cmodes
+        # A CRLF draft would print three blank lines before 'Power Line:'.
+        crf_normalize_procedure_breaks(ctx)
+        # The Test Port decides which Test Setup picture and which TEST OBSERVATION block
+        # survive; Ambient / Humidity / Test Date / Tested by split into per-day sections.
+        ctx["_crf_meta"] = {"ports": _crf_ports(form_data),
+                            "row_splits": _re_row_splits(form_data)}
+        # Extra Test Setup pictures, sharing RE's slot naming so the form repeater, the
+        # image-save allowlist and the generator's resolver all work unchanged.
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
+    if schema.get("code") == "VOLTAGEFLICKER":
+        # Same Test Specification rules as HARMONIC - it is the other mains-supply test:
+        # the spec row shows the modification state NUMBER only, the supply is fixed at
+        # 230 V, 50 Hz, and Test Mode prints the mode NAMES.
+        re_normalize_legacy_values(ctx)
+        _normalize_mains_and_modes(ctx, request_obj)
+        # Ambient / Humidity / Test Date / Tested by split into the 1-3 per-day sections the
+        # engineer chose. Field bases match RE's, so its collector is reused; the finaliser
+        # splits the value cell.
+        ctx["_flicker_meta"] = {"row_splits": _re_row_splits(form_data)}
     return ctx
 
 
@@ -781,6 +1093,169 @@ def _re_test_procedure(template, basics_text, cfg, fams):
     return _re_apply_support_mapping(txt, cfg)
 
 
+#: Basic standard per test code, for the datasheets whose mapping is not yet in the
+#: admin-editable basic_standard_map table (RE / HARMONIC / VOLTAGEFLICKER / CE use that).
+_DERIVED_BASIC_STANDARDS = {
+    "VOLTAGEDIPS": "IEC 61000-4-11:2020 & EN 61000-4-11:2020",
+    "EFT": "IEC 61000-4-4:2012 & EN 61000-4-4:2012",
+    "SURGE": "IEC 61000-4-5:2014+A1:2017 & EN 61000-4-5:2014+A1:2017",
+    "CRF": "IEC 61000-4-6:2023 & EN 61000-4-6:2023",
+    "RS_RI": "EN 61000-4-3:2020 & IEC 61000-4-3:2020",
+    "PFMF": "IEC 61000-4-8:2009 & EN 61000-4-8:2010",
+    "ESD": "IEC 61000-4-2:2008 & EN 61000-4-2:2009",
+}
+
+#: Observation codes ranked least to most severe. Sub-cases (B1, C2, ...) collapse to their
+#: letter, so the worst code across a matrix is reported as a plain A/B/C/D.
+_PERF_ORDER = ("A", "B", "C", "D")
+
+#: HARMONIC and VOLTAGEFLICKER are both measured on the mains supply, so this is THE value
+#: of their EUT Input Voltage & Frequency row - it overwrites whatever the Test Request or a
+#: saved draft carries, rather than only standing in for a blank.
+_MAINS_DEFAULT_SUPPLY = "230 V, 50 Hz"
+#: ... and these are the datasheets it applies to.
+_MAINS_SUPPLY_CODES = ("HARMONIC", "VOLTAGEFLICKER")
+
+
+def worst_performance_code(codes):
+    """The most severe observation code in `codes`, as a bare letter.
+
+    'A' is the least severe (no degradation) and 'D' the worst (permanent damage). Sub-cases
+    such as B1/C3 count as their letter, and anything unrecognised is ignored, so a stray
+    blank or 'NA' cannot outrank a real observation. Returns '' when nothing was recorded."""
+    worst = -1
+    for c in codes or ():
+        letter = _s(c).strip().upper()[:1]
+        if letter in _PERF_ORDER:
+            worst = max(worst, _PERF_ORDER.index(letter))
+    return _PERF_ORDER[worst] if worst >= 0 else ""
+
+
+def _surge_first_line_basic(text, basic):
+    """Point the procedure's opening sentence at the BASIC standard.
+
+    The template ships '<Standard name>', which the generic prefill fills with the PRODUCT
+    standards - the procedure is written against the basic standard instead. Rewrites the
+    first sentence, so a draft saved with the wrong list is corrected as well.
+
+    Also collapses runs of blank lines to a single one: a draft saved with CRLF endings came
+    back with three blank lines after the opening sentence, a gap wide enough to read as if
+    the sentence had been repeated."""
+    txt = _s(text)
+    if not txt:
+        return txt
+    if basic:
+        txt = re.sub(r"^(The test procedure was in accordance with\s+)[^\n]*?\.",
+                     lambda m: m.group(1) + basic + ".", txt, count=1)
+    return re.sub(r"(?:\r\n|\r|\n){3,}", "\n\n", txt)
+
+
+def _surge_filter_procedure(text, power_applicable, signal_applicable):
+    """Keep only the Test Procedure sections for the ports actually tested.
+
+    The template carries a 'Power Line:' block and a 'Signal Line:' block; with Signal Line
+    marked Not Applicable its paragraph should not be in the document at all. Each heading
+    owns the paragraphs that follow it until the next heading, so both go together.
+
+    If NEITHER port reads as applicable, nothing is stripped: that is far more likely to mean
+    the field has not been filled in yet than that no port was tested, and silently deleting
+    the whole procedure would be worse than leaving it complete.
+    """
+    txt = _s(text)
+    if not txt or not (power_applicable or signal_applicable):
+        return txt
+    blocks = re.split(r"\n\s*\n", txt)
+    keep, section = [], None
+    for b in blocks:
+        head = b.strip().lower().rstrip(":")
+        if head in ("power line", "power lines"):
+            section = "power"
+        elif head in ("signal line", "signal lines"):
+            section = "signal"
+        elif section is None:
+            keep.append(b)                     # preamble: always kept
+            continue
+        if section == "power" and not power_applicable:
+            continue
+        if section == "signal" and not signal_applicable:
+            continue
+        keep.append(b)
+    return "\n\n".join(b for b in keep if b.strip())
+
+
+def normalize_procedure_basic(values, basic=None):
+    """Point a procedure's opening sentence at the basic standard, in place.
+
+    `basic` defaults to the dict's OWN 'basic_standard' value, so the sentence always mirrors
+    what the Test Specification table shows - including a value the engineer edited or one an
+    older draft carries, rather than a constant that might have moved on.
+
+    Needed on the FORM path as well as at generation: a draft saved before this rule holds the
+    PRODUCT standards there, and a draft value overrides the prefill, so fixing the prefill
+    alone left the old sentence on screen. Idempotent."""
+    if not isinstance(values, dict):
+        return values
+    txt = _s(values.get("test_procedure"))
+    if not txt:
+        return values
+    std = _s(basic) or _s(values.get("basic_standard"))
+    values["test_procedure"] = _surge_first_line_basic(txt, std)
+    return values
+
+
+def _normalize_mains_and_modes(values, request_obj=None):
+    """The two Test Specification rules shared by the mains-supply datasheets, in place.
+
+    Needed because a saved draft OVERRIDES the prefill on the form path, so correcting the
+    prefill alone leaves an already-saved draft showing the old values:
+
+      * EUT Input Voltage & Frequency - the test is always run on the mains supply, so
+        230 V, 50 Hz replaces whatever the draft carries. This is deliberately an
+        overwrite, not a blank-fill: it is the value, not a fallback.
+      * Test Mode - the mode NAMES ('Mode A, Mode B'), not the description the requester
+        typed. Left alone when the request yields no modes, so the draft keeps its text
+        rather than being blanked.
+
+    EUT Modification state is handled by re_normalize_legacy_values(). Idempotent."""
+    if not isinstance(values, dict):
+        return values
+    values["eut_input_voltage_frequency"] = _MAINS_DEFAULT_SUPPLY
+    if request_obj is not None:
+        modes = _re_functional_mode_names(request_obj)
+        if modes:
+            values["test_mode"] = modes
+    return values
+
+
+def flicker_normalize_values(values, request_obj=None):
+    """VOLTAGEFLICKER's form-path corrections: the mains supply and Test Mode rules.
+
+    No EUT-support wording here - unlike HARMONIC, that was not asked for on this
+    datasheet, so its procedure text is left exactly as the engineer sees it."""
+    return _normalize_mains_and_modes(values, request_obj)
+
+
+def harmonic_normalize_values(values, request_obj=None):
+    """HARMONIC's form-path corrections: the shared mains supply / Test Mode rules, plus
+    its own EUT-support wording."""
+    if not isinstance(values, dict):
+        return values
+    _normalize_mains_and_modes(values, request_obj)
+    # The procedure's EUT-support phrase follows EUT Configuration. A draft saved with the
+    # combined 'wooden table/insulation support at 0.8/0.1m height' placeholder - or with
+    # the other option's wording - is corrected to match what the form is showing.
+    values["test_procedure"] = _harmonic_apply_support_mapping(
+        values.get("test_procedure"), values.get("eut_configuration"))
+    return values
+
+
+def surge_normalize_procedure(values):
+    """SURGE flavour of normalize_procedure_basic(): falls back to SURGE's derived basic
+    standard when the dict has no basic_standard of its own."""
+    return normalize_procedure_basic(
+        values, _s((values or {}).get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get("SURGE", ""))
+
+
 def _re_apply_support_mapping(text, cfg):
     """EUT support wording follows the EUT Configuration: a non-conductive table of
     0.8 m for Tabletop, an insulation support of 0.1 m for Floor standing. Idempotent,
@@ -799,6 +1274,52 @@ def _re_apply_support_mapping(text, cfg):
                     "insulation support of 0.1 m height"):
         txt = txt.replace(generic, support)
     return txt
+
+
+#: HARMONIC's EUT-support wording. Its procedure ships the combined
+#: 'wooden table/insulation support at 0.8/0.1m height' placeholder and uses a WOODEN
+#: table, so it needs its own phrases rather than RE/RS_RI's non-conductive-table ones.
+_HARMONIC_SUPPORT_TABLETOP = "wooden table at 0.8m height"
+_HARMONIC_SUPPORT_FLOOR = "insulation support at 0.1m height"
+#: Longest first, so the combined placeholder is consumed before the single wordings.
+_HARMONIC_SUPPORT_PHRASES = (
+    "wooden table/ insulation support at 0.8/0.1 m height",
+    "wooden table/insulation support at 0.8/0.1 m height",
+    "wooden table/ insulation support at 0.8/0.1m height",
+    "wooden table/insulation support at 0.8/0.1m height",
+    "wooden table at 0.8 m height",
+    "wooden table at 0.8m height",
+    "insulation support at 0.1 m height",
+    "insulation support at 0.1m height",
+)
+
+
+def _harmonic_apply_support_mapping(text, cfg):
+    """HARMONIC's EUT-support wording follows EUT Configuration: a wooden table at 0.8m
+    height for Tabletop, an insulation support at 0.1m height for Floor standing.
+
+    Idempotent and reversible - it rewrites whichever of the phrases is currently in the
+    text, so switching the dropdown either way corrects it, as does a resumed draft."""
+    txt = _s(text)
+    if not txt:
+        return txt
+    want = (_HARMONIC_SUPPORT_FLOOR if "floor" in _s(cfg).lower()
+            else _HARMONIC_SUPPORT_TABLETOP)
+    for phrase in _HARMONIC_SUPPORT_PHRASES:
+        if phrase != want:
+            txt = txt.replace(phrase, want)
+    return txt
+
+
+def _harmonic_fill_na(rows, value="NA"):
+    """Empty cells in HARMONIC's harmonic-current RESULT grids print 'NA' rather than a
+    blank box. Applied to the rows that survive the 'row carries some content' filter, so
+    a wholly empty row is still dropped instead of becoming a row of NAs."""
+    for row in rows or []:
+        for k, v in list(row.items()):
+            if not _s(v):
+                row[k] = value
+    return rows
 
 
 def collect_prefill(schema, request_obj, assignment):
@@ -903,27 +1424,23 @@ def collect_prefill(schema, request_obj, assignment):
             else:
                 # Derived basic standard per test (kept in code for now; can move to
                 # the basic_standard_map table later, like the DB-backed datasheets).
-                _basic_map = {
-                    "VOLTAGEDIPS": "IEC 61000-4-11:2020 & EN 61000-4-11:2020",
-                    "EFT": "IEC 61000-4-4:2012 & EN 61000-4-4:2012",
-                    "SURGE": "IEC 61000-4-5:2014+A1:2017 & EN 61000-4-5:2014+A1:2017",
-                    "CRF": "IEC 61000-4-6:2023 & EN 61000-4-6:2023",
-                    "RS_RI": "EN 61000-4-3:2020 & IEC 61000-4-3:2020",
-                    "PFMF": "IEC 61000-4-8:2009 & EN 61000-4-8:2010",
-                    "ESD": "IEC 61000-4-2:2008 & EN 61000-4-2:2009",
-                }
-                pre[f["key"]] = _basic_map.get(_bcode, "Sysmex")
+                pre[f["key"]] = _DERIVED_BASIC_STANDARDS.get(_bcode, "Sysmex")
         elif "monitoring_parameters" in k:
             # Pull from the Test Request; if the TR has nothing, fall back to the
             # schema's constant default so the field is never blank on the datasheet.
             pre[f["key"]] = monitoring or default
         elif "voltage" in k and "frequency" in k:
-            pre[f["key"]] = vf
+            # HARMONIC is always run on the mains supply, so 230 V, 50 Hz is the value the
+            # field starts at - it WINS over whatever the Test Request carries, rather than
+            # only filling a blank. The engineer can still type over it on the form.
+            pre[f["key"]] = _MAINS_DEFAULT_SUPPLY if _code in _MAINS_SUPPLY_CODES else vf
         elif k == "test_mode":
             # RE prints the mode NAMES ('Mode A, Mode B'), not the descriptions the
             # requester typed for each one. Other datasheets keep the full text.
             pre[f["key"]] = (_re_functional_mode_names(request_obj) or test_mode) \
-                if _code == "RE" else test_mode
+                if _code in ("RE", "SURGE", "HARMONIC", "VOLTAGEFLICKER", "VOLTAGEDIPS",
+                             "CRF", "PFMF") \
+                else test_mode
         elif _code == "CRF" and k == "immunity_test_requirement":
             v = _s(crf_spec.get("immunityTestRequirement"))
             if v:
@@ -964,8 +1481,12 @@ def collect_prefill(schema, request_obj, assignment):
             side = "power" if k == "test_port_power" else "signal"
             pre[f["key"]] = "Applicable" if _s(cbl.get(side)).lower() in ("yes", "true", "1") else "Not Applicable"
         elif "modification_state" in k:
-            # RE: engineers want just the state number (0), not "0 - Initial state".
-            pre[f["key"]] = "0" if _code == "RE" else "0 - Initial state"
+            # RE and RS_RI: engineers want just the state number (0), not "0 - Initial
+            # state" - the description already has its own column in 1.2.
+            pre[f["key"]] = "0" if _code in ("RE", "RS_RI", "SURGE", "HARMONIC",
+                                             "VOLTAGEFLICKER", "VOLTAGEDIPS", "CRF",
+                                             "PFMF") \
+                else "0 - Initial state"
         elif _code == "RE" and k == "test_procedure":
             try:
                 from .fixed_store import basic_standard as _bs
@@ -975,6 +1496,39 @@ def collect_prefill(schema, request_obj, assignment):
             from . import re_logic as _rl
             pre[f["key"]] = _re_test_procedure(
                 f.get("default", ""), _basics, cfg, _rl.families(standard))
+        elif _code == "HARMONIC" and k == "test_procedure":
+            # '<Standard name>' in the opening sentence means the BASIC standard, which for
+            # HARMONIC comes from the admin-editable basic_standard_map table - so the
+            # sentence matches whatever the Basic Standard row shows.
+            try:
+                from .fixed_store import basic_standard as _bs
+                _hb = _bs(standard, "HARMONIC")
+            except Exception:
+                _hb = ""
+            # ... and the EUT-support phrase follows the EUT Configuration, the way RE's does.
+            pre[f["key"]] = _harmonic_apply_support_mapping(
+                _s(f.get("default", "")).replace("<Standard name>", _hb), cfg)
+        elif _code == "VOLTAGEDIPS" and k == "test_procedure":
+            # '<Standard name>' in the opening sentence means the BASIC standard
+            # (IEC/EN 61000-4-11), not the product standards the generic path would use.
+            pre[f["key"]] = _s(f.get("default", "")).replace(
+                "<Standard name>", _DERIVED_BASIC_STANDARDS.get("VOLTAGEDIPS", ""))
+        elif _code == "SURGE" and k == "test_procedure":
+            # '<Standard name>' in the opening sentence means the BASIC standard here, not
+            # the product standards the generic substitution would drop in.
+            _full = _s(f.get("default", "")).replace(
+                "<Standard name>", _DERIVED_BASIC_STANDARDS.get("SURGE", ""))
+            # The UNFILTERED text is kept alongside, so the form can rebuild the procedure
+            # when a Test Port is switched back on - filtering the stored value would delete
+            # the block for good.
+            pre["test_procedure_full"] = _full
+            pre[f["key"]] = _full
+        elif _code == "RS_RI" and k == "test_procedure":
+            # Resolve the EUT-support wording on the FORM as well, not just in the
+            # generated document: the template default carries the combined
+            # "non-conductive table/ insulation support of 0.8/0.1m" placeholder, and the
+            # engineer should see the phrase that will actually print.
+            pre[f["key"]] = _re_apply_support_mapping(f.get("default", ""), cfg)
         elif k.startswith("eut_configuration"):
             if (schema.get("code") or "").upper() in ("RE", "HARMONIC", "VOLTAGEFLICKER", "CRF", "RS_RI", "PFMF", "ESD"):
                 if cfg in ("Tabletop", "Floor standing"):
@@ -1707,6 +2261,41 @@ _RE_SPLIT_ROWS = (("ambient temperature", "ambient_temperature"),
                   ("relative humidity", "relative_humidity"),
                   ("test date", "test_date"),
                   ("tested by", "tested_by"))
+
+#: RS_RI's spec rows already carry TWO value cells - one per frequency band (80M-1G and
+#: 1G-6G) - so a split has to name the CELL as well as the row. Cell 1 is the 80M-1G
+#: column, cell 2 is 1G-6G; 'Tested by' has a single cell spanning both bands.
+#:     (row label needle, value-cell index, field base)
+_RS_RI_SPLIT_ROWS = (
+    ("ambient temperature", 1, "ambient_temperature_col_1"),
+    ("ambient temperature", 2, "ambient_temperature_col_2"),
+    ("relative humidity",   1, "relative_humidity_col_1"),
+    ("relative humidity",   2, "relative_humidity_col_2"),
+    ("test date",           1, "test_date_col_1"),
+    ("test date",           2, "test_date_col_2"),
+    ("tested by",           1, "tested_by"),
+)
+
+
+def _rs_ri_row_splits(form_data):
+    """Per-CELL section counts (1/2/3) for RS_RI's spec rows, with each section's value.
+
+    Same idea as _re_row_splits, but every band column is independent: the 80M-1G sweep can
+    have run over two days while 1G-6G ran on one. Dates are reformatted to DD/MM/YYYY the
+    way the document shows them."""
+    out = []
+    for needle, cell, base in _RS_RI_SPLIT_ROWS:
+        try:
+            n = int(_s(form_data.get(base + "_sections")) or 1)
+        except ValueError:
+            n = 1
+        n = max(1, min(3, n))
+        vals = []
+        for i in range(n):
+            v = _s(form_data.get(base if i == 0 else "%s_%d" % (base, i + 1)))
+            vals.append(_fmt_ddmmyyyy(v) if base.startswith("test_date") else v)
+        out.append({"needle": needle, "cell": cell, "values": vals})
+    return out
 
 
 def _re_row_splits(form_data):

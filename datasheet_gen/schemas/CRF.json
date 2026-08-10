@@ -71,20 +71,46 @@
             { "key": "test_port", "label": "Test Port", "input": "text", "options": ["Power Line", "Signal Line"], "default": "" },
             { "key": "coupling_method", "label": "Coupling Method", "input": "text", "options": ["CDN", "EM Clamp"], "default": "" },
             { "key": "test_level", "label": "Test Level (Vrms)", "input": "text", "options": ["1", "3", "10", "Custom"], "default": "" },
-            { "key": "frequency_range", "label": "Frequency Range", "input": "text", "options": ["150 kHz - 80 MHz", "ISM Band", "Custom"], "default": "" },
+            { "key": "frequency_range", "label": "Frequency Range", "input": "text", "options": ["150kHz-80MHz", "150kHz-230MHz", "Custom"], "default": "" },
             { "key": "frequency_step_size", "label": "Frequency Step Size", "input": "text", "default": "1 %" },
             { "key": "dwell_time", "label": "Dwell Time", "input": "text", "default": "3 seconds" },
-            { "key": "modulation", "label": "Modulation", "input": "text", "default": "AM 80%, 1 kHz" },
+            { "key": "modulation", "label": "Modulation", "input": "text", "default": "Amplitude Modulation" },
+          {
+            "key": "modulation_depth",
+            "label": "Modulation depth",
+            "input": "text",
+            "default": "80%"
+          },
+          {
+            "key": "modulation_frequency",
+            "label": "Modulation Frequency",
+            "input": "text",
+            "default": "1kHz"
+          },
             { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
             { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
             { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
             { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
-            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "" },
-            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "" },
-            { "key": "test_date", "label": "Test Date", "input": "text", "default": "" },
-            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "" }
+            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "test_date", "label": "Test Date", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "",
+  "split_group": true
+}
           ]
         }
+      ],
+      "split_rows": [
+        { "base": "ambient_temperature", "label": "Ambient Temperature (°C)", "type": "text" },
+        { "base": "relative_humidity", "label": "Relative Humidity (%)", "type": "text" },
+        { "base": "test_date", "label": "Test Date", "type": "date" },
+        { "base": "tested_by", "label": "Tested by", "type": "text" }
       ]
     },
     {
@@ -109,13 +135,14 @@
       "items": [
         {
           "type": "table",
+          "legend_always": "A", "legend_required": true,
           "key": "test_observation_rows",
           "columns": [
             { "key": "c0", "label": "Frequency range (MHz)" },
             { "key": "c1", "label": "Port Name" },
             { "key": "c2", "label": "Test Level (Vrms)" },
             { "key": "c3", "label": "Coupling method" },
-            { "key": "c4", "label": "Observation", "input": "select", "options": ["A", "B", "C", "D", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3"], "legend": true }
+            { "key": "c4", "label": "Observation", "input": "select", "options": ["A", "B", "C", "D", "B1", "B2", "B3", "C1", "C2", "C3"], "legend": true }
           ]
         }
       ]
@@ -123,9 +150,10 @@
     {
       "title": "TEST SETUP PICTURES",
       "items": [
-        { "type": "image", "key": "img_photo_1", "label": "Photo 1: CRF test setup - Power Line", "caption": true },
-        { "type": "image", "key": "img_photo_2", "label": "Photo 2: CRF test setup - Signal Line", "caption": true }
-      ]
+        { "type": "image", "key": "img_photo_1", "label": "Photo 1: CRF test setup - Power Line", "caption": true, "port": "Power Line" },
+        { "type": "image", "key": "img_photo_2", "label": "Photo 2: CRF test setup - Signal Line", "caption": true, "port": "Signal Line" }
+      ],
+      "allow_extra_images": true
     },
     {
       "title": "TEST EQUIPMENT USED",
@@ -167,7 +195,7 @@
           "type": "fields",
           "fields": [
             { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
-            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["Yes", "No"], "default": "" }
+            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
           ]
         },
         {

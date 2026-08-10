@@ -60,7 +60,7 @@
             { "key": "immunity_test_requirement", "label": "Immunity test requirement", "input": "text", "checkbox": ["Basic", "Industrial", "Controlled", "Custom"], "default": "" },
             { "key": "test_port", "label": "Test Port", "input": "text", "default": "Enclosure" },
             { "key": "test_level", "label": "Test Level", "input": "text", "checkbox": ["1A/m", "3A/m", "30A/m", "Custom"], "default": "" },
-            { "key": "test_method", "label": "Test Method", "input": "text", "options": ["Proximity method", "Immersion method"], "default": "" }
+            { "key": "test_method", "label": "Test Method", "input": "text", "options": ["Proximity method", "Immersion method", "Both"], "default": "" }
           ]
         },
         { "type": "custom", "layout": "pfmf_coil", "label": "Coil Orientation" },
@@ -73,12 +73,26 @@
             { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
             { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
             { "key": "test_frequency", "label": "Test Frequency", "input": "text", "default": "50Hz & 60Hz" },
-            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "" },
-            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "" },
-            { "key": "test_date", "label": "Test Date", "input": "text", "default": "" },
-            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "" }
+            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "test_date", "label": "Test Date", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "",
+  "split_group": true
+}
           ]
         }
+      ],
+      "split_rows": [
+        { "base": "ambient_temperature", "label": "Ambient Temperature (°C)", "type": "text" },
+        { "base": "relative_humidity", "label": "Relative Humidity (%)", "type": "text" },
+        { "base": "test_date", "label": "Test Date", "type": "date" },
+        { "base": "tested_by", "label": "Tested by", "type": "text" }
       ]
     },
     {
@@ -137,7 +151,8 @@
         { "type": "image", "key": "img_photo_1", "label": "Photo 1: PFMF test setup – X axis", "caption": true },
         { "type": "image", "key": "img_photo_2", "label": "Photo 2: PFMF test setup – Y axis", "caption": true },
         { "type": "image", "key": "img_photo_3", "label": "Photo 3: PFMF test setup – Z axis", "caption": true }
-      ]
+      ],
+      "allow_extra_images": true
     },
     {
       "title": "TEST EQUIPMENT USED",

@@ -11,7 +11,8 @@ from docx.shared import Mm
 from docx.oxml.ns import qn
 
 from .layout import (polish_layout, page_break_before_top_sections, ce_finalize_layout,
-                     enforce_arial_fonts, enforce_body_arial, enforce_arial_procedure)
+                     enforce_arial_fonts, enforce_body_arial, enforce_arial_procedure,
+                     _ce_center_tables, _ce_fill_empty_cells, _ce_tune_plot_spacing)
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "word_templates", "IEC-FRM-504_CE.docx")
 
@@ -74,13 +75,34 @@ _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 
 
+def _in_signature_table(el):
+    """True when this picture sits in the sign-off table.
+
+    Matched on the enclosing table carrying the word "Signature", NOT on merely being in
+    a table: EFT keeps three test-setup diagrams inside a table and those DO want borders.
+    """
+    n = el
+    while n is not None:
+        if n.tag == qn("w:tbl"):
+            text = "".join(t.text or "" for t in n.iter(qn("w:t"))).lower()
+            return "signature" in text
+        n = n.getparent()
+    return False
+
+
 def _add_image_borders(doc, emu=6350, color="000000"):
     """Wrap every inline body image in a thin rectangular border (a box), matching the
-    reference datasheet where the plots sit in a bordered box. The header logo lives in
-    the header (not the body), so it is left untouched. emu=6350 -> 0.5pt."""
+    reference datasheet where the plots sit in a bordered box. emu=6350 -> 0.5pt.
+
+    Skipped: the header logo (it lives in the header, not the body) and the signature in
+    the sign-off block. A signature is a scan of ink on paper, and boxing it reads as a
+    defect. Every plot and photo is left bordered.
+    """
     for spPr in doc.element.body.iter("{%s}spPr" % _PIC_NS):
         for ln in spPr.findall("{%s}ln" % _A_NS):
             spPr.remove(ln)
+        if _in_signature_table(spPr):
+            continue                       # signature: leave it borderless
         ln = spPr.makeelement("{%s}ln" % _A_NS, {"w": str(emu)})
         fill = spPr.makeelement("{%s}solidFill" % _A_NS, {})
         clr = spPr.makeelement("{%s}srgbClr" % _A_NS, {"val": color})
@@ -93,6 +115,11 @@ def _add_image_borders(doc, emu=6350, color="000000"):
 #: gives 6, which divides by 1, 2 and 3 so every section split lands on a boundary and
 #: stays on one line. (RE re-grids to 12 for the same reason.)
 _CE_VALUE_REGRID = (3, 3)
+
+#: Full width of a CE MEASUREMENT DATA table in twips (the template ships 8 x 1128). RE's
+#: page content width is 9016; CE's tables are 9024, so the shared width-resync pass is
+#: told which to use.
+_CE_TABLE_WIDTH_TWIPS = 9024
 
 
 def _resolve_extra_images(tpl, entries, images, img_boxes, box=None):
@@ -175,9 +202,11 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
         box = custom or _IMAGE_BOXES[var]
         context[var] = _fit_image(tpl, path, box, exact=bool(custom)) if (path and os.path.exists(path)) else ""
     # per-Test measurement plots -> InlineImage on each record. Four slots: a Quasi-peak
-    # and an Average graph for each of the Line and Neutral conductors.
+    # and an Average graph for each of the Line and Neutral conductors, each of which the
+    # template pairs with its own data table.
+    from .service import _CE_PLOT_GROUPS
     for rec in context.get("measurement_records") or []:
-        for role in ("plot_line", "plot_line_avg", "plot_neutral", "plot_neutral_avg"):
+        for role in ("plot_%s" % g[0] for g in _CE_PLOT_GROUPS):
             key = rec.get(role + "_key")
             path = images.get(key)
             custom = _img_boxes.get(key)
@@ -206,12 +235,42 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
     # Any blank Calibration Due on a populated equipment row prints 'NA' (as RE). Covers
     # rows the engineer cleared on the form as well as equipment with no due date.
     from .generic_generator import (_re_fill_missing_na, _re_renumber_figures,
-                                    _re_renumber_photos)
+                                    _re_renumber_photos, _re_renumber_tables,
+                                    _re_relabel_captions_custom_range,
+                                    _re_sync_meas_table_widths)
+    # The measurement tables are built with a column loop, so their column COUNT comes from
+    # the data. docxtpl re-splits the template width and leaves stale cell widths behind, so
+    # rebuild each grid as N equal columns summing to CE's full 9024-twip page width.
+    from .service import _CE_PLOT_GROUPS
+    _re_sync_meas_table_widths(
+        tpl.docx, None, width=_CE_TABLE_WIDTH_TWIPS,
+        extra_header_sets=[rec.get("%s_headers" % g[0])
+                           for rec in (context.get("measurement_records") or [])
+                           for g in _CE_PLOT_GROUPS if rec.get("%s_headers" % g[0])])
     _re_fill_missing_na(tpl.docx, header_needle="calibration due", value="NA")
+    # A custom Frequency Range from the Test Request renames the captions still carrying
+    # the standard band from fixed template text (the 'Table N: CE_...' headings). Shares
+    # RE's pass with CE's own band spellings.
+    from .service import CE_CAPTION_BANDS
+    _re_relabel_captions_custom_range(tpl.docx, context.get("ce_custom_range"),
+                                      bands=CE_CAPTION_BANDS)
     # Close the gaps left by the slots that printed nothing: an Average plot the engineer
     # skipped, or an extra picture slot with no upload, would otherwise burn a number.
     _re_renumber_figures(tpl.docx)
     _re_renumber_photos(tpl.docx)
+    # Table captions are generated per plot group inside the record loop, so they restart
+    # at 1 for every Test until renumbered in document order.
+    _re_renumber_tables(tpl.docx)
+    # An unrecorded cell in the EUT Modification Record prints '-' rather than reading as
+    # an unfinished row. Only rows that carry some content are filled.
+    _ce_fill_empty_cells(tpl.docx, ("modification state",), placeholder="-")
+    # Centre the grids the reference layout shows centred (Test Limits, Measurement Data,
+    # Test Equipment Used, Software Used, EUT Modification Record). Runs after the Arial
+    # enforcement so nothing rewrites the alignment afterwards.
+    _ce_center_tables(tpl.docx)
+    # Pull each plot up under its "Line:"/"Neutral:" label, and give the data table room
+    # below its "Figure N:" caption. Last, so no earlier spacing pass overrides it.
+    _ce_tune_plot_spacing(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

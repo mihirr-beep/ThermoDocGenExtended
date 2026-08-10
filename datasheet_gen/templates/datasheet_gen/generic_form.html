@@ -16,6 +16,26 @@
                class="mt-1 w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg">
       {% endif %}
     </div>
+  {% elif f.multi_checkbox %}
+    {# Several options can be ticked at once (SURGE's Coupling Phases: all four by default).
+       The real checkboxes are what the engineer clicks; a hidden field carries the
+       comma-joined value the document is built from, kept in step by syncMultiCheckbox(). #}
+    {% set _sel = (prefill.get(f.key, '') if prefill else '') or f.default or '' %}
+    {# One grid cell like every other field, so it sits beside its neighbour instead of
+       spanning the row and leaving a gap. The options are short, so they still fit. #}
+    <div class="js-multicheck" data-key="{{ f.key }}">
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
+      <input type="hidden" name="{{ f.key }}" value="{{ _sel }}">
+      <div class="flex flex-wrap items-center gap-3 px-3 py-2 border border-gray-300 rounded-lg">
+        {% for o in f.multi_checkbox %}
+        <label class="inline-flex items-center gap-1.5 text-sm text-gray-700">
+          <input type="checkbox" value="{{ o }}" class="js-mc-opt rounded border-gray-300"
+                 {{ 'checked' if o in _sel.split(',')|map('trim')|list }}>
+          <span>{{ o }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
   {% elif f.checkbox or f.options %}
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ f.label }}</label>
@@ -112,7 +132,9 @@
           <button type="button" onclick="generateVdipsObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from EUT Voltages</button>
         </div>
         <div id="vdips-obs-records" class="mt-3"></div>
-        <div id="vdips-obs-legend" class="mt-1" data-legend-prefix="obs_legend"></div>
+        {# data-legend-required: every description must be filled before the form submits #}
+        <div id="vdips-obs-legend" class="mt-1" data-legend-prefix="obs_legend"
+             data-legend-required="1"></div>
         <script type="application/json" id="vdips-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
       </section>
       {% elif sec.title == 'RESULT' and code == 'VOLTAGEDIPS' %}
@@ -188,9 +210,11 @@
                       <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_2" value="{{ prefill.get(b.key ~ '_col_2', '') }}" class="w-16 px-1 py-1 border rounded"></td>
                       {% for n in [3, 4, 5, 6, 7, 8, 9, 10] %}
                       <td class="p-1 border border-gray-300">
+                        {# Performance criteria A-D and their sub-cases. D is a permanent
+                           failure, so it has no numbered sub-cases. #}
                         <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -199,7 +223,10 @@
                   </tbody>
                 </table>
               </div>
-              <div id="rs-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
+              {# data-legend-always: 'A' is listed even before any cell is set to it, so the
+                 legend is present from the start with its standard wording filled in. #}
+              <div id="rs-obs-legend" class="md:col-span-2 mt-1"
+                   data-legend-prefix="obs_legend" data-legend-always="A"></div>
               <script type="application/json" id="rs-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
 
             {% elif it.layout == 'pfmf_obs' %}
@@ -209,12 +236,13 @@
                     <tr>
                       <th rowspan="2" class="p-1 border border-gray-300">Field Strength<br>(A/m)</th>
                       <th rowspan="2" class="p-1 border border-gray-300">Test Frequency</th>
-                      <th colspan="4" class="p-1 border border-gray-300">Proximity method</th>
-                      <th colspan="3" class="p-1 border border-gray-300">Immersion method</th>
+                      {# data-method: shown only while that Test Method is selected #}
+                      <th colspan="4" data-method="proximity" class="p-1 border border-gray-300">Proximity method</th>
+                      <th colspan="3" data-method="immersion" class="p-1 border border-gray-300">Immersion method</th>
                     </tr>
                     <tr>
-                      <th class="p-1 border border-gray-300">0&deg;</th><th class="p-1 border border-gray-300">90&deg;</th><th class="p-1 border border-gray-300">180&deg;</th><th class="p-1 border border-gray-300">270&deg;</th>
-                      <th class="p-1 border border-gray-300">X</th><th class="p-1 border border-gray-300">Y</th><th class="p-1 border border-gray-300">Z</th>
+                      <th data-method="proximity" class="p-1 border border-gray-300">0&deg;</th><th data-method="proximity" class="p-1 border border-gray-300">90&deg;</th><th data-method="proximity" class="p-1 border border-gray-300">180&deg;</th><th data-method="proximity" class="p-1 border border-gray-300">270&deg;</th>
+                      <th data-method="immersion" class="p-1 border border-gray-300">X</th><th data-method="immersion" class="p-1 border border-gray-300">Y</th><th data-method="immersion" class="p-1 border border-gray-300">Z</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -223,10 +251,10 @@
                       <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_1" value="{{ prefill.get(b.key ~ '_col_1', '') }}" class="w-16 px-1 py-1 border rounded"></td>
                       <td class="p-1 border border-gray-300"><input name="{{ b.key }}_col_2" value="{{ prefill.get(b.key ~ '_col_2', '') }}" class="w-16 px-1 py-1 border rounded"></td>
                       {% for n in [3, 4, 5, 6, 7, 8, 9] %}
-                      <td class="p-1 border border-gray-300">
+                      <td data-method="{{ 'proximity' if n <= 6 else 'immersion' }}" class="p-1 border border-gray-300">
                         <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded pfmf-obs-cell">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -319,24 +347,25 @@
               <div class="md:col-span-2">
                 <div class="flex items-center justify-between mb-1">
                   <label class="block text-sm font-medium text-gray-700">{{ it.label }}</label>
-                  {% if code == 'RE' %}
-                  {# Edit lets the engineer override the standard wording. Once edited, the
-                     text stops being regenerated from Product Standard / EUT Configuration /
-                     Frequency Range until they press Reset. #}
+                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
+                {# Edit lets the engineer override the standard wording. Once edited, the
+                   text stops being regenerated (RE derives it from Product Standard / EUT
+                   Configuration / Frequency Range; RS_RI takes it from the request) until
+                   they press Reset. #}
                   <div class="flex items-center gap-2">
                     <button type="button" id="procEditBtn" onclick="toggleProcedureEdit()"
                             title="Edit the test procedure text"
                             class="text-xs px-2 py-1 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-semibold">
                       <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit</button>
                     <button type="button" id="procResetBtn" onclick="resetProcedure()"
-                            title="Discard your edits and rebuild the standard text"
+                            title="Discard your edits and restore the standard text"
                             class="hidden text-xs px-2 py-1 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">&#8634; Reset</button>
                   </div>
                   {% endif %}
                 </div>
-                <p class="text-xs text-gray-500 mb-1" id="{{ it.key }}_hint">Standard test procedure; read-only{% if code == 'RE' %} &mdash; use <strong>Edit</strong> to change it{% endif %}.</p>
+                <p class="text-xs text-gray-500 mb-1" id="{{ it.key }}_hint">Standard test procedure; read-only{% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %} &mdash; use <strong>Edit</strong> to change it{% endif %}.</p>
                 <input type="hidden" name="{{ it.key }}" id="{{ it.key }}" value="{{ prefill.get(it.key, '') }}">
-                {% if code == 'RE' %}
+                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
                 {# Sticky flag: survives a draft reload so a manual edit is never silently
                    overwritten by the auto-generated wording. #}
                 <input type="hidden" name="{{ it.key }}_manual" id="{{ it.key }}_manual" value="{{ prefill.get(it.key ~ '_manual', '') }}">
@@ -355,7 +384,9 @@
               </div>
 
             {% elif it.type == 'image' %}
-              <div class="md:col-span-2">
+              {# data-port: the slot belongs to one Test Port, so it is shown only while
+                 that port is the one selected in the Test Specification (CRF). #}
+              <div class="md:col-span-2"{% if it.port %} data-port="{{ it.port }}"{% endif %}>
                 <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
                 <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                 {% if it.caption %}
@@ -412,7 +443,11 @@
                 {% endif %}
                 {% set _legcols = it['columns']|selectattr('legend')|list %}
                 {% if _legcols %}
-                <div id="{{ it.key }}-obs-legend" class="mt-2" data-legend-prefix="obs_legend"></div>
+                {# legend_always: that code is listed (with its standard wording) even before
+                   any cell is set to it. legend_required: every description must be filled. #}
+                <div id="{{ it.key }}-obs-legend" class="mt-2" data-legend-prefix="obs_legend"
+                     {% if it.legend_always %}data-legend-always="{{ it.legend_always }}"{% endif %}
+                     {% if it.legend_required %}data-legend-required="1"{% endif %}></div>
                 <script type="application/json" id="{{ it.key }}-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
                 {% endif %}
               </div>
@@ -579,7 +614,8 @@
             </div>
             {% for d in [1, 2, 3] %}
             {% set _n = row.base if d == 1 else row.base ~ '_' ~ d %}
-            <div>
+            {# data-day lets syncSplitRowDays() grey out the days beyond the chosen count #}
+            <div class="js-split-day" data-day="{{ d }}">
               <label class="block text-sm font-medium text-gray-700 mb-1">{{ row.label }} &ndash; Day {{ d }}{% if d > 1 %} <span class="text-[10px] font-normal text-gray-400">(optional)</span>{% endif %}</label>
               <input type="{{ 'date' if row.type == 'date' else 'text' }}" name="{{ _n }}"
                      value="{{ prefill.get(_n, '') or '' }}"{% if row.type == 'date' %} max="{{ today }}"{% endif %}
@@ -645,7 +681,8 @@
             {% endfor %}
           </select>
         </div>
-        {% if code == 'RE' %}
+        {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'VOLTAGEFLICKER', 'VOLTAGEDIPS',
+                       'CRF', 'PFMF') %}
         <button type="button" id="draftDocxBtn" onclick="downloadDraftDocx()"
                 title="Generate the Word document from the form as it stands and download it. Nothing is submitted."
                 class="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow">Generate Datasheet</button>
@@ -907,11 +944,17 @@
       });
     });
 
-    /* Observation "Dwell time (s)" mirrors the Test-Specification Dwell Time. */
+    /* Observation "Dwell time (s)" mirrors the Test-Specification Dwell Time. The unit is
+       already in the column heading, so only the NUMBER is copied across - the
+       specification says "3 seconds" but the cell must read "3". */
     var dwell = document.querySelector('[name="dwell_time"]');
     var targets = ['f_80_to_1000_col_2', 'f_1000_to_6000_col_2'];
+    function dwellNumber(v) {
+      var m = String(v == null ? '' : v).match(/-?\d+(?:\.\d+)?/);
+      return m ? m[0] : '';
+    }
     function syncDwell() {
-      var v = dwell ? dwell.value : '';
+      var v = dwellNumber(dwell ? dwell.value : '');
       targets.forEach(function (n) {
         var el = document.querySelector('[name="' + n + '"]');
         if (el) el.value = v;
@@ -1388,29 +1431,49 @@
   // Activates ONLY where '.js-obs-code' observation selects and a '[data-legend-prefix]' host exist,
   // so the bespoke EFT/SURGE/PFMF legends stay untouched. Codes include 'A' (all selected codes).
   var __obsLegendStore = {};  // hostId -> { code: description }, preserved across rebuilds
+  //: Standard wording pre-filled for a code that is ALWAYS listed (data-legend-always).
+  //  Codes the engineer selects start blank on purpose - B/C/D describe an actual observed
+  //  failure, so boilerplate there would be wrong more often than right.
+  var __OBS_LEGEND_DEFAULTS = {
+    'A': 'No degradation was observed during the test based on the parameters monitored.'
+  };
   function __obsLegendHosts() { return document.querySelectorAll('[data-legend-prefix]'); }
-  function __obsCodesInScope() {
+  function __obsCodesInScope(host) {
     var seen = {};
     document.querySelectorAll('select.js-obs-code').forEach(function (el) {
       var v = (el.value || '').trim(); if (v) seen[v] = true;
     });
+    // codes this host always lists, even when nothing is set to them yet
+    ((host && host.getAttribute('data-legend-always')) || '')
+      .split(',').map(function (s) { return s.trim(); })
+      .forEach(function (c) { if (c) seen[c] = true; });
     return Object.keys(seen).sort();
   }
   function rebuildObsLegend(host) {
     if (!host) return;
     var prefix = host.getAttribute('data-legend-prefix') || 'obs_legend';
     var store = __obsLegendStore[host.id] || (__obsLegendStore[host.id] = {});
-    var codes = __obsCodesInScope();
+    var codes = __obsCodesInScope(host);
     if (!codes.length) { host.innerHTML = ''; return; }
+    // seed any code we have not seen before with its standard wording
+    codes.forEach(function (c) {
+      if (store[c] == null && __OBS_LEGEND_DEFAULTS[c] != null) store[c] = __OBS_LEGEND_DEFAULTS[c];
+    });
+    // Hosts marked data-legend-required cannot be left half-written: every description
+    // carries the browser's own 'required', so submit stops on the first empty one.
+    var req = host.getAttribute('data-legend-required') === '1';
     var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3">' +
-      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div>' +
-      '<p class="text-xs text-gray-500 mb-2">Describe what each observation code selected above stands for.</p>';
+      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend' +
+      (req ? ' <span class="text-red-600">*</span>' : '') + '</div>' +
+      '<p class="text-xs text-gray-500 mb-2">Describe what each observation code selected above stands for.' +
+      (req ? ' All descriptions are required.' : '') + '</p>';
     codes.forEach(function (c) {
       var desc = (store[c] != null) ? store[c] : '';
       html += '<div class="flex items-start gap-2 mb-2">' +
         '<span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
         '<input type="hidden" name="' + prefix + '_code[]" value="' + esc(c) + '">' +
         '<textarea name="' + prefix + '_desc[]" data-code="' + esc(c) + '" rows="2" ' +
+        (req ? 'required ' : '') +
         'class="w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea>' +
         '</div>';
     });
@@ -1424,6 +1487,66 @@
     });
   }
   function rebuildAllObsLegends() { __obsLegendHosts().forEach(rebuildObsLegend); }
+
+  /* ---- multi_checkbox fields ----------------------------------------------------------
+     Several options ticked at once. The hidden field carries the comma-joined selection in
+     the option order declared by the schema (not click order), which is what the document's
+     checkbox row is built from. */
+  function syncMultiCheckbox(box) {
+    var hidden = box.querySelector('input[type=hidden]');
+    if (!hidden) return;
+    var picked = [];
+    box.querySelectorAll('.js-mc-opt').forEach(function (cb) {
+      if (cb.checked) picked.push(cb.value);
+    });
+    var joined = picked.join(', ');
+    if (joined !== hidden.value) {
+      hidden.value = joined;
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-multicheck').forEach(function (box) {
+      box.querySelectorAll('.js-mc-opt').forEach(function (cb) {
+        cb.addEventListener('change', function () { syncMultiCheckbox(box); });
+      });
+      syncMultiCheckbox(box);
+    });
+  });
+
+  /* ---- per-day split rows: only the chosen number of days stays active ---------------
+     Picking "1 section" leaves Day 2 and Day 3 on screen but greyed and disabled, so only
+     the boxes the document will actually use are fillable.
+
+     Deliberately the SAME treatment RE and CE use (disabled + .ds-locked + 50% opacity) so
+     the three datasheets behave identically. Note the consequence of `disabled`: the box is
+     not submitted, so reducing the count and raising it again starts that day empty. */
+  function syncSplitRowDays() {
+    document.querySelectorAll('.js-split-row').forEach(function (row) {
+      var base = row.getAttribute('data-base');
+      var sel = row.querySelector('[name="' + base + '_sections"]');
+      var n = sel ? (parseInt(sel.value || '1', 10) || 1) : 1;
+      if (!(n >= 1 && n <= 3)) n = 1;
+      row.querySelectorAll('.js-split-day').forEach(function (box) {
+        var day = parseInt(box.getAttribute('data-day') || '1', 10);
+        var open = day <= n;
+        box.style.opacity = open ? '' : '0.5';
+        box.querySelectorAll('input, select, textarea').forEach(function (el) {
+          el.disabled = !open;
+          el.classList.toggle('ds-locked', !open);
+        });
+      });
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-split-row [name$="_sections"]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        syncSplitRowDays();
+        if (typeof triggerAutoSave === 'function') triggerAutoSave();
+      });
+    });
+    syncSplitRowDays();
+  });
   document.addEventListener('DOMContentLoaded', function () {
     __obsLegendHosts().forEach(function (host) {
       var seedEl = document.getElementById(host.id + '-seed');
@@ -1779,6 +1902,43 @@
   }
 
   /* ---- image editor (crop + ratio presets / rotate / grayscale / brightness-contrast) ---- */
+  /* ---- blocks that follow a Test Specification choice --------------------------------
+     An element tagged data-<attr> belongs to one option of the field named by that attr's
+     driver, so it is shown only while that option is selected - matching the document,
+     which keeps just the selected option's content:
+
+       data-port   <- Test Port    (CRF: one Test Setup picture slot per port)
+       data-method <- Test Method  (PFMF: the coil columns of one method)
+
+     'Both' (or nothing chosen yet) keeps everything visible, so the engineer never loses
+     sight of a column before making the choice. */
+  function syncTaggedBlocks(attr, fieldName) {
+    var els = document.querySelectorAll('[data-' + attr + ']');
+    if (!els.length) return;
+    var sel = document.querySelector('[name="' + fieldName + '"]');
+    var chosen = String((sel && sel.value) || '').toLowerCase();
+    var all = !chosen || chosen.indexOf('both') >= 0;
+    els.forEach(function (el) {
+      var want = String(el.getAttribute('data-' + attr) || '').toLowerCase();
+      el.classList.toggle('hidden', !(all || chosen.indexOf(want) >= 0));
+    });
+  }
+  function syncPortPictures() { syncTaggedBlocks('port', 'test_port'); }
+  function syncMethodColumns() { syncTaggedBlocks('method', 'test_method'); }
+  document.addEventListener('DOMContentLoaded', function () {
+    [['test_port', syncPortPictures], ['test_method', syncMethodColumns]].forEach(function (pair) {
+      var sel = document.querySelector('[name="' + pair[0] + '"]');
+      if (sel) {
+        sel.addEventListener('change', pair[1]);
+        sel.addEventListener('input', pair[1]);
+      }
+      pair[1]();
+    });
+  });
+
+  //: Datasheets whose Test Setup pictures vary in shape, so the crop frame is unlocked
+  //  and the placed picture keeps the aspect the engineer cropped to.
+  var FREE_CROP_CODES = ['RE', 'VOLTAGEDIPS', 'CRF', 'PFMF'];
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
   // can reframe / select a different portion of the full image.
   function openImageEditor(key){
@@ -1787,9 +1947,10 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key), sizeCm:imageCm(key),
-      // RE: crop free-hand from any corner (no fixed ratio). Other datasheets keep
-      // the ratio-locked frame so their images stay uniform.
-      freeCrop: (DS_SCHEMA && DS_SCHEMA.code === 'RE'),
+      // Free-hand crop from any corner (no fixed ratio), with the placed size derived
+      // from the crop's own aspect. The others keep the ratio-locked frame so their
+      // images stay uniform.
+      freeCrop: !!(DS_SCHEMA && FREE_CROP_CODES.indexOf(DS_SCHEMA.code) >= 0),
       onApply:function(edited, sz){ setInputFile(key, edited); if(sz&&sz.w>0&&sz.h>0) setImageCm(key, sz.w, sz.h); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
@@ -2868,6 +3029,159 @@
 </script>
 {% endif %}
 
+{% if code in ('RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
+<script>
+  /* =========================================================================
+     Test Procedure: edit by hand, or Reset back to the standard text.
+
+     RE has its own copy of these functions in its block above, where Reset REBUILDS the
+     wording from Product Standard / EUT Configuration / Frequency Range. RS_RI's procedure
+     is not derived from anything on the form - it arrives from the Test Request - so Reset
+     restores the text the server sent, captured here at load time. Defined in a code-gated
+     block of its own so the two versions can never collide.
+     ========================================================================= */
+  var PROC_ORIGINAL = (function () {
+    var el = document.getElementById('test_procedure');
+    return el ? (el.value || '') : '';
+  })();
+
+  function procIsManual() {
+    var f = document.getElementById('test_procedure_manual');
+    return !!(f && f.value === '1');
+  }
+
+  function renderProcedureView() {
+    var pEl = document.getElementById('test_procedure');
+    var view = document.getElementById('test_procedure_view');
+    if (!pEl || !view) return;
+    view.textContent = pEl.value || '';        // textContent escapes; CSS keeps the breaks
+  }
+
+  function toggleProcedureEdit() {
+    var ta = document.getElementById('test_procedure_edit');
+    var view = document.getElementById('test_procedure_view');
+    var pEl = document.getElementById('test_procedure');
+    var btn = document.getElementById('procEditBtn');
+    var reset = document.getElementById('procResetBtn');
+    var hint = document.getElementById('test_procedure_hint');
+    if (!ta || !view || !pEl) return;
+
+    if (ta.classList.contains('hidden')) {          // ---- enter edit mode
+      ta.value = pEl.value || '';
+      ta.classList.remove('hidden');
+      view.classList.add('hidden');
+      if (btn) btn.innerHTML = '&#10003; Done';
+      if (hint) hint.innerHTML = 'Editing &mdash; your wording replaces the standard text.';
+      ta.focus();
+    } else {                                        // ---- leave edit mode
+      pEl.value = ta.value;
+      var flag = document.getElementById('test_procedure_manual');
+      if (flag) flag.value = '1';
+      ta.classList.add('hidden');
+      view.classList.remove('hidden');
+      renderProcedureView();
+      if (btn) btn.innerHTML = '<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+      if (reset) reset.classList.remove('hidden');
+      if (hint) hint.innerHTML = 'Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+
+  function resetProcedure() {
+    var flag = document.getElementById('test_procedure_manual');
+    if (flag) flag.value = '';
+    var pEl = document.getElementById('test_procedure');
+    if (pEl) pEl.value = PROC_ORIGINAL;           // the text the server sent
+    // ... then re-apply the support phrase for whatever EUT Configuration is set NOW,
+    // which may differ from what it was when the page loaded.
+    if (typeof applySupportWording === 'function') applySupportWording();
+    var ta = document.getElementById('test_procedure_edit');
+    var view = document.getElementById('test_procedure_view');
+    if (ta) ta.classList.add('hidden');
+    if (view) view.classList.remove('hidden');
+    renderProcedureView();
+    var btn = document.getElementById('procEditBtn');
+    if (btn) btn.innerHTML = '<span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit';
+    var reset = document.getElementById('procResetBtn');
+    if (reset) reset.classList.add('hidden');
+    var hint = document.getElementById('test_procedure_hint');
+    if (hint) hint.innerHTML = 'Standard test procedure; read-only &mdash; use <strong>Edit</strong> to change it.';
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    if (typeof showMessage === 'function') showMessage('Test procedure reset to the standard text.', 'success');
+  }
+
+  /* The EUT-support phrase follows EUT Configuration: a non-conductive table of 0.8 m for
+     Tabletop, an insulation support of 0.1 m for Floor standing. Swapped live so changing
+     the dropdown updates the text the engineer is reading, and left alone once the
+     procedure has been hand-edited. Idempotent: it rewrites whichever of the three
+     wordings is currently in the text. Mirrors _re_apply_support_mapping() on the server,
+     which is what the document is actually built from.
+
+     HARMONIC words this differently - its EUT sits on a WOODEN table and its procedure
+     ships the 'wooden table/insulation support at 0.8/0.1m height' placeholder - so the
+     phrases are per-datasheet, mirroring _harmonic_apply_support_mapping() instead. */
+{% if code == 'HARMONIC' %}
+  var PROC_SUPPORTS = [
+    'wooden table/ insulation support at 0.8/0.1 m height',
+    'wooden table/insulation support at 0.8/0.1 m height',
+    'wooden table/ insulation support at 0.8/0.1m height',
+    'wooden table/insulation support at 0.8/0.1m height',
+    'wooden table at 0.8 m height',
+    'wooden table at 0.8m height',
+    'insulation support at 0.1 m height',
+    'insulation support at 0.1m height'
+  ];
+  var PROC_SUPPORT_FLOOR = 'insulation support at 0.1m height';
+  var PROC_SUPPORT_TABLE = 'wooden table at 0.8m height';
+{% else %}
+  var PROC_SUPPORTS = [
+    'non-conductive table/ insulation support of 0.8/0.1m height',
+    'non-conductive table/ insulation support of 0.8/0.1 m height',
+    'non-conductive table of 0.8m height',
+    'non-conductive table of 0.8 m height',
+    'insulation support of 0.1m height',
+    'insulation support of 0.1 m height'
+  ];
+  var PROC_SUPPORT_FLOOR = 'insulation support of 0.1 m height';
+  var PROC_SUPPORT_TABLE = 'non-conductive table of 0.8 m height';
+{% endif %}
+  function applySupportWording() {
+    if (procIsManual()) return;
+    var pEl = document.getElementById('test_procedure');
+    var cfgEl = document.querySelector('[name="eut_configuration"]');
+    if (!pEl || !cfgEl) return;
+    var want = (String(cfgEl.value || '').toLowerCase().indexOf('floor') >= 0)
+      ? PROC_SUPPORT_FLOOR
+      : PROC_SUPPORT_TABLE;
+    var txt = pEl.value || '';
+    PROC_SUPPORTS.forEach(function (generic) {
+      if (generic !== want) txt = txt.split(generic).join(want);
+    });
+    if (txt !== pEl.value) {
+      pEl.value = txt;
+      renderProcedureView();
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+
+  // A draft whose procedure was hand-edited comes back with the flag set: show Reset and
+  // say so, rather than looking like untouched standard text.
+  document.addEventListener('DOMContentLoaded', function () {
+    var cfgEl = document.querySelector('[name="eut_configuration"]');
+    if (cfgEl) {
+      cfgEl.addEventListener('change', applySupportWording);
+      cfgEl.addEventListener('input', applySupportWording);
+    }
+    applySupportWording();
+    if (!procIsManual()) return;
+    var reset = document.getElementById('procResetBtn');
+    if (reset) reset.classList.remove('hidden');
+    var hint = document.getElementById('test_procedure_hint');
+    if (hint) hint.innerHTML = 'Edited by hand &mdash; press <strong>Reset</strong> to go back to the standard text.';
+  });
+</script>
+{% endif %}
+
 {% if code == 'VOLTAGEDIPS' %}
 <script>
   /* =========================================================================
@@ -2895,7 +3209,8 @@
       intr: [ { pct: '0', spec: '250/300 cycles', dur: '250', crit: 'C' } ]
     }
   };
-  var VDIPS_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
+  // D has no sub-cases on this datasheet, so D1/D2/D3 are not offered.
+  var VDIPS_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
 
   function vdipsLevelSet() {
     var el = inputByName('immunity_test_requirement');
@@ -2967,16 +3282,12 @@
     host.innerHTML = html;
   }
 
-  // ---- Observation dropdown (A/B/C/D) with a confirm popup on change ----
+  // ---- Observation dropdown (A/B/C/D) ----
+  // Picking a code used to raise a confirm() dialog; it interrupted normal data entry for
+  // no benefit, so the choice is simply saved.
   function vdipsObsConfirm(sel) {
-    var v = sel.value;
-    if (!v) { sel.setAttribute('data-prev', ''); if (typeof triggerAutoSave === 'function') triggerAutoSave(); return; }
-    if (!confirm('Are you sure you want to choose Observation "' + v + '" ?')) {
-      sel.value = sel.getAttribute('data-prev') || '';
-    } else {
-      sel.setAttribute('data-prev', v);
-      if (typeof triggerAutoSave === 'function') triggerAutoSave();
-    }
+    sel.setAttribute('data-prev', sel.value || '');
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
   function vdipsObsSelect(name) {
     var s = '<select name="' + name + '" data-prev="" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center js-obs-code">';
@@ -3143,7 +3454,8 @@
     });
     return rows;
   }
-  var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
+  // D is a permanent failure, so it has no numbered sub-cases.
+  var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
   function surgeObsCell(name) {
     var s = '<select name="' + name + '" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:52px">';
     s += '<option value=""></option>';
@@ -3218,16 +3530,94 @@
     host.querySelectorAll('.surge-obs-cell').forEach(function (inp) { var v = (inp.value || '').trim(); if (v) seen[v] = true; });
     return Object.keys(seen).sort();
   }
+
+  /* Met Performance Criteria = the WORST code observed across the matrices, reported as a
+     bare letter: A (no degradation) is the least severe, D (permanent damage) the worst, and
+     a sub-case such as B2 counts as B. Mirrors worst_performance_code() on the server, which
+     is what the document is built from. */
+  var SURGE_PERF_ORDER = ['A', 'B', 'C', 'D'];
+  function surgeWorstObsCode() {
+    var host = document.getElementById('surge-obs-records');
+    var worst = -1;
+    if (host) {
+      host.querySelectorAll('.surge-obs-cell').forEach(function (inp) {
+        var i = SURGE_PERF_ORDER.indexOf((inp.value || '').trim().toUpperCase().charAt(0));
+        if (i > worst) worst = i;
+      });
+    }
+    return worst >= 0 ? SURGE_PERF_ORDER[worst] : '';
+  }
+  function syncSurgeMetCriteria() {
+    var el = document.querySelector('[name="met_performance_criteria"]');
+    if (!el) return;
+    var worst = surgeWorstObsCode();
+    if (!worst || el.value === worst) return;
+    el.value = worst;
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+  /* 'A' is always listed - every datasheet needs the "no degradation" line - and comes with
+     its standard wording. B/C/D appear only once actually selected, and start BLANK: they
+     describe a real observed failure, so boilerplate there would be wrong more often than
+     right. Every description is required, so the legend cannot be left half-written. */
+  /* ---- Test Procedure follows the tested ports ---------------------------------------
+     The template carries a 'Power Line:' block and a 'Signal Line:' block. Only the ports
+     marked Applicable belong in the document, so the text shown here is rebuilt from the
+     FULL template whenever a port changes - rebuilding rather than deleting, so switching a
+     port back on brings its block back. Mirrors _surge_filter_procedure() on the server,
+     which is what the document is actually built from. Left alone once hand-edited. */
+  var SURGE_PROC_FULL = {{ prefill.get('test_procedure_full', '')|tojson }};
+  function surgeFilterProcedure(text, powerOn, signalOn) {
+    if (!text || !(powerOn || signalOn)) return text;   // nothing selected yet -> keep all
+    var blocks = text.split(/\n\s*\n/), keep = [], section = null;
+    blocks.forEach(function (b) {
+      var head = b.trim().toLowerCase().replace(/:$/, '');
+      if (head === 'power line' || head === 'power lines') section = 'power';
+      else if (head === 'signal line' || head === 'signal lines') section = 'signal';
+      else if (section === null) { keep.push(b); return; }
+      if (section === 'power' && !powerOn) return;
+      if (section === 'signal' && !signalOn) return;
+      keep.push(b);
+    });
+    return keep.filter(function (b) { return b.trim(); }).join('\n\n');
+  }
+  function applySurgeProcedurePorts() {
+    if (typeof procIsManual === 'function' && procIsManual()) return;
+    var pEl = document.getElementById('test_procedure');
+    if (!pEl || !SURGE_PROC_FULL) return;
+    var appl = function (n) {
+      var el = document.querySelector('[name="' + n + '"]');
+      return !!(el && String(el.value || '').trim().toLowerCase().indexOf('appl') === 0);
+    };
+    var next = surgeFilterProcedure(SURGE_PROC_FULL, appl('test_port_power'), appl('test_port_signal'));
+    if (next && next !== pEl.value) {
+      pEl.value = next;
+      if (typeof renderProcedureView === 'function') renderProcedureView();
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+
+  var SURGE_LEGEND_ALWAYS = ['A'];
+  var SURGE_LEGEND_DEFAULTS = {
+    'A': 'No degradation was observed during the test based on the parameters monitored.'
+  };
   function rebuildSurgeLegend() {
     var box = document.getElementById('surge-obs-legend'); if (!box) return;
     var codes = surgeUniqueObsCodes();
+    SURGE_LEGEND_ALWAYS.forEach(function (c) { if (codes.indexOf(c) < 0) codes.push(c); });
+    codes.sort();
     if (!codes.length) { box.innerHTML = ''; return; }
-    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3"><div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div><p class="text-xs text-gray-500 mb-2">Describe what each observation code entered above stands for.</p>';
+    codes.forEach(function (c) {
+      if (surgeLegendComments[c] == null && SURGE_LEGEND_DEFAULTS[c] != null) {
+        surgeLegendComments[c] = SURGE_LEGEND_DEFAULTS[c];
+      }
+    });
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3"><div class="text-xs font-bold text-gray-700 mb-1">Observation legend <span class="text-red-600">*</span></div><p class="text-xs text-gray-500 mb-2">Describe what each observation code entered above stands for. All descriptions are required.</p>';
     codes.forEach(function (c) {
       var desc = surgeLegendComments[c] || '';
       html += '<div class="flex items-start gap-2 mb-2"><span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
         '<input type="hidden" name="surge_obs_legend_code[]" value="' + esc(c) + '">' +
-        '<textarea name="surge_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" class="surge-legend-desc w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea></div>';
+        '<textarea name="surge_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" required ' +
+        'class="surge-legend-desc w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea></div>';
     });
     html += '</div>';
     box.innerHTML = html;
@@ -3237,6 +3627,11 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    ['test_port_power', 'test_port_signal'].forEach(function (n) {
+      var el = inputByName(n);
+      if (el) el.addEventListener('change', applySurgeProcedurePorts);
+    });
+    applySurgeProcedurePorts();
     ['product_standard', 'immunity_test_requirement', 'test_port_power', 'test_port_signal'].forEach(function (n) {
       var el = inputByName(n);
       if (el) {
@@ -3246,10 +3641,14 @@
     });
     var obsHost = document.getElementById('surge-obs-records');
     if (obsHost) obsHost.addEventListener('change', function (e) {
-      if (e.target && e.target.classList && e.target.classList.contains('surge-obs-cell')) rebuildSurgeLegend();
+      if (e.target && e.target.classList && e.target.classList.contains('surge-obs-cell')) {
+        rebuildSurgeLegend();
+        syncSurgeMetCriteria();
+      }
     });
     deriveSurgeTV();
     generateSurgeObservation(true);
+    syncSurgeMetCriteria();
   });
 </script>
 {% endif %}
@@ -3424,11 +3823,9 @@
 <script>
   /* Standard meanings pre-fill each legend comment; the engineer can edit them. */
   var pfmfLegend = {
-    'A': 'No degradation was observed during the test based on the parameters monitored.',
-    'B': 'The EUT recovered automatically without manual intervention.',
-    'C': 'The EUT recovered after manual intervention.',
-    'D': 'The EUT got damaged permanently.',
-    'NA': 'Not Applicable'
+    // Only A carries standard wording. B/C/D describe an actual observed failure, so
+    // boilerplate there would be wrong more often than right - the engineer types it.
+    'A': 'No degradation was observed during the test based on the parameters monitored.'
   };
   function pfmfUniqueObsCodes() {
     var seen = {};
@@ -3443,14 +3840,14 @@
     var codes = pfmfUniqueObsCodes();
     if (!codes.length) { box.innerHTML = ''; return; }
     var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-2">' +
-      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div>' +
-      '<p class="text-xs text-gray-500 mb-2">Describe what each observation value used above stands for.</p>';
+      '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend <span class="text-red-600">*</span></div>' +
+      '<p class="text-xs text-gray-500 mb-2">Describe what each observation value used above stands for. All descriptions are required.</p>';
     codes.forEach(function (c) {
       var desc = (pfmfLegend[c] != null) ? pfmfLegend[c] : '';
       html += '<div class="flex items-start gap-2 mb-2">' +
         '<span class="font-semibold text-sm shrink-0 pt-2" style="min-width:2.5rem">' + esc(c) + ':</span>' +
         '<input type="hidden" name="pfmf_obs_legend_code[]" value="' + esc(c) + '">' +
-        '<textarea name="pfmf_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" ' +
+        '<textarea name="pfmf_obs_legend_desc[]" data-code="' + esc(c) + '" rows="2" required ' +
         'class="pfmf-legend-desc w-full px-2 py-1 border border-gray-300 rounded text-sm">' + esc(desc) + '</textarea>' +
         '</div>';
     });
