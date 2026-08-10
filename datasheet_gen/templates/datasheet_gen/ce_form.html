@@ -313,8 +313,14 @@
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Overall Result</label>
           <select name="overall_result" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
             <option value="">Select</option><option>PASS</option><option>FAIL</option></select></div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Name)</label>{{ field('tested_by_name', prefill.tested_by) }}</div>
-        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Date)</label><input type="date" name="tested_by_date" max="{{ today }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
+        {# The box is NAMED tested_by_name but was valued from prefill.tested_by,
+           a different key. So the engineer's own entry - saved under
+           tested_by_name - could never be shown again: every reload refilled
+           the box from the auto-derived name. Prefer what was saved, and keep
+           tested_by as the auto-fill for a form that has never been filled. #}
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Name)</label>{{ field('tested_by_name', prefill.tested_by_name or prefill.tested_by) }}</div>
+        {# and this one carried no value at all, so a saved date never came back #}
+        <div><label class="block text-sm font-medium text-gray-700 mb-1">Tested By (Date)</label><input type="date" name="tested_by_date" value="{{ prefill.tested_by_date or '' }}" max="{{ today }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Signature (image)</label>
           <input type="file" name="signature" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"></div>
       </div>

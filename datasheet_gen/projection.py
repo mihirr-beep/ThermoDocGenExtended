@@ -544,6 +544,17 @@ def _project_children(db, did, code, form, schema):
             continue
         rows = (FX._ce_arrays(form, ce_prefix, list(ce_names)) if code == "CE"
                 else FX.table_rows(form, key, len(columns)))
+        # CE records SOFTWARE as two scalars - software_used and
+        # software_version - rather than as a repeating grid like every other
+        # datasheet. The array lookup above finds nothing, so
+        # datasheet_software was empty for every CE datasheet ever saved: the
+        # values were in form_json and simply never became queryable. One row
+        # is exactly what the form can express.
+        if code == "CE" and table == "datasheet_software" and not rows:
+            sw_name = FX.value(form, "software_used")
+            sw_version = FX.value(form, "software_version")
+            if sw_name or sw_version:
+                rows = [[sw_name, sw_version]]
         db.session.execute(text("DELETE FROM `%s` WHERE datasheet_id=:d" % table),
                            {"d": did})
         n = 0
