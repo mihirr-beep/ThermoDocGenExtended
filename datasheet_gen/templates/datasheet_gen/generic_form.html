@@ -90,6 +90,9 @@
      it. This is what was saved last time - columns, row labels and the filled
      cells - so the first build can reproduce it instead of starting blank. #}
   <script type="application/json" id="obs-matrix-seed">{{ obs_matrix_seed|default({})|tojson }}</script>
+  {# VOLTAGEDIPS builds one observation table per supply combo, also in the
+     browser, also under its own names. Same seed-on-first-build treatment. #}
+  <script type="application/json" id="vdips-obs-seed">{{ vdips_obs_seed|default({})|tojson }}</script>
   <form id="dsForm" enctype="multipart/form-data" class="space-y-6">
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
@@ -3336,10 +3339,23 @@
     sel.setAttribute('data-prev', sel.value || '');
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
-  function vdipsObsSelect(name) {
-    var s = '<select name="' + name + '" data-prev="" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center js-obs-code">';
-    s += '<option value="">Select</option>';
-    VDIPS_OBS_OPTS.forEach(function (o) { s += '<option>' + o + '</option>'; });
+  var __VDIPS_SEED = (function () {
+    try { return JSON.parse((document.getElementById('vdips-obs-seed') || {}).textContent || '{}') || {}; }
+    catch (e) { return {}; }
+  })();
+  var __vdipsSeedActive = true;
+  function __vdipsSavedObs(kind, ci, ri) {
+    if (!__vdipsSeedActive) return '';
+    var k = __VDIPS_SEED[kind];
+    var col = k && k[String(ci)];
+    return (col && col[ri]) || '';
+  }
+  function vdipsObsSelect(name, val) {
+    var s = '<select name="' + name + '" data-prev="' + esc(val || '') + '" onchange="vdipsObsConfirm(this)" class="w-full px-1 py-1 border rounded text-center js-obs-code">';
+    s += '<option value=""' + (!val ? ' selected' : '') + '>Select</option>';
+    VDIPS_OBS_OPTS.forEach(function (o) {
+      s += '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>';
+    });
     return s + '</select>';
   }
 
@@ -3351,11 +3367,13 @@
     html += '<input type="hidden" name="vdips_' + kind + '_combo_' + ci + '" value="' + esc(combo) + '">';
     html += '<div class="overflow-x-auto"><table class="w-full text-xs border border-gray-200"><thead><tr>';
     html += '<th class="' + thc + '">Test Level % Ut</th><th class="' + thc + '">Duration (cycles/periods)</th><th class="' + thc + '">Observation</th></tr></thead><tbody>';
-    rows.forEach(function (r) {
+    rows.forEach(function (r, ri) {
       html += '<tr>'
         + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.pct) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__pct[]" value="' + esc(r.pct) + '"></td>'
         + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.dur) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__dur[]" value="' + esc(r.dur) + '"></td>'
-        + '<td class="p-1 border border-gray-200">' + vdipsObsSelect('vdips_' + kind + '_' + ci + '__obs[]') + '</td>'
+        + '<td class="p-1 border border-gray-200">'
+        + vdipsObsSelect('vdips_' + kind + '_' + ci + '__obs[]',
+                         __vdipsSavedObs(kind, ci, ri)) + '</td>'
         + '</tr>';
     });
     return html + '</tbody></table></div></div>';
@@ -3381,6 +3399,10 @@
     html += '<div class="text-sm font-bold text-gray-800 mb-2 mt-4">Interruptions:</div>';
     combos.forEach(function (combo, ci) { html += vdipsObsTable('intr', ci, combo, set.intr); });
     host.innerHTML = html;
+    // the saved observations are used once, on the first build; changing the
+    // supply voltages or pressing Generate rebuilds empty, as the confirm
+    // dialog promises
+    __vdipsSeedActive = false;
     if (!silent) showMessage('Generated observation tables for ' + combos.length + ' combo(s).', 'success');
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }

@@ -311,8 +311,13 @@
             <option value="">Select</option>
             {% for o in ['A','B'] %}<option {{ 'selected' if prefill.result_class==o }}>{{ o }}</option>{% endfor %}</select></div>
         <div><label class="block text-sm font-medium text-gray-700 mb-1">Overall Result</label>
+          {# Its options were hardcoded with no `selected` test, so a saved
+             result was never shown again - the box read "Select" however many
+             times it had been set. result_class immediately above always did
+             this correctly; this one was simply missed. #}
           <select name="overall_result" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-            <option value="">Select</option><option>PASS</option><option>FAIL</option></select></div>
+            <option value="">Select</option>
+            {% for o in ['PASS','FAIL'] %}<option {{ 'selected' if prefill.overall_result==o }}>{{ o }}</option>{% endfor %}</select></div>
         {# The box is NAMED tested_by_name but was valued from prefill.tested_by,
            a different key. So the engineer's own entry - saved under
            tested_by_name - could never be shown again: every reload refilled

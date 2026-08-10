@@ -290,6 +290,7 @@ def g_form(code, assignment_id):
         assignment_id=a.id, tco_id=a.tco_id or "", test_name=a.test_name or code,
         draft_status=draft_status, saved_images=saved_images,
         obs_matrix_seed=_obs_matrix_seed(code, draft),
+        vdips_obs_seed=_vdips_obs_seed(code, draft),
         measurement_groups=measurement_groups,
         extra_photos=extra_photos,
         reviewers=_reviewer_candidates(),
@@ -351,6 +352,35 @@ def _obs_matrix_seed(code, draft):
             "cells": data.get("cells") or {},
         }
     return out
+
+
+def _vdips_obs_seed(code, draft):
+    """{kind: {ci: [observation per row]}} for VOLTAGEDIPS.
+
+    A third dynamic observation grid, with a third naming scheme. VDIPS builds
+    one table per supply combo - vdips_<kind>_<ci>__obs[] holds one entry per
+    row, alongside __pct[]/__dur[] which are hidden inputs carrying the derived
+    level and duration.
+
+    Same failure as EFT and SURGE had: vdipsObsSelect() took only a name, so no
+    option could ever start selected, and the page rebuilt the tables from the
+    EUT voltages on every load. The observations were in form_json and the
+    dropdowns all read "Select".
+    """
+    if (code or "").upper() != "VOLTAGEDIPS" or not draft:
+        return {}
+    seed = {}
+    for key, value in draft.items():
+        if not key.startswith("vdips_") or not key.endswith("__obs[]"):
+            continue
+        body = key[len("vdips_"):-len("__obs[]")]
+        kind, _, ci = body.rpartition("_")
+        if not ci.isdigit() or not kind:
+            continue
+        vals = value if isinstance(value, list) else [value]
+        if any(str(v).strip() for v in vals):
+            seed.setdefault(kind, {})[ci] = [str(v or "") for v in vals]
+    return seed
 
 
 def _read_generic_payload():
