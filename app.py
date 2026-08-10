@@ -5062,16 +5062,6 @@ Please do not reply to this email.
             entry.updated_at = get_ist_now()
             db.session.commit()
 
-            # On approval (status now 'datasheet_uploaded') index the datasheet
-            # into the vector store for NL document search - AFTER commit, async,
-            # best-effort (never blocks the response or breaks on missing keys).
-            if entry.status == 'datasheet_uploaded':
-                try:
-                    from nlp_search import ingest as _nlp_ingest
-                    _nlp_ingest.ingest_async(flask_app, entry.id)
-                except Exception:
-                    pass
-
             return jsonify({
                 'success': True,
                 'message': message,
@@ -5123,16 +5113,6 @@ Please do not reply to this email.
             entry.updated_at = get_ist_now()
 
             db.session.commit()
-
-            # On approval (status now 'datasheet_uploaded') index the datasheet
-            # into the vector store for NL document search - AFTER commit, async,
-            # best-effort (never blocks the response or breaks on missing keys).
-            if entry.status == 'datasheet_uploaded':
-                try:
-                    from nlp_search import ingest as _nlp_ingest
-                    _nlp_ingest.ingest_async(flask_app, entry.id)
-                except Exception:
-                    pass
 
             logger.info(
                 f'Peer review approved for planner entry {planner_id} '

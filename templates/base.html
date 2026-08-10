@@ -961,6 +961,24 @@
       .labai-badge.doc{background:#ffedd5;color:#9a3412;}
       .labai-badge.both{background:#ede9fe;color:#5b21b6;}
       .labai-badge.none{background:#f1f5f9;color:#475569;}
+      /* Evidence tables inside an answer. The bubble is white-space:pre-wrap
+         for ordinary prose; these blocks opt out of that and lay out as a
+         real table, so a column of numbers reads as a column of numbers. */
+      .labai-para{white-space:pre-wrap;}
+      .labai-para+.labai-tablewrap,.labai-tablewrap+.labai-para{margin-top:8px;}
+      .labai-tablewrap{white-space:normal;overflow-x:auto;max-width:100%;
+        border:1px solid #e5e7eb;border-radius:8px;background:#fbfcfe;}
+      .labai-table{border-collapse:collapse;width:100%;font-size:12.5px;}
+      .labai-table th{position:sticky;top:0;background:#f1f5f9;color:#334155;
+        text-align:left;font-weight:600;padding:6px 10px;white-space:nowrap;
+        border-bottom:1px solid #e2e8f0;}
+      .labai-table td{padding:5px 10px;border-bottom:1px solid #f1f5f9;
+        vertical-align:top;}
+      .labai-table tbody tr:last-child td{border-bottom:none;}
+      .labai-table tbody tr:nth-child(even){background:#f8fafc;}
+      .labai-table td.num{text-align:right;font-variant-numeric:tabular-nums;
+        white-space:nowrap;}
+      .labai-tfoot{font-size:11.5px;color:#64748b;margin-top:4px;font-style:italic;}
       .labai-sql{margin-top:6px;}
       .labai-sql summary{cursor:pointer;font-size:11.5px;color:#4f46e5;font-weight:600;list-style:none;}
       .labai-sql summary::before{content:'▸ ';}
@@ -1025,10 +1043,89 @@
           c.addEventListener('click', function(){ input.value = c.textContent.trim(); ask(); });
         });
         function scrollDown(){ body.scrollTop = body.scrollHeight; }
+        // A withheld answer degrades to the rows the database actually
+        // returned, laid out as a fixed-width table. The bubble sets
+        // textContent in a proportional font, so all that padding collapsed
+        // and the columns landed wherever they liked - which is exactly when
+        // the reader most needs to be able to read them.
+        //
+        // The separator line ("----  ------  ---") carries the exact column
+        // widths, because the server padded every cell to them. So the
+        // columns can be sliced back apart from those dash runs rather than
+        // guessed at by splitting on whitespace, which would break on every
+        // value containing a space - and equipment names are full of them.
+        var SEP_RE=/^-+(?: +-+)+$/;
+        function columnSpans(sep){
+          var spans=[], re=/-+/g, m;
+          while((m=re.exec(sep))!==null){ spans.push([m.index, m.index+m[0].length]); }
+          return spans;
+        }
+        function sliceRow(line, spans){
+          return spans.map(function(s, i){
+            // last column runs to end of line: a value may exceed its heading
+            var end = (i===spans.length-1) ? line.length : s[1];
+            return line.substring(s[0], end).trim();
+          });
+        }
+        function buildTable(header, sep, rows){
+          var spans=columnSpans(sep);
+          if(spans.length<2) return null;
+          var t=document.createElement('table'); t.className='labai-table';
+          var thead=document.createElement('thead'), tr=document.createElement('tr');
+          sliceRow(header, spans).forEach(function(h){
+            var th=document.createElement('th'); th.textContent=h; tr.appendChild(th);
+          });
+          thead.appendChild(tr); t.appendChild(thead);
+          var tb=document.createElement('tbody');
+          rows.forEach(function(line){
+            var r=document.createElement('tr');
+            sliceRow(line, spans).forEach(function(c){
+              var td=document.createElement('td'); td.textContent=c;
+              if(/^-?[\d,]*\.?\d+$/.test(c)) td.className='num';
+              r.appendChild(td);
+            });
+            tb.appendChild(r);
+          });
+          t.appendChild(tb);
+          var wrap=document.createElement('div'); wrap.className='labai-tablewrap';
+          wrap.appendChild(t);
+          return wrap;
+        }
+        function renderAnswer(bub, text){
+          var lines=String(text==null?'':text).split('\n');
+          var buf=[], i=0;
+          function flush(){
+            var s=buf.join('\n').replace(/^\n+|\n+$/g,'');
+            if(s){ var p=document.createElement('div'); p.className='labai-para';
+                   p.textContent=s; bub.appendChild(p); }
+            buf=[];
+          }
+          while(i<lines.length){
+            // a header line followed by a separator line starts a table
+            if(i+1<lines.length && SEP_RE.test(lines[i+1].trim()) && lines[i].trim()){
+              var header=lines[i], sep=lines[i+1], rows=[], footer=null;
+              var j=i+2;
+              while(j<lines.length && lines[j].trim()){
+                if(/^\.\.\./.test(lines[j].trim())){ footer=lines[j].trim(); j++; break; }
+                rows.push(lines[j]); j++;
+              }
+              var el=buildTable(header, sep, rows);
+              if(el){
+                flush(); bub.appendChild(el);
+                if(footer){ var f=document.createElement('div'); f.className='labai-tfoot';
+                            f.textContent=footer; bub.appendChild(f); }
+                i=j; continue;
+              }
+            }
+            buf.push(lines[i]); i++;
+          }
+          flush();
+        }
         function addMsg(role, text){
           if(empty) empty.style.display='none';
           var w=document.createElement('div'); w.className='labai-msg '+(role==='user'?'u':'a');
-          var b=document.createElement('div'); b.className='labai-bub'; b.textContent=text;
+          var b=document.createElement('div'); b.className='labai-bub';
+          if(role==='user'){ b.textContent=text; } else { renderAnswer(b, text); }
           w.appendChild(b); body.appendChild(w); scrollDown(); return w;
         }
         function typing(){
@@ -1039,28 +1136,63 @@
           b.appendChild(d); w.appendChild(b); body.appendChild(w); scrollDown(); return w;
         }
         function routeBadge(route){
-          var map={database:['db','Route: Database (SQL)'],documents:['doc','Route: Documents (Vector DB)'],
-                   both:['both','Route: Database + Documents'],none:['none','Route: Direct answer']};
-          var m=map[route]||map.none; var s=document.createElement('span'); s.className='labai-badge '+m[0]; s.textContent=m[1]; return s;
+          // route is now the worker(s) that did the work: "datasheets",
+          // "datasheets+schedule", "requests (probe only)", "probe-only", "none".
+          var r=String(route||'none'), cls='db', label;
+          var names={requests:'Requests',schedule:'Schedule & people',
+                     datasheets:'Datasheets',inventory:'Equipment'};
+          if(r==='none'){ cls='none'; label='Answered directly'; }
+          else if(r==='probe-only'){ cls='none'; label='Checked the database for a matching name'; }
+          else {
+            var probe=/\(probe only\)/.test(r);
+            var parts=r.replace(/\s*\(probe only\)\s*/,'').split('+').map(function(p){
+              p=p.trim(); return names[p]||p; });
+            cls = parts.length>1 ? 'both' : 'db';
+            label='Asked: '+parts.join(' + ')+(probe?' (values checked, no query needed)':'');
+          }
+          var s=document.createElement('span'); s.className='labai-badge '+cls;
+          s.textContent=label; return s;
         }
-        function renderMeta(wrap, route, steps){
+        function groundingBadge(g){
+          // Show whether the answer was checked against the rows the database
+          // returned - a repaired or withheld answer should be visible, not silent.
+          if(!g||!g.verdict) return null;
+          var map={grounded:['db','Verified against the data'],
+                   repaired:['both','Corrected to match the data'],
+                   unsupported:['none','Could not be verified'],
+                   'no-evidence':['none','No supporting data found'],
+                   clarify:['none','Needs clarification']};
+          var m=map[g.verdict]; if(!m) return null;
+          var s=document.createElement('span'); s.className='labai-badge '+m[0];
+          s.textContent=m[1];
+          if(g.unsupported&&g.unsupported.length){ s.title='Removed: '+g.unsupported.join(', '); }
+          return s;
+        }
+        function renderMeta(wrap, route, steps, grounding, sql){
           var meta=document.createElement('div'); meta.className='labai-meta';
           meta.appendChild(routeBadge(route||'none'));
-          (steps||[]).forEach(function(s){
-            if(s.type!=='call') return;
-            var args={}; try{ args=JSON.parse(s.args||'{}'); }catch(e){}
-            if(s.tool==='query_database' && args.sql){
-              var d=document.createElement('details'); d.className='labai-sql';
-              var sm=document.createElement('summary'); sm.textContent='SQL query'; d.appendChild(sm);
-              var pre=document.createElement('pre'); pre.textContent=args.sql; d.appendChild(pre);
-              meta.appendChild(d);
-            } else if(s.tool==='search_documents'){
-              var q=document.createElement('div'); q.className='labai-docq';
-              var f=[]; if(args.test_code)f.push('test='+args.test_code); if(args.job_number)f.push('job='+args.job_number); if(args.tco_id)f.push('tco='+args.tco_id);
-              q.textContent='Document search: "'+(args.query||'')+'"'+(f.length?(' ['+f.join(', ')+']'):'');
-              meta.appendChild(q);
-            }
-          });
+          var gb=groundingBadge(grounding); if(gb) meta.appendChild(gb);
+          // The SQL comes from the evidence ledger - the statements that
+          // actually executed - not from the model's tool-call arguments.
+          // Reading it off the arguments meant renaming a tool silently blanked
+          // this panel, and it also showed queries that errored as though they
+          // had produced the answer.
+          if(sql && sql.length){
+            var d=document.createElement('details'); d.className='labai-sql';
+            var sm=document.createElement('summary');
+            sm.textContent=sql.length===1 ? 'SQL query'
+                                          : sql.length+' SQL queries';
+            d.appendChild(sm);
+            sql.forEach(function(q){
+              var pre=document.createElement('pre');
+              var head='-- '+(q.worker||'query');
+              if(q.error){ head+='  (failed: '+q.error+')'; }
+              else { head+='  ('+(q.rows||0)+(q.rows===1?' row':' rows')+')'; }
+              pre.textContent=head+'\n'+q.sql;
+              d.appendChild(pre);
+            });
+            meta.appendChild(d);
+          }
           wrap.appendChild(meta); scrollDown();
         }
         function setBusy(b){ send.disabled=b; input.disabled=b; }
@@ -1072,7 +1204,7 @@
             .then(function(r){ var ct=r.headers.get('content-type')||''; if(ct.indexOf('application/json')<0) throw new Error('Session expired — reload and sign in as admin.'); return r.json(); })
             .then(function(res){
               t.remove(); setBusy(false);
-              if(res.success){ var w=addMsg('assistant', res.answer||'(no answer)'); renderMeta(w, res.route, res.steps); }
+              if(res.success){ var w=addMsg('assistant', res.answer||'(no answer)'); renderMeta(w, res.route, res.steps, res.grounding, res.sql); }
               else { addMsg('assistant', res.message||'Sorry, I could not answer that.'); }
               input.focus();
             })

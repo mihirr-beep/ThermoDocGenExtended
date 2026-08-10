@@ -1,185 +1,468 @@
 # -*- coding: utf-8 -*-
-"""Coordinator agent for the NL search, built on the OpenAI Agents SDK.
+"""The orchestrator: plans a question, dispatches it to specialist workers,
+and synthesizes an answer that is checked against the evidence before it goes
+out.
 
-One agent, two tools, routing by INTENT (as designed):
+    question
+       |
+       v
+  ORCHESTRATOR ----> ask_requests    (EMC requests / jobs / scope)
+       |        ----> ask_schedule    (who, when, peer review)
+       |        ----> ask_datasheets  (what was measured)
+       |        ----> ask_inventory   (equipment, calibration)
+       |        ----> resolve_entity / list_values   (deterministic, no LLM)
+       |
+       |   every tool writes the rows it saw into the LEDGER
+       v
+   synthesis  --->  verify.check(answer, ledger)  --->  answer or honest refusal
 
-  query_database   - NL->SQL over the live MySQL DB (validated, read-only,
-                     capped). Structured facts: counts, statuses, lists,
-                     assignments, dates, people, standards.
-  search_documents - content of the GENERATED datasheet documents (Pinecone
-                     RAG). Currently a stub with a fixed answer; the agent
-                     still routes to it so the path is testable end-to-end.
+The workers are tools, not handoffs, deliberately: a handoff transfers control
+and the orchestrator stops being able to combine domains, which is the whole
+point for a question like "which of Krishna's tests last month failed". As
+tools, it can fan out, re-ask with a narrower brief, and decide when it has
+enough.
 
-The SDK's own loop gives us the agentic behaviour we designed: the model can
-call tools repeatedly (fixing SQL after an error message), call both tools for
-combined questions, then synthesize the final answer. max_turns bounds cost.
+The database is the only source. Nothing here reads a document, an index or
+the model's own memory of the lab.
 
-The SDK is imported lazily so the Flask app still boots when the package or
-the OPENAI_API_KEY is missing - the endpoint then degrades to a clear message.
+The SDK is imported lazily so the Flask app still boots when the package or the
+OPENAI_API_KEY is missing - the endpoint then degrades to a clear message.
 """
+import contextlib
 import datetime
 import json
 import os
 import time
 
-from . import doc_search, sql_tool
-from .schema_catalog import catalog_prompt_text
+from . import decompose, gates, intent, probes, semantics, verify, workers
+from .ledger import Ledger
 
+# Domain workers ON by default - measured, not assumed.
+#
+# The plan argued for collapsing them into one SQL author with the whole
+# catalog, on the published finding that filtering a schema which already fits
+# the context window hurts more than it helps. That finding did not transfer.
+# Same 13 eval cases, same day, same data:
+#
+#     single author    10/13 correct   23% hallucination   292k tokens   144s
+#     domain workers   13/13 correct    0% hallucination   182k tokens   130s
+#
+# The single author got "how many EMC requests are there" wrong - it answered
+# "there are none" against nine rows - and reported 0 CE datasheets for an
+# engineer with two. Worse on accuracy, cost AND latency, which is not the
+# trade-off anyone predicted.
+#
+# The cross-domain gap the collapse was meant to fix turned out to be a routing
+# bug, not a partitioning one: "which equipment is used most" belongs to the
+# datasheets worker (datasheet_equipment), and the orchestrator was sending it
+# to inventory. Fixing the tool description fixed the question.
+#
+# Set NLP_SINGLE_AUTHOR=1 to run the collapsed variant and re-measure.
+USE_DOMAIN_WORKERS = os.environ.get("NLP_SINGLE_AUTHOR", "") != "1"
+
+# gpt-4o-mini, chosen for cost. Measured per question, cache-adjusted:
+# ~$0.0015 against ~$0.025 on gpt-4o - roughly 17x, which at this lab's
+# volume is the difference between $1 and $30 a month.
+#
+# WHAT IS AND IS NOT KNOWN ABOUT THE ACCURACY COST OF THIS CHOICE:
+#
+#   gpt-4o, WITH today's fixes, on the 8 complex questions:  16/16 over two
+#   runs, 0 wrong.
+#   gpt-4o-mini, WITHOUT them, measured earlier:             4-7/8, and it
+#   got both of the hard questions wrong every time.
+#   gpt-4o-mini, WITH them:                                  NOT MEASURED.
+#
+# That last line is the one that matters and it is blank. The fixes - lab
+# rules, declared join paths, pre-computed metric rows - all replace
+# reasoning the model had to do with facts handed to it directly, and that
+# is worth more to a weaker model than a stronger one, so mini's number has
+# probably moved. Probably. Nobody has run it.
+#
+# To find out (~$0.15 and about four minutes):
+#     python -m nlp_search.evals --suite useful --repeat 2
+# and against the gpt-4o baseline for comparison:
+#     NLP_SEARCH_MODEL=gpt-4o python -m nlp_search.evals --suite useful --repeat 2
+#
+# Until then, treat "mini is fine now" as a hope rather than a finding. The
+# questions to watch are the multi-domain ones - job_completeness,
+# never_scheduled, equipment_by_usage - because those are where the weaker
+# model failed before.
+#
+# Set NLP_SEARCH_MODEL=gpt-4o to switch back, per question or per
+# deployment. Nothing else needs to change.
 DEFAULT_MODEL = "gpt-4o-mini"
-MAX_TURNS = 12
+MAX_TURNS = 16
 MAX_QUESTION_CHARS = 2000
 
-_INSTRUCTIONS = """You are the EMC Test Lab data assistant for Thermo Fisher's test-plan/datasheet
-application. Lab admins ask you questions in plain English; you answer from the
-application's MySQL database and from the generated datasheet documents.
+_INSTRUCTIONS = """You are the EMC Test Lab data assistant for Thermo Fisher's test-plan and
+datasheet application. Lab admins ask you questions in plain English. You
+answer ONLY from this lab's MySQL database, through the specialist workers
+below. You have no other source: no documents, no outside knowledge, no memory
+of previous conversations.
 
 Today's date is {today}. Timestamps in the database are IST.
 
-## Scope - answer ONLY about this lab's data
-You answer questions about this EMC test lab: its test requests / jobs,
-datasheets, equipment, schedules/planner, peer review, standards, users, and the
-content of generated datasheet documents.
+## Your workers
+- ask_requests   - what customers ASKED FOR: requests/jobs/TCOs, the product
+                   under test, tests in scope, declared standards, requester,
+                   approval and rejection state. ALSO owns ASKED-FOR vs
+                   DELIVERED: it can see the datasheet rows too, so send it
+                   "which jobs are behind", "what is outstanding on job X",
+                   "requested but never recorded" as ONE sub-question. Do not
+                   split those across two workers and compare the answers
+                   yourself - it can do the join.
+- ask_schedule   - WHO and WHEN: scheduled tests, assigned engineers, workflow
+                   status, peer review, users and roles.
+- ask_datasheets - what was MEASURED: results, pass/fail, ambient conditions,
+                   recorded per-test parameters, individual observation cells,
+                   equipment and software used, review history.
+- ask_inventory  - the lab's EQUIPMENT: what exists, calibration and
+                   maintenance due dates, change history. Also sees which
+                   equipment was USED on datasheets, so "was anything used on
+                   a test out of calibration" is one sub-question, not two.
 
-Interpret casual wording, synonyms and abbreviations GENEROUSLY and map them to
-the schema - e.g. gadget/instrument/tool -> equipment; tester/engineer ->
-assigned engineer or planner engineer; job / TCO / project -> request; report ->
-datasheet; EUT -> the product being tested; "pending review" -> peer-review /
-At Review status. A question about a specific PERSON by name ("who is X", "what
-is X's role", "is X an admin") is a lab question - look them up in the users
-table with LIKE on the name; if there is no such user, say so rather than
-declining. A question is IN SCOPE if its topic relates to the lab in ANY
-way, INCLUDING broad or summary questions like "how is the lab doing this month?"
-or "give me an overview". For a broad question, give a short summary from the
-data (or ask ONE clarifying question) - do NOT decline it, and do NOT assume a
-question is off-topic just because its wording does not match column names.
+And one deterministic lookup you can call yourself:
+- resolve_entity(kind, text) - turn a name the user typed into the real rows.
 
-DECLINE (one sentence: "I can only help with the EMC lab's data and datasheets.")
-ONLY when the topic is clearly unrelated to the lab - weather, sports, general
-knowledge, current events, math, coding, creative writing, personal opinions.
-Never answer those from your own knowledge or call the tools for them.
+## How to answer a question
+1. PLAN. Decide which domains the question touches. "Requested" and "measured"
+   are different domains and people conflate them - "what level was the ESD run
+   at" is ask_datasheets; "what level did they ask for" is ask_requests.
+2. RESOLVE FIRST. If the question names a person, job, product or instrument,
+   call resolve_entity BEFORE dispatching, and pass the exact resolved value to
+   the worker. If nothing resolves, say there is no such person/job - do not
+   send a worker off to count rows matching a name that does not exist.
+3. DISPATCH. Send each worker a specific, self-contained sub-question. Give it
+   the identifiers you resolved. Send to several workers when the question
+   spans domains, then join their answers yourself.
 
-## Honesty - never guess or fabricate
-- If you cannot map a question to the schema/tools, or the tools return nothing
-  relevant, SAY SO plainly ("I couldn't find that in the system" / "there is no
-  such field") - never invent a number, name, status or value.
-- A COUNT of 0 is suspicious: it often means you filtered on a value that does
-  not exist. Before reporting 0 or "none", verify the value actually exists
-  (e.g. run SELECT DISTINCT on that column); if the concept maps to no real
-  field/value, tell the user that instead of reporting 0. Note: there is no
-  "failed"/"rejected" status value in the database - test Pass/Fail is recorded
-  INSIDE the datasheet documents (use search_documents), and a rejected request
-  is one whose rejected_at / rejected_by / rejection_reason columns are filled.
-- If the question is ambiguous or underspecified, ask ONE short clarifying
-  question instead of guessing what was meant.
+   EVERY factual answer goes through a worker. resolve_entity tells you a name
+   is real; it does not tell you how many, or which, or what the result was.
+   Never count, total or list from a resolve_entity reply - dispatch and let a
+   worker run the actual query, even when the answer looks obvious.
+4. FOLLOW UP. If a worker's answer is thin, contradicts another, or raises an
+   obvious next question, ask again with a narrower brief. Two or three rounds
+   is normal for a complex question.
+5. ANSWER. Lead with the direct answer, then a brief supporting line. Write
+   PLAIN TEXT - no markdown, no **bold**, no ### headings, no bullet syntax.
+   The interface shows your reply verbatim, so markup arrives as literal
+   asterisks. A short list is fine as one item per line.
 
-## Routing - decide by INTENT
-- query_database: anything stored as structured records - counts, lists,
-  statuses, who is assigned what, requests/jobs, planner entries, peer-review
-  state, dates and durations, standards mapping, equipment, users/roles.
-- search_documents: what a generated (peer-approved) datasheet document SAYS -
-  test limits/observations/procedure wording written inside a document,
-  comparing the contents of two documents, reasons in in-document notes.
-- Combined questions: use both. If the document part depends on identifiers
-  (job numbers, TCO ids), fetch those from the database first; otherwise the
-  calls are independent.
+## Lab rules you must follow
+These are decisions the lab has made. The data cannot tell you them and you
+must not decide them yourself on the fly.
+{lab_rules}
 
-## Searching documents - BREAK THE QUERY + agentic loop
-search_documents runs ONE semantic retrieval (top 5 chunks) per call. For any
-question that spans MORE THAN ONE document or aspect, decompose it and make
-SEVERAL focused calls, then reason across the returned chunks:
-- Comparisons ("compare the test limits in the CE datasheet for job A vs job B"):
-  issue one search per document, narrowing with the test_code / job_number /
-  tco_id filter args, then compare the results in your answer.
-- Multi-aspect questions: search each aspect separately (e.g. one call for
-  "test limits", one for "test procedure").
-- If the first retrieval is thin or clearly missing something, search again
-  with a refined query or a different filter (keep looping until you have
-  enough - typically 1-4 calls). Always pass a filter when you know the test
-  code or job so retrieval stays on the right document.
-- Cite what you used: mention the test code / job number / section the facts
-  came from. Never invent document content that is not in the returned chunks.
+## Honesty - this is the part that matters most
+Every figure, name, date and status in your answer must have come back from a
+worker in THIS conversation. You will be checked against the rows the database
+actually returned, and unsupported claims will be removed.
 
-## Writing SQL (MySQL 8)
-- ONE single SELECT statement per call. No comments, no semicolons, no SET,
-  nothing but SELECT (WITH ... SELECT is fine).
-- Use ONLY the tables and columns in the schema catalog below. Never invent
-  names. Join with the keys shown in the catalog.
-- Always include LIMIT (200 max). Prefer COUNT/GROUP BY aggregates over
-  dumping rows. For fuzzy text matching use LIKE '%...%' (try LOWER() for
-  case-insensitive matching). For relative dates use CURDATE() and
-  DATE_SUB/INTERVAL.
-- If the tool returns {{"error": ...}}, read the message, FIX the SQL and try
-  again (up to 3 attempts). Do not apologise to the user about intermediate
-  errors - only the final answer matters.
-- Never query credential/secret columns; never SELECT * on the users table.
-- Only filter a categorical column against a value shown in the schema catalog
-  below. If you need a value that is NOT listed there, first run
-  SELECT DISTINCT on that column to learn the real values, THEN filter - never
-  invent a status/result/type literal (a made-up value silently returns 0 rows).
-- For NAMES, products, standards and other free-text lookups, match case-
-  insensitively with a PARTIAL LIKE (e.g. WHERE LOWER(name) LIKE '%krishna%'),
-  never exact '='. People are stored by full name (e.g. 'Krishna Gonela'), so a
-  first name like "Krishna" must use LIKE. If any lookup returns 0 rows, RETRY
-  once with a broader LIKE (and check both name and username/email) BEFORE you
-  tell the user it was not found.
+- Never state a number the workers did not report. Do not compute a percentage,
+  average or trend unless a worker returned the figures it needs, and say which.
+- DO NOT ADD FIGURES FROM DIFFERENT QUERIES TOGETHER. Two counts of different
+  things do not sum into anything meaningful - 2 draft datasheets plus 6 tests
+  in progress is not "8 outstanding items", it is two separate facts about two
+  separate sets that probably overlap. Report each figure with the label that
+  belongs to it and leave the arithmetic to the reader.
+- NEVER assert that something does not exist, or that a count is zero, unless a
+  worker ran the query that shows it. You can see from the schema that a column
+  only holds certain values - that is not the same as having checked, and an
+  answer of "nothing failed" with no query behind it will be rejected. Dispatch
+  first, then report what came back.
+- A COUNT of 0 is not the same as "there are none". It usually means a filter
+  matched nothing because the value does not exist. Ask the worker to confirm
+  the value is real. If it is not, NAME THE REAL VOCABULARY rather than
+  answering inside the user's wrong one. Asked how many datasheets are
+  "Rejected" when the statuses are Approved and Draft, do not say "none are
+  Rejected" - that implies Rejected is a status that happens to be unused. Say
+  "datasheets are only ever Approved or Draft; there is no Rejected status.
+  Both of his are Approved." The user learns the shape of the data instead of
+  being quietly confirmed in a wrong assumption.
+- When a name is ambiguous, ASK. If resolve_entity returns more than one
+  candidate, list them with something that tells them apart (role, job) and
+  ask which is meant. Do not pick one, and do not silently merge them - "2
+  datasheets" is a different fact for each of two people, and either answer
+  would be wrong half the time.
+- ONLY ask when the user NAMED something and the name is ambiguous. A question
+  that names nothing is not ambiguous - it is asking about everything, and the
+  answer is a query over the whole table. "Are there tests that were requested
+  on A JOB but never scheduled" means ACROSS ALL JOBS; "is AN INSTRUMENT out of
+  calibration" means any instrument. An indefinite "a" / "any" / "some" is not
+  a blank for you to fill in - answering "which job did you mean?" to a
+  question that deliberately did not name one is a non-answer, and the user has
+  to ask twice to get something they could have had at once. If there is no
+  proper noun in the question, there is nothing to disambiguate: run the query.
+  ONE EXCEPTION, and it matters: tco_id is NOT a surrogate key. "IEC-EMC-004"
+  is what the lab calls that job out loud, and it is the only identifier a job
+  has before a job number is issued. Always show it. The ids to suppress are
+  the numeric ones - request_id, planner_entry_id, datasheet_id, user_id.
+  Identify a job by its job number and tco_id, NEVER by product name alone:
+  several jobs share a product, so "Genpure UV xCAD plus WM is behind" does
+  not tell the reader which job to go and look at.
+- A PRE-COMPUTED FIGURE IS THE ANSWER. WORKING OUT YOUR OWN IS NOT.
+  When a DEFINED TERMS block above gives you a number for a phrase in the
+  question, that number came from SQL a human wrote and reviewed. Quote it.
+  Do not send a worker off to re-derive it and do not report a different
+  figure for the same phrase - if your own query disagrees with the reviewed
+  one, the reviewed one wins and yours is wrong. Asked how many requested
+  tests are still unfilled, the reviewed answer of 68 was sitting in the
+  prompt; a worker re-derived it with a broken join and 6 was published.
+- IF A WORKER IS REFUSED A TABLE, THAT PART IS UNANSWERED. Do not accept a
+  substitute answer to a question you did not ask, and do not present one.
+  Say which part could not be answered and why.
+- ACCOUNT FOR EVERY ROW. If a worker reports ten items, list ten or say "10
+  in total, here are the first 5". Silently dropping half a list is as wrong as
+  inventing one, and it is the easier mistake to make.
+- An empty column is not an empty world. If a date-filtered question comes back
+  with nothing, find out whether that date column is populated at all before
+  concluding the events did not happen - "no datasheet records a test date, so
+  I cannot answer by month" is the truth; "no tests ran in July" is not.
+- If the data is not there, say so plainly and say what IS there instead. "The
+  lab records a Pass/Fail per datasheet but no failure reason field" is a good
+  answer. An invented reason is not.
+- If the question is ambiguous in a way that changes the answer, ask ONE short
+  clarifying question instead of guessing.
+- If workers disagree, say so and give both figures with their sources.
 
-## Answering
-- Lead with the direct answer (the number, the list, the status), then a short
-  supporting explanation. Plain text, no markdown tables unless listing rows.
-- If a result was truncated, say the numbers reflect the first N rows.
-- If the data genuinely is not there, say so - never fabricate values.
-- If document search returns status "unavailable", tell the user document
-  search is not configured yet, and still answer whatever the database can.
-- If document search returns status "ok" but no results, say no matching
-  datasheet content was found (the document may not be approved/indexed yet).
+## Scope
+Answer anything about this lab: requests, jobs, datasheets, results, equipment,
+schedules, peer review, standards, users. Interpret casual wording generously -
+gadget/instrument -> equipment; tester/engineer -> the assigned engineer;
+job/TCO/project -> request; EUT -> the product under test; "pending review" ->
+peer-review status. A BROAD question is still a data question, not a reason to give up. "How is the
+lab doing", "give me a summary", "any issues" - dispatch to two or three
+workers for headline figures (how many jobs and their statuses, how many
+datasheets and their results, anything overdue for calibration) and summarise
+what comes back. Answering "I could not find that" to a question you never
+asked a worker about is the one failure mode worse than being wrong, because
+the data was right there.
 
-## Schema catalog (the ONLY tables you may query)
-{catalog}
+Words the user brings from their own world map onto this schema: "customer" and
+"client" mean the REQUESTER on a request; "report" usually means the datasheet;
+"certificate" is not something this system records - say so rather than
+declining. If a mapping is genuinely ambiguous, say which reading you took.
+
+Never report a raw database id to a human. If a worker hands you "user_id 5",
+ask it for the name.
+
+Decline ONLY when the topic is clearly unrelated to the lab - weather, sports,
+general knowledge, current events, coding, creative writing, opinions. Never
+answer those from your own knowledge and never send a worker after them.
+
+When you decline, do not just say no. Say in one line that it is outside the
+lab data, then say what you DO cover, and if their wording suggests something
+in scope, offer that. Someone who asks about "the weather" may want the ambient
+conditions on a test - point at it. A dead end teaches the user nothing about
+what to ask next, and they stop asking.
 """
 
 
-def _build_agent(db_params):
+def _prepare(question, db_params, ledger, kind, verify_answer=True):
+    """Everything that must happen BEFORE the model is asked anything.
+
+    The gates test what the question assumes; the semantic layer replaces the
+    lab's fuzzy words with reviewed definitions and runs their SQL. Both are
+    plain SQL, so neither can invent, and a fact established here cannot be
+    argued away by whatever the model writes next.
+
+    Returns (agent, prompt_blocks, undefined_terms).
+    """
+    verdicts = gates.run(question, db_params, ledger=ledger) if verify_answer else []
+    resolved = semantics.execute(semantics.resolve(question), db_params, ledger=ledger)
+    # A word the semantic layer defines is no longer "undefined" - it has an
+    # answer, it just has more than one.
+    undefined = [t for t in intent.undefined_terms_in(question)
+                 if not any(t in a["term"] for a in resolved.get("ambiguous", []))]
+    blocks = (gates.prompt_block(verdicts), semantics.prompt_block(resolved))
+    if undefined:
+        blocks = blocks + (intent.UNDEFINED_DIRECTIVE.format(
+            terms=", ".join("'%s'" % t for t in undefined)),)
+
+    # A question that plainly belongs to one domain goes straight to that
+    # worker. The orchestrator's own turns were most of the cost - it spends
+    # one deciding to dispatch and more relaying the answer back, around a
+    # single worker loop that was already going to do the work.
+    if kind != intent.SCHEMA:
+        domain = intent.single_domain(question)
+        if domain:
+            agent = workers.build_standalone(domain, db_params, ledger,
+                                             extra_blocks=blocks)
+            return agent, blocks, undefined
+
+    agent = _build_orchestrator(
+        db_params, ledger, kind=kind, undefined=undefined, extra_blocks=blocks,
+        code_hint=intent.test_code_in(question) if kind == intent.SCHEMA else None)
+    return agent, blocks, undefined
+
+
+def _answer_in_parts(parts, question, db_params, ledger, kind, user, user_id,
+                     sp, traced, tag, t0):
+    """Run each sub-question separately, verify separately, assemble.
+
+    One ledger is shared across the parts, so evidence gathered for part one is
+    available to part three and the budget is spent once. The VERDICTS are
+    per-part, which is the whole point - a clause that cannot be grounded costs
+    that clause and nothing else.
+    """
+    import contextlib
+
+    from agents import Runner
+    from . import audit, tracing
+
+    results, steps_all = [], []
+    tok_cached = 0
+    tok_in = tok_out = tok_tot = 0
+    # Each part gets its own slice of the query budget, so a greedy first part
+    # cannot starve the third of the queries it needs.
+    ledger.max_queries = max(4, ledger.max_queries // max(1, len(parts))) * len(parts)
+    with (sp if sp is not None else contextlib.nullcontext()):
+        if sp is not None:
+            tag(sp)
+        for idx, part in enumerate(parts):
+            part_kind = intent.classify(part)
+            # The subject and any earlier conclusion travel with the part -
+            # without this, "has the datasheet been filled in" arrives with no
+            # idea whose datasheet, and "is any of it overdue" with no idea
+            # what "it" was.
+            context = decompose.context_for(part, idx, question, results)
+            try:
+                agent, _blocks, undefined = _prepare(part, db_params, ledger, part_kind)
+                run = Runner.run_sync(agent, context + part, max_turns=MAX_TURNS)
+                _i, _o, _t, _m, _c = _extract_usage(run)
+                tok_in += _i; tok_out += _o; tok_tot += _t; tok_cached += _c
+                draft = str(run.final_output or "").strip()
+                steps_all.extend(_extract_steps(run))
+                g = verify.check(part, draft, ledger, kind=part_kind,
+                                 undefined=undefined)
+                results.append({"question": part, "verdict": g["verdict"],
+                                "answer": verify.plain_text(g["answer"] or draft),
+                                "unsupported": g.get("unsupported") or []})
+            except Exception as exc:  # noqa: BLE001 - one part must not kill the rest
+                results.append({"question": part, "verdict": "error",
+                                "answer": "", "unsupported": [str(exc)[:120]]})
+
+    assembled = decompose.assemble(results)
+    ok = [r for r in results if r["verdict"] in ("grounded", "repaired", "clarify")]
+    if assembled is None:
+        assembled = ("I could not verify an answer to any part of that question. "
+                     "Try asking one thing at a time - a single job, test, "
+                     "engineer or piece of equipment.")
+
+    verdict = ("grounded" if len(ok) == len(results)
+               else "partial" if ok else "unsupported")
+    route = _route_label(ledger, steps_all)
+    tracing.flush()
+    audit.log_query(question=question, answer=assembled, user_id=user_id,
+                    username=user, route=route,
+                    model=os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL),
+                    input_tokens=tok_in, output_tokens=tok_out, total_tokens=tok_tot,
+                    cached_tokens=tok_cached,
+                    latency_ms=int((time.time() - t0) * 1000),
+                    sql_queries=ledger.sql_log() or None, success=True)
+    return {"success": True, "answer": assembled, "route": route,
+            "steps": steps_all, "evidence": ledger.summary(),
+            "sql": ledger.queries(),
+            "grounding": {"verdict": verdict,
+                          "parts": [{"q": r["question"], "verdict": r["verdict"]}
+                                    for r in results],
+                          "unsupported": [u for r in results for u in r["unsupported"]],
+                          "notes": ["%d of %d parts answered" % (len(ok), len(results))]},
+            "tokens": {"input": tok_in, "output": tok_out, "total": tok_tot}}
+
+
+def _matched_columns(find_field_json):
+    """'table.column, table.column' from a find_field result, or 'no match'."""
+    try:
+        data = json.loads(find_field_json)
+    except (TypeError, ValueError):
+        return "unreadable"
+    hits = data.get("matches") or []
+    if not hits:
+        return "NO MATCH - the field is not recorded in this database"
+    return ", ".join("%s.%s" % (h.get("table"), h.get("column")) for h in hits)
+
+
+def _build_orchestrator(db_params, ledger, model=None, kind=intent.DATA,
+                        code_hint=None, undefined=(), extra_blocks=()):
     from agents import Agent, function_tool
 
-    @function_tool
-    def query_database(sql: str) -> str:
-        """Run ONE read-only MySQL SELECT statement against the EMC lab database.
+    tools = (list(workers.worker_tools(db_params, ledger, model=model))
+             if USE_DOMAIN_WORKERS
+             else [workers.author_tool(db_params, ledger, model=model)])
+
+    @function_tool(name_override="find_field")
+    def find_field(term: str, test_code: str = "") -> str:
+        """WHERE a concept is recorded - the table and column names, not the
+        values. Reads the schema catalog, never the data, and returns nothing
+        when the field is not recorded, which is the honest answer.
+
+        Use this ONLY for questions about the structure: "where is X stored",
+        "which column holds X", "do we record X at all". For a question about
+        the VALUES - what X actually is, how many, whose - do NOT call this;
+        dispatch to a worker, which knows its own columns already.
 
         Args:
-            sql: A single SELECT statement using only tables from the schema
-                catalog. Must include a LIMIT clause (max 200 rows).
+            term: The concept, in the user's words (e.g. "coupling method").
+            test_code: Optional - narrows to one test (CE, RE, ESD, ...).
         """
-        return sql_tool.run_select(sql, db_params)
+        out = probes.find_field(term, test_code=test_code or None)
+        # Record the matches compactly rather than the raw JSON. The JSON
+        # carries a purpose sentence per row and overran the note's length
+        # cap, silently dropping later matches - so the grounding check saw an
+        # answer citing a column that "was not in the evidence" and rewrote a
+        # correct answer into a wrong one.
+        ledger.note("schema", "find_field(%r) -> %s" % (term, _matched_columns(out)))
+        return out
 
-    @function_tool
-    def search_documents(query: str, test_code: str = "", job_number: str = "",
-                         tco_id: str = "", top_k: int = 5) -> str:
-        """Semantic search over the CONTENT of generated datasheet documents
-        (test limits, observations, procedures written inside approved .docx).
-        Returns the top matching chunks with their section + document metadata.
-        Call it once per document/aspect for multi-document questions.
+    @function_tool(name_override="resolve_entity")
+    def resolve_entity(kind: str, text: str) -> str:
+        """Turn a name the user typed into the real database rows, before it is
+        used as a filter anywhere. Returns candidates or an explicit no-match.
 
         Args:
-            query: What to look for inside the documents.
-            test_code: Optional filter - restrict to one test (CE, RE, SURGE,
-                EFT, ESD, HARMONIC, VOLTAGEFLICKER, VOLTAGEDIPS, CRF, PFMF, RS_RI).
-            job_number: Optional filter - restrict to one job number.
-            tco_id: Optional filter - restrict to one TCO id.
-            top_k: How many chunks to return (default 5, max 15).
+            kind: One of person, job, product, equipment, standard.
+            text: The name or fragment from the question.
         """
-        return doc_search.search_documents(
-            query, top_k=top_k, test_code=test_code or None,
-            job_number=job_number or None, tco_id=tco_id or None)
+        return probes.resolve_entity(db_params, kind, text, ledger=ledger)
+
+    # NOTE: list_values is deliberately NOT offered here, only to the workers.
+    # When the orchestrator had it, it answered counting questions straight off
+    # a value listing ("9 distinct rows, so 9 requests") instead of dispatching -
+    # right by luck, with no query in the ledger to check the answer against.
+    # Checking a value exists is a worker's job, inside the query that uses it.
+    tools += [resolve_entity]
 
     instructions = _INSTRUCTIONS.format(
         today=datetime.date.today().isoformat(),
-        catalog=catalog_prompt_text())
+        lab_rules=semantics.LAB_RULES)
+    # Facts established BEFORE the model was asked anything: what the gates
+    # found, and what the lab's own definitions say a fuzzy word means. The
+    # undefined-term directive is already inside extra_blocks (see _prepare).
+    for block in extra_blocks:
+        if block:
+            instructions += block
+    if kind == intent.SCHEMA:
+        # find_field is handed over ONLY on a schema question. Offered on every
+        # question it became a first reflex on data questions too - the model
+        # would look up where a column lives, then answer about the column
+        # instead of querying it. One run reported "0 CE datasheets" for an
+        # engineer who has two. Routing means changing the toolset, not adding
+        # a tool and hoping the description is read.
+        tools.append(find_field)
+        instructions += intent.SCHEMA_DIRECTIVE.format(
+            code_hint=(" and test_code=%r" % code_hint) if code_hint else "")
+
     return Agent(
         name="EMC Lab Data Assistant",
         instructions=instructions,
-        model=os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL),
-        tools=[query_database, search_documents])
+        model=model or os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL),
+        tools=tools)
 
+
+# --------------------------------------------------------------------------
+# run bookkeeping
+# --------------------------------------------------------------------------
 
 def _extract_steps(result):
     """Mine the run for tool calls/results so the UI can show what happened.
@@ -209,23 +492,47 @@ def _extract_steps(result):
     return steps
 
 
-def _route_label(steps):
-    """Which path(s) the orchestrator actually used, from the tool calls."""
-    tools = {s.get("tool") for s in steps if s.get("type") == "call"}
-    db, doc = "query_database" in tools, "search_documents" in tools
-    if db and doc:
-        return "both"
-    if db:
-        return "database"
-    if doc:
-        return "documents"
+def _route_label(ledger, steps):
+    """Which workers actually did the work, for the audit log and the UI.
+
+    Prefer the ledger, but fall back to the orchestrator's own tool calls: a
+    worker that answered from a value probe alone leaves a note rather than a
+    query, and its internal calls never appear in the parent's step list, so
+    the ledger looks empty when the work did happen.
+    """
+    used = sorted({e["worker"] for e in ledger.entries})
+    if used:
+        return "+".join(used)
+    called = {s.get("tool") for s in steps if s.get("type") == "call"}
+    asked = sorted(t[4:] for t in called if t and t.startswith("ask_"))
+    if asked:
+        return "+".join(asked) + " (probe only)"
+    if called & {"resolve_entity", "list_values"}:
+        return "probe-only"
     return "none"
 
 
+def _cached_of(usage):
+    """The part of input_tokens the API served from its prompt cache.
+
+    Worth capturing rather than ignoring: this system resends a large, nearly
+    identical prefix on every call, and 97% of input came back cached on a
+    live measurement. Cached input is billed at half rate, so costing without
+    it overstates by about 2x.
+    """
+    det = getattr(usage, "input_tokens_details", None)
+    if det is None:
+        return 0
+    if isinstance(det, dict):
+        return det.get("cached_tokens", 0) or 0
+    return getattr(det, "cached_tokens", 0) or 0
+
+
 def _extract_usage(result):
-    """(input_tokens, output_tokens, total_tokens, model) from a RunResult,
-    defensively across SDK shapes. Falls back to summing raw_responses."""
-    inp = out = tot = 0
+    """(input, output, total, model, cached) from a RunResult, defensively
+    across SDK shapes. Worker runs are nested inside the same context, so
+    their usage rolls up here too."""
+    inp = out = tot = cached = 0
     model = None
     try:
         u = getattr(getattr(result, "context_wrapper", None), "usage", None)
@@ -233,6 +540,7 @@ def _extract_usage(result):
             inp = getattr(u, "input_tokens", 0) or 0
             out = getattr(u, "output_tokens", 0) or 0
             tot = getattr(u, "total_tokens", 0) or 0
+            cached = _cached_of(u)
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -244,41 +552,27 @@ def _extract_usage(result):
                     inp += getattr(ru, "input_tokens", 0) or 0
                     out += getattr(ru, "output_tokens", 0) or 0
                     tot += getattr(ru, "total_tokens", 0) or 0
+                    cached += _cached_of(ru)
         for r in raws:
             m = getattr(r, "model", None)
             if m:
                 model = m
     except Exception:  # noqa: BLE001
         pass
-    return inp, out, (tot or (inp + out)), model
+    return inp, out, (tot or (inp + out)), model, min(cached, inp)
 
 
-def _sql_and_tools(steps):
-    """(joined SQL string, comma tool list) from the extracted steps."""
-    sqls, tools = [], []
-    for s in steps or []:
-        if s.get("type") != "call":
-            continue
-        if s.get("tool") not in tools:
-            tools.append(s.get("tool"))
-        if s.get("tool") == "query_database":
-            try:
-                sql = json.loads(s.get("args") or "{}").get("sql")
-                if sql:
-                    sqls.append(sql)
-            except Exception:  # noqa: BLE001
-                pass
-    return ("\n\n".join(sqls) or None), (",".join(t for t in tools if t) or None)
+# --------------------------------------------------------------------------
+# entry point
+# --------------------------------------------------------------------------
 
+def answer(question, db_params, user=None, user_id=None, verify_answer=True):
+    """Run the orchestrator on one question. Returns a dict for the API layer:
+    {"success": True, "answer": str, "route": str, "steps": [...],
+     "grounding": {...}} or {"success": False, "message": str}. Never raises.
 
-def answer(question, db_params, user=None, user_id=None):
-    """Run the coordinator on one question. Returns a dict for the API layer:
-    {"success": True, "answer": str, "steps": [...]} or
-    {"success": False, "message": str}. Never raises.
-
-    `user`/`user_id` (the admin who asked) are attached to the Langfuse trace and
-    recorded in the nlp_search_audit table for auditing (who asked, question,
-    answer, tokens, cost, route, SQL, latency)."""
+    `user`/`user_id` (the admin who asked) are attached to the Langfuse trace
+    and recorded in nlp_search_audit."""
     question = (question or "").strip()
     if not question:
         return {"success": False, "message": "Please type a question."}
@@ -297,15 +591,11 @@ def answer(question, db_params, user=None, user_id=None):
 
     # Enable Langfuse tracing if configured (it turns SDK tracing ON itself);
     # otherwise keep SDK tracing OFF so nothing is exported to OpenAI's backend.
-    import contextlib
     from . import tracing
     traced = tracing.setup_tracing()
     if not traced:
         set_tracing_disabled(True)
 
-    # Wrap the run in a tagged Langfuse trace carrying the question/answer/route,
-    # so the admin usage dashboard can show a per-question cost table. The
-    # 'nl-search' tag lets us filter these out from background indexing traces.
     sp = None
     if traced:
         try:
@@ -327,10 +617,30 @@ def answer(question, db_params, user=None, user_id=None):
 
     from . import audit
     model_name = os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL)
+    ledger = Ledger()
     t0 = time.time()
     trace_id = None
+    # Route before retrieving. A question about WHERE something is recorded is
+    # answered from the catalog; sending it down the SQL path guarantees a
+    # plausible wrong pointer, because rows cannot tell you which field is the
+    # right one. See intent.py.
+    kind = intent.classify(question)
+
+    # Three things in one sentence is three questions. Answering them as one
+    # unit is what fails: the grounding check can only pass or withhold a whole
+    # reply, so a wrong second clause takes the correct first and third down
+    # with it. Each part gets its own run and its own verdict.
+    # Decomposition is OFF by default and opt-in via NLP_SPLIT=1 - the gate
+    # lives in decompose.looks_multipart(), which returns False unless it is
+    # set. See that module's docstring for the measurement.
+    parts = decompose.split(question) if verify_answer else [question]
+
     try:
-        agent = _build_agent(db_params)
+        if len(parts) > 1:
+            return _answer_in_parts(parts, question, db_params, ledger, kind,
+                                    user, user_id, sp, traced, _tag, t0)
+        agent, blocks, undefined = _prepare(question, db_params, ledger, kind,
+                                           verify_answer)
         with (sp if sp is not None else contextlib.nullcontext()):
             if sp is not None:
                 _tag(sp)
@@ -341,34 +651,54 @@ def answer(question, db_params, user=None, user_id=None):
                 except Exception:  # noqa: BLE001
                     pass
             result = Runner.run_sync(agent, question, max_turns=MAX_TURNS)
-            answer_text = str(result.final_output or "").strip()
+            draft = str(result.final_output or "").strip()
             steps = _extract_steps(result)
-            route = _route_label(steps)
+            route = _route_label(ledger, steps)
+
+            # Nothing leaves without being checked against the rows we actually
+            # saw. This is the control the honesty requirement rests on; the
+            # prompt above is only the request.
+            grounding = (verify.check(question, draft, ledger, kind=kind,
+                                      undefined=undefined)
+                         if verify_answer else verify.skipped())
+            answer_text = verify.plain_text(grounding["answer"] or draft)
+
             if sp is not None:
                 try:
                     sp.set_attribute("langfuse.trace.output", answer_text)
                     sp.set_attribute("langfuse.trace.metadata.route", route)
+                    sp.set_attribute("langfuse.trace.metadata.grounding",
+                                     grounding["verdict"])
                 except Exception:  # noqa: BLE001
                     pass
         tracing.flush()
-        inp, out, tot, model = _extract_usage(result)
-        sqls, tools = _sql_and_tools(steps)
-        audit.log_query(question=question, answer=answer_text, user_id=user_id, username=user,
-                        route=route, model=(model or model_name), input_tokens=inp,
-                        output_tokens=out, total_tokens=tot,
-                        latency_ms=int((time.time() - t0) * 1000), tool_calls=tools,
-                        sql_queries=sqls, success=True, trace_id=trace_id)
-        return {"success": True, "answer": answer_text, "route": route, "steps": steps,
-                "tokens": {"input": inp, "output": out, "total": tot}}
+        inp, out, tot, model, cached = _extract_usage(result)
+        audit.log_query(question=question, answer=answer_text, user_id=user_id,
+                        username=user, route=route, model=(model or model_name),
+                        input_tokens=inp, output_tokens=out, total_tokens=tot,
+                        cached_tokens=cached,
+                        latency_ms=int((time.time() - t0) * 1000),
+                        tool_calls=",".join(sorted({s.get("tool") for s in steps
+                                                    if s.get("type") == "call"
+                                                    and s.get("tool")})) or None,
+                        sql_queries=ledger.sql_log() or None,
+                        success=True, trace_id=trace_id)
+        return {"success": True, "answer": answer_text, "route": route,
+                "steps": steps, "grounding": grounding,
+                "evidence": ledger.summary(), "sql": ledger.queries(),
+                "tokens": {"input": inp, "output": out, "total": tot,
+                           "cached": cached}}
     except MaxTurnsExceeded:
         audit.log_query(question=question, user_id=user_id, username=user, route="none",
                         model=model_name, success=False, error="Max turns exceeded",
-                        latency_ms=int((time.time() - t0) * 1000), trace_id=trace_id)
+                        latency_ms=int((time.time() - t0) * 1000),
+                        sql_queries=ledger.sql_log() or None, trace_id=trace_id)
         return {"success": False, "message":
                 "The question needed more steps than allowed (%d). Try asking a "
                 "more specific question." % MAX_TURNS}
     except Exception as exc:  # noqa: BLE001 - surface a clean message to the UI
         audit.log_query(question=question, user_id=user_id, username=user, model=model_name,
                         success=False, error=str(exc),
-                        latency_ms=int((time.time() - t0) * 1000), trace_id=trace_id)
+                        latency_ms=int((time.time() - t0) * 1000),
+                        sql_queries=ledger.sql_log() or None, trace_id=trace_id)
         return {"success": False, "message": "NL search failed: %s" % exc}

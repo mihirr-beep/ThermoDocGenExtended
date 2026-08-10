@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """NL search over the EMC lab data (admin tool).
 
-Architecture (as designed):
-  - a coordinator agent (OpenAI Agents SDK) routes each question by intent;
-  - query_database tool: NL->SQL over MySQL, SELECT-only, validated against a
-    generated schema catalog, executed read-only with row/time caps;
-  - search_documents tool: Pinecone RAG over generated datasheets - currently
-    a stub so the routing is testable before the index exists.
+The database is the only source of truth. A coordinator agent (OpenAI Agents
+SDK) turns the question into read-only SQL, which is validated against a
+generated schema catalog and executed with row, size and time caps. There is
+no vector store and no document-retrieval lane: if a fact is not in a table,
+the assistant says so rather than producing it from somewhere else.
 
 Wire-up: call register_nlp_search(app) next to register_datasheet_gen(app).
 """
@@ -24,4 +23,14 @@ def register_nlp_search(app):
         ensure_audit_table(app)
     except Exception as exc:  # noqa: BLE001 - never block boot
         app.logger.warning("nlp_search: audit table setup skipped: %s", exc)
+
+    # Everything else this feature reads is owned by other modules. Check it
+    # is there, create what datasheet_gen owns if it is not, and say plainly
+    # what is still absent - see preflight.py for why a missing table is
+    # worse here than an obvious error.
+    try:
+        from .preflight import ensure_dependencies
+        ensure_dependencies(app)
+    except Exception as exc:  # noqa: BLE001 - never block boot
+        app.logger.warning("nlp_search: preflight skipped: %s", exc)
     return app

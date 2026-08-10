@@ -3,7 +3,7 @@
 
 Langfuse Cloud exposes an OTEL trace endpoint, so we export the OpenAI Agents
 SDK spans (agent runs, LLM generations, tool calls) and the raw OpenAI calls
-(embeddings) to Langfuse over OTLP. logfire is used purely as the OTEL SDK /
+to Langfuse over OTLP. logfire is used purely as the OTEL SDK /
 instrumentation layer — nothing is sent to Logfire's own cloud
 (``send_to_logfire=False``).
 
@@ -76,7 +76,7 @@ def setup_tracing():
 
         logfire.instrument_openai_agents()
         try:
-            logfire.instrument_openai()   # capture raw OpenAI calls (embeddings)
+            logfire.instrument_openai()   # capture the raw OpenAI calls too
         except Exception:  # noqa: BLE001
             pass
 

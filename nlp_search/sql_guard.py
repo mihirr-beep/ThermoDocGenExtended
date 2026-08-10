@@ -40,6 +40,24 @@ _FORBIDDEN_KEYWORDS = (
     "MASTER", "PROCESSLIST", "COMMIT", "ROLLBACK", "SAVEPOINT", "XA", "INTO",
 )
 
+# Forbidden as statement verbs, permitted as read-only function calls - but
+# ONLY in the `NAME(` form. Deliberately short: each entry is a name where
+# MySQL has both a write statement and a harmless scalar function, and where
+# the function is one this schema genuinely needs.
+_ALSO_FUNCTIONS = frozenset(("REPLACE",))
+
+
+def _only_as_function(upper_sql, kw):
+    """True when every occurrence of `kw` is immediately a call: NAME(...)."""
+    for m in re.finditer(r"\b%s\b" % kw, upper_sql):
+        if not upper_sql[m.end():m.end() + 1].lstrip(" ").startswith("("):
+            # allow one space before the paren, nothing else
+            rest = upper_sql[m.end():]
+            if not re.match(r"\s*\(", rest):
+                return False
+    return True
+
+
 _FORBIDDEN_FUNCTIONS = (
     "SLEEP", "BENCHMARK", "GET_LOCK", "RELEASE_LOCK", "IS_FREE_LOCK",
     "IS_USED_LOCK", "LOAD_FILE", "UPDATEXML", "EXTRACTVALUE", "NAME_CONST",
@@ -252,6 +270,20 @@ def validate_sql(sql, allowed_tables, denied_star_tables=()):
     upper = masked.upper()
     for kw in _FORBIDDEN_KEYWORDS:
         if re.search(r"\b%s\b" % kw, upper):
+            # Some of these names are also read-only FUNCTIONS. REPLACE is the
+            # one that bit: REPLACE INTO is a write, REPLACE(col,' ','_') is
+            # ordinary string handling - and it is what canon_sql() emits, so
+            # the guard was rejecting the exact join recipe the prompt tells
+            # the model to use. Asked how many requested tests are unfilled,
+            # the model wrote the correct normalised join three times, was
+            # blocked three times, gave up and fell back to matching test_code
+            # raw. That dropped the four codes spelled differently across
+            # tables and answered 6 where the truth is 68.
+            #
+            # A trailing "(" is the whole distinction: no MySQL write verb is
+            # ever followed by one, so allowing the call form gives up nothing.
+            if kw in _ALSO_FUNCTIONS and _only_as_function(upper, kw):
+                continue
             return False, "Keyword '%s' is not allowed. This tool is strictly read-only SELECT." % kw, ""
     for fn in _FORBIDDEN_FUNCTIONS:
         if re.search(r"\b%s\s*\(" % fn, upper):

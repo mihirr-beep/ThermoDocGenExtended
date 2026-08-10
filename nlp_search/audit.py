@@ -23,14 +23,15 @@ CREATE TABLE IF NOT EXISTS nlp_search_audit (
   username VARCHAR(150) NULL,
   question TEXT NOT NULL,
   answer MEDIUMTEXT NULL,
-  route VARCHAR(20) NULL,
+  route VARCHAR(120) NULL,
   model VARCHAR(100) NULL,
   input_tokens INT NULL,
+  cached_tokens INT NULL,
   output_tokens INT NULL,
   total_tokens INT NULL,
   estimated_cost_usd DECIMAL(12,6) NULL,
   latency_ms INT NULL,
-  tool_calls VARCHAR(120) NULL,
+  tool_calls VARCHAR(255) NULL,
   sql_queries TEXT NULL,
   success TINYINT NOT NULL DEFAULT 1,
   error TEXT NULL,
@@ -40,27 +41,46 @@ CREATE TABLE IF NOT EXISTS nlp_search_audit (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
-# per 1,000,000 tokens: (input $, output $). Used to estimate cost from tokens.
+# per 1,000,000 tokens: (input $, output $, CACHED input $).
+#
+# The cached rate is not a detail here, it is most of the bill. This system
+# sends a large, near-identical prefix every call - system prompt, lab rules,
+# join paths, the worker's slice of the catalog - and measured on a live
+# question 20,864 of 21,432 input tokens came back marked cached: 97%. Input
+# is ~98% of all tokens, so pricing it at the full rate overstates the true
+# cost by about 2x, and a dashboard that does that is worse than none.
+#
+# Longest key wins, so "gpt-4o-mini" is not matched by the "gpt-4o" prefix.
 PRICING = {
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (2.50, 10.0),
-    "gpt-4.1": (2.00, 8.00),
-    "gpt-4.1-mini": (0.40, 1.60),
-    "gpt-4.1-nano": (0.10, 0.40),
-    "text-embedding-3-small": (0.02, 0.0),
-    "text-embedding-3-large": (0.13, 0.0),
+    "gpt-4o-mini": (0.15, 0.60, 0.075),
+    "gpt-4o": (2.50, 10.0, 1.25),
+    "gpt-4.1": (2.00, 8.00, 0.50),
+    "gpt-4.1-mini": (0.40, 1.60, 0.10),
+    "gpt-4.1-nano": (0.10, 0.40, 0.025),
+    "text-embedding-3-small": (0.02, 0.0, 0.02),
+    "text-embedding-3-large": (0.13, 0.0, 0.13),
 }
-_DEFAULT_PRICE = (0.15, 0.60)   # gpt-4o-mini
+_DEFAULT_PRICE = (0.15, 0.60, 0.075)   # gpt-4o-mini
+
+# Rates move. Check https://openai.com/api/pricing/ before quoting these.
+PRICING_CHECKED_ON = "2026-08-07"
 
 
-def estimate_cost(model, input_tokens, output_tokens):
+def estimate_cost(model, input_tokens, output_tokens, cached_tokens=None):
+    """Cost in USD. `cached_tokens` is the part of input_tokens served from
+    the prompt cache, and is billed at the cheaper cached rate."""
     m = (model or "").lower()
     price = _DEFAULT_PRICE
-    for key, p in PRICING.items():
+    for key in sorted(PRICING, key=len, reverse=True):
         if m.startswith(key):
-            price = p
+            price = PRICING[key]
             break
-    return round((input_tokens or 0) / 1e6 * price[0] + (output_tokens or 0) / 1e6 * price[1], 6)
+    inp = input_tokens or 0
+    cached = min(cached_tokens or 0, inp)
+    fresh = inp - cached
+    return round(fresh / 1e6 * price[0]
+                 + cached / 1e6 * price[2]
+                 + (output_tokens or 0) / 1e6 * price[1], 6)
 
 
 def ensure_audit_table(app):
@@ -76,14 +96,61 @@ def ensure_audit_table(app):
                 db.session.execute(text(_CREATE))
                 db.session.commit()
                 app.logger.info("nlp_search: created table %s", _TABLE)
+            else:
+                _widen_columns(app, db, text, inspect)
         except Exception as exc:  # noqa: BLE001
             db.session.rollback()
             if "exist" not in str(exc).lower():
                 app.logger.error("nlp_search: could not create %s: %s", _TABLE, exc)
 
 
+# route is a "+"-joined list of the workers a question touched, so it grows
+# with the number of domains. At VARCHAR(20) every multi-domain question -
+# "datasheets+inventory+semantics" is 30 characters - failed to insert under
+# strict mode, silently, because log_query swallows its errors by design. The
+# audit table was therefore missing precisely the expensive questions, which
+# is the worst possible sample to lose from a cost record.
+_WIDEN = {"route": "VARCHAR(120)", "tool_calls": "VARCHAR(255)"}
+_ADD = {"cached_tokens": "INT NULL AFTER input_tokens"}
+
+
+def _widen_columns(app, db, text, inspect):
+    try:
+        have = {c["name"]: c for c in inspect(db.engine).get_columns(_TABLE)}
+    except Exception:  # noqa: BLE001
+        return
+    for col, decl in _ADD.items():
+        if col in have:
+            continue
+        try:
+            db.session.execute(text("ALTER TABLE %s ADD COLUMN %s %s" % (_TABLE, col, decl)))
+            db.session.commit()
+            app.logger.info("nlp_search: added %s.%s", _TABLE, col)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            app.logger.warning("nlp_search: could not add %s.%s: %s", _TABLE, col, exc)
+    for col, decl in _WIDEN.items():
+        info = have.get(col)
+        if info is None:
+            continue
+        want = int(decl.split("(")[1].rstrip(")"))
+        cur = getattr(info.get("type"), "length", None)
+        if cur is not None and cur >= want:
+            continue
+        try:
+            db.session.execute(text("ALTER TABLE %s MODIFY COLUMN %s %s NULL"
+                                    % (_TABLE, col, decl)))
+            db.session.commit()
+            app.logger.info("nlp_search: widened %s.%s to %s", _TABLE, col, decl)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            app.logger.warning("nlp_search: could not widen %s.%s: %s",
+                               _TABLE, col, exc)
+
+
 def log_query(question, answer=None, user_id=None, username=None, route=None,
               model=None, input_tokens=None, output_tokens=None, total_tokens=None,
+              cached_tokens=None,
               latency_ms=None, tool_calls=None, sql_queries=None, success=True,
               error=None, trace_id=None, cost=None):
     """Insert one audit row. Best-effort — never raises."""
@@ -93,21 +160,22 @@ def log_query(question, answer=None, user_id=None, username=None, route=None,
         if total_tokens is None and (input_tokens is not None or output_tokens is not None):
             total_tokens = (input_tokens or 0) + (output_tokens or 0)
         if cost is None:
-            cost = estimate_cost(model, input_tokens, output_tokens)
+            cost = estimate_cost(model, input_tokens, output_tokens, cached_tokens)
         params = {
             "created_at": datetime.datetime.utcnow(),
             "user_id": user_id,
             "username": (username or None),
             "question": (question or "")[:65000],
             "answer": (answer or None),
-            "route": (route or None),
+            "route": ((route or None) and str(route)[:120]),
             "model": (model or None),
             "input_tokens": input_tokens,
+            "cached_tokens": cached_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "estimated_cost_usd": cost,
             "latency_ms": latency_ms,
-            "tool_calls": (tool_calls or None),
+            "tool_calls": ((tool_calls or None) and str(tool_calls)[:255]),
             "sql_queries": (sql_queries or None),
             "success": 1 if success else 0,
             "error": (str(error)[:65000] if error else None),
@@ -116,12 +184,14 @@ def log_query(question, answer=None, user_id=None, username=None, route=None,
         db.session.execute(text("""
             INSERT INTO nlp_search_audit
               (created_at, user_id, username, question, answer, route, model,
-               input_tokens, output_tokens, total_tokens, estimated_cost_usd,
-               latency_ms, tool_calls, sql_queries, success, error, trace_id)
+               input_tokens, cached_tokens, output_tokens, total_tokens,
+               estimated_cost_usd, latency_ms, tool_calls, sql_queries, success,
+               error, trace_id)
             VALUES
               (:created_at, :user_id, :username, :question, :answer, :route, :model,
-               :input_tokens, :output_tokens, :total_tokens, :estimated_cost_usd,
-               :latency_ms, :tool_calls, :sql_queries, :success, :error, :trace_id)
+               :input_tokens, :cached_tokens, :output_tokens, :total_tokens,
+               :estimated_cost_usd, :latency_ms, :tool_calls, :sql_queries, :success,
+               :error, :trace_id)
         """), params)
         db.session.commit()
         return True
