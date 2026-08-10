@@ -197,6 +197,12 @@ def main():
         has_legend_widget = ("obs_legend" in body) or ("obs-legend" in body)
         legend_ok = (("ZQLEGEND" + code) in back) if has_legend_widget else None
 
+        # MySQL defaults to REPEATABLE READ, so this connection keeps the
+        # snapshot it first read - and the save just made through the app is
+        # invisible in it. Committing starts a fresh snapshot. Without this the
+        # audit reports whatever the tables held on the PREVIOUS run, which
+        # made it pass or fail depending on history rather than on the code.
+        conn.commit()
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM `datasheet` WHERE planner_entry_id=%s", (pid,))
             row = cur.fetchone()
