@@ -248,10 +248,20 @@ def prefill_ce(assignment_id):
 
 
 def _read_payload():
-    """Return (form_data dict, assignment_id, tco_id, files) for multipart or JSON."""
-    ctype = request.content_type or ""
-    if "multipart/form-data" in ctype:
-        raw = request.form
+    """Return (form_data dict, assignment_id, tco_id, files) for a form post or JSON.
+
+    Keyed on whether a FORM was posted, not on the content type. The check used
+    to be `"multipart/form-data" in request.content_type`, which meant a plain
+    application/x-www-form-urlencoded post - a form with no file in it, and every
+    non-browser caller - fell through to the JSON branch, got an empty dict, and
+    was rejected with "Assignment ID is required". The id was right there in the
+    body; only the encoding was different.
+
+    request.form covers both encodings, which is what the other ten datasheets'
+    route has always done (generic_routes.g_save_draft). CE was the odd one out.
+    """
+    raw = request.form
+    if raw:
         form_data = {}
         for key in raw.keys():
             form_data[key] = raw.getlist(key) if key.endswith("[]") else raw.get(key)
