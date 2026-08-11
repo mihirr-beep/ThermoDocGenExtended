@@ -199,9 +199,237 @@ def clear_update_on_open(path):
 
 
 def finalise(path):
-    """Compute the fields and stop Word re-doing it. Returns True if finalised."""
+    """Finish the report as well as this host can. Returns what was done.
+
+    Windows with Word: everything, including the page numbers, and the
+    update-on-open flag is dropped so the reader gets no prompts at all.
+
+    Anywhere else: the contents entries and caption numbers are written in pure
+    Python and updateFields is LEFT in place, so a reader who says yes still gets
+    perfect page numbers and a reader who says no still gets a readable document.
+    """
     warn_if_unavailable()
-    if not compute_fields(path):
-        return False
-    clear_update_on_open(path)
-    return True
+    if compute_fields(path):
+        clear_update_on_open(path)
+        return {"engine": "word", "page_numbers": True}
+    info = populate_lists(path)
+    info.update({"engine": "python", "page_numbers": False})
+    return info
+
+
+# ==========================================================================
+# The Linux path: everything that does not need a layout engine
+# ==========================================================================
+# compute_fields needs Word, so on the production host it does nothing and the
+# report ships with blanked contents lists - clear_toc_entries empties the
+# template's stale entries and, without Word, nothing puts real ones back.
+#
+# Page numbers genuinely cannot be computed here. Knowing that a heading falls on
+# page 31 means laying the document out, and Python has no engine for that.
+# Everything ELSE about those lists is countable from the document itself: which
+# headings exist, at what level, in what order, and how many figures precede a
+# given caption.
+#
+# So this writes the entry TEXT and the caption numbers and leaves only the page
+# number blank. Two things follow, and the second is the point:
+#
+#   * a reader who clicks Yes gets a perfect document, exactly as before;
+#   * a reader who clicks No now gets a READABLE contents page instead of a blank
+#     one - and because Word then never modifies the document, there is nothing
+#     for it to record. The red contents page and the balloon margin cannot
+#     happen on that path at all.
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+
+
+def _q(tag):
+    return _W + tag
+
+
+def _text_of(el):
+    return "".join(t.text or "" for t in el.iter(_q("t"))).strip()
+
+
+def _style_of(el):
+    ppr = el.find(_q("pPr"))
+    if ppr is None:
+        return ""
+    st = ppr.find(_q("pStyle"))
+    return (st.get(_q("val")) or "") if st is not None else ""
+
+
+def _collect_entries(doc):
+    """What each of the four lists should hold, in document order.
+
+    Heading numbers are computed from level counters rather than read off the
+    paragraph: the body numbers its headings through list definitions, so the
+    text does not carry "4.2." anywhere.
+    """
+    out = {"TOC": [], "Figure": [], "Photo": [], "Table": []}
+    counters = [0, 0, 0]
+    seen = {"Figure": 0, "Photo": 0, "Table": 0}
+    for el in doc.element.body.iter(_q("p")):
+        style = _style_of(el).lower()
+        text = _text_of(el)
+        if not text:
+            continue
+        if style.startswith("heading") and style[-1:].isdigit():
+            lvl = int(style[-1])
+            if 1 <= lvl <= 3:
+                counters[lvl - 1] += 1
+                for deeper in range(lvl, 3):
+                    counters[deeper] = 0
+                number = ".".join(str(counters[i]) for i in range(lvl)) + "."
+                out["TOC"].append((number, text))
+            continue
+        if style == "caption":
+            for label in ("Figure", "Photo", "Table"):
+                if not text.startswith(label):
+                    continue
+                seen[label] += 1
+                tail = text[len(label):].lstrip()
+                tail = tail.split(":", 1)[1].strip() if ":" in tail else tail
+                out[label].append(("%s %d:" % (label, seen[label]), tail))
+                break
+    return out
+
+
+def number_seq_fields(doc):
+    """Set each SEQ field's cached number by counting them in document order.
+
+    Word would compute these. Without Word the cached value is whatever the
+    source document carried, so a spliced "Photo 1" stays 1 even when it is the
+    ninth photo in the report.
+    """
+    counts, changed = {}, 0
+    for p in doc.element.body.iter(_q("p")):
+        runs = list(p)
+        for i, r in enumerate(runs):
+            instr = "".join(t.text or "" for t in r.iter(_q("instrText")))
+            if "SEQ" not in instr:
+                continue
+            parts = instr.split()
+            if "SEQ" not in parts:
+                continue
+            label = parts[parts.index("SEQ") + 1] if len(parts) > parts.index("SEQ") + 1 else ""
+            if not label:
+                continue
+            counts[label] = counts.get(label, 0) + 1
+            for later in runs[i:]:
+                fc = later.find(_q("fldChar"))
+                if fc is not None and fc.get(_q("fldCharType")) == "end":
+                    break
+                done = False
+                for t in later.iter(_q("t")):
+                    if (t.text or "").strip().isdigit():
+                        t.text = str(counts[label])
+                        changed += 1
+                        done = True
+                        break
+                if done:
+                    break
+    return changed
+
+
+def _regions(doc):
+    """[(kind, [paragraphs of the field])] for the four TOC-family fields."""
+    paras = list(doc.element.body.iter(_q("p")))
+    out, depth, cur = [], 0, None
+    for i, el in enumerate(paras):
+        instr = " ".join("".join(t.text or "" for t in el.iter(_q("instrText"))).split())
+        for fc in el.iter(_q("fldChar")):
+            typ = fc.get(_q("fldCharType"))
+            if typ == "begin":
+                depth += 1
+                if depth == 1 and instr.startswith("TOC"):
+                    kind = "TOC"
+                    for label in ("Figure", "Photo", "Table"):
+                        if '"%s"' % label in instr:
+                            kind = label
+                    cur = (kind, i)
+            elif typ == "end":
+                if depth == 1 and cur is not None:
+                    out.append((cur[0], paras[cur[1]:i + 1]))
+                    cur = None
+                depth = max(0, depth - 1)
+    return out
+
+
+def _write_entry(p, number, text):
+    """Rewrite one contents paragraph as number, tab, text, tab.
+
+    The field machinery - the outer TOC chars and the nested PAGEREF - is kept
+    exactly as it was, so Word can still rebuild the list and fill the page in.
+    Only the visible text is replaced, which is the same surgery
+    docx_tools.clear_toc_entries already does to blank it.
+    """
+    import copy
+    from docx.oxml import OxmlElement
+    rpr = None
+    for r in list(p):
+        if r.tag != _q("r"):
+            continue
+        if r.find(_q("fldChar")) is not None or r.find(_q("instrText")) is not None:
+            continue
+        if rpr is None:
+            found = r.find(_q("rPr"))
+            if found is not None:
+                rpr = copy.deepcopy(found)
+        p.remove(r)
+    for link in p.findall(_q("hyperlink")):
+        for t in link.iter(_q("t")):
+            t.text = ""
+
+    run = OxmlElement("w:r")
+    if rpr is not None:
+        run.append(rpr)
+    t = OxmlElement("w:t")
+    t.set(_XML_SPACE, "preserve")
+    t.text = "%s\t%s\t" % (number, text)
+    run.append(t)
+
+    ppr = p.find(_q("pPr"))
+    if ppr is not None:
+        ppr.addnext(run)
+    else:
+        p.insert(0, run)
+
+
+def populate_lists(path):
+    """Write the contents entries and caption numbers without Word.
+
+    Best-effort: any failure leaves the file exactly as the builder wrote it,
+    which is the behaviour this replaces.
+    """
+    try:
+        from docx import Document
+        doc = Document(path)
+        seq = number_seq_fields(doc)
+        entries = _collect_entries(doc)
+        written = dropped = 0
+        for kind, paras in _regions(doc):
+            want = entries.get(kind) or []
+            # only paragraphs with no field machinery may be rewritten or removed;
+            # the first and last of a region carry the field and must survive
+            slots = [p for p in paras
+                     if p.find(_q("fldChar")) is None
+                     and p.find(_q("instrText")) is None]
+            for i, p in enumerate(slots):
+                if i < len(want):
+                    _write_entry(p, want[i][0], want[i][1])
+                    written += 1
+                else:
+                    parent = p.getparent()
+                    if parent is not None:
+                        parent.remove(p)
+                        dropped += 1
+        doc.save(path)
+        log.info("report lists written without Word: %d entries, %d caption "
+                 "numbers, %d surplus lines removed (page numbers left to Word)",
+                 written, seq, dropped)
+        return {"entries_written": written, "captions_numbered": seq,
+                "surplus_removed": dropped}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not write the report lists for %s: %s",
+                    os.path.basename(path), exc)
+        return {"entries_written": 0, "captions_numbered": 0, "surplus_removed": 0}
