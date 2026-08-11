@@ -51,6 +51,38 @@ def available():
         return False
 
 
+# Said once per process, not once per report, so it is visible in the boot log
+# without burying every generation behind it.
+_warned = [False]
+
+
+def warn_if_unavailable():
+    """Say plainly that reports will ship un-computed on this host.
+
+    PRODUCTION IS LINUX WITH PYTHON AND NOTHING ELSE - no Word, no LibreOffice.
+    So this module is a no-op there, and that is not a detail: it means the
+    report keeps w:updateFields, every reader gets the "update the fields?"
+    prompt and the four "page numbers only / entire table" prompts, and if their
+    Word has track changes on, its field rebuild lands as revisions - the red
+    contents page and the balloon margin.
+
+    Computing them server-side needs a layout engine to know what page anything
+    falls on. Python has none, so on Linux this cannot be fixed by trying
+    harder; it needs either a Windows/Word or LibreOffice host for this one step,
+    or the prompts are accepted as the cost of a Linux-only stack.
+
+    Returning False silently was the worse option: it looked like the problem
+    had been fixed everywhere when it had been fixed on one developer's laptop.
+    """
+    if available() or _warned[0]:
+        return
+    _warned[0] = True
+    log.warning(
+        "report fields will NOT be computed on this host (%s, no Word) - reports "
+        "keep updateFields, so readers get the field prompts and, with track "
+        "changes on, a markup margin. See report_gen/finalise.py.", os.name)
+
+
 def compute_fields(path, timeout_hint=120):
     """Open ``path`` in Word, compute every field, save, close.
 
@@ -168,6 +200,7 @@ def clear_update_on_open(path):
 
 def finalise(path):
     """Compute the fields and stop Word re-doing it. Returns True if finalised."""
+    warn_if_unavailable()
     if not compute_fields(path):
         return False
     clear_update_on_open(path)
