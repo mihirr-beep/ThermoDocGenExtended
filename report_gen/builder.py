@@ -1357,7 +1357,11 @@ def build_report(request_obj, planner_entries, output_path, now=None):
 
     summary = {
         "path": output_path,
-        "finalised_in_word": finalised,
+        # {"engine": "word"|"python", "page_numbers": bool, ...} - which host
+        # finished the document, and therefore whether the reader will be asked
+        # to update anything. Was a bare bool when Word was the only path.
+        "finalised": finalised,
+        "finalised_in_word": (finalised or {}).get("engine") == "word",
         "tests": [t["code"] for t in tests],
         "tests_without_data": [t["code"] for t in tests if not t["has_data"]],
         "dropped_sections": dropped,

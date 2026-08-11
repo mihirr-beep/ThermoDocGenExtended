@@ -364,6 +364,15 @@ def replace_section_in_doc(report, code, datasheet_path):
     body = report.element.body
     removed = 0
     for el in list(body)[start:end]:
+        # NEVER remove the body's own sectPr. report_section_span returns
+        # len(body) for the LAST test section, and the trailing w:sectPr sits in
+        # that range - it carries the page size, the margins and every
+        # header/footer reference. Deleting it left the eleven-test report with
+        # zero header parts and no ULR NO / TEST REPORT NO, while a single splice
+        # into a middle section looked perfect. Only paragraphs and tables are
+        # ever content here.
+        if not (el.tag.endswith("}p") or el.tag.endswith("}tbl")):
+            continue
         body.remove(el)
         removed += 1
 
