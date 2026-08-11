@@ -12,6 +12,7 @@ Table numbers, "Page X of Y") back to Word by setting ``w:updateFields``.
 Section 3 (IMMUNITY CRITERIA AND DECISION RULE) is static by specification and
 is only touched to tick the request's chosen decision rule.
 """
+import logging
 import os
 import re
 
@@ -19,6 +20,8 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+
+log = logging.getLogger(__name__)
 
 from . import docx_tools as T
 from . import mapping as M
@@ -1283,9 +1286,34 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     tick_decision_rules(outline, data["meta"])
 
     # 3. one section per test
-    per_test = []
+    #
+    # Preferred: SPLICE the test's own pages out of the datasheet .docx that peer
+    # review approved, replacing the report's hand-maintained copy of the same
+    # tables. Measured against the eleven datasheet templates, 49 of 92 per-test
+    # subsections had drifted apart - SOFTWARE USED 4x2 against 2x3, RESULT two
+    # tables against one - and EFT and SURGE build their observation grid at
+    # generation time, so a fixed copy cannot match by construction.
+    #
+    # Fallback: fill the template section as before. A test approved before this
+    # change, or one whose .docx has been cleaned off disk, has no region to
+    # splice, and a report that builds with an older-looking section beats one
+    # that refuses to build at all. Which path each test took is logged.
+    from . import splice as SPL
+    per_test, spliced = [], []
     for test in tests:
         outline.refresh()
+        path = test.get("datasheet_path")
+        if path:
+            try:
+                info = SPL.replace_section_in_doc(doc, test["code"], path)
+                spliced.append(info)
+                outline.refresh()
+                continue
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not splice %s from %s (%s) - filling the "
+                            "template section instead", test["code"],
+                            os.path.basename(path), exc)
+                outline.refresh()
         per_test.append(fill_test_section(outline, test, data["meta"]))
 
     # 4. finishing passes
@@ -1335,6 +1363,8 @@ def build_report(request_obj, planner_entries, output_path, now=None):
         "dropped_sections": dropped,
         "skipped": data["skipped"],
         "per_test": per_test,
+        "spliced": spliced,
+        "spliced_from_datasheet": [i["code"] for i in spliced],
         "fields_cleared": cleared,
         "toc_entries_cleared": toc_cleared,
         "revision_markup_removed": revisions,

@@ -288,16 +288,16 @@ def rewrite_crossrefs(doc):
     return changed
 
 
-def replace_section(report_path, code, datasheet_path, out_path=None):
-    """Swap the report's own ``code`` section for the datasheet's.
+def replace_section_in_doc(report, code, datasheet_path):
+    """Swap the report's own ``code`` section for the datasheet's, in place.
 
-    Returns a dict describing what happened, so the caller can log it rather
-    than assume it.
+    Takes an ALREADY-OPEN report so the builder can splice while it still holds
+    the document - reopening from disk mid-build would discard everything filled
+    so far. Returns a dict describing what happened, so the caller can log it
+    rather than assume it.
     """
-    from docx import Document
     from docxcompose.composer import Composer
 
-    report = Document(report_path)
     span = report_section_span(report, code)
     if span is None:
         raise ValueError("no %r section in the report" % code)
@@ -319,9 +319,19 @@ def replace_section(report_path, code, datasheet_path, out_path=None):
 
     Composer(report).insert(start, region)
 
-    out_path = out_path or report_path
-    report.save(out_path)
     return {"code": code, "report_blocks_removed": removed,
             "datasheet_blocks_inserted": region_blocks,
             "captions_to_seq": captions, "crossrefs_rewritten": crossrefs,
-            "inserted_at": start, "path": out_path}
+            "inserted_at": start,
+            "source": os.path.basename(datasheet_path)}
+
+
+def replace_section(report_path, code, datasheet_path, out_path=None):
+    """File-level wrapper around replace_section_in_doc, for testing by hand."""
+    from docx import Document
+    report = Document(report_path)
+    info = replace_section_in_doc(report, code, datasheet_path)
+    out_path = out_path or report_path
+    report.save(out_path)
+    info["path"] = out_path
+    return info

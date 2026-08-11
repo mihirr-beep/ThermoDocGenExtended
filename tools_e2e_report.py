@@ -309,14 +309,42 @@ def main():
         if r.status_code == 200:
             filled.append((pid, code))
 
-    # 3. submit + approve each, so the report has approved data to build from
-    print("\n3. SUBMIT -> PEER REVIEW -> APPROVE")
+    # 3a. submit through the REAL route, which is what generates the .docx
+    #
+    # record_transition alone moves the statuses but never renders a datasheet,
+    # so the report had nothing to splice from and silently fell back to filling
+    # its own template copy - the exact thing the splice exists to replace. Going
+    # through /generate produces the document peer review approves, and records
+    # its path, which is what the builder looks for.
+    print("\n3a. SUBMIT FOR PEER REVIEW (generates each datasheet .docx)")
+    with app.app_context():
+        reviewer = db.session.execute(text(
+            "SELECT id, username FROM users WHERE is_active=1 AND role IN "
+            "('admin','lab_engineer') AND id <> :me ORDER BY id LIMIT 1"),
+            {"me": uid}).first()
+    if reviewer is None:
+        print("   no eligible peer reviewer - cannot generate datasheets")
+    else:
+        print("   reviewer: %s (id %s)" % (reviewer[1], reviewer[0]))
+        for pid, code in filled:
+            data = payload_for(code, pid, args.tco, today, uname)
+            data["peer_reviewer_id"] = str(reviewer[0])
+            url = ("/datasheet/ce/generate" if code == "CE"
+                   else "/datasheet/g/%s/generate" % code.lower())
+            login()
+            r = client.post(url, data=data)
+            body = r.get_json() or {}
+            print("   %-16s entry %-4s %-3s  %s" % (
+                code, pid, r.status_code,
+                (body.get("message") or body.get("filename") or "")[:56]))
+
+    print("\n3b. APPROVE")
     with app.app_context():
         from datasheet_gen.projection import record_transition
         for pid, code in filled:
-            record_transition(pid, "Peer Review", actor=admin, from_status="Draft",
-                              snapshot=True, submitted=True,
-                              comment="Sent for peer review (end-to-end test).")
+            # only the DECISION here - /generate above already recorded the
+            # submission and froze the revision, so repeating it would file a
+            # second Peer Review transition against the same version
             record_transition(pid, "Approved", actor=admin, decided=True,
                               comment="Approved (end-to-end test).")
             row = db.session.execute(text(
