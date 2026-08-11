@@ -41,6 +41,7 @@ TABLES = (
     "datasheet_software",
     "datasheet_modification",
     "datasheet_observation",
+    "datasheet_measurement",
     "datasheet_observation_legend",
     "datasheet_revision",
     "datasheet_status_history",
@@ -391,6 +392,39 @@ _DDL = (
   KEY `idx_dso_val` (`test_code`, `value`),
   CONSTRAINT `fk_dso` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    # Every MEASURED number the lab records. Until this table existed, 13 of the
+    # 25 grids on the per-test tables were stored as JSON and nowhere else:
+    # CE's Line and Neutral quasi-peak/average readings, RE's two tables,
+    # harmonic currents, the three flicker grids, and the per-test observation
+    # row tables. Observations had `datasheet_observation`; measurements had
+    # nothing, so "show me every CE reading within 3 dB of its limit" could not
+    # be written in SQL at all - the numbers were in the database and out of
+    # reach of it.
+    #
+    # Same shape as datasheet_observation on purpose: that design already
+    # carries ten different grids with different column counts, so it is known
+    # to work, and a DBA who can read one can read the other. The JSON columns
+    # are kept as well - they hold the grid's own labels and block structure,
+    # which is what regenerates the document - so this is a second view of the
+    # same data, not a migration away from it.
+    """CREATE TABLE IF NOT EXISTS `datasheet_measurement` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `datasheet_id` INT NOT NULL,
+  `revision_no` INT NOT NULL DEFAULT 1,   -- which submitted version this reading belongs to
+  `test_code` VARCHAR(20) NOT NULL,
+  `grid_key`  VARCHAR(60) NOT NULL,    -- line_measurements | re_table1 | harmonic_rows | flicker_meas_rows ...
+  `block_label` VARCHAR(200) NULL,     -- CE repeats its whole grid per Test; this names which
+  `row_no`    INT NULL,
+  `row_label` VARCHAR(200) NULL,
+  `col_key`   VARCHAR(60) NULL,        -- qp_freq | qp | qp_limit | qp_margin ...
+  `col_label` VARCHAR(120) NULL,       -- 'Frequency (MHz)' | 'Q-peak' | 'Limit'
+  `value`     VARCHAR(120) NULL,       -- wider than an observation: these are numbers with units
+  `value_num` DECIMAL(18,6) NULL,      -- the same cell parsed, so a DBA can compare and sort
+  KEY `idx_dsms` (`datasheet_id`, `revision_no`),
+  KEY `idx_dsms_grid` (`test_code`, `grid_key`, `col_key`),
+  UNIQUE KEY `uq_dsms` (`datasheet_id`, `revision_no`, `grid_key`, `block_label`, `row_no`, `col_key`),
+  CONSTRAINT `fk_dsms` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS `datasheet_observation_legend` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `datasheet_id` INT NOT NULL,
@@ -473,7 +507,94 @@ def ensure_projection_tables(app):
                 app.logger.error("datasheet projection: could not create %s: %s",
                                  name, exc)
 
+        created += _ensure_revision_mirrors(app, db, existing)
+
         if created:
             app.logger.info("datasheet projection: created %d table(s): %s",
                             len(created), ", ".join(created))
+    return created
+
+
+# --------------------------------------------------------------------------
+# Per-revision detail, in columns
+# --------------------------------------------------------------------------
+# datasheet_revision froze a header and a form_json blob, and nothing else. So
+# "what did the CE datasheet say before the reviewer rejected it" meant opening
+# form_json and reading it by eye - which is the complaint that started this:
+# the data was in the database and not in the database's terms.
+#
+# Each mirror is created with CREATE TABLE ... LIKE its live counterpart, so it
+# has exactly the same columns - all 27 of datasheet_ce, all 54 of datasheet_re -
+# and cannot drift when one of them gains a column. Writing sixteen schemas by
+# hand would have guaranteed that drift.
+#
+# Two adjustments after the copy: a revision_no column, and every UNIQUE index
+# that contains datasheet_id is rebuilt to include it. Without the second step
+# datasheet_ce's primary key (which IS datasheet_id) would allow one revision
+# per datasheet and silently reject the rest.
+_MIRRORED = (
+    "datasheet_ce", "datasheet_voltagedips", "datasheet_voltageflicker",
+    "datasheet_harmonic", "datasheet_eft", "datasheet_esd", "datasheet_surge",
+    "datasheet_re", "datasheet_rs_ri", "datasheet_crf", "datasheet_pfmf",
+    "datasheet_equipment", "datasheet_software", "datasheet_modification",
+    "datasheet_observation", "datasheet_observation_legend",
+)
+
+_MIRROR_PREFIX = "datasheet_rev_"
+
+
+def mirror_name(table):
+    """datasheet_ce -> datasheet_rev_ce."""
+    return _MIRROR_PREFIX + table[len("datasheet_"):]
+
+
+def mirrored_tables():
+    return tuple((t, mirror_name(t)) for t in _MIRRORED)
+
+
+def _unique_indexes_with(db, table, column):
+    """[(index_name, [columns...])] for UNIQUE indexes containing ``column``."""
+    rows = db.session.execute(text(
+        "SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) "
+        "FROM information_schema.statistics WHERE table_schema=DATABASE() "
+        "AND table_name=:t AND non_unique=0 GROUP BY index_name"),
+        {"t": table}).fetchall()
+    out = []
+    for name, cols in rows:
+        parts = [c.strip() for c in (cols or "").split(",") if c.strip()]
+        if column in parts:
+            out.append((name, parts))
+    return out
+
+
+def _ensure_revision_mirrors(app, db, existing):
+    created = []
+    for src, dst in mirrored_tables():
+        if src not in existing or dst in existing:
+            continue
+        try:
+            db.session.execute(text("CREATE TABLE `%s` LIKE `%s`" % (dst, src)))
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD COLUMN `revision_no` INT NOT NULL DEFAULT 1" % dst))
+            for name, cols in _unique_indexes_with(db, dst, "datasheet_id"):
+                newcols = ", ".join("`%s`" % c for c in cols + ["revision_no"])
+                if name == "PRIMARY":
+                    db.session.execute(text(
+                        "ALTER TABLE `%s` DROP PRIMARY KEY, ADD PRIMARY KEY (%s)"
+                        % (dst, newcols)))
+                else:
+                    db.session.execute(text(
+                        "ALTER TABLE `%s` DROP INDEX `%s`, ADD UNIQUE KEY `%s` (%s)"
+                        % (dst, name, name[:60], newcols)))
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD KEY `idx_%s_rev` (`datasheet_id`, `revision_no`)"
+                % (dst, dst[-24:])))
+            db.session.commit()
+            created.append(dst)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            msg = str(exc).lower()
+            if "exist" in msg or "duplicate" in msg:
+                continue
+            app.logger.error("datasheet projection: could not mirror %s: %s", src, exc)
     return created

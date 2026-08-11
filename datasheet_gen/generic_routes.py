@@ -471,11 +471,12 @@ def g_save_draft(code):
         if not _can_access(a):
             return jsonify(success=False, message="Access denied"), 403
         images = _save_generic_images(gs.image_keys(schema), assignment_id)
-        # the Save Draft button marks its save; the autosave timer does not, and
-        # only pays for the header projection (records.upsert_record)
-        full = bool(form_data.pop("_full_save", None))
-        R.upsert_record(a, code, form_data, images, R.DRAFT, user=current_user,
-                        full_projection=full)
+        # Every save projects into the queryable tables now, autosave included.
+        # Gating the child tables on this flag left them holding the PREVIOUS
+        # content of the form between manual saves - see records._full_tier for
+        # the measured cost of not doing that.
+        form_data.pop("_full_save", None)
+        R.upsert_record(a, code, form_data, images, R.DRAFT, user=current_user)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()

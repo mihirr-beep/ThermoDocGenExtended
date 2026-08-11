@@ -499,28 +499,129 @@ def project(record, entry, request=None, with_images=True):
         return None
 
     schema = _schema(code)
-    written = {"spec": _project_spec(db, did, code, form, schema)}
+    # The revision this projection belongs to, read from the row we just wrote.
+    # Measurements are stored per revision, so writing them under the wrong
+    # number would either overwrite a submitted version's readings or strand
+    # them under a revision nobody looks at.
+    revision_no = db.session.execute(text(
+        "SELECT revision_no FROM `datasheet` WHERE id=:d"), {"d": did}).scalar() or 1
+    written = {"spec": _project_spec(db, did, code, form, schema, revision_no)}
     written.update(_project_children(db, did, code, form, schema))
     db.session.commit()
     return {"datasheet_id": did, "rows": written}
 
 
-def _project_spec(db, did, code, form, schema):
-    """The per-test table: its unique scalar columns + its grid JSON columns."""
+def _project_spec(db, did, code, form, schema, revision_no=1):
+    """The per-test table: its unique scalar columns + its grid JSON columns.
+
+    Also flattens every grid into ``datasheet_measurement`` on the way past.
+    The payload is built once and used twice - the JSON column keeps the grid's
+    own labels and block structure (which is what regenerates the document),
+    and the flattened rows make the numbers queryable.
+    """
     table = "datasheet_" + code.lower()
     cols, date_cols = _describe(db, table)
     if not cols:
         return 0
     vals = {"datasheet_id": did}
+    grids = {}
     for column in cols - {"datasheet_id"}:
         if column.endswith("_json"):
             payload = _grid_payload(code, form, column[:-5], schema)
             vals[column] = json.dumps(payload, ensure_ascii=False) if payload else None
+            if payload:
+                grids[column[:-5]] = payload
         else:
             v = _form_value(form, column, code)
             vals[column] = _as_date(v) if (v and column in date_cols) else v
     _upsert(db, table, vals, "datasheet_id")
+    _project_measurements(db, did, code, grids, revision_no)
     return 1
+
+
+# A cell may read "12.4", "12.4 dBuV", "-3.2", "< 0.5" or "N/A". The numeric
+# copy is best-effort and NULL when there is no number to take - the text is
+# always kept, so nothing is lost by failing to parse.
+_NUMERIC_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _num(value):
+    m = _NUMERIC_RE.search(str(value or ""))
+    if not m:
+        return None
+    try:
+        f = float(m.group(0))
+    except ValueError:
+        return None
+    # DECIMAL(18,6) - refuse anything that would overflow rather than raise
+    return f if abs(f) < 1e12 else None
+
+
+def _flatten_grid(payload):
+    """One grid payload -> (block_label, row_no, row_label, col_key, col_label, value).
+
+    Handles both shapes `_grid_payload` produces: a plain ``rows`` list, and
+    ``blocks`` - which CE uses because its whole measurement section repeats per
+    Test, so "row 1" exists several times over and only the block name tells
+    them apart. That is why block_label is part of the unique key.
+    """
+    columns = payload.get("columns") or []
+    keys = [c.get("key") or "c%d" % i for i, c in enumerate(columns)]
+    labels = [c.get("label") or "" for c in columns]
+    groups = payload.get("groups") or []
+
+    blocks = payload.get("blocks")
+    if not blocks:
+        blocks = [{"label": "", "rows": payload.get("rows") or []}]
+
+    out = []
+    for block in blocks:
+        blabel = str(block.get("label") or "")[:200]
+        for ri, row in enumerate(block.get("rows") or [], 1):
+            if not row:
+                continue
+            rlabel = str(groups[ri - 1]).strip()[:200] if ri - 1 < len(groups) and groups[ri - 1] else ""
+            for ci, value in enumerate(row):
+                value = str(value or "").strip()
+                if not value:
+                    continue
+                out.append({
+                    "bl": blabel or None,
+                    "rn": ri,
+                    "rl": rlabel or None,
+                    "ck": (keys[ci] if ci < len(keys) else "c%d" % ci)[:60],
+                    "cl": (labels[ci] if ci < len(labels) else "")[:120] or None,
+                    "v": value[:120],
+                    "vn": _num(value)})
+    return out
+
+
+def _project_measurements(db, did, code, grids, revision_no):
+    """Flatten this datasheet's grids into datasheet_measurement.
+
+    Scoped to ONE revision: the DELETE only clears the revision being written,
+    so an earlier submitted version's readings survive the engineer's next edit.
+    That is the whole point of keeping revision_no here rather than only on the
+    header - a rejected CE datasheet's numbers stay queryable in columns instead
+    of being recoverable only by parsing form_json.
+    """
+    if not _columns(db, "datasheet_measurement"):
+        return 0
+    rev = int(revision_no or 1)
+    db.session.execute(text(
+        "DELETE FROM datasheet_measurement WHERE datasheet_id=:d AND revision_no=:r"),
+        {"d": did, "r": rev})
+    payload = []
+    for grid_key, grid in sorted((grids or {}).items()):
+        for cell in _flatten_grid(grid):
+            cell.update({"d": did, "r": rev, "tc": code, "g": grid_key[:60]})
+            payload.append(cell)
+    if payload:
+        db.session.execute(text(
+            "INSERT INTO datasheet_measurement (datasheet_id, revision_no, test_code, "
+            "grid_key, block_label, row_no, row_label, col_key, col_label, value, value_num) "
+            "VALUES (:d, :r, :tc, :g, :bl, :rn, :rl, :ck, :cl, :v, :vn)"), payload)
+    return len(payload)
 
 
 _CHILD_SPECS = (
@@ -681,6 +782,20 @@ def record_transition(planner_entry_id, to_status, actor=None, comment="",
         # datasheet.status reads 'Peer Review' and cannot say what it left
         from_status = from_status or row[1]
 
+        # A DECISION is about the revision that was SUBMITTED, not the one the
+        # engineer will edit next. Submitting revision 2 freezes 2 and moves the
+        # live row to 3, so reading datasheet.revision_no here filed the
+        # rejection of revision 2 against revision 3 - and "which version was
+        # rejected" is exactly the question this table exists to answer. Take
+        # the highest frozen revision instead, which is by definition the one
+        # the reviewer was looking at.
+        if not snapshot:
+            reviewed = db.session.execute(text(
+                "SELECT MAX(revision_no) FROM datasheet_revision WHERE datasheet_id=:d"),
+                {"d": did}).scalar()
+            if reviewed:
+                revision = int(reviewed)
+
         if snapshot:
             _snapshot_revision(db, did, planner_entry_id, revision, from_status, actor)
 
@@ -745,9 +860,50 @@ def _snapshot_revision(db, did, planner_entry_id, revision, status, actor):
          "amb": head[0] if head else None, "rh": head[1] if head else None,
          "rpc": head[2] if head else None, "mpc": head[3] if head else None,
          "tb": head[4] if head else None, "dev": head[5] if head else None})
+    _snapshot_children(db, did, revision)
     db.session.execute(text(
         "UPDATE `datasheet` SET revision_no=:r WHERE id=:d"),
         {"r": revision + 1, "d": did})
+
+
+def _snapshot_children(db, did, revision):
+    """Copy this datasheet's child rows into their datasheet_rev_* mirrors.
+
+    Column-for-column, so the frozen CE datasheet has its coupling method, its
+    limits and its 27 columns as columns - not as text inside form_json. The
+    column list is read from the mirror at run time and intersected with the
+    live table, so a schema change on either side degrades to copying what they
+    still share instead of raising.
+
+    REPLACE rather than INSERT: re-submitting the same revision (the engineer
+    withdraws and sends again without the number moving) has to overwrite, not
+    fail on the unique key and abandon the rest of the snapshot.
+
+    Measurements are NOT copied here - datasheet_measurement already carries
+    revision_no and the projection writes each revision under its own number,
+    so its rows are already the history.
+    """
+    from .projection_schema import mirrored_tables
+    copied = 0
+    for src, dst in mirrored_tables():
+        try:
+            live = _columns(db, src)
+            mirror = _columns(db, dst)
+            if not live or not mirror:
+                continue
+            # never copy the source's surrogate key: the mirror has its own
+            shared = sorted((live & mirror) - {"id", "revision_no"})
+            if "datasheet_id" not in shared:
+                continue
+            cols = ", ".join("`%s`" % c for c in shared)
+            db.session.execute(text(
+                "REPLACE INTO `%s` (%s, `revision_no`) "
+                "SELECT %s, :r FROM `%s` WHERE `datasheet_id`=:d"
+                % (dst, cols, cols, src)), {"r": revision, "d": did})
+            copied += 1
+        except Exception:  # noqa: BLE001 - one table must not lose the snapshot
+            continue
+    return copied
 
 
 def delete_projection(planner_entry_id):

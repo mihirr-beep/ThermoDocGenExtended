@@ -17,6 +17,7 @@ Kept self-contained: raw idempotent DDL (matches schema.py's style), no edits to
 models.py or the main migration path.
 """
 import json
+import os
 from datetime import datetime
 
 from sqlalchemy import inspect, text
@@ -390,10 +391,35 @@ def upsert_record(assignment, test_code, form_data, images, status,
     db.session.commit()
 
     _refresh_projection(entry_fields, params,
-                        full=(status == SUBMITTED if full_projection is None
-                              else full_projection),
+                        full=_full_tier(status, full_projection),
                         images_known=bool(posted))
     return merged_images
+
+
+# The autosave used to project only the header, leaving the child tables holding
+# the PREVIOUS content of the form. That is worse than leaving them empty: a DBA
+# or a report reading datasheet_ce got last-save's coupling method with a fresh
+# updated_at next to it and no way to tell.
+#
+# Measured cost of doing it properly, one CRF datasheet:
+#
+#     project_header   3 statements, 14 ms local
+#     project (full)  24 statements, 21 ms local
+#
+# 7 ms locally; on the remote production database it is 21 extra round trips,
+# so call it a second. The save is debounced 1.5 s after typing stops and runs
+# async - nobody is waiting on it - and the projection is best-effort in its own
+# transaction, so the cost is DB load, not user-visible latency. Correct tables
+# are worth that.
+#
+# DATASHEET_CHEAP_AUTOSAVE=1 restores the header-only tier if that load ever
+# becomes the problem; a submit projects fully either way.
+def _full_tier(status, full_projection):
+    if full_projection is not None:
+        return bool(full_projection)
+    if status == SUBMITTED:
+        return True
+    return os.environ.get("DATASHEET_CHEAP_AUTOSAVE", "") != "1"
 
 
 def _stored_images(assignment_id):
