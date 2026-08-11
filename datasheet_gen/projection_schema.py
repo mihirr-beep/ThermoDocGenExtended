@@ -548,7 +548,135 @@ def ensure_projection_tables(app):
         if created:
             app.logger.info("datasheet projection: created %d table(s): %s",
                             len(created), ", ".join(created))
+        _ensure_integrity(app, db)
     return created
+
+
+# --------------------------------------------------------------------------
+# Fixes to tables this module does not own
+# --------------------------------------------------------------------------
+# These were applied by hand on one database, which is exactly how a dev
+# environment ends up quietly different from production. There is no migration
+# framework here - the convention is an idempotent ensure_* at boot - so they
+# belong in one, guarded and logged, and every environment converges by being
+# started.
+#
+# Two of the three touch tables outside datasheet_gen (`users`,
+# `planner_entries`). That is deliberate: putting them somewhere "more correct"
+# would mean inventing a new boot hook, and a fix nobody runs is worth nothing.
+
+_INDEXES = (
+    # A join column on every request-to-datasheet query, previously unindexed.
+    ("datasheet", "test_request_id", "idx_ds_testreq"),
+)
+
+# ON DELETE SET NULL, not CASCADE: deleting a user must not destroy the
+# datasheet they touched, and the NAME survives anyway in
+# datasheet_status_history.actor_name and datasheet.engineer_name. Untouched
+# these columns hold ids with nothing enforcing them, so removing a user leaves
+# a number that looks valid and points at nothing.
+#
+# The STRUCTURAL links are deliberately absent - datasheet.planner_entry_id,
+# datasheet.test_request_id, planner_entries.test_request_id,
+# datasheet_records.planner_entry_id. app.py deletes requests and planner
+# entries, so RESTRICT would block working buttons and CASCADE would silently
+# destroy filled datasheets. What deleting a job should MEAN is a product
+# decision, not a missing constraint.
+_FKS = (
+    ("datasheet", "reviewer_user_id", "users", "fk_ds_reviewer"),
+    ("datasheet", "created_by_user_id", "users", "fk_ds_creator"),
+    ("planner_entries", "engineer_user_id", "users", "fk_pe_engineer"),
+    ("planner_entries", "peer_reviewer_user_id", "users", "fk_pe_reviewer"),
+)
+
+# `users` was the only table in the database on utf8mb4_unicode_ci while all 61
+# others were utf8mb4_0900_ai_ci, so ANY join on a person's name threw MySQL
+# 1267 - including the obvious one a question about engineers leads to.
+_COLLATION = "utf8mb4_0900_ai_ci"
+
+
+def _table_exists(db, name):
+    return bool(db.session.execute(text(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_schema=DATABASE() AND table_name=:t"), {"t": name}).scalar())
+
+
+def _ensure_integrity(app, db):
+    done = []
+
+    for table, column, index in _INDEXES:
+        try:
+            if not _table_exists(db, table):
+                continue
+            if db.session.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.statistics "
+                    "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c"),
+                    {"t": table, "c": column}).scalar():
+                continue
+            db.session.execute(text("CREATE INDEX `%s` ON `%s` (`%s`)"
+                                    % (index, table, column)))
+            db.session.commit()
+            done.append("index %s.%s" % (table, column))
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            if "duplicate" not in str(exc).lower() and "exist" not in str(exc).lower():
+                app.logger.warning("schema: index on %s.%s skipped: %s", table, column, exc)
+
+    # Collation before the foreign keys: a FK between columns of differing
+    # collation is refused, so doing these the other way round fails on a fresh
+    # database and leaves it half-fixed.
+    try:
+        if _table_exists(db, "users"):
+            current = db.session.execute(text(
+                "SELECT table_collation FROM information_schema.tables "
+                "WHERE table_schema=DATABASE() AND table_name='users'")).scalar()
+            if current and current != _COLLATION:
+                db.session.execute(text(
+                    "ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE %s"
+                    % _COLLATION))
+                db.session.commit()
+                done.append("users collation %s -> %s" % (current, _COLLATION))
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: users collation not converted: %s", exc)
+
+    for table, column, ref, name in _FKS:
+        try:
+            if not (_table_exists(db, table) and _table_exists(db, ref)):
+                continue
+            if db.session.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.key_column_usage "
+                    "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c "
+                    "AND referenced_table_name IS NOT NULL"),
+                    {"t": table, "c": column}).scalar():
+                continue
+            # An existing orphan makes the ALTER fail. Report it and move on
+            # rather than half-applying - and never delete the row to make the
+            # constraint fit.
+            orphans = db.session.execute(text(
+                "SELECT COUNT(*) FROM `%s` c LEFT JOIN `%s` p ON p.id=c.`%s` "
+                "WHERE c.`%s` IS NOT NULL AND p.id IS NULL"
+                % (table, ref, column, column))).scalar()
+            if orphans:
+                app.logger.warning(
+                    "schema: %s.%s has %d row(s) pointing at a missing %s - "
+                    "foreign key not added", table, column, orphans, ref)
+                continue
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD CONSTRAINT `%s` FOREIGN KEY (`%s`) "
+                "REFERENCES `%s`(`id`) ON DELETE SET NULL"
+                % (table, name, column, ref)))
+            db.session.commit()
+            done.append("fk %s.%s" % (table, column))
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            if "duplicate" not in str(exc).lower() and "exist" not in str(exc).lower():
+                app.logger.warning("schema: fk on %s.%s skipped: %s", table, column, exc)
+
+    if done:
+        app.logger.info("schema: applied %d integrity fix(es): %s",
+                        len(done), "; ".join(done))
+    return done
 
 
 # --------------------------------------------------------------------------
