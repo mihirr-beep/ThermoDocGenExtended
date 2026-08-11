@@ -254,19 +254,27 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
                                      allowed_tables=allowed, ledger=ledger)
 
     @function_tool(name_override="lab_metric")
-    def lab_metric(name: str) -> str:
+    def lab_metric(name: str, include_rows: bool = False) -> str:
         """Run one of the lab's REVIEWED measures by name and get its figure,
-        already computed, plus the rows behind it where they are the answer.
+        already computed, plus the rows behind it when you ask for them.
 
         Use this whenever the question asks for something on the measures list
         in your instructions. The SQL was written and checked by a human, so it
         is right; a version you derive yourself may not be, and if the two
         disagree this one wins.
 
+        Set include_rows=True whenever the question asks WHICH or WHO rather
+        than HOW MANY. Do not write your own query for the list instead - the
+        measure's rows come from the table the figure was counted from, and a
+        list you assemble yourself will usually come from a different table
+        covering different rows.
+
         Args:
             name: A measure name exactly as listed, e.g. "test_unfilled".
+            include_rows: True to also return the rows behind the figure.
         """
-        return semantics.run_metric(name, db_params, ledger=ledger)
+        return semantics.run_metric(name, db_params, ledger=ledger,
+                                    include_rows=include_rows)
 
     @function_tool(name_override="describe_table")
     def describe_table(tables: str) -> str:

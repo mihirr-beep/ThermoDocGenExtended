@@ -145,7 +145,12 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                     "notes": ["factual claims with an empty ledger"]}
         return {"verdict": "no-evidence", "answer": draft, "unsupported": [], "notes": []}
 
-    supported = (ledger.values() | _question_tokens(question)
+    # A primary key is not evidence for a quantity. "10 tests assigned" was
+    # passed as grounded because planner_entries.id 10 came back in a result
+    # set; see Ledger.id_only_numbers for the full account. Subtracted BEFORE
+    # the union so a figure that also appears as a genuine value survives.
+    supported = ((ledger.values() - ledger.id_only_numbers())
+                 | _question_tokens(question)
                  | _row_counts(ledger) | _temporal_tokens())
     flagged = [tok for tok in _claim_tokens(draft) if tok.lower() not in supported]
 
@@ -214,9 +219,14 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                            missed, phantom, counting=counting,
                            undisclosed=undisclosed, model=model)
     if verdicts is None:                      # adjudicator unavailable
+        # Do NOT call this grounded. The flags are the reason we are here, and
+        # labelling an unchecked answer "Verified against the data" is the same
+        # failure as the one this pass exists to prevent - it was shown with
+        # exactly that badge over two invented figures. The answer is still
+        # shown; only the claim that it was checked is withdrawn.
         notes.append("adjudication unavailable; flags reported unresolved")
-        return {"verdict": "grounded", "answer": draft, "unsupported": flagged,
-                "notes": notes}
+        return {"verdict": "unsupported" if flagged else "grounded",
+                "answer": draft, "unsupported": flagged, "notes": notes}
 
     bad = verdicts.get("unsupported") or []
     incomplete = bool(verdicts.get("incomplete"))
@@ -697,3 +707,72 @@ def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
              if b.lower() != ph and _NUMBER_RE.fullmatch(b.replace(",", ""))
              and b.lower() in out.lower()]
     return None if still else out
+
+
+# --------------------------------------------------------------------------
+# Machinery does not belong in a user's answer
+# --------------------------------------------------------------------------
+# The prompt asks for this - "never show tool names, measures, tables or a SQL
+# statement, the interface shows those separately" - and asking did not work.
+# The run immediately after that instruction was added answered:
+#
+#   65 instruments are overdue for maintenance. SQL shape used: SELECT COUNT(*)
+#   FROM maintenance WHERE maintenance_due_date < CURDATE();
+#
+# The statement is also WRONG - the figure came from `equipment`, not
+# `maintenance` - so the model was inventing SQL to display, incorrectly, to
+# somebody who did not ask for it. Earlier runs printed
+# "Source: maintenance_overdue with include_rows=False" and
+# "Total equipment_history rows: missing".
+#
+# Same lesson as the caveats: a prompt is a request, code is a control. The
+# real SQL is already shown in its own panel, straight from the ledger, so
+# nothing is lost by cutting the model's rendition of it.
+_SQL_STMT_RE = re.compile(
+    r"\b(?:SELECT|INSERT|UPDATE|DELETE)\b[\s\S]*?(?:;|(?=\n\s*\n)|$)", re.I)
+# "SQL shape used:", "Source: maintenance_overdue", "SQL behind the figure:".
+# Anchored to a line start OR a sentence end, because these turn up mid-sentence
+# too - "...overdue for maintenance. SQL shape used: SELECT..." - and a
+# start-of-line anchor left the label stranded once the statement was cut.
+# Deliberately NOT matching "Note:", which is how the reader's caveat arrives.
+_MACHINERY_LABEL_RE = re.compile(
+    r"(?im)(?:^|(?<=[.!?])[ \t])[ \t>*-]*"
+    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route)[ \t]*:[^\n]*")
+# lab_metric(name='x', include_rows=False) and the bare keyword form
+_TOOL_CALL_RE = re.compile(
+    r"\b(?:lab_metric|run_sql|read_grid|list_values|resolve_entity|find_field|"
+    r"describe_table|sample_rows|profile_column|ask_\w+)\s*\([^)]*\)")
+_KWARG_RE = re.compile(r"\b(?:include_rows|max_rows|name)\s*=\s*[^\s,.;)]+")
+# "Total equipment_history rows: missing" - a count the model could not get,
+# reported as a field rather than dropped.
+#
+# Matches the CLAUSE, not the line. The first version began `^.*` and deleted a
+# whole correct answer along with the stray clause at the end of it - exactly
+# the failure mode this function is supposed to prevent, committed by the
+# function itself.
+_MISSING_FIELD_RE = re.compile(
+    r"(?im)(?:^|(?<=[.!?;])[ \t])[ \t>*-]*(?:total[ \t]+)?"
+    r"\w+(?:[ \t]+\w+){0,2}[ \t]*:[ \t]*(?:missing|unknown|not available|n/?a)[ \t]*\.?")
+
+
+def strip_machinery(text):
+    """Remove SQL, tool calls and internal labels from an answer.
+
+    Deliberately conservative: it only touches text carrying one of the markers
+    above. Bare identifiers are left alone, because a SCHEMA question's answer
+    IS an identifier - "the coupling method is in datasheet_ce.coupling_method"
+    is exactly right and must survive.
+    """
+    if not text:
+        return text
+    out = _SQL_STMT_RE.sub("", text)
+    out = _TOOL_CALL_RE.sub("", out)
+    out = _MACHINERY_LABEL_RE.sub("", out)
+    out = _MISSING_FIELD_RE.sub("", out)
+    out = _KWARG_RE.sub("", out)
+    # tidy what removal left behind: orphaned punctuation and blank runs
+    out = re.sub(r"[ \t]*\(\s*\)", "", out)
+    out = re.sub(r"[ \t]+([.,;:])", r"\1", out)
+    out = re.sub(r"(?m)^[ \t]*[.;,]+[ \t]*$", "", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()

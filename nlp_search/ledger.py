@@ -37,6 +37,11 @@ class Ledger:
         self._rows_seen = 0
         self._values = None          # lazily built, invalidated on append
         self.notes = []              # non-SQL observations (probe results, refusals)
+        # Reviewed measures that actually ran, with the caveat each one carries.
+        # Kept OFF self.notes on purpose: note text is tokenised into values()
+        # for grounding, and a caveat is commentary, not evidence - it must not
+        # become something a claim can be grounded against.
+        self.metrics = []
 
     # -- budget ------------------------------------------------------------
 
@@ -86,6 +91,12 @@ class Ledger:
         self._rows_seen += entry["row_count"]
         self._values = None
         return entry
+
+    def used_metric(self, name, caveat=None, label=None):
+        """Record that a reviewed measure ran. The caveat travels with it so
+        the answer can carry it whether or not the model repeats it."""
+        self.metrics.append({"name": name, "caveat": (caveat or "").strip(),
+                             "label": label or name})
 
     def note(self, kind, text):
         """Record something that is evidence but is not a SELECT result -
@@ -150,6 +161,47 @@ class Ledger:
             self._values = vals
         return self._values
 
+    def id_only_numbers(self):
+        """Bare integers that appear ONLY in identifier columns.
+
+        WHY THIS EXISTS
+        ---------------
+        values() returns every scalar the database handed back, primary keys
+        included, and verify.py treats that whole set as things an answer is
+        allowed to assert. Asked which engineers have not filled in a single
+        datasheet, the model answered "Kondababu Arjilli has 10 tests assigned
+        with no datasheet, and Krishna Gonela has 3". Its own queries returned
+        12 and 2. But `planner_entries.id` 10 and 3 both exist and both came
+        back in a result set, so both numbers looked grounded, and the answer
+        was shown with a badge reading "Corrected to match the data".
+
+        A row's primary key is not evidence for how many of anything there
+        are. Nothing legitimate is lost by refusing it: an answer that quotes a
+        raw id is already a separate defect, caught by _ID_LEAK_RE.
+
+        Only NUMERIC values are withheld, and only where every occurrence was
+        in an id column. tco_id holds 'IEC-EMC-004' - the identifier a lab
+        engineer actually uses - and that stays citable. A number that also
+        appears as a COUNT, a measure or any ordinary column stays citable too,
+        because then it really is evidence.
+        """
+        in_ids, elsewhere = set(), set()
+        for e in self.entries:
+            if e["error"]:
+                continue
+            cols = [str(c or "").strip().lower() for c in e["columns"]]
+            flags = [c == "id" or c.endswith("_id") for c in cols]
+            for row in e["rows"]:
+                for i, cell in enumerate(row):
+                    if cell is None:
+                        continue
+                    s = str(cell).strip()
+                    if not s or not _INT_RE.match(s.replace(",", "")):
+                        continue
+                    is_id = flags[i] if i < len(flags) else False
+                    (in_ids if is_id else elsewhere).update(_normalise(cell))
+        return in_ids - elsewhere
+
     # -- handover ----------------------------------------------------------
 
     def evidence_digest(self, max_rows_per_query=8, with_sql=True):
@@ -208,6 +260,9 @@ class Ledger:
 
 
 _NUM_RE = re.compile(r"^-?[\d,]*\.?\d+$")
+# Whole numbers only. A measured value like 0.212 is a fact even in a column
+# whose name ends in _id, and withholding it would reject a real answer.
+_INT_RE = re.compile(r"^\d+$")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9.]+")
 
 

@@ -173,7 +173,14 @@ METRICS = {
         "value_sql": "SELECT COUNT(*) FROM equipment WHERE maintenance_due_date < CURDATE()",
         "rows_sql": ("SELECT name, make, model_no, maintenance_due_date FROM equipment "
                      "WHERE maintenance_due_date < CURDATE() ORDER BY maintenance_due_date"),
-        "caveat": "24 items have no maintenance date at all and are not counted.",
+        # No count here on purpose. It used to read "24 items have no
+        # maintenance date" - true when it was written, and wrong the moment a
+        # job is added, with nothing to catch it. Same mistake as freezing row
+        # counts into the schema catalog.
+        "caveat": ("Equipment with no maintenance date at all is not counted "
+                   "here; profile_column on maintenance_due_date for how many "
+                   "that is. Say that they are excluded rather than quoting a "
+                   "figure you have not queried."),
     },
     "maintenance_flagged": {
         "label": "flagged as requiring maintenance",
@@ -287,7 +294,9 @@ METRICS = {
                       % (canon_sql("t.test_code"), canon_sql("p.test_name"))),
         "rows_are_the_answer": True,
         "rows_sql": ("SELECT r.tco_id, COALESCE(NULLIF(r.job_number,''),'(no job number)') "
-                     "AS job_number, t.test_code "
+                     "AS job_number, t.test_code, "
+                     "COALESCE(NULLIF(t.assigned_engineer_name,''),'(nobody assigned)') "
+                     "AS assigned_engineer "
                      "FROM iec_emc_request_tests t "
                      "JOIN iec_emc_requests r ON r.id = t.request_id "
                      "LEFT JOIN planner_entries p ON p.test_request_id = t.request_id "
@@ -306,13 +315,31 @@ METRICS = {
         "value_sql": ("SELECT COUNT(*) FROM iec_emc_request_tests t "
                       "LEFT JOIN `datasheet` d ON d.test_request_id = t.request_id "
                       "AND %s = %s WHERE t.is_selected = 1 AND d.id IS NULL" % (_CANON_R, _CANON_L)),
-        "rows_sql": ("SELECT r.tco_id, r.job_number, t.test_code, t.workflow_status "
+        # assigned_engineer is here because a question about PEOPLE could not be
+        # answered from this measure without it, and that had consequences.
+        # Asked twice which engineers have not filled in a single datasheet, the
+        # model reached for THIS metric first - correctly, it starts from
+        # iec_emc_request_tests, which knows all five engineers - found no name
+        # in the row list, and fell through to planner_entries, which knows
+        # four. Saymeer Shaik has eleven tests assigned and no planner row at
+        # all, so both answers omitted the person with the most unstarted work,
+        # and the second one named an engineer who has filled twelve datasheets.
+        # The column was sitting in the source table the whole time.
+        #
+        # The general rule this stands for: a measure must be able to name the
+        # thing people ask about, or the model is forced onto a table that can.
+        "rows_sql": ("SELECT r.tco_id, r.job_number, t.test_code, t.workflow_status, "
+                     "COALESCE(NULLIF(t.assigned_engineer_name,''),'(nobody assigned)') "
+                     "AS assigned_engineer "
                      "FROM iec_emc_request_tests t "
                      "JOIN iec_emc_requests r ON r.id = t.request_id "
                      "LEFT JOIN `datasheet` d ON d.test_request_id = t.request_id "
                      "AND %s = %s WHERE t.is_selected = 1 AND d.id IS NULL "
                      "ORDER BY r.tco_id, t.test_code" % (_CANON_R, _CANON_L)),
-        "caveat": "Test codes are spelled differently per table; this join normalises them.",
+        "caveat": ("Test codes are spelled differently per table; this join "
+                   "normalises them. The engineer shown is who the test is "
+                   "ASSIGNED to on the request - an engineer with no planner "
+                   "entry still appears here, which is the point."),
     },
 
     # -- requests ----------------------------------------------------------
@@ -638,7 +665,7 @@ def resolve(question):
 _ROWS_LIMIT = 60
 
 
-def execute(resolved, db_params, ledger=None):
+def execute(resolved, db_params, ledger=None, force_rows=False):
     """Run every candidate metric NOW and record the answers in the ledger.
 
     Handing the model the SQL and trusting it to run it does not work - it
@@ -677,16 +704,35 @@ def execute(resolved, db_params, ledger=None):
                     # and wrote its own query for the rows, which is the exact
                     # thing the reviewed SQL exists to prevent. Fetch the rows
                     # here too, and they arrive pre-grounded.
-                    if not mtc.get("rows_are_the_answer") or not mtc.get("rows_sql"):
+                    # force_rows is the caller saying "the question asked
+                    # WHICH, not HOW MANY". Without it the model was told a row
+                    # list existed and given no way to get one, so it wrote its
+                    # own query - against whichever table it could reach, which
+                    # is how a measure covering five engineers turned into an
+                    # answer covering four.
+                    if not mtc.get("rows_sql"):
+                        continue
+                    if not force_rows and not mtc.get("rows_are_the_answer"):
                         continue
                     try:
+                        # Fetch ONE more than we will show. Without the extra
+                        # row there is no way to tell a set that happens to be
+                        # exactly _ROWS_LIMIT long from one the LIMIT chopped,
+                        # and the difference matters: test_unfilled has 78 rows
+                        # and 60 came back looking complete, with the engineer
+                        # who has the most unfilled work showing 1 instead of
+                        # 13. Silent truncation reads as a full answer.
                         sql = mtc["rows_sql"]
-                        if " limit " not in sql.lower():
-                            sql += " LIMIT %d" % _ROWS_LIMIT
+                        capped = " limit " not in sql.lower()
+                        if capped:
+                            sql += " LIMIT %d" % (_ROWS_LIMIT + 1)
                         cur.execute(sql)
                         cols = [d[0] for d in (cur.description or [])]
                         rows = [list(r) for r in cur.fetchall()]
-                        mtc["rows"] = {"columns": cols, "rows": rows}
+                        truncated = capped and len(rows) > _ROWS_LIMIT
+                        rows = rows[:_ROWS_LIMIT]
+                        mtc["rows"] = {"columns": cols, "rows": rows,
+                                       "truncated": truncated}
                         if ledger is not None:
                             ledger.record("semantics", sql, columns=cols, rows=rows)
                     except Exception as exc:  # noqa: BLE001
@@ -734,10 +780,19 @@ def prompt_block(resolved):
                          "the lab and already computed - quote it rather than "
                          "re-querying:" % item["term"])
         else:
+            # "give EVERY reading" was unconditional, and asked how many
+            # instruments are overdue for MAINTENANCE the model returned the
+            # maintenance figure plus the calibration figure plus overdue
+            # scheduled tests - two of which nobody asked for. The word is
+            # ambiguous; that question is not. Only spell out the alternatives
+            # when the question itself leaves the choice open.
             lines.append("The phrase '%s' has more than one meaning here. If the "
-                         "question turns on it, give EVERY reading below rather "
-                         "than picking one; the numbers are already run, so quote "
-                         "them rather than re-querying:" % item["term"])
+                         "question does NOT say which it means, give every "
+                         "reading below so the reader can pick. If it does say - "
+                         "'overdue for maintenance' names one - answer only that "
+                         "one and leave the others out. The numbers are already "
+                         "run, so quote them rather than re-querying:"
+                         % item["term"])
         for mtc in item["metrics"]:
             if "value" in mtc:
                 lines.append("  - %s = %s" % (mtc["label"], mtc["value"]))
@@ -748,14 +803,25 @@ def prompt_block(resolved):
                 lines.append("  - %s   SQL: %s"
                              % (mtc["label"], " ".join(mtc["value_sql"].split())))
             if mtc.get("caveat"):
-                lines.append("      you must also say: %s" % mtc["caveat"])
+                lines.append("      context, do NOT copy into the answer - the "
+                             "reader gets a plain version automatically: %s"
+                             % mtc["caveat"])
             if mtc.get("rows"):
                 lines.extend(_render_rows(mtc["rows"]))
             elif mtc.get("rows_error"):
                 lines.append("      the row list failed: %s" % mtc["rows_error"])
             elif mtc.get("rows_sql"):
-                lines.append("      for the list behind it, run: %s"
-                             % " ".join(mtc["rows_sql"].split())[:300])
+                # The statement itself used to be printed here with "run this".
+                # The model printed it back at the user instead - a SELECT with
+                # ORDER BY, in a chat reply. It never needed the text: asking
+                # for the list by name runs the reviewed version and grounds the
+                # rows on the way through.
+                lines.append("      a row list exists. If the question asks "
+                             "WHICH or WHO rather than HOW MANY, call "
+                             "lab_metric('%s', include_rows=True). Do not write "
+                             "your own query for it - yours will read a "
+                             "different table than the figure came from."
+                             % mtc.get("name", ""))
         if len(computed) > 1:
             lines.append("Give ALL of these figures with the label that goes with "
                          "each, so the reader can see which reading is which. "
@@ -800,25 +866,46 @@ def metric_menu(domain=None):
     return "\n".join(head + rows)
 
 
-def run_metric(name, db_params, ledger=None):
+def run_metric(name, db_params, ledger=None, include_rows=False):
     """Execute one reviewed measure by name. Returns text for the model."""
     m = METRICS.get(name)
     if not m:
         near = [k for k in METRICS if name and name.lower() in k.lower()]
         return ("No measure called %r. Available: %s"
                 % (name, ", ".join(sorted(near or METRICS))))
+    if ledger is not None:
+        ledger.used_metric(name, m.get("caveat"), m.get("label"))
     item = {"term": name, "metrics": [dict(m, name=name)]}
-    resolved = execute({"ambiguous": [item], "undefined": []}, db_params, ledger=ledger)
+    resolved = execute({"ambiguous": [item], "undefined": []}, db_params,
+                       ledger=ledger, force_rows=include_rows)
     mtc = resolved["ambiguous"][0]["metrics"][0]
     out = ["%s = %s" % (m["label"], mtc.get("value", "could not be computed"))]
     if m.get("caveat"):
-        out.append("You must also say: %s" % m["caveat"])
+        # "You must also say: ..." used to sit here, and it has to go now that
+        # attach_caveats guarantees the reader gets the note. Keeping both gave
+        # the answer twice over, and the model's own rendering was the worse of
+        # the two - it turned the instruction to call profile_column into a
+        # citation of "profile_maintenance_due_date", a tool that does not
+        # exist, printed to a user.
+        #
+        # The caveat is still here because the model needs it to reason - it
+        # says which figure not to quote and which flag is not authoritative.
+        # It is context now, not a line to repeat.
+        out.append("CONTEXT for your own reasoning, do NOT copy this into the "
+                   "answer - the reader is given a plain-language version "
+                   "automatically: %s" % m["caveat"])
     if mtc.get("rows"):
         out.extend(_render_rows(mtc["rows"]))
     elif m.get("rows_sql"):
-        out.append("Row list available - ask for it if the question wants "
-                   "which/what rather than how many.")
+        out.append("A row list exists for this measure. If the question asks "
+                   "WHICH or WHO rather than HOW MANY, call lab_metric again "
+                   "with include_rows=True - do NOT write your own query for "
+                   "it, or the list will come from a different table than the "
+                   "figure did.")
     return "\n".join(out)
+
+
+_RENDER_LIMIT = _ROWS_LIMIT
 
 
 def _render_rows(payload):
@@ -827,21 +914,36 @@ def _render_rows(payload):
     Handing over the SQL and asking for it to be run does not work; handing
     over the rows does. These are already in the ledger, so anything quoted
     from here is grounded before the model speaks.
+
+    A TRUNCATED list is shown but must never be counted from, and the warning
+    below is not decoration. test_unfilled returns 78 rows and only 40 render.
+    Grouping those 40 by engineer gives Karaka 12, Saymeer 11, Krishna 1 - and
+    omits Kondababu Arjilli entirely, who has the most unfilled work of anyone
+    at 13. Every visible figure is wrong too. A model handed a sample and asked
+    "which engineer has the most" will answer confidently off the sample unless
+    it is told, in the same breath, that it cannot.
     """
     cols, rows = payload.get("columns") or [], payload.get("rows") or []
     if not rows:
         return ["      the list behind it is EMPTY - no rows matched."]
+    clipped = bool(payload.get("truncated"))
     out = ["      THE ROWS BEHIND IT - these ARE the answer if the question "
            "asks which/what/list. Use them verbatim; do not re-query and do "
            "not summarise them into a single number. Keep the FIRST column - "
            "it is what identifies each row to a human, and a list without it "
            "cannot be acted on:",
            "      | " + " | ".join(str(c) for c in cols) + " |"]
-    for r in rows[:40]:
+    for r in rows[:_RENDER_LIMIT]:
         out.append("      | " + " | ".join("" if v is None else str(v) for v in r) + " |")
-    if len(rows) > 40:
-        out.append("      ...and %d more rows (say so if you list them)."
-                   % (len(rows) - 40))
+    if clipped or len(rows) > _RENDER_LIMIT:
+        out.append("      *** THIS LIST IS CUT OFF after %d rows. It is a "
+                   "SAMPLE, not the set. DO NOT count, rank, group or total "
+                   "anything from these rows - a name absent here may still "
+                   "have the most, and every count you can see is too low. "
+                   "Use the figure above for totals, say the list is partial, "
+                   "and if the question needs a per-person or per-job "
+                   "breakdown, say you can show only the first %d."
+                   % (len(rows[:_RENDER_LIMIT]), _RENDER_LIMIT))
     return out
 
 
@@ -920,3 +1022,134 @@ if __name__ == "__main__":  # pragma: no cover
         print("  PROBLEM: %s" % p)
     print("OK" if ok else "%d problem(s)" % len(probs))
     sys.exit(0 if ok else 1)
+
+
+# --------------------------------------------------------------------------
+# Caveats, attached rather than requested
+# --------------------------------------------------------------------------
+# Nine of the seventeen measures carry a caveat, and the prompt asks the model
+# to relay it: "You must also say: ...". Asked how many instruments are overdue
+# for maintenance, the model returned the right figure - 65 - and said nothing
+# about the 24 items that have no maintenance date at all and are therefore not
+# in it. The caveat was in its prompt. It just did not repeat it.
+#
+# Relaying is a request; appending is a control. That distinction is the same
+# one the evidence ledger rests on, applied to the commentary instead of the
+# numbers: a caveat the lab has decided is necessary should not depend on the
+# model choosing to mention it.
+#
+# The overlap test below only avoids saying the same thing twice. It is
+# deliberately biased towards appending: a caveat printed twice is untidy, a
+# caveat dropped is how somebody reads 65 as the whole picture.
+_CAVEAT_STOP = frozenset((
+    "also", "and", "are", "but", "for", "from", "have", "here", "into", "not",
+    "per", "that", "the", "them", "there", "these", "they", "this", "those",
+    "with", "which", "when", "were", "will", "would", "still", "only", "each",
+    "both", "than", "then", "counted", "count", "table", "tables"))
+_CAVEAT_OVERLAP = 0.6
+# Bare integers only. A version number or a standard like 61000-4-5 is not a
+# figure the reader has to be told about, and matching those would make every
+# caveat look already-stated.
+_CAVEAT_NUM = re.compile(r"(?<![\w.-])(\d{1,6})(?![\w.-])")
+
+
+def _distinctive(text):
+    words = re.findall(r"[a-z][a-z_]{3,}", (text or "").lower())
+    return {w for w in words if w not in _CAVEAT_STOP}
+
+
+# A metric's `caveat` is written for the MODEL - it says which join to trust,
+# which figure not to quote, which tool to call. Appending that verbatim to a
+# user's answer leaks the wrong register and, in two cases, internal names: the
+# calibration caveat tells the reader to run profile_column, and the
+# never-scheduled one explains that a per-job join gives 45. Neither means
+# anything to a lab engineer.
+#
+# So the reader gets its own sentence. Everything below is what a person needs
+# to know to read the figure correctly, with no table names, no tool names, no
+# arithmetic about joins - and no hard-coded counts, because those go stale the
+# moment somebody adds a job.
+READER_NOTES = {
+    "calibration_marked_out":
+        "This counts the manually-set 'Out of Calibration' flag. The lab treats "
+        "the calibration due date as authoritative, and the flag and the dates "
+        "do not agree.",
+    "calibration_overdue":
+        "Equipment with no calibration date recorded is not included. Many items "
+        "past their due date are still marked 'In Calibration' in the status "
+        "field - the due date is what counts.",
+    "engineer_current_load":
+        "Load here means tests in progress. The system does not record hours, "
+        "capacity or leave, so this does not show who is free.",
+    "job_completeness":
+        "Three states, not two: approved, started but not finished, and not "
+        "started. Requests with no job number yet are listed by their TCO id. A "
+        "cancelled test still counts as outstanding.",
+    "maintenance_flagged":
+        "This is the standing flag - it means the item is on a maintenance "
+        "schedule, not that anything is due now.",
+    "maintenance_overdue":
+        "Items with no maintenance date recorded at all are not included in this "
+        "figure.",
+    "test_never_scheduled":
+        "Counted per test, not per job.",
+    "test_past_end_date":
+        "'Late' is worked out from the planned end date. The system records no "
+        "due date or SLA, so this is a reading rather than a rule.",
+    "test_unfilled":
+        "The engineer shown is who the test is assigned to on the request, so "
+        "someone with work assigned that was never scheduled still appears.",
+}
+
+
+def caveats_for(ledger):
+    """The notes owed to the READER, in the order their measures ran.
+
+    Falls back to the model-facing caveat when a measure has no reader note, on
+    the grounds that clumsy wording beats a silently dropped warning - but every
+    measure that carries a caveat should have an entry above.
+    """
+    seen, out = set(), []
+    for m in getattr(ledger, "metrics", ()) or ():
+        c = (READER_NOTES.get(m.get("name")) or m.get("caveat") or "").strip()
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def attach_caveats(answer, ledger):
+    """Append any caveat the answer does not already make.
+
+    Runs AFTER verification, so a rewrite cannot drop it either - the repair
+    pass rewrites the answer from the evidence, and the evidence does not
+    contain the caveat.
+    """
+    answer = (answer or "").strip()
+    owed = caveats_for(ledger)
+    if not answer or not owed:
+        return answer
+    said = _distinctive(answer)
+    said_nums = set(_CAVEAT_NUM.findall(answer))
+    missing = []
+    for c in owed:
+        # A caveat that names a figure IS that figure. maintenance_overdue's
+        # whole point is the 24 items with no date, and word overlap called it
+        # already-stated on an answer that never mentioned them - "maintenance"
+        # and "date" appear in any sentence about maintenance dates, so two
+        # generic words out of three read as a match. Where the caveat carries
+        # numbers, the numbers decide; the fuzzy test only handles the ones
+        # that are purely prose.
+        nums = set(_CAVEAT_NUM.findall(c))
+        if nums:
+            if not nums <= said_nums:
+                missing.append(c)
+            continue
+        words = _distinctive(c)
+        if not words:
+            continue
+        if len(words & said) / float(len(words)) < _CAVEAT_OVERLAP:
+            missing.append(c)
+    if not missing:
+        return answer
+    return answer.rstrip() + "\n\nNote: " + "  ".join(missing)

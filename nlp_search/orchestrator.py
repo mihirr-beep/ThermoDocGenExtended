@@ -206,6 +206,14 @@ actually returned, and unsupported claims will be removed.
   Identify a job by its job number and tco_id, NEVER by product name alone:
   several jobs share a product, so "Genpure UV xCAD plus WM is behind" does
   not tell the reader which job to go and look at.
+- WRITE FOR A LAB ENGINEER, NOT FOR A DEVELOPER. The reader knows tests,
+  jobs, equipment and calibration. They do not know, and must never be shown,
+  the names of your tools, your measures, your tables or your columns, and
+  never a SQL statement. Write "65 instruments are overdue for maintenance",
+  not "Source: maintenance_overdue with include_rows=False", not "SQL shape:
+  lab_metric(name='maintenance_overdue')", and not a SELECT. All three have
+  been printed to a user. How you found the answer is shown separately by the
+  interface; your job is the answer.
 - A PRE-COMPUTED FIGURE IS THE ANSWER. WORKING OUT YOUR OWN IS NOT.
   When a DEFINED TERMS block above gives you a number for a phrase in the
   question, that number came from SQL a human wrote and reviewed. Quote it.
@@ -349,6 +357,12 @@ def _answer_in_parts(parts, question, db_params, ledger, kind, user, user_id,
                                 "answer": "", "unsupported": [str(exc)[:120]]})
 
     assembled = decompose.assemble(results)
+    if assembled:
+        assembled = verify.strip_machinery(assembled)
+        # The decomposed path shares one ledger across every part, so the
+        # caveats are attached once to the assembled answer rather than
+        # repeated under each part.
+        assembled = semantics.attach_caveats(assembled, ledger)
     ok = [r for r in results if r["verdict"] in ("grounded", "repaired", "clarify")]
     if assembled is None:
         assembled = ("I could not verify an answer to any part of that question. "
@@ -672,6 +686,14 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True):
                                       undefined=undefined)
                          if verify_answer else verify.skipped())
             answer_text = verify.plain_text(grounding["answer"] or draft)
+            # Machinery out first, then the caveat in - that order, so the
+            # stripper never sees the Note and cannot take it back out.
+            answer_text = verify.strip_machinery(answer_text)
+            # AFTER verification, deliberately. A caveat is not evidence, so
+            # the repair pass - which rewrites the answer from the ledger and
+            # nothing else - would strip it back out again. Appending here also
+            # means it survives every path: grounded, repaired, or withheld.
+            answer_text = semantics.attach_caveats(answer_text, ledger)
 
             if sp is not None:
                 try:
