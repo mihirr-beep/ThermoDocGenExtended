@@ -392,11 +392,16 @@ def upsert_record(assignment, test_code, form_data, images, status,
     db.session.execute(sql, params)
     db.session.commit()
 
-    _append_draft_history(assignment.id, test_code, status, previous,
-                          form_data, params.get("form_json"), user)
+    # Projection FIRST, history second. The other order looks harmless and is
+    # not: on the very first save of a datasheet the `datasheet` row does not
+    # exist yet, so the history row was written with datasheet_id NULL and any
+    # query that joined through `datasheet` silently lost it - losing the first
+    # save, which is usually the one somebody is looking for.
     _refresh_projection(entry_fields, params,
                         full=_full_tier(status, full_projection),
                         images_known=bool(posted))
+    _append_draft_history(assignment.id, test_code, status, previous,
+                          form_data, params.get("form_json"), user)
     return merged_images
 
 

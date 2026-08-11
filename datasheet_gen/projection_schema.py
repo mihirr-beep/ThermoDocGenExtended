@@ -673,6 +673,25 @@ def _ensure_integrity(app, db):
             if "duplicate" not in str(exc).lower() and "exist" not in str(exc).lower():
                 app.logger.warning("schema: fk on %s.%s skipped: %s", table, column, exc)
 
+    # Link history rows written before their datasheet row existed. The ordering
+    # bug that caused it is fixed in records.upsert_record, but rows already
+    # written carry a NULL and would stay invisible to any query that joins
+    # through `datasheet`.
+    try:
+        if _table_exists(db, "datasheet_draft_history"):
+            res = db.session.execute(text(
+                "UPDATE datasheet_draft_history h "
+                "JOIN `datasheet` d ON d.planner_entry_id = h.planner_entry_id "
+                "SET h.datasheet_id = d.id WHERE h.datasheet_id IS NULL"))
+            if res.rowcount:
+                db.session.commit()
+                done.append("linked %d orphaned draft-history row(s)" % res.rowcount)
+            else:
+                db.session.rollback()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: draft-history backfill skipped: %s", exc)
+
     if done:
         app.logger.info("schema: applied %d integrity fix(es): %s",
                         len(done), "; ".join(done))
