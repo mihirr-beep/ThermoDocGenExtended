@@ -1,72 +1,85 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" version="24.0.0" type="device">
+<mxfile host="app.diagrams.net" pages="3">
   <diagram id="page1" name="1. Where a save lands">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1389" dy="771" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="n1" value="Where the data goes when a lab engineer presses save" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#1A2430;fontSize=17;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="30" width="700" height="30" as="geometry" />
+        <mxCell id="n1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#1A2430;fontSize=17;fontStyle=1;" value="Where the data goes when a lab engineer presses save" vertex="1">
+          <mxGeometry height="30" width="700" x="40" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="n2" value="One authoritative copy. Everything else is rebuilt from it." style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="62" width="900" height="30" as="geometry" />
+        <mxCell id="n2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" value="One authoritative copy. Everything else is rebuilt from it." vertex="1">
+          <mxGeometry height="30" width="900" x="40" y="62" as="geometry" />
         </mxCell>
-        <mxCell id="n3" value="Engineer fills&lt;br&gt;the form" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
-          <mxGeometry x="40" y="190" width="160" height="70" as="geometry" />
+        <mxCell id="n3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" value="Engineer fills&lt;br&gt;the form" vertex="1">
+          <mxGeometry height="70" width="160" x="40" y="190" as="geometry" />
         </mxCell>
-        <mxCell id="n4" value="&lt;b&gt;SOURCE OF TRUTH&lt;/b&gt;&lt;br&gt;&lt;br&gt;datasheet_records&lt;br&gt;.form_json&lt;br&gt;&lt;font style='font-size:10px'&gt;one row per assigned test&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF3DC;strokeColor=#9A6407;strokeWidth=3;fontColor=#3D2A00;align=center;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="260" y="170" width="230" height="110" as="geometry" />
+        <mxCell id="n4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF3DC;strokeColor=#9A6407;strokeWidth=3;fontColor=#3D2A00;align=center;verticalAlign=middle;" value="&lt;b&gt;SOURCE OF TRUTH&lt;/b&gt;&lt;br&gt;&lt;br&gt;datasheet_records&lt;br&gt;.form_json&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;one row per assigned test&lt;/font&gt;" vertex="1">
+          <mxGeometry height="110" width="230" x="260" y="170" as="geometry" />
         </mxCell>
-        <mxCell id="n5" value="Word datasheet&lt;br&gt;and final report" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9A6407;strokeWidth=1.5;fontColor=#3D2A00;align=center;" vertex="1" parent="1">
-          <mxGeometry x="260" y="340" width="230" height="70" as="geometry" />
+        <mxCell id="n5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9A6407;strokeWidth=1.5;fontColor=#3D2A00;align=center;" value="Word datasheet&lt;br&gt;and final report" vertex="1">
+          <mxGeometry height="70" width="230" x="70" y="310" as="geometry" />
         </mxCell>
-        <mxCell id="n6" value="&lt;b&gt;DERIVED &amp;#183; QUERYABLE&lt;/b&gt;&lt;br&gt;datasheet&lt;br&gt;+ 19 child tables&lt;br&gt;&lt;font style='font-size:10px'&gt;per-test, observations,&lt;br&gt;measurements, equipment&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E4F2F5;strokeColor=#0F6377;strokeWidth=2;fontColor=#04333D;align=center;" vertex="1" parent="1">
-          <mxGeometry x="590" y="175" width="230" height="100" as="geometry" />
+        <mxCell id="n6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E4F2F5;strokeColor=#0F6377;strokeWidth=2;fontColor=#04333D;align=center;" value="&lt;b&gt;DERIVED &amp;#183; QUERYABLE&lt;/b&gt;&lt;br&gt;datasheet&lt;br&gt;+ 19 child tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;per-test, observations,&lt;br&gt;measurements, equipment&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="230" x="590" y="175" as="geometry" />
         </mxCell>
-        <mxCell id="n7" value="NLP assistant,&lt;br&gt;SQL, client DB" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
-          <mxGeometry x="900" y="195" width="180" height="70" as="geometry" />
+        <mxCell id="n7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" value="NLP assistant,&lt;br&gt;SQL, client DB" vertex="1">
+          <mxGeometry height="70" width="180" x="900" y="195" as="geometry" />
         </mxCell>
-        <mxCell id="n8" value="Edit a value here in MySQL and&lt;br&gt;the next save overwrites it.&lt;br&gt;This is a reporting surface, not a store." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontColor=#A3341F;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="590" y="300" width="240" height="60" as="geometry" />
+        <mxCell id="n8" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontColor=#A3341F;fontSize=11;" value="Edit a value here in MySQL and&lt;br&gt;the next save overwrites it.&lt;br&gt;This is a reporting surface, not a store." vertex="1">
+          <mxGeometry height="60" width="240" x="590" y="300" as="geometry" />
         </mxCell>
-        <mxCell id="n9" value="datasheet_draft_history&lt;br&gt;&lt;font style='font-size:10px'&gt;append-only &amp;#183; EVERY save&lt;br&gt;skips saves that changed nothing&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
-          <mxGeometry x="40" y="470" width="240" height="80" as="geometry" />
+        <mxCell id="n9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" value="datasheet_draft_history&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;append-only &amp;#183; EVERY save&lt;br&gt;skips saves that changed nothing&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="240" x="40" y="470" as="geometry" />
         </mxCell>
-        <mxCell id="n10" value="Submit, then the&lt;br&gt;peer-review decision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
-          <mxGeometry x="340" y="470" width="200" height="80" as="geometry" />
+        <mxCell id="n10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" value="Submit, then the&lt;br&gt;peer-review decision" vertex="1">
+          <mxGeometry height="80" width="200" x="340" y="470" as="geometry" />
         </mxCell>
-        <mxCell id="n11" value="datasheet_revision&lt;br&gt;&lt;font style='font-size:10px'&gt;+ 16 datasheet_rev_* mirrors&lt;br&gt;frozen on EVERY submission&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
-          <mxGeometry x="600" y="470" width="250" height="80" as="geometry" />
+        <mxCell id="n11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" value="datasheet_revision&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;+ 16 datasheet_rev_* mirrors&lt;br&gt;frozen on EVERY submission&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="250" x="720" y="540" as="geometry" />
         </mxCell>
-        <mxCell id="n12" value="datasheet_status_history&lt;br&gt;&lt;font style='font-size:10px'&gt;who decided what, and why&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
-          <mxGeometry x="900" y="470" width="240" height="80" as="geometry" />
+        <mxCell id="n12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" value="datasheet_status_history&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;who decided what, and why&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="240" x="1020" y="460" as="geometry" />
         </mxCell>
-        <mxCell id="e13" value="POST save-draft" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n3" target="n4">
+        <mxCell id="e13" edge="1" parent="1" source="n3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" target="n4" value="POST save-draft">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e14" value="generated from the JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2.5;strokeColor=#9A6407;fontColor=#7A4E05;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n4" target="n5">
+        <mxCell id="e14" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2.5;strokeColor=#9A6407;fontColor=#7A4E05;fontSize=10;endArrow=block;endFill=1;" target="n5" value="generated from the JSON">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e15" value="projected in code &amp;#183; ONE WAY&amp;#10;every save &amp;#183; 24 statements" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2.5;strokeColor=#0F6377;fontColor=#0F6377;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n4" target="n6">
+        <mxCell id="e15" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2.5;strokeColor=#0F6377;fontColor=#0F6377;fontSize=10;endArrow=block;endFill=1;" target="n6" value="projected in code &amp;#183; ONE WAY&amp;#10;every save &amp;#183; 24 statements">
+          <mxGeometry relative="1" x="1" y="154" as="geometry">
+            <mxPoint x="140" y="89" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="n6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" target="n7" value="plain SQL">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e16" value="plain SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n6" target="n7">
+        <mxCell id="e17" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" target="n9" value="every save that changed something">
+          <mxGeometry relative="1" x="-0.0864" y="40" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="375" y="410" />
+              <mxPoint x="160" y="410" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" target="n10" value="the version under review">
+          <mxGeometry relative="1" x="0.0196" y="-55" as="geometry">
+            <mxPoint x="-55" y="-55" as="offset" />
+            <Array as="points">
+              <mxPoint x="375" y="410" />
+              <mxPoint x="440" y="410" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" target="n11" value="freezes revision N">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e17" value="every save that changed something" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n4" target="n9">
+        <mxCell id="e20" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" target="n12" value="Draft &amp;#8594; Peer Review &amp;#8594; Approved / Rejected">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e18" value="the version under review" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n4" target="n10">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e19" value="freezes revision N" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n10" target="n11">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e20" value="Draft &amp;#8594; Peer Review &amp;#8594; Approved / Rejected" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#55489F;fontColor=#55489F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n10" target="n12">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="n21" value="Amber = authoritative. Teal = derived from it. Violet = append-only history. Documents are built from form_json, never from the tables." style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="590" width="1100" height="30" as="geometry" />
+        <mxCell id="n21" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" value="Amber = authoritative. Teal = derived from it. Violet = append-only history. Documents are built from form_json, never from the tables." vertex="1">
+          <mxGeometry height="30" width="1100" x="40" y="590" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
@@ -91,37 +104,37 @@
         <mxCell id="n5" value="WHAT WAS RECORDED" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" vertex="1" parent="1">
           <mxGeometry x="800" y="110" width="300" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="n6" value="iec_emc_requests&lt;br&gt;&lt;font style='font-size:10px'&gt;10 rows &amp;#183; 80 columns&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n6" value="iec_emc_requests&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;10 rows &amp;#183; 80 columns&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="140" width="250" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n7" value="13 detail tables&lt;br&gt;&lt;font style='font-size:10px'&gt;cables, EUT specs, standards&amp;#8230;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#78909C;dashed=1;dashPattern=2 3;fontColor=#37474F;align=center;" vertex="1" parent="1">
+        <mxCell id="n7" value="13 detail tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;cables, EUT specs, standards&amp;#8230;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#78909C;dashed=1;dashPattern=2 3;fontColor=#37474F;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="240" width="250" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="n8" value="iec_emc_request_tests&lt;br&gt;&lt;font style='font-size:10px'&gt;92 rows &amp;#183; holds the assignment&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n8" value="iec_emc_request_tests&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;92 rows &amp;#183; holds the assignment&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="340" width="250" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n9" value="13 requested-params tables&lt;br&gt;&lt;font style='font-size:10px'&gt;one per test type&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#78909C;dashed=1;dashPattern=2 3;fontColor=#37474F;align=center;" vertex="1" parent="1">
+        <mxCell id="n9" value="13 requested-params tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;one per test type&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#78909C;dashed=1;dashPattern=2 3;fontColor=#37474F;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="440" width="250" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="n10" value="planner_entries&lt;br&gt;&lt;font style='font-size:10px'&gt;28 rows &amp;#183; the schedule&lt;br&gt;engineer &amp;#183; peer reviewer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n10" value="planner_entries&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;28 rows &amp;#183; the schedule&lt;br&gt;engineer &amp;#183; peer reviewer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="430" y="240" width="230" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n11" value="datasheet_records&lt;br&gt;&lt;b&gt;form_json&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;the only authoritative copy &amp;#183; 24 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF3DC;strokeColor=#9A6407;strokeWidth=3;fontColor=#3D2A00;align=center;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="n11" value="datasheet_records&lt;br&gt;&lt;b&gt;form_json&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;the only authoritative copy &amp;#183; 24 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF3DC;strokeColor=#9A6407;strokeWidth=3;fontColor=#3D2A00;align=center;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="430" y="390" width="230" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="n12" value="datasheet&lt;br&gt;&lt;font style='font-size:10px'&gt;24 rows &amp;#183; the derived hub&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E4F2F5;strokeColor=#0F6377;strokeWidth=2;fontColor=#04333D;align=center;" vertex="1" parent="1">
+        <mxCell id="n12" value="datasheet&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;24 rows &amp;#183; the derived hub&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E4F2F5;strokeColor=#0F6377;strokeWidth=2;fontColor=#04333D;align=center;" vertex="1" parent="1">
           <mxGeometry x="800" y="140" width="250" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n13" value="11 per-test tables&lt;br&gt;&lt;font style='font-size:10px'&gt;datasheet_ce &amp;#183; _re &amp;#183; _esd &amp;#8230;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0F6377;strokeWidth=1;fontColor=#04333D;align=center;" vertex="1" parent="1">
+        <mxCell id="n13" value="11 per-test tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;datasheet_ce &amp;#183; _re &amp;#183; _esd &amp;#8230;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0F6377;strokeWidth=1;fontColor=#04333D;align=center;" vertex="1" parent="1">
           <mxGeometry x="800" y="240" width="250" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="n14" value="6 shared detail tables&lt;br&gt;&lt;font style='font-size:10px'&gt;observation &amp;#183; equipment &amp;#183; software&lt;br&gt;&lt;b&gt;measurement &amp;#8212; 669 rows&lt;/b&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0F6377;strokeWidth=1;fontColor=#04333D;align=center;" vertex="1" parent="1">
+        <mxCell id="n14" value="6 shared detail tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;observation &amp;#183; equipment &amp;#183; software&lt;br&gt;&lt;b&gt;measurement &amp;#8212; 669 rows&lt;/b&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0F6377;strokeWidth=1;fontColor=#04333D;align=center;" vertex="1" parent="1">
           <mxGeometry x="800" y="320" width="250" height="65" as="geometry" />
         </mxCell>
-        <mxCell id="n15" value="3 history tables&lt;br&gt;&lt;font style='font-size:10px'&gt;revision &amp;#183; draft_history &amp;#183; status_history&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
+        <mxCell id="n15" value="3 history tables&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;revision &amp;#183; draft_history &amp;#183; status_history&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
           <mxGeometry x="800" y="415" width="250" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n16" value="16 mirrors&lt;br&gt;&lt;font style='font-size:10px'&gt;per-test detail&lt;br&gt;per revision&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
+        <mxCell id="n16" value="16 mirrors&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;per-test detail&lt;br&gt;per revision&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEECF8;strokeColor=#55489F;strokeWidth=1.5;fontColor=#251D52;align=center;" vertex="1" parent="1">
           <mxGeometry x="1110" y="415" width="160" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e17" value="request_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n6" target="n7">
@@ -157,16 +170,16 @@
         <mxCell id="n27" value="REFERENCED FROM EVERYWHERE" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="545" width="400" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="n28" value="users&lt;br&gt;&lt;font style='font-size:10px'&gt;20 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n28" value="users&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;20 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="575" width="200" height="60" as="geometry" />
         </mxCell>
         <mxCell id="n29" value="12 columns point here &amp;#8212; requester, assigned engineer, peer reviewer,&lt;br&gt;who cancelled it, who uploaded it, who changed a piece of equipment" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#1A2430;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="270" y="575" width="520" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n30" value="equipment&lt;br&gt;&lt;font style='font-size:10px'&gt;89 rows &amp;#183; calibration dates&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n30" value="equipment&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;89 rows &amp;#183; calibration dates&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="665" width="200" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="n31" value="equipment_history &amp;#183; maintenance&lt;br&gt;&lt;font style='font-size:10px'&gt;170 + 82 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#78909C;strokeWidth=1;fontColor=#1A2430;align=center;" vertex="1" parent="1">
+        <mxCell id="n31" value="equipment_history &amp;#183; maintenance&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;170 + 82 rows&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#78909C;strokeWidth=1;fontColor=#1A2430;align=center;" vertex="1" parent="1">
           <mxGeometry x="270" y="665" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e32" value="equipment_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1.5;strokeColor=#37474F;fontColor=#37474F;fontSize=10;endArrow=block;endFill=1;" edge="1" parent="1" source="n30" target="n31">
@@ -178,7 +191,7 @@
         <mxCell id="n34" value="DEAD WEIGHT" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontColor=#607D8B;fontSize=10;fontStyle=1;letterSpacing=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="755" width="400" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="n35" value="4 legacy tables, connected to nothing live&lt;br&gt;&lt;font style='font-size:10px'&gt;test_requests &amp;#183; test_plans &amp;#183; test_datasheets &amp;#183; iec_emc_test_requests&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;dashed=1;fontColor=#616161;align=center;" vertex="1" parent="1">
+        <mxCell id="n35" value="4 legacy tables, connected to nothing live&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;test_requests &amp;#183; test_plans &amp;#183; test_datasheets &amp;#183; iec_emc_test_requests&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;dashed=1;fontColor=#616161;align=center;" vertex="1" parent="1">
           <mxGeometry x="40" y="785" width="470" height="60" as="geometry" />
         </mxCell>
         <mxCell id="n36" value="test_datasheets is the dangerous name: it looks like the live&lt;br&gt;table and holds 56 abandoned rows." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontColor=#A3341F;fontSize=11;" vertex="1" parent="1">
