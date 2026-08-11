@@ -150,6 +150,144 @@ def report_section_span(report_doc, code):
     return (start, len(body))
 
 
+# --------------------------------------------------------------------------
+# Phase 2a: captions have to become fields, or the lists stay empty
+# --------------------------------------------------------------------------
+# The datasheets carry ZERO SEQ fields - a caption there is the literal text
+# "Photo 1: ESD test setup - Indirect discharge (HCP)". The report's three lists
+# are TOC \c "Figure" / "Photo" / "Table" fields, and those collect paragraphs
+# containing a matching SEQ field, not paragraphs that happen to start with the
+# word Photo. So a spliced caption is invisible to LIST OF PHOTOS until its
+# number becomes a field.
+#
+# Both documents already use the Caption paragraph style, which is the half of
+# this that was free. What is rebuilt is the runs, in the report's own shape:
+#
+#     text "Photo "  |  SEQ Photo \* ARABIC  |  ": "  |  the caption text
+#
+# The run formatting is taken from the caption's OWN first run, not from the
+# report, so a spliced caption keeps the font and size it was generated with -
+# which is the point of splicing rather than re-rendering.
+_CAPTION_RE = None          # built below, see the note on \b
+
+
+def _caption_re():
+    global _CAPTION_RE
+    if _CAPTION_RE is None:
+        import re
+        # Built rather than written as a literal: a \b typed into a heredoc has
+        # arrived here as a backspace byte three times in this repo's history.
+        b = chr(92) + "b"
+        _CAPTION_RE = re.compile(
+            r"^\s*(Figure|Photo|Table)%s\s*(\d+)\s*[:.\-]?\s*(.*)$" % b,
+            re.IGNORECASE | re.DOTALL)
+    return _CAPTION_RE
+
+
+def _seq_runs(label, number, rest, rpr):
+    """The runs for one caption: label, SEQ field, separator, text."""
+    import copy
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    def run(text=None, field=None, fld=None):
+        r = OxmlElement("w:r")
+        if rpr is not None:
+            r.append(copy.deepcopy(rpr))
+        if fld is not None:
+            fc = OxmlElement("w:fldChar")
+            fc.set(qn("w:fldCharType"), fld)
+            r.append(fc)
+        elif field is not None:
+            it = OxmlElement("w:instrText")
+            it.set(qn("xml:space"), "preserve")
+            it.text = field
+            r.append(it)
+        else:
+            t = OxmlElement("w:t")
+            t.set(qn("xml:space"), "preserve")
+            t.text = text
+            r.append(t)
+        return r
+
+    out = [run(text="%s " % label),
+           run(fld="begin"),
+           run(field=" SEQ %s %s* ARABIC " % (label, chr(92))),
+           run(fld="separate"),
+           run(text=str(number)),          # cached value; Word recomputes it
+           run(fld="end")]
+    tail = ": %s" % rest if rest else ":"
+    out.append(run(text=tail))
+    return out
+
+
+def captions_to_seq(doc):
+    """Turn literal caption numbers into SEQ fields. Returns the count changed."""
+    from docx.oxml.ns import qn
+    from .docx_tools import template_rpr
+
+    changed = 0
+    for p in doc.element.body.iter(qn("w:p")):
+        ppr = p.find(qn("w:pPr"))
+        style = ""
+        if ppr is not None:
+            st = ppr.find(qn("w:pStyle"))
+            if st is not None:
+                style = (st.get(qn("w:val")) or "").lower()
+        text = "".join(t.text or "" for t in p.iter(qn("w:t")))
+        m = _caption_re().match(text)
+        if not m or "caption" not in style:
+            continue
+        # already a field? leave it - re-running must not double-wrap
+        if any(True for _ in p.iter(qn("w:instrText"))):
+            continue
+        label, number, rest = m.group(1), m.group(2), (m.group(3) or "").strip()
+        rpr = template_rpr(p)
+        for r in list(p.findall(qn("w:r"))):
+            p.remove(r)
+        for r in _seq_runs(label.title(), number, rest, rpr):
+            p.append(r)
+        changed += 1
+    return changed
+
+
+# --------------------------------------------------------------------------
+# Phase 2b: the same section has a different number in the two documents
+# --------------------------------------------------------------------------
+# A datasheet points at its own EUT Modification Record, which is its section
+# 1.2. In the report that content is section 2.4. The reference is literal text
+# in the spec table's label column, not a REF field, so it needs rewriting -
+# and Test Mode gains one, because the report cross-references it and the
+# datasheet does not.
+#
+# Exact whole-cell matches only. "Test Mode" as a substring would also hit
+# "EUT Modes of Operation" and "Test Mode of Operation".
+CROSSREF = {
+    "EUT Modification state (Refer 1.2)": "EUT Modification state (Refer 2.4)",
+    "EUT Modification state\n(Refer 1.2)": "EUT Modification state\n(Refer 2.4)",
+    "Test Mode": "Test Mode (Refer 2.7)",
+}
+
+
+def rewrite_crossrefs(doc):
+    """Point the spliced section's cross-references at the REPORT's numbering."""
+    from docx.oxml.ns import qn
+    changed = 0
+    for tc in doc.element.body.iter(qn("w:tc")):
+        texts = [t for t in tc.iter(qn("w:t"))]
+        whole = "".join(t.text or "" for t in texts).strip()
+        want = CROSSREF.get(whole)
+        if not want:
+            continue
+        # collapse into the first run's text and blank the rest, so the cell's
+        # own formatting survives
+        texts[0].text = want
+        for t in texts[1:]:
+            t.text = ""
+        changed += 1
+    return changed
+
+
 def replace_section(report_path, code, datasheet_path, out_path=None):
     """Swap the report's own ``code`` section for the datasheet's.
 
@@ -167,6 +305,11 @@ def replace_section(report_path, code, datasheet_path, out_path=None):
 
     region = extract_region(datasheet_path, code)
     region_blocks = len(list(region.element.body))
+    # Fix the region BEFORE it is inserted: it is a standalone document here, so
+    # the caption and cross-reference passes cannot reach the rest of the report
+    # and change something that was already correct.
+    captions = captions_to_seq(region)
+    crossrefs = rewrite_crossrefs(region)
 
     body = report.element.body
     removed = 0
@@ -180,4 +323,5 @@ def replace_section(report_path, code, datasheet_path, out_path=None):
     report.save(out_path)
     return {"code": code, "report_blocks_removed": removed,
             "datasheet_blocks_inserted": region_blocks,
+            "captions_to_seq": captions, "crossrefs_rewritten": crossrefs,
             "inserted_at": start, "path": out_path}
