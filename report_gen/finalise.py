@@ -198,6 +198,64 @@ def clear_update_on_open(path):
         return 0
 
 
+def unlink_body_fields(path):
+    """Freeze the BODY's fields into their computed text. Headers stay live.
+
+    Removing w:updateFields stops Word RECALCULATING on open; it does not stop it
+    ASKING. "This document contains fields that may refer to other files" is
+    triggered by the presence of TOC fields, which Word classes as potentially
+    external because a table of contents can pull entries from other documents
+    with an RD switch. Ours does not, but the class is what Word checks.
+
+    So once Word has computed everything there is nothing left for a field to do,
+    and unlinking them - the same thing Ctrl+Shift+F9 does by hand - turns the
+    result into plain text. No fields, no prompt, and an issued report is the
+    right place for a frozen contents page: it should say what was checked and
+    approved, not recompute itself on somebody's machine.
+
+    BODY ONLY. The header's PAGE and NUMPAGES fields must stay live or every one
+    of the 53 pages reads "Page 1 of 53" - they live in header2.xml, so leaving
+    the header parts alone is the whole safeguard.
+
+    Only ever called after compute_fields has succeeded. On a host without Word
+    the numbers are not computed, and freezing a blank page number would make it
+    blank permanently.
+    """
+    try:
+        from docx import Document
+        doc = Document(path)
+        removed = 0
+        body = doc.element.body
+        # w:fldSimple carries its instruction as an attribute and its result as
+        # children - unwrap it so the result survives without the field.
+        for simple in list(body.iter(_q("fldSimple"))):
+            parent = simple.getparent()
+            if parent is None:
+                continue
+            at = list(parent).index(simple)
+            for child in reversed(list(simple)):
+                parent.insert(at, child)
+            parent.remove(simple)
+            removed += 1
+        # a complex field is a run holding fldChar or instrText; every visible
+        # result sits in ordinary runs between them, so dropping those runs
+        # leaves exactly the computed text behind
+        for run in list(body.iter(_q("r"))):
+            if run.find(_q("fldChar")) is None and run.find(_q("instrText")) is None:
+                continue
+            parent = run.getparent()
+            if parent is not None:
+                parent.remove(run)
+                removed += 1
+        doc.save(path)
+        log.info("froze %d field run(s) in the body of %s; header pagination "
+                 "left live", removed, os.path.basename(path))
+        return removed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not unlink fields in %s: %s", os.path.basename(path), exc)
+        return 0
+
+
 def finalise(path):
     """Finish the report as well as this host can. Returns what was done.
 
@@ -211,7 +269,8 @@ def finalise(path):
     warn_if_unavailable()
     if compute_fields(path):
         clear_update_on_open(path)
-        return {"engine": "word", "page_numbers": True}
+        frozen = unlink_body_fields(path)
+        return {"engine": "word", "page_numbers": True, "fields_frozen": frozen}
     info = populate_lists(path)
     info.update({"engine": "python", "page_numbers": False})
     return info
