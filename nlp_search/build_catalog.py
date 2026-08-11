@@ -89,6 +89,7 @@ PURPOSES = {
     "datasheet_modification": "EUT modifications recorded on a datasheet",
     "datasheet_status_history": "audit trail of datasheet review decisions: who approved/rejected, when, and why",
     "datasheet_revision": "frozen snapshot of a datasheet as submitted for each review round",
+    "datasheet_draft_history": "append-only record of EVERY save an engineer made, with changed_fields naming the boxes that changed and form_json holding the whole form as it stood. This is how to answer 'what did it say before', 'who changed this field' and 'when was this value entered'. Finer grained than datasheet_revision, which only captures submissions.",
     "datasheet_records": "the RAW saved form behind each datasheet (draft or submitted). Prefer the `datasheet` tables above - this one stores the form as JSON.",
     "datasheet_fixed_values": "admin-editable fixed values (uncertainty, SOP refs, limits) per datasheet type",
     "basic_standard_map": "admin mapping: product standard -> basic standard used by datasheets",
@@ -266,6 +267,7 @@ _GLOSSARY = """How lab vocabulary maps to this schema (read this before writing 
 - "reading" / "measurement" / "limit"     -> datasheet_measurement.value_num (filter revision_no)
 - "margin" / "how close to the limit"     -> datasheet_measurement, col_key like '%_margin'
 - "previous version" / "before it was rejected" -> datasheet_revision + datasheet_rev_<code>
+- "who changed" / "when was it entered" / "edit history" -> datasheet_draft_history
 - "pass" / "fail" / "outcome"             -> datasheet.result  (per test)
 - "conditions" / "ambient" / "humidity"   -> datasheet.ambient_temperature / relative_humidity
 - "equipment used on a test"              -> datasheet_equipment  (NOT the `equipment` inventory)

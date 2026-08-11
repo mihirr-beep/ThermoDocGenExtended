@@ -16,6 +16,7 @@ Design (see datasheet_database_documentation.docx):
 Kept self-contained: raw idempotent DDL (matches schema.py's style), no edits to
 models.py or the main migration path.
 """
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -323,7 +324,8 @@ def upsert_record(assignment, test_code, form_data, images, status,
     # Arrays are replaced, not appended: a grid that loses a row posts the
     # shorter list and the shorter list wins, which is what deleting a row must
     # mean.
-    form_data = dict(_stored_form(assignment.id), **(form_data or {}))
+    previous = _stored_form(assignment.id)
+    form_data = dict(previous, **(form_data or {}))
 
     common = _extract_common(form_data)
     uid = getattr(user, "id", None)
@@ -390,10 +392,72 @@ def upsert_record(assignment, test_code, form_data, images, status,
     db.session.execute(sql, params)
     db.session.commit()
 
+    _append_draft_history(assignment.id, test_code, status, previous,
+                          form_data, params.get("form_json"), user)
     _refresh_projection(entry_fields, params,
                         full=_full_tier(status, full_projection),
                         images_known=bool(posted))
     return merged_images
+
+
+def _changed_keys(before, after):
+    """Which form keys this save actually altered, added or cleared."""
+    out = []
+    for k in sorted(set(before) | set(after)):
+        if before.get(k) != after.get(k):
+            out.append(k)
+    return out
+
+
+def _append_draft_history(entry_id, test_code, status, before, after,
+                          form_json, user):
+    """Record this save, if it changed anything, and never touch it again.
+
+    Placed here because upsert_record already holds BOTH versions of the form -
+    it reads the stored one to merge onto. So the history costs one INSERT and
+    no extra read.
+
+    Skipped when nothing changed: the autosave fires on a timer and cannot tell
+    whether the engineer edited a box or just tabbed through, and without this
+    check the table fills with identical rows.
+
+    Best-effort in its own transaction, AFTER form_json is committed. The
+    history must never be the reason a save the engineer was told succeeded did
+    not: losing one audit row is a nuisance, losing their work is not.
+    """
+    from models import db
+    changed = _changed_keys(before or {}, after or {})
+    if before and not changed:
+        return 0
+    try:
+        blob = form_json if isinstance(form_json, str) else json.dumps(after or {})
+        db.session.execute(text("""
+            INSERT INTO datasheet_draft_history
+              (planner_entry_id, datasheet_id, revision_no, test_code, status,
+               form_json, content_hash, changed_fields, changed_count,
+               saved_by_user_id, saved_by_name, saved_at)
+            SELECT :p, d.id, COALESCE(d.revision_no, 1), :tc, :st, :fj, :h, :cf, :cc,
+                   :uid, :un, NOW()
+              FROM (SELECT 1) x
+              LEFT JOIN `datasheet` d ON d.planner_entry_id = :p
+        """), {"p": entry_id, "tc": test_code, "st": status, "fj": blob,
+               "h": hashlib.sha1((blob or "").encode("utf-8")).hexdigest(),
+               # the full list can be long; keep it readable and bounded
+               "cf": ", ".join(changed)[:60000] or None,
+               "cc": len(changed),
+               "uid": getattr(user, "id", None),
+               "un": (getattr(user, "username", None) or "")[:200] or None})
+        db.session.commit()
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        try:
+            from flask import current_app
+            current_app.logger.warning(
+                "draft history not recorded for entry %s: %s", entry_id, exc)
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
 
 
 # The autosave used to project only the header, leaving the child tables holding

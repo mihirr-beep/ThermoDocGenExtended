@@ -44,6 +44,7 @@ TABLES = (
     "datasheet_measurement",
     "datasheet_observation_legend",
     "datasheet_revision",
+    "datasheet_draft_history",
     "datasheet_status_history",
 )
 
@@ -454,6 +455,41 @@ _DDL = (
   `created_at`   DATETIME NOT NULL,    -- when this snapshot was written
   UNIQUE KEY `uq_dsr` (`datasheet_id`, `revision_no`),
   CONSTRAINT `fk_dsr` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    # Every save an engineer makes, kept.
+    #
+    # datasheet_records holds ONE row per assignment and upserts it in place, so
+    # an engineer who typed 48.2, saved, noticed it should be 48.7 and saved
+    # again left no trace of 48.2 anywhere in the database. datasheet_revision
+    # only froze SUBMITTED versions, which is a coarser grain: a datasheet
+    # submitted once has exactly one snapshot and no record of the hour of
+    # editing that produced it.
+    #
+    # Append-only. Nothing updates or deletes a row here, which is the whole
+    # point - a history you can rewrite is not a history.
+    #
+    # content_hash exists because the autosave fires 1.5 s after typing stops
+    # and does not know whether anything changed. Without it, tabbing through a
+    # form would append identical rows until the table was mostly noise.
+    #
+    # changed_fields is what makes it readable: "which boxes did they touch on
+    # this save" answered without diffing two JSON blobs by eye.
+    """CREATE TABLE IF NOT EXISTS `datasheet_draft_history` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `planner_entry_id` INT NOT NULL,     -- stable: exists before the projection does
+  `datasheet_id` INT NULL,
+  `revision_no` INT NOT NULL DEFAULT 1,
+  `test_code` VARCHAR(20) NULL,
+  `status` VARCHAR(30) NULL,           -- what the save was called: Draft / Submitted
+  `form_json` LONGTEXT NULL,           -- the WHOLE form as it stood after this save
+  `content_hash` CHAR(40) NULL,        -- sha1 of form_json; skips no-op autosaves
+  `changed_fields` TEXT NULL,          -- the keys that differed from the save before
+  `changed_count` INT NOT NULL DEFAULT 0,
+  `saved_by_user_id` INT NULL,
+  `saved_by_name` VARCHAR(200) NULL,
+  `saved_at` DATETIME NOT NULL,
+  KEY `idx_dsdh_entry` (`planner_entry_id`, `saved_at`),
+  KEY `idx_dsdh_sheet` (`datasheet_id`, `revision_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS `datasheet_status_history` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
