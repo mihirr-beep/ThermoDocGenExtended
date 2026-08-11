@@ -140,6 +140,27 @@ def _looks_like_signature(tbl_el):
     return any(w in text for w in _SIGNATURE_CONTEXT)
 
 
+# A paragraph that holds a photo carries no w:t at all - the picture lives in a
+# w:drawing and the caption is a separate paragraph - so "has no text" does NOT
+# mean "is empty". The backward walk below deletes trailing blanks, and on a
+# datasheet whose region ends with a picture it would have deleted the picture.
+# No datasheet does today: TEST SETUP PICTURES is followed by TEST EQUIPMENT
+# USED / SOFTWARE USED / RESULT, so the walk stops on a table long before it
+# reaches a photo. This is a guard against that ordering changing, not a fix for
+# an observed loss. Fields count too: a lone PAGEREF or SEQ paragraph has no w:t
+# either, only instrText.
+_DRAWN_TAGS = ("drawing", "pict", "object", "fldChar", "instrText")
+
+
+def _is_blank_para(p_el):
+    """True only when the paragraph holds neither text nor anything drawn."""
+    from docx.oxml.ns import qn
+    if "".join(t.text or "" for t in p_el.iter(qn("w:t"))).strip():
+        return False
+    return not any(p_el.find(".//" + qn("w:" + tag)) is not None
+                   for tag in _DRAWN_TAGS)
+
+
 def _drop_trailing_signature(doc):
     """Remove the datasheet's own sign-off block from the end of a region.
 
@@ -159,14 +180,11 @@ def _drop_trailing_signature(doc):
                 continue
             break                      # a real content table - stop here
         if el.tag.endswith("}p"):
-            text = "".join(t.text or "" for t in
-                           el.iter("{http://schemas.openxmlformats.org/"
-                                   "wordprocessingml/2006/main}t")).strip()
-            if not text:
+            if _is_blank_para(el):
                 body.remove(el)        # trailing blank, safe to drop
                 removed += 1
                 continue
-            break
+            break                      # a photo or a line of text - content
         break
     return removed
 
