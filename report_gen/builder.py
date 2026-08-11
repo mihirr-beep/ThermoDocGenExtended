@@ -1310,8 +1310,26 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path)
 
+    # Finish the document HERE rather than leaving Word to do it on open.
+    #
+    # refresh_fields_on_open above asks Word to rebuild the contents page, the
+    # lists of figures/photos/tables and "Page X of Y". Asking Word to modify
+    # the document on open has a consequence that took a reader's screenshot to
+    # see: the modification can be RECORDED. With track changes active the
+    # rebuild arrived as revisions - a contents page in red underline and
+    # "Field Code Changed" balloons down the margin - on a file that contained
+    # no revisions when it left here. Cleaning the file cannot prevent that,
+    # because Word creates them afterwards, out of the rebuild we requested.
+    #
+    # So compute the fields now and drop the flag. Best-effort: on a host
+    # without Word this returns False and behaviour is exactly as before -
+    # correct, but with the prompts and the risk.
+    from . import finalise as FZ
+    finalised = FZ.finalise(output_path)
+
     summary = {
         "path": output_path,
+        "finalised_in_word": finalised,
         "tests": [t["code"] for t in tests],
         "tests_without_data": [t["code"] for t in tests if not t["has_data"]],
         "dropped_sections": dropped,
