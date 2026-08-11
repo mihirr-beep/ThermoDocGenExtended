@@ -118,7 +118,57 @@ def extract_region(path, code):
     # the elements still to remove do not shift under us.
     for el in list(body)[:start]:
         body.remove(el)
+    _drop_trailing_signature(doc)
     return doc
+
+
+# A datasheet is signed by the engineer who ran that test, so it ends with a
+# "Tested By / Name / Signature / Date" table after RESULT. A REPORT is signed
+# once, on its cover - Prepared / Reviewed / Authorized - and its template
+# carries no per-test signature block at all. Splicing the region verbatim
+# imported one per test, so a full report grew eleven signature tables that the
+# form deliberately does not have.
+_SIGNATURE_WORDS = ("signature",)
+_SIGNATURE_CONTEXT = ("tested by", "name", "date")
+
+
+def _looks_like_signature(tbl_el):
+    from docx.oxml.ns import qn
+    text = " ".join(t.text or "" for t in tbl_el.iter(qn("w:t"))).lower()
+    if not any(w in text for w in _SIGNATURE_WORDS):
+        return False
+    return any(w in text for w in _SIGNATURE_CONTEXT)
+
+
+def _drop_trailing_signature(doc):
+    """Remove the datasheet's own sign-off block from the end of a region.
+
+    Only from the END, and only past the last table that is not one - a
+    "Signature" heading inside a test's own observation grid would otherwise be
+    at risk. Returns the number of blocks removed.
+    """
+    body = doc.element.body
+    removed = 0
+    for el in reversed(list(body)):
+        if el.tag.endswith("}sectPr"):
+            continue
+        if el.tag.endswith("}tbl"):
+            if _looks_like_signature(el):
+                body.remove(el)
+                removed += 1
+                continue
+            break                      # a real content table - stop here
+        if el.tag.endswith("}p"):
+            text = "".join(t.text or "" for t in
+                           el.iter("{http://schemas.openxmlformats.org/"
+                                   "wordprocessingml/2006/main}t")).strip()
+            if not text:
+                body.remove(el)        # trailing blank, safe to drop
+                removed += 1
+                continue
+            break
+        break
+    return removed
 
 
 def report_section_span(report_doc, code):
