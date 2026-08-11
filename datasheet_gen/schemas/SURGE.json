@@ -300,14 +300,12 @@
           "type": "image",
           "key": "img_photo_1",
           "label": "Photo 1: Surge test setup - Power Line",
-          "caption": true
-        },
+          "caption": true, "port": "Power Line", "port_field": "test_port_power" },
         {
           "type": "image",
           "key": "img_photo_2",
           "label": "Photo 2: Surge test setup - Signal Line",
-          "caption": true
-        }
+          "caption": true, "port": "Signal Line", "port_field": "test_port_signal" }
       ],
       "allow_extra_images": true
     },

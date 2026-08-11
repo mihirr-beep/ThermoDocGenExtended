@@ -311,41 +311,10 @@
         }
       ],
       "split_rows": [
-        {
-          "base": "ambient_temperature_col_1",
-          "label": "Ambient Temperature (°C) – 80M-1G",
-          "type": "text"
-        },
-        {
-          "base": "ambient_temperature_col_2",
-          "label": "Ambient Temperature (°C) – 1G-6G",
-          "type": "text"
-        },
-        {
-          "base": "relative_humidity_col_1",
-          "label": "Relative Humidity (%) – 80M-1G",
-          "type": "text"
-        },
-        {
-          "base": "relative_humidity_col_2",
-          "label": "Relative Humidity (%) – 1G-6G",
-          "type": "text"
-        },
-        {
-          "base": "test_date_col_1",
-          "label": "Test Date – 80M-1G",
-          "type": "date"
-        },
-        {
-          "base": "test_date_col_2",
-          "label": "Test Date – 1G-6G",
-          "type": "date"
-        },
-        {
-          "base": "tested_by",
-          "label": "Tested by",
-          "type": "text"
-        }
+        { "base": "ambient_temperature_col_1", "label": "Ambient Temperature (°C)", "type": "text" },
+        { "base": "relative_humidity_col_1", "label": "Relative Humidity (%)", "type": "text" },
+        { "base": "test_date_col_1", "label": "Test Date", "type": "date" },
+        { "base": "tested_by", "label": "Tested by", "type": "text" }
       ]
     },
     {
@@ -613,7 +582,8 @@
           "label": "Photo 4: RS test setup_Horizontal_1 GHz - 6 GHz",
           "caption": true
         }
-      ]
+      ],
+      "allow_extra_images": true
     },
     {
       "title": "TEST EQUIPMENT USED",

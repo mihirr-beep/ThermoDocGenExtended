@@ -121,19 +121,25 @@ def cumulative_checkbox(level, options, size=22):
     boxes are ticked. A 'Custom' level ticks only the Custom box; a blank/unknown
     level ticks nothing. Returns a RunsXml for a `{{r key }}` placeholder.
     """
+    def _not_a_level(opt):
+        # 'Custom' and 'NA' are not points on the scale, so they are never implied by a
+        # higher level and they only ever tick themselves. NA's POSITION varies: SURGE lists
+        # it last, ESD's Indirect HCP lists it first, where 'i <= sel' would otherwise have
+        # ticked it alongside a real voltage.
+        return str(opt).strip().lower() in ("custom", "na", "n/a")
+
     rt = RunsXml()
     sel = -1
     for i, opt in enumerate(options):
         if _match(level, str(opt)):
             sel = i
             break
-    sel_is_custom = sel >= 0 and "custom" in str(options[sel]).strip().lower()
+    sel_alone = sel >= 0 and _not_a_level(options[sel])
     for i, opt in enumerate(options):
-        opt_is_custom = "custom" in str(opt).strip().lower()
-        if sel_is_custom:
-            checked = (i == sel)                      # only the Custom box
+        if sel_alone:
+            checked = (i == sel)                      # only that box
         else:
-            checked = (sel >= 0 and i <= sel and not opt_is_custom)
+            checked = (sel >= 0 and i <= sel and not _not_a_level(opt))
         rt.add(_box_run(checked, size))
         sep = "    " if i < len(options) - 1 else ""
         rt.add(_label_run(" " + str(opt) + sep, size))
