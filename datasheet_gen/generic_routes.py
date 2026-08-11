@@ -156,11 +156,26 @@ def g_form(code, assignment_id):
         except Exception:  # noqa: BLE001 - a lost legend must not blank the form
             pass
         if code in ("RE", "RS_RI", "SURGE", "HARMONIC", "VOLTAGEFLICKER",
-                    "VOLTAGEDIPS", "CRF", "PFMF"):
+                    "VOLTAGEDIPS", "CRF", "PFMF", "EFT", "ESD"):
             # A draft saved before the format corrections must not resurrect legacy
             # values (e.g. EUT Modification state '0 - Initial state').
             from .generic_service import re_normalize_legacy_values
             re_normalize_legacy_values(pre)
+        # Product Standard: drop the RF-emissions entries where they do not belong, for every
+        # datasheet in the list rather than one 'if' per code.
+        from .generic_service import _NON_RF_EMISSION_CODES, drop_emission_standards
+        if code in _NON_RF_EMISSION_CODES:
+            pre["product_standard"] = drop_emission_standards(pre.get("product_standard"))
+        if code == "RS_RI":
+            # the emissions standards must not come back from a draft saved before the rule,
+            # and Test Mode shows the mode NAMES rather than the stored description
+            from .generic_service import _re_functional_mode_names, re_extra_photo_slots
+            _rm = _re_functional_mode_names(_parent_request(a))
+            if _rm:
+                pre["test_mode"] = _rm
+            # extra Test Setup pictures come back on a draft reload, keeping each slot's
+            # index so the image already stored under that name still shows
+            extra_photos = re_extra_photo_slots(draft)
         if code == "SURGE":
             # ... and its procedure's first line names the BASIC standard, not the product
             # standards an older draft stored there.
@@ -196,6 +211,26 @@ def g_form(code, assignment_id):
                 pre["test_mode"] = _cm
             # extra Test Setup pictures come back on a draft reload, keeping each slot's
             # index so the image already stored under that name still shows
+            from .generic_service import re_extra_photo_slots
+            extra_photos = re_extra_photo_slots(draft)
+        if code == "ESD":
+            # a draft still holding '<Standard name>' gets the basic standard
+            from .generic_service import normalize_procedure_basic, _DERIVED_BASIC_STANDARDS
+            normalize_procedure_basic(
+                pre, (pre.get("basic_standard") or "").strip()
+                or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
+        if code == "EFT":
+            # a draft still holding '<Standard name>' gets the basic standard, and Test Mode
+            # becomes the mode NAMES - both would otherwise survive the draft overlay
+            from .generic_service import (normalize_procedure_basic, _DERIVED_BASIC_STANDARDS,
+                                          _re_functional_mode_names)
+            normalize_procedure_basic(
+                pre, (pre.get("basic_standard") or "").strip()
+                or _DERIVED_BASIC_STANDARDS.get("EFT", ""))
+            _em = _re_functional_mode_names(parent)
+            if _em:
+                pre["test_mode"] = _em
+            # extra Test Setup pictures survive a draft reload
             from .generic_service import re_extra_photo_slots
             extra_photos = re_extra_photo_slots(draft)
         if code == "PFMF":

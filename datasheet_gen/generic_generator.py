@@ -190,14 +190,25 @@ def _eft_insert_observation(doc, power, signal):
             marker._p.getparent().remove(marker._p)   # port not tested -> drop the dangling heading
 
 
+#: The standard wording for A, the only code that carries boilerplate. B/C/D describe an
+#: actual observed failure, so their text belongs to the engineer.
+_LEGEND_DEFAULT_A = "No degradation was observed during the test based on the parameters monitored."
+
+
 def _eft_insert_legend(doc, legend):
     """Replace the template's static 'A: ... / B: ...' observation legend with one
-    '<code>: <description>' paragraph per unique code the engineer entered. The
-    static legend paragraphs are short 'code:' lines (A:/B:/C:/D:); if the user
-    entered no codes, the static legend is left as-is."""
+    '<code>: <description>' paragraph per unique code the engineer entered.
+
+    With NOTHING recorded the static block used to be left exactly as shipped, which printed
+    all four lines - including the author's highlighted instructions ('Write the observation
+    in case of not meeting the required criteria. If needed use more criteria such as B1,
+    B2 ...'). Only A has standard wording, so an empty legend collapses to that one line and
+    the B/C/D boilerplate goes. The inserted paragraphs are fresh runs, so they carry none of
+    the template's yellow highlighting either.
+    """
     import re
     if not legend:
-        return
+        legend = [{"code": "A", "desc": _LEGEND_DEFAULT_A}]
     statics = [p for p in doc.paragraphs
                if re.match(r"^\s*[A-Za-z0-9]{1,3}\s*:\s", p.text or "")
                and not p.text.strip().lower().startswith(("power line", "signal line"))]
@@ -1617,16 +1628,226 @@ def _pfmf_finalize(doc, context):
     _strip_trailing_empty_paragraphs(doc)
 
 
-def _crf_prune_photos(doc, ports):
-    """Keep only the Test Setup picture for the Test Port(s) actually selected.
+#: EFT's spec value area is 2 grid columns; 3 from each gives 6, so 1/2/3 sections all land
+#: on a boundary.
+_EFT_VALUE_REGRID = (3, 3)
 
-    The template ships both slots ('Photo 1: CRF test setup - Power Line' and
-    'Photo 2: ... - Signal Line'); the caption names the port, so the unselected one is
-    dropped together with its image paragraph. With no port selected nothing is removed,
-    so a half-filled draft still renders what it has."""
-    if not ports:
-        return 0
-    wanted = [p.lower() for p in ports]
+#: ESD's spec value area is 2 grid columns -> the same 6.
+_ESD_VALUE_REGRID = (3, 3)
+#: Row height for the ESD observation grids, in cm.
+_ESD_OBS_ROW_CM = 0.6
+
+
+def _set_row_height(tb, cm, exact=False):
+    """Give every row of a table a minimum height of `cm` (Word's 'At least', or 'Exactly'
+    when exact=True). Returns the number of rows set."""
+    from docx.shared import Cm
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+    n = 0
+    for row in tb.rows:
+        row.height = Cm(cm)
+        row.height_rule = (WD_ROW_HEIGHT_RULE.EXACTLY if exact
+                           else WD_ROW_HEIGHT_RULE.AT_LEAST)
+        n += 1
+    return n
+
+
+def _esd_drop_empty_observation(doc, filled):
+    """Remove the ESD observation tables whose group the engineer did not fill.
+
+    The three grids (Indirect / Direct / Air) are templated, so an untouched one printed as
+    an empty table under its heading. The table's own label paragraph goes with it.
+
+    A group with nothing in it is dropped whatever the others hold - including when NONE was
+    filled, which leaves the section with its heading and no tables. An empty grid says
+    nothing about the test, so printing one is worse than printing none.
+    """
+    filled = set(filled or ())
+    plan = (("indirect", "ind"), ("direct", "dir"), ("air discharge", "air"))
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    tm = {t._tbl: t for t in doc.tables}
+    els = list(body.iterchildren())
+    removed = 0
+    for i, el in enumerate(els):
+        if el.tag != qn("w:tbl"):
+            continue
+        tb = tm.get(el)
+        if tb is None or not tb.rows:
+            continue
+        head = " ".join((tb.rows[0].cells[0].text or "").split()).lower()
+        if not head.startswith("s. no") and not head.startswith("s.no"):
+            continue                                   # not an observation grid
+        # the label sits in the nearest non-empty paragraph above the table
+        label = ""
+        j = i - 1
+        while j >= 0 and els[j].tag == qn("w:p"):
+            p = pm.get(els[j])
+            t = " ".join((p.text or "").split()) if p is not None else ""
+            if t:
+                label = t.lower()
+                break
+            j -= 1
+        grp = next((g for needle, g in plan if needle in label), None)
+        if grp is None or grp in filled:
+            continue
+        el.getparent().remove(el)
+        removed += 1
+        if j >= 0 and els[j].tag == qn("w:p"):
+            els[j].getparent().remove(els[j])           # its heading
+            removed += 1
+    return removed
+
+
+def _esd_finalize(doc, context):
+    """ESD reference-format corrections.
+
+      * Per-day sections for the five environment rows (this datasheet also records
+        Atmospheric Air Pressure).
+      * The observation grids get a 0.6 cm row height, and a group the engineer left
+        untouched is dropped rather than printing an empty table.
+      * 1.2 EUT MODIFICATION RECORD and TEST EQUIPMENT USED read as centred; SOFTWARE USED
+        shows '-' in a blank cell, centred. A blank Calibration Due prints 'NA'.
+      * 1.4 MONITORING PARAMETERS becomes a bulleted list; the signature loses its border.
+    """
+    from .layout import _ce_center_table, _ce_table_header, _ce_fill_empty_cells
+    meta = (context or {}).get("_esd_meta") or {}
+    splits = meta.get("row_splits") or []
+
+    tb0 = _re_spec_table(doc)
+    if tb0 is not None and splits:
+        if _re_regrid_value_area(tb0, _ESD_VALUE_REGRID):
+            for row in splits:
+                vals = row.get("values") or []
+                if vals:
+                    _set_cell_sections(tb0, _re_row_by_label(tb0, row["needle"]), 1, vals)
+            _sync_row_widths(tb0)
+            for needle in dict.fromkeys(r["needle"] for r in splits):
+                _re_fit_row_font(tb0, needle)
+
+    _esd_drop_empty_observation(doc, meta.get("filled") or set())
+
+    _re_fill_missing_na(doc, header_needle="calibration due", value="NA")
+    # A blank Software Name / Version reads as '-' rather than an empty box.
+    _ce_fill_empty_cells(doc, ("software name", "software version"), "-")
+    for tb in doc.tables:
+        hdr = _ce_table_header(tb)
+        if ("equipment name" in hdr and "calibration" in hdr) or \
+           ("software name" in hdr and "software version" in hdr) or \
+           ("modification state" in hdr and "description" in hdr):
+            _ce_center_table(tb)
+        elif hdr.startswith("s. no") or hdr.startswith("s.no"):
+            _set_row_height(tb, _ESD_OBS_ROW_CM)
+
+    _bullet_monitoring_parameters(doc)
+    _re_fix_signature(doc)
+    _strip_trailing_empty_paragraphs(doc)
+
+
+def _eft_finalize(doc, context):
+    """EFT reference-format corrections.
+
+      * TEST OBSERVATION: the inserted tables read with a bold header row and centred
+        content, and the blank paragraph the template leaves between a table and the
+        observation legend is removed.
+      * 1.2 EUT MODIFICATION RECORD, TEST EQUIPMENT USED and SOFTWARE USED read as centred;
+        a blank Calibration Due prints 'NA'.
+      * 1.4 MONITORING PARAMETERS becomes a bulleted list and the signature loses its border.
+
+    Runs AFTER _eft_insert_observation, which is what creates those tables.
+    """
+    from .layout import _ce_center_table, _ce_table_header
+    meta = (context or {}).get("_eft_meta") or {}
+    splits = meta.get("row_splits") or []
+    ports = meta.get("ports") or {}
+
+    tb0 = _re_spec_table(doc)
+    if tb0 is not None and splits:
+        if _re_regrid_value_area(tb0, _EFT_VALUE_REGRID):
+            for row in splits:
+                vals = row.get("values") or []
+                if vals:
+                    _set_cell_sections(tb0, _re_row_by_label(tb0, row["needle"]), 1, vals)
+            _sync_row_widths(tb0)
+            for needle in dict.fromkeys(r["needle"] for r in splits):
+                _re_fit_row_font(tb0, needle)
+
+    # Only the tested port's Test Setup picture survives, matching the procedure and the
+    # observation matrices. Reuses the shared caption walk.
+    drop = [name for key, name in (("power", "power line"), ("signal", "signal line"))
+            if ports and not ports.get(key, True)]
+    if drop:
+        _drop_photo_blocks(doc, lambda txt: any(d in txt for d in drop))
+    _re_renumber_photos(doc)
+
+    for tb in doc.tables:
+        hdr = _ce_table_header(tb)
+        if "coupling path" in hdr:                    # the inserted observation table(s)
+            _ce_center_table(tb)
+            _bold_row(tb, 0)
+        elif ("equipment name" in hdr and "calibration" in hdr) or \
+             ("software name" in hdr and "software version" in hdr) or \
+             ("modification state" in hdr and "description" in hdr):
+            _ce_center_table(tb)
+
+    _eft_tighten_legend(doc)
+    _bullet_monitoring_parameters(doc)
+    _re_fill_missing_na(doc, header_needle="calibration due", value="NA")
+    _re_fix_signature(doc)
+    _strip_trailing_empty_paragraphs(doc)
+
+
+def _eft_tighten_legend(doc):
+    """Drop the blank paragraph(s) sitting between an observation table and the legend.
+
+    The template spaces its static legend away from the table it belongs to; once the real
+    table is inserted the gap reads as a break in the middle of TEST OBSERVATION."""
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    els = list(body.iterchildren())
+    removed = 0
+    for i, el in enumerate(els):
+        if el.tag != qn("w:tbl"):
+            continue
+        # only the observation tables - identified by their first cell
+        try:
+            first = " ".join((docx_table_first_cell(el) or "").split()).lower()
+        except Exception:  # noqa: BLE001
+            first = ""
+        if "coupling path" not in first:
+            continue
+        j = i + 1
+        while j < len(els) and els[j].tag == qn("w:p"):
+            p = pm.get(els[j])
+            txt = " ".join((p.text or "").split()) if p is not None else ""
+            if txt:
+                break                                # reached the legend / next heading
+            if els[j].findall(".//" + qn("w:drawing")):
+                break
+            els[j].getparent().remove(els[j])
+            removed += 1
+            j += 1
+    return removed
+
+
+def docx_table_first_cell(tbl_el):
+    """The text of a table element's first cell, without building a python-docx Table."""
+    tc = tbl_el.find(qn("w:tr"))
+    if tc is None:
+        return ""
+    cell = tc.find(qn("w:tc"))
+    if cell is None:
+        return ""
+    return "".join(t.text or "" for t in cell.iter(qn("w:t")))
+
+
+def _drop_photo_blocks(doc, should_drop):
+    """Remove the Test Setup picture captions for which should_drop(caption_text) is True,
+    together with the image paragraph that precedes each.
+
+    Shared by the datasheets whose picture slots belong to a Test Port: the caption names
+    the port, so the slot for a port that was not tested is removed rather than printing an
+    empty box under a heading for work that never happened."""
     body = doc.element.body
     paras = {p._p: p for p in doc.paragraphs}
     removed = 0
@@ -1639,7 +1860,7 @@ def _crf_prune_photos(doc, ports):
         txt = " ".join((p.text or "").split()).lower()
         if "test setup" not in txt or "photo" not in txt:
             continue
-        if any(w in txt for w in wanted):
+        if not should_drop(txt):
             continue
         # this caption names the other port: drop it and the image just above it
         prev = el.getprevious()
@@ -1657,6 +1878,32 @@ def _crf_prune_photos(doc, ports):
             if has_img:
                 break
     return removed
+
+
+def _crf_prune_photos(doc, ports):
+    """CRF: keep only the Test Setup picture of the Test Port that was selected.
+
+    `ports` is the list of chosen port names. With none chosen nothing is removed, so a
+    half-filled draft still renders what it has."""
+    if not ports:
+        return 0
+    wanted = [p.lower() for p in ports]
+    return _drop_photo_blocks(doc, lambda txt: not any(w in txt for w in wanted))
+
+
+def _surge_prune_photos(doc, ports):
+    """SURGE: drop the Test Setup picture of a port marked 'Not Applicable'.
+
+    `ports` is {'power': bool, 'signal': bool} - the same flags that decide which
+    observation block survives, so the pictures and the matrices agree. A port whose flag
+    is missing counts as tested, leaving the slot alone."""
+    if not ports:
+        return 0
+    drop = [name for key, name in (("power", "power line"), ("signal", "signal line"))
+            if not ports.get(key, True)]
+    if not drop:
+        return 0
+    return _drop_photo_blocks(doc, lambda txt: any(d in txt for d in drop))
 
 
 #: CRF's spec value area is 2 grid columns; 3 from each gives 6, which divides by 1, 2
@@ -1954,6 +2201,9 @@ def _surge_finalize(doc, context):
     _bullet_monitoring_parameters(doc)
     _surge_bold_port_headings(doc)
     _surge_drop_untested_port(doc, (context or {}).get("_surge_ports"))
+    # ... and the Test Setup picture of that port goes with it, so an untested port leaves
+    # no empty slot behind. Runs before the renumbering below so the survivors are 1..N.
+    _surge_prune_photos(doc, (context or {}).get("_surge_ports"))
     # Extra pictures continue the sequence: 'Photo 3:', 'Photo 4:', ... whatever label the
     # engineer typed. Runs after the untested-port pass so a dropped photo leaves no gap.
     _re_renumber_photos(doc)
@@ -1995,12 +2245,18 @@ def _rs_ri_finalize(doc, context):
         if _re_regrid_value_area(tb, _RS_RI_VALUE_REGRID):
             # Right-to-left: splitting a cell inserts new cells after it, which would shift
             # the index of every cell to its right.
-            for row in sorted(splits, key=lambda r: -int(r.get("cell") or 1)):
+            for row in sorted(splits, key=lambda r: -int(r.get("cell") or 0)):
                 vals = row.get("values") or []
                 if not vals:
                     continue
-                _set_cell_sections(tb, _re_row_by_label(tb, row["needle"]),
-                                   int(row.get("cell") or 1), vals)
+                idx = _re_row_by_label(tb, row["needle"])
+                cell = int(row.get("cell") or 0)
+                if cell:
+                    _set_cell_sections(tb, idx, cell, vals)
+                else:
+                    # cell 0 -> the whole value area: one set of day sections spanning both
+                    # frequency bands, which is what a single input group means.
+                    _re_set_row_sections(tb, idx, vals)
             # Cell widths must agree with the grid or Word re-lays the table out from the
             # stale values and the label column collapses.
             _sync_row_widths(tb)
@@ -2013,13 +2269,27 @@ def _rs_ri_finalize(doc, context):
     _rs_ri_unjustify(doc, "MONITORING PARAMETERS")
     _rs_ri_center_placeholders(doc)
     _rs_ri_blacken_observation(doc)
-    # 2.6 TEST EQUIPMENT USED and 2.7 SOFTWARE USED read as centred grids, as on CE.
+    # TEST OBSERVATION's two stacked heading rows read as bold: 'Dwell time (s) /
+    # Horizontal Polarization / Vertical Polarization' and the 0/90/180/270 beneath.
+    from .layout import _ce_table_header as _hdr
+    for _tb in doc.tables:
+        _h = _hdr(_tb)
+        if "dwell time" in _h and "polarization" in _h:
+            _bold_row(_tb, 0)
+            _bold_row(_tb, 1)
+            break
+    # 1.2 EUT MODIFICATION RECORD, 2.6 TEST EQUIPMENT USED and 2.7 SOFTWARE USED read as
+    # centred grids, as on CE.
     from .layout import _ce_center_table, _ce_table_header
     for _tb in doc.tables:
         _hdr = _ce_table_header(_tb)
         if ("equipment name" in _hdr and "calibration" in _hdr) or \
-           ("software name" in _hdr and "software version" in _hdr):
+           ("software name" in _hdr and "software version" in _hdr) or \
+           ("modification state" in _hdr and "description" in _hdr):
             _ce_center_table(_tb)
+    # 'Photo 1..N' in document order, so pictures the engineer added continue the sequence
+    # after the four polarization x band slots instead of restarting at 1.
+    _re_renumber_photos(doc)
     # One blank line between the TEST PROCEDURE title and the procedure text.
     _re_procedure_heading_gap(doc)
     # A sub-section that no longer fits moves whole to the next page rather than breaking
@@ -2223,6 +2493,10 @@ def render(code, context, img_keys, img_paths, output_path):
         _crf_finalize(tpl.docx, context)
     elif code == "PFMF":
         _pfmf_finalize(tpl.docx, context)
+    elif code == "EFT":
+        _eft_finalize(tpl.docx, context)
+    elif code == "ESD":
+        _esd_finalize(tpl.docx, context)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

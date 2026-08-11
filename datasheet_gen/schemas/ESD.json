@@ -67,13 +67,30 @@
             { "key": "eut_modification_state", "label": "EUT Modification State (Refer 1.2)", "input": "text", "default": "" },
             { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
             { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
-            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "" },
-            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "" },
-            { "key": "atmospheric_air_pressure", "label": "Atmospheric Air Pressure (mBar)", "input": "text", "default": "" },
-            { "key": "test_date", "label": "Test Date", "input": "text", "default": "" },
-            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "" }
+            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "atmospheric_air_pressure", "label": "Atmospheric Air Pressure (mBar)", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "test_date", "label": "Test Date", "input": "text", "default": "",
+  "split_group": true
+},
+            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "",
+  "split_group": true
+}
           ]
         }
+      ],
+      "split_rows": [
+        { "base": "ambient_temperature", "label": "Ambient Temperature (°C)", "type": "text" },
+        { "base": "relative_humidity", "label": "Relative Humidity (%)", "type": "text" },
+        { "base": "atmospheric_air_pressure", "label": "Atmospheric Air Pressure(mBar)", "type": "text" },
+        { "base": "test_date", "label": "Test Date", "type": "date" },
+        { "base": "tested_by", "label": "Tested by", "type": "text" }
       ]
     },
     {

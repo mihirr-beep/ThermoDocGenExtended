@@ -321,6 +321,18 @@ def _eft_obs(form_data, kind):
     return {"cols": cols, "rows": rows}
 
 
+def _eft_ports(form_data):
+    """Which Test Ports EFT was run on, from its single 'test_port' select.
+
+    'Power Line' / 'Signal Line' / 'Both'. Nothing chosen counts as BOTH, so a half-filled
+    draft keeps the whole procedure and both picture slots rather than losing content before
+    the engineer has answered."""
+    v = _s((form_data or {}).get("test_port")).lower()
+    if not v or "both" in v:
+        return {"power": True, "signal": True}
+    return {"power": "power" in v, "signal": "signal" in v}
+
+
 def _eft_build_context(form_data):
     """EFT/BURST docx context: ticked checkboxes, cumulative test voltages, single
     PRF, and the dynamic observation tables (inserted post-render by the generator)."""
@@ -337,8 +349,13 @@ def _eft_build_context(form_data):
         _s(form_data.get("test_voltage_signal_line")), ["±0.25 kV", "±0.5 kV", "±1 kV", "±2 kV"])
     ctx["pulse_repetition_frequency"] = human_checkbox(
         _s(form_data.get("pulse_repetition_frequency")), ["5 kHz", "100 kHz"])
-    ctx["eut_configuration"] = human_checkbox(
-        _s(form_data.get("eut_configuration")), ["Tabletop", "Floor standing"])
+    # EUT Configuration prints ONE option per cell. The template used to carry the same
+    # combined placeholder in both cells, so each printed the whole list.
+    _cfg = _s(form_data.get("eut_configuration"))
+    ctx["eut_configuration_col_1"] = human_checkbox(_cfg, ["Tabletop"])
+    ctx["eut_configuration_col_2"] = human_checkbox(_cfg, ["Floor standing"])
+    # kept for compatibility with the single combined placeholder
+    ctx["eut_configuration"] = human_checkbox(_cfg, ["Tabletop", "Floor standing"])
     # dynamic observation tables — consumed by the generator after render (not in the template)
     ctx["eft_obs_power"] = _eft_obs(form_data, "power")
     ctx["eft_obs_signal"] = _eft_obs(form_data, "signal")
@@ -538,18 +555,47 @@ def _pfmf_build_context(form_data):
     return ctx
 
 
+def _esd_filled_groups(form_data):
+    """Which ESD observation groups carry any data: {'ind','dir','air'} subset.
+
+    The three tables are templated, so an untouched one would print as an empty grid. A
+    group counts as filled when ANY of its cells (or, for the named groups, a test-point
+    name) has content. `_re_row_splits`-style keys: ind_r<i>_c<j>, dir_r<i>_name, ...
+    """
+    fd = form_data or {}
+    out = set()
+    for i in range(1, 9):
+        if any(_s(fd.get("ind_r%d_c%d" % (i, c))) for c in range(1, 7)):
+            out.add("ind")
+            break
+    for grp in ("dir", "air"):
+        for i in range(1, 4):
+            if _s(fd.get("%s_r%d_name" % (grp, i))) or \
+               any(_s(fd.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)):
+                out.add(grp)
+                break
+    return out
+
+
 def _esd_build_context(form_data):
     """ESD docx context: ticked EUT-Configuration cells, the two-line Indirect
     Contact Discharge cell (HCP line + VCP line), and all observation-table cell
     values (Indirect 8 fixed rows; Direct/Air 3 rows with editable names)."""
-    from .layout import human_checkbox, RunsXml
+    from .layout import human_checkbox, cumulative_checkbox, RunsXml
     ctx = {}
     cfg = _s(form_data.get("eut_configuration"))
     ctx["eut_configuration_tabletop"] = human_checkbox(cfg, ["Tabletop"])
     ctx["eut_configuration_floor"] = human_checkbox(cfg, ["Floor standing"])
 
-    hcp = human_checkbox(_s(form_data.get("indirect_hcp")), ["NA", "±2kV", "±4kV", "±8kV", "Custom"])
-    vcp = human_checkbox(_s(form_data.get("indirect_vcp")), ["±2kV", "±4kV", "±8kV", "Custom"])
+    # Discharge levels are CUMULATIVE: the EUT is stressed up to the chosen level, so
+    # selecting +-4kV means +-2kV was applied too and both boxes tick. 'NA' and 'Custom'
+    # are not levels, so they only ever tick themselves.
+    ctx["direct_contact_discharge"] = cumulative_checkbox(
+        _s(form_data.get("direct_contact_discharge")), ["±2kV", "±4kV", "±8kV", "Custom"])
+    hcp = cumulative_checkbox(_s(form_data.get("indirect_hcp")),
+                              ["NA", "±2kV", "±4kV", "±8kV", "Custom"])
+    vcp = cumulative_checkbox(_s(form_data.get("indirect_vcp")),
+                              ["±2kV", "±4kV", "±8kV", "Custom"])
     ctx["indirect_contact_discharge_hcp_vcp"] = RunsXml(str(hcp)).add('<w:r><w:br/></w:r>').add(str(vcp))
 
     for i in range(1, 9):                       # Indirect: 8 fixed rows
@@ -662,7 +708,7 @@ def build_context(schema, form_data, request_obj=None):
     # generator falls back to that slot's default box.
     _img_boxes = {}
     _size_keys = list(image_keys(schema))
-    if schema.get("code") in ("RE", "SURGE", "HARMONIC", "CRF", "PFMF"):
+    if schema.get("code") in ("RE", "SURGE", "HARMONIC", "CRF", "PFMF", "RS_RI", "EFT"):
         # extra test-setup pictures aren't in the schema, but their size is set the
         # same way by the image editor
         _size_keys += [s["key"] for s in re_extra_photo_slots(form_data)]
@@ -677,6 +723,11 @@ def build_context(schema, form_data, request_obj=None):
     # Upload-driven tables (columns come from the uploaded file), one per flagged section.
     for _ut in upload_tables(schema):
         ctx[_ut["key"]] = collect_upload_table(form_data, _ut["key"])
+    # Product Standard: drop the RF-emissions entries on the datasheets they do not belong
+    # to. Done once here rather than per datasheet, so the rule cannot be applied to the
+    # prefill and then forgotten in the context a stored draft is re-rendered from.
+    if (schema.get("code") or "").upper() in _NON_RF_EMISSION_CODES:
+        ctx["product_standard"] = drop_emission_standards(ctx.get("product_standard"))
     if schema.get("code") == "RE":
         re_normalize_legacy_values(ctx)          # legacy draft values -> current format
         ctx["measurement_groups"] = _re_measurement_groups(form_data)
@@ -716,6 +767,17 @@ def build_context(schema, form_data, request_obj=None):
             "row_splits": _re_row_splits(form_data),
         }
     if schema.get("code") == "RS_RI":
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed. Only the Test Request knows them, so this needs the request the
+        # caller passes in; a draft saved before this keeps working.
+        if request_obj is not None:
+            _rmodes = _re_functional_mode_names(request_obj)
+            if _rmodes:
+                ctx["test_mode"] = _rmodes
+        # Extra Test Setup pictures beyond the four polarization x band slots, sharing RE's
+        # slot naming so the form repeater, the image-save allowlist and the generator's
+        # resolver all work unchanged.
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
         # Per-band, per-day sections for Ambient / Humidity / Test Date / Tested by. The
         # finaliser splits the matching value CELL, so both bands stay on the same row.
         ctx["_rs_ri_meta"] = {"row_splits": _rs_ri_row_splits(form_data)}
@@ -792,6 +854,28 @@ def build_context(schema, form_data, request_obj=None):
         ctx["_vdips_meta"] = {"row_splits": _re_row_splits(form_data)}
     if schema.get("code") == "EFT":
         ctx.update(_eft_build_context(form_data))
+        # The spec row shows the modification state NUMBER only.
+        re_normalize_legacy_values(ctx)
+        # Only the selected Test Port's block belongs in the procedure. EFT records the
+        # choice in ONE select ('Power Line' / 'Signal Line' / 'Both'), so the flags are
+        # derived from it and handed to the same filter SURGE uses.
+        _ep = _eft_ports(form_data)
+        ctx["test_procedure"] = _surge_filter_procedure(
+            ctx.get("test_procedure"), _ep["power"], _ep["signal"])
+        # ... and the finaliser drops the picture of a port that was not tested, and splits
+        # the per-day cells.
+        ctx["_eft_meta"] = {"ports": _ep, "row_splits": _re_row_splits(form_data)}
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
+        # The procedure's opening sentence names the BASIC standard, replacing the
+        # '<Standard name>' placeholder a draft may still carry.
+        normalize_procedure_basic(
+            ctx, _s(ctx.get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get("EFT", ""))
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed for each.
+        if request_obj is not None:
+            _emodes = _re_functional_mode_names(request_obj)
+            if _emodes:
+                ctx["test_mode"] = _emodes
     if schema.get("code") == "SURGE":
         ctx.update(_surge_build_context(form_data))
         # The spec row shows the state NUMBER only; a draft saved before that holds
@@ -821,6 +905,15 @@ def build_context(schema, form_data, request_obj=None):
         ctx["re_extra_photos"] = _re_extra_photos(form_data)
     if schema.get("code") == "ESD":
         ctx.update(_esd_build_context(form_data))
+        # The spec row shows the modification state NUMBER only.
+        re_normalize_legacy_values(ctx)
+        # The procedure's opening sentence names the BASIC standard.
+        normalize_procedure_basic(
+            ctx, _s(ctx.get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
+        # Per-day sections for the five environment rows, and which observation groups the
+        # engineer actually filled - the finaliser drops the tables of the empty ones.
+        ctx["_esd_meta"] = {"row_splits": _re_row_splits(form_data),
+                            "filled": _esd_filled_groups(form_data)}
     if schema.get("code") == "RS_RI":
         ctx.update(_rs_ri_build_context(form_data))
     if schema.get("code") == "CRF":
@@ -851,6 +944,9 @@ def build_context(schema, form_data, request_obj=None):
         # engineer chose. Field bases match RE's, so its collector is reused; the finaliser
         # splits the value cell.
         ctx["_flicker_meta"] = {"row_splits": _re_row_splits(form_data)}
+    # LAST, so nothing a per-datasheet branch above added can slip past: every date in the
+    # document prints DD/MM/YYYY, whatever the form or the equipment master supplied.
+    normalize_context_dates(schema, ctx)
     return ctx
 
 
@@ -1059,6 +1155,37 @@ def re_normalize_legacy_values(values):
     return values
 
 
+#: Emissions-only standards. They are named on the Test Request because one request
+#: covers emissions and immunity together, but an immunity datasheet must not cite them.
+_EMISSION_ONLY_STANDARDS = ("fcc", "ices")
+#: Datasheets whose Product Standard row drops the emissions-only entries.
+#:
+#: Everything except CE and RE. Those two ARE radio-frequency emissions tests - conducted
+#: and radiated - so FCC Part 15 and ICES-001 are genuinely their product standards. The
+#: rest are immunity tests, or mains-emissions ones (HARMONIC / VOLTAGEFLICKER), where an
+#: RF emissions limit says nothing about the test being reported.
+_NON_RF_EMISSION_CODES = ("RS_RI", "SURGE", "HARMONIC", "CRF", "EFT", "ESD",
+                          "PFMF", "VOLTAGEDIPS", "VOLTAGEFLICKER")
+
+
+def drop_emission_standards(raw):
+    """The Product Standard list with the emissions-only entries removed.
+
+    'IEC 61326-1 : 2020; EN 61326-1 : 2021; FCC Subpart 15B : 2024; ICES-001 Issue 5 : 2020'
+    -> 'IEC 61326-1 : 2020; EN 61326-1 : 2021'
+
+    Separators are preserved: the request joins with '; ', RE's display mapping with ' & '.
+    Idempotent, so a resumed draft is corrected too."""
+    txt = _s(raw)
+    if not txt:
+        return txt
+    sep = "; " if ";" in txt else (" & " if "&" in txt else "; ")
+    parts = [p.strip() for p in re.split(r"\s*[;&]\s*", txt) if p.strip()]
+    kept = [p for p in parts
+            if not any(tok in p.lower() for tok in _EMISSION_ONLY_STANDARDS)]
+    return sep.join(kept) if kept else txt      # never blank the row entirely
+
+
 def _re_product_standard_display(raw):
     """Map the request's product standards to the client's canonical display text
     (admin-editable via RE.product_standard_display in the fixed-values table).
@@ -1167,10 +1294,13 @@ def _surge_filter_procedure(text, power_applicable, signal_applicable):
     blocks = re.split(r"\n\s*\n", txt)
     keep, section = [], None
     for b in blocks:
-        head = b.strip().lower().rstrip(":")
-        if head in ("power line", "power lines"):
+        # The heading may stand alone in its own block (SURGE) or open the paragraph it
+        # belongs to (EFT: 'Power Line: The power supply to the EUT was fed ...'), so match
+        # on the start of the block's FIRST LINE rather than on the whole block.
+        head = b.strip().split("\n")[0].strip().lower().rstrip(":")
+        if head.startswith(("power line", "power lines")):
             section = "power"
-        elif head in ("signal line", "signal lines"):
+        elif head.startswith(("signal line", "signal lines")):
             section = "signal"
         elif section is None:
             keep.append(b)                     # preamble: always kept
@@ -1413,7 +1543,10 @@ def collect_prefill(schema, request_obj, assignment):
         elif "eut_serial" in k:
             pre[f["key"]] = serial
         elif "product_standard" in k:
-            pre[f["key"]] = (_re_product_standard_display(standard) if _code == "RE" else standard) or standard
+            _ps = (_re_product_standard_display(standard) if _code == "RE" else standard) or standard
+            # RS_RI is an immunity test: the request's FCC / ICES entries are emissions
+            # standards and must not appear on its Test Specification.
+            pre[f["key"]] = drop_emission_standards(_ps) if _code in _NON_RF_EMISSION_CODES else _ps
         elif k == "basic_standard":
             # Product -> Basic standard now comes from the admin-editable
             # basic_standard_map table (per test_code; emission is shared/global).
@@ -1439,7 +1572,7 @@ def collect_prefill(schema, request_obj, assignment):
             # requester typed for each one. Other datasheets keep the full text.
             pre[f["key"]] = (_re_functional_mode_names(request_obj) or test_mode) \
                 if _code in ("RE", "SURGE", "HARMONIC", "VOLTAGEFLICKER", "VOLTAGEDIPS",
-                             "CRF", "PFMF") \
+                             "CRF", "PFMF", "RS_RI", "EFT") \
                 else test_mode
         elif _code == "CRF" and k == "immunity_test_requirement":
             v = _s(crf_spec.get("immunityTestRequirement"))
@@ -1485,7 +1618,7 @@ def collect_prefill(schema, request_obj, assignment):
             # state" - the description already has its own column in 1.2.
             pre[f["key"]] = "0" if _code in ("RE", "RS_RI", "SURGE", "HARMONIC",
                                              "VOLTAGEFLICKER", "VOLTAGEDIPS", "CRF",
-                                             "PFMF") \
+                                             "PFMF", "EFT", "ESD") \
                 else "0 - Initial state"
         elif _code == "RE" and k == "test_procedure":
             try:
@@ -1508,6 +1641,21 @@ def collect_prefill(schema, request_obj, assignment):
             # ... and the EUT-support phrase follows the EUT Configuration, the way RE's does.
             pre[f["key"]] = _harmonic_apply_support_mapping(
                 _s(f.get("default", "")).replace("<Standard name>", _hb), cfg)
+        elif _code == "ESD" and k == "test_procedure":
+            # '<Standard name>' in the opening sentence means the BASIC standard
+            # (IEC/EN 61000-4-2), not the product standards.
+            pre[f["key"]] = _s(f.get("default", "")).replace(
+                "<Standard name>", _DERIVED_BASIC_STANDARDS.get("ESD", ""))
+        elif _code == "EFT" and k == "test_procedure":
+            # '<Standard name>' in the opening sentence means the BASIC standard
+            # (IEC/EN 61000-4-4), not the product standards.
+            _full = _s(f.get("default", "")).replace(
+                "<Standard name>", _DERIVED_BASIC_STANDARDS.get("EFT", ""))
+            # The UNFILTERED text is kept alongside so the form can rebuild the procedure
+            # when a Test Port is switched back on - filtering the stored value would delete
+            # that block for good. Same arrangement as SURGE.
+            pre["test_procedure_full"] = _full
+            pre[f["key"]] = _full
         elif _code == "VOLTAGEDIPS" and k == "test_procedure":
             # '<Standard name>' in the opening sentence means the BASIC standard
             # (IEC/EN 61000-4-11), not the product standards the generic path would use.
@@ -2285,14 +2433,18 @@ _RE_SPLIT_ROWS = (("ambient temperature", "ambient_temperature"),
 #: 1G-6G) - so a split has to name the CELL as well as the row. Cell 1 is the 80M-1G
 #: column, cell 2 is 1G-6G; 'Tested by' has a single cell spanning both bands.
 #:     (row label needle, value-cell index, field base)
+#: (row needle, which value CELL, which form field feeds it).
+#:
+#: cell 0 means the WHOLE value area, not one band's cell. The form asks for Ambient
+#: Temperature once rather than once per frequency band, so the row shows the engineer's
+#: day sections once across the row - splitting each band cell instead gave 3 days x 2
+#: bands = six boxes of the same value. 'Tested by' already worked this way.
+#: The frequency-range row keeps its two band cells; only these four collapse.
 _RS_RI_SPLIT_ROWS = (
-    ("ambient temperature", 1, "ambient_temperature_col_1"),
-    ("ambient temperature", 2, "ambient_temperature_col_2"),
-    ("relative humidity",   1, "relative_humidity_col_1"),
-    ("relative humidity",   2, "relative_humidity_col_2"),
-    ("test date",           1, "test_date_col_1"),
-    ("test date",           2, "test_date_col_2"),
-    ("tested by",           1, "tested_by"),
+    ("ambient temperature", 0, "ambient_temperature_col_1"),
+    ("relative humidity",   0, "relative_humidity_col_1"),
+    ("test date",           0, "test_date_col_1"),
+    ("tested by",           0, "tested_by"),
 )
 
 
@@ -2366,6 +2518,57 @@ def to_iso_date(value):
         except ValueError:
             continue
     return ""
+
+
+#: Scalar context keys that hold a date. Matches 'date', 'test_date', 'test_date_2',
+#: 'test_date_col_1', 'test_date_col_1_2' - and deliberately NOT 'test_date_sections',
+#: which is a count of 1/2/3, nor 'test_duration'.
+_DATE_KEY_RE = re.compile(r"^(?:[a-z0-9_]*_)?date(?:_col_\d+)?(?:_\d+)?$", re.I)
+
+
+def _is_date_key(key):
+    return bool(_DATE_KEY_RE.match(_s(key)))
+
+
+def normalize_context_dates(schema, ctx):
+    """Print every date in the document as DD/MM/YYYY, in place.
+
+    The forms post ISO (an <input type=date> always does, and must keep doing so for the
+    browser), and the equipment master returns whatever the database holds. Formatting was
+    happening only where a per-datasheet builder remembered to call _fmt_ddmmyyyy, so the
+    sign-off Date and the Calibration Due column still printed as 2026-07-23.
+
+    Two passes, both driven by the SCHEMA rather than by guessing at key names:
+      * scalars whose key is a date key (see _DATE_KEY_RE);
+      * repeating-table cells whose COLUMN LABEL mentions 'date' or 'due' - which is how
+        'Calibration Due' and 'Date modification fitted' are found without hard-coding c3/c4.
+
+    _fmt_ddmmyyyy returns unparseable text unchanged, so a value like 'NA' is safe, and the
+    whole pass is idempotent - applying it to already-formatted values is a no-op.
+    """
+    if not isinstance(ctx, dict):
+        return ctx
+    for k, v in list(ctx.items()):
+        if isinstance(v, str) and v and _is_date_key(k):
+            ctx[k] = _fmt_ddmmyyyy(v)
+
+    date_cols = {}                      # table key -> the cell keys holding dates
+    for sec in (schema or {}).get("sections", []) or []:
+        for it in sec.get("items", []) or []:
+            if it.get("type") != "table":
+                continue
+            cells = [c.get("key") for c in it.get("columns", []) or []
+                     if re.search(r"date|due", _s(c.get("label")) + " " + _s(c.get("key")), re.I)]
+            if cells:
+                date_cols[it.get("key")] = cells
+    for tkey, cells in date_cols.items():
+        for row in ctx.get(tkey) or []:
+            if not isinstance(row, dict):
+                continue
+            for ck in cells:
+                if isinstance(row.get(ck), str) and row[ck]:
+                    row[ck] = _fmt_ddmmyyyy(row[ck])
+    return ctx
 
 
 def _fmt_ddmmyyyy(value):

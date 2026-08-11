@@ -224,10 +224,12 @@
                       {% for n in [3, 4, 5, 6, 7, 8, 9, 10] %}
                       <td class="p-1 border border-gray-300">
                         {# Performance criteria A-D and their sub-cases. D is a permanent
-                           failure, so it has no numbered sub-cases. #}
+                           failure, so it has no numbered sub-cases. 'NA' is for a
+                           combination that was not tested - not a performance code, so the
+                           legend skips it. #}
                         <select name="{{ b.key }}_col_{{ n }}" class="w-14 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'NA'] %}<option {{ 'selected' if prefill.get(b.key ~ '_col_' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -321,7 +323,7 @@
                       <td class="p-1 border border-gray-300">
                         <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
-                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
+                          {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3', 'NA'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
                         </select>
                       </td>
                       {% endfor %}
@@ -360,7 +362,8 @@
               <div class="md:col-span-2">
                 <div class="flex items-center justify-between mb-1">
                   <label class="block text-sm font-medium text-gray-700">{{ it.label }}</label>
-                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
+                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF', 'VOLTAGEFLICKER', 'CRF',
+                                'VOLTAGEDIPS', 'EFT') %}
                 {# Edit lets the engineer override the standard wording. Once edited, the
                    text stops being regenerated (RE derives it from Product Standard / EUT
                    Configuration / Frequency Range; RS_RI takes it from the request) until
@@ -376,9 +379,10 @@
                   </div>
                   {% endif %}
                 </div>
-                <p class="text-xs text-gray-500 mb-1" id="{{ it.key }}_hint">Standard test procedure; read-only{% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %} &mdash; use <strong>Edit</strong> to change it{% endif %}.</p>
+                <p class="text-xs text-gray-500 mb-1" id="{{ it.key }}_hint">Standard test procedure; read-only{% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF', 'VOLTAGEFLICKER', 'CRF', 'VOLTAGEDIPS', 'EFT') %} &mdash; use <strong>Edit</strong> to change it{% endif %}.</p>
                 <input type="hidden" name="{{ it.key }}" id="{{ it.key }}" value="{{ prefill.get(it.key, '') }}">
-                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
+                {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'PFMF', 'VOLTAGEFLICKER', 'CRF',
+                                'VOLTAGEDIPS', 'EFT') %}
                 {# Sticky flag: survives a draft reload so a manual edit is never silently
                    overwritten by the auto-generated wording. #}
                 <input type="hidden" name="{{ it.key }}_manual" id="{{ it.key }}_manual" value="{{ prefill.get(it.key ~ '_manual', '') }}">
@@ -397,9 +401,10 @@
               </div>
 
             {% elif it.type == 'image' %}
-              {# data-port: the slot belongs to one Test Port, so it is shown only while
-                 that port is the one selected in the Test Specification (CRF). #}
-              <div class="md:col-span-2"{% if it.port %} data-port="{{ it.port }}"{% endif %}>
+              {# data-port: the slot belongs to one Test Port, so it is shown only while that
+                 port applies. CRF names the port in one select (data-port alone); SURGE has
+                 an Applicable / Not Applicable field per port, named by data-port-field. #}
+              <div class="md:col-span-2"{% if it.port %} data-port="{{ it.port }}"{% endif %}{% if it.port_field %} data-port-field="{{ it.port_field }}"{% endif %}>
                 <label class="block text-sm font-medium text-gray-700 mb-1">{{ it.label }}</label>
                 <input type="file" name="{{ it.key }}" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                 {% if it.caption %}
@@ -695,7 +700,7 @@
           </select>
         </div>
         {% if code in ('RE', 'RS_RI', 'SURGE', 'HARMONIC', 'VOLTAGEFLICKER', 'VOLTAGEDIPS',
-                       'CRF', 'PFMF') %}
+                       'CRF', 'PFMF', 'EFT', 'ESD') %}
         <button type="button" id="draftDocxBtn" onclick="downloadDraftDocx()"
                 title="Generate the Word document from the form as it stands and download it. Nothing is submitted."
                 class="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow">Generate Datasheet</button>
@@ -1478,10 +1483,15 @@
   function __obsSeedDone() { __obsSeedActive = false; }
 
   function __obsLegendHosts() { return document.querySelectorAll('[data-legend-prefix]'); }
+  //: Values that are not performance criteria, so they get no legend row. 'NA' means the
+  //  combination was not tested - there is nothing to describe, and on the hosts whose
+  //  descriptions are mandatory an NA row would block submit for no reason.
+  var __OBS_NON_CODES = ['NA'];
   function __obsCodesInScope(host) {
     var seen = {};
     document.querySelectorAll('select.js-obs-code').forEach(function (el) {
-      var v = (el.value || '').trim(); if (v) seen[v] = true;
+      var v = (el.value || '').trim();
+      if (v && __OBS_NON_CODES.indexOf(v.toUpperCase()) < 0) seen[v] = true;
     });
     // codes this host always lists, even when nothing is set to them yet
     ((host && host.getAttribute('data-legend-always')) || '')
@@ -1966,16 +1976,38 @@
     var els = document.querySelectorAll('[data-' + attr + ']');
     if (!els.length) return;
     var sel = document.querySelector('[name="' + fieldName + '"]');
-    var chosen = String((sel && sel.value) || '').toLowerCase();
+    // No driver field on this datasheet -> nothing to decide. Returning rather than
+    // treating it as "nothing chosen" matters because a second sync may own these
+    // elements (SURGE drives data-port from its own per-port fields, not test_port).
+    if (!sel) return;
+    var chosen = String(sel.value || '').toLowerCase();
     var all = !chosen || chosen.indexOf('both') >= 0;
     els.forEach(function (el) {
       var want = String(el.getAttribute('data-' + attr) || '').toLowerCase();
       el.classList.toggle('hidden', !(all || chosen.indexOf(want) >= 0));
     });
   }
-  function syncPortPictures() { syncTaggedBlocks('port', 'test_port'); }
+  /* A slot carrying data-port-field is decided by THAT field reading 'Applicable', which is
+     how SURGE records its two Test Ports (there is no single test_port select to read). */
+  function syncPortFieldPictures() {
+    document.querySelectorAll('[data-port-field]').forEach(function (el) {
+      var f = document.querySelector('[name="' + el.getAttribute('data-port-field') + '"]');
+      if (!f) return;
+      var v = String(f.value || '').trim().toLowerCase();
+      // blank = not answered yet: leave the slot visible rather than hiding it early
+      el.classList.toggle('hidden', v.indexOf('not applicable') === 0);
+    });
+  }
+  function syncPortPictures() { syncTaggedBlocks('port', 'test_port'); syncPortFieldPictures(); }
   function syncMethodColumns() { syncTaggedBlocks('method', 'test_method'); }
   document.addEventListener('DOMContentLoaded', function () {
+    // each per-port Applicable field re-runs the picture visibility when changed
+    document.querySelectorAll('[data-port-field]').forEach(function (el) {
+      var f = document.querySelector('[name="' + el.getAttribute('data-port-field') + '"]');
+      if (!f) return;
+      f.addEventListener('change', syncPortFieldPictures);
+      f.addEventListener('input', syncPortFieldPictures);
+    });
     [['test_port', syncPortPictures], ['test_method', syncMethodColumns]].forEach(function (pair) {
       var sel = document.querySelector('[name="' + pair[0] + '"]');
       if (sel) {
@@ -1986,9 +2018,56 @@
     });
   });
 
+  /* ---- Test Procedure follows the tested port(s), for a SINGLE test_port select ----------
+     EFT records its choice in one field ('Power Line' / 'Signal Line' / 'Both'), unlike
+     SURGE's two Applicable fields - so it gets its own driver here while sharing the block
+     splitting rule. Rebuilt from the FULL text each time, so switching a port back on brings
+     its block back rather than having deleted it. Left alone once hand-edited. */
+  var PROC_FULL_TEXT = {{ prefill.get('test_procedure_full', '')|tojson }};
+  function procSplitByPort(text, powerOn, signalOn) {
+    if (!text || !(powerOn || signalOn)) return text;   // nothing chosen yet -> keep all
+    var blocks = text.split(/\n\s*\n/), keep = [], section = null;
+    blocks.forEach(function (b) {
+      var head = b.trim().toLowerCase().replace(/:$/, '').split('\n')[0];
+      if (head.indexOf('power line') === 0) section = 'power';
+      else if (head.indexOf('signal line') === 0) section = 'signal';
+      else if (section === null) { keep.push(b); return; }
+      if (section === 'power' && !powerOn) return;
+      if (section === 'signal' && !signalOn) return;
+      keep.push(b);
+    });
+    return keep.filter(function (b) { return b.trim(); }).join('\n\n');
+  }
+  function applySinglePortProcedure() {
+    var sel = document.querySelector('[name="test_port"]');
+    // Only for the single-select datasheets. SURGE has its own pair of Applicable fields
+    // and its own handler; running both would fight over the same textarea.
+    if (!sel || !PROC_FULL_TEXT) return;
+    if (typeof procIsManual === 'function' && procIsManual()) return;
+    var pEl = document.getElementById('test_procedure');
+    if (!pEl) return;
+    var v = String(sel.value || '').toLowerCase();
+    var both = !v || v.indexOf('both') >= 0;
+    var next = procSplitByPort(PROC_FULL_TEXT, both || v.indexOf('power') >= 0,
+                               both || v.indexOf('signal') >= 0);
+    if (next && next !== pEl.value) {
+      pEl.value = next;
+      if (typeof renderProcedureView === 'function') renderProcedureView();
+      if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var sel = document.querySelector('[name="test_port"]');
+    if (sel) {
+      sel.addEventListener('change', applySinglePortProcedure);
+      sel.addEventListener('input', applySinglePortProcedure);
+    }
+    applySinglePortProcedure();
+  });
+
   //: Datasheets whose Test Setup pictures vary in shape, so the crop frame is unlocked
   //  and the placed picture keeps the aspect the engineer cropped to.
-  var FREE_CROP_CODES = ['RE', 'VOLTAGEDIPS', 'CRF', 'PFMF'];
+  var FREE_CROP_CODES = ['RE', 'VOLTAGEDIPS', 'CRF', 'PFMF', 'RS_RI', 'SURGE', 'EFT'];
   // Edit always opens the ORIGINAL upload (not the auto-fitted crop) so the user
   // can reframe / select a different portion of the full image.
   function openImageEditor(key){
@@ -3079,7 +3158,7 @@
 </script>
 {% endif %}
 
-{% if code in ('RS_RI', 'SURGE', 'HARMONIC', 'PFMF') %}
+{% if code in ('RS_RI', 'SURGE', 'HARMONIC', 'PFMF', 'VOLTAGEFLICKER', 'CRF', 'VOLTAGEDIPS', 'EFT') %}
 <script>
   /* =========================================================================
      Test Procedure: edit by hand, or Reset back to the standard text.
@@ -3524,7 +3603,12 @@
     return rows;
   }
   // D is a permanent failure, so it has no numbered sub-cases.
-  var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
+  // 'NA' for a combination that was not tested. It is not a performance code: the worst-code
+  // derivation reads the first letter and only A/B/C/D count, so an NA cannot outrank a real
+  // observation, and the legend below skips it (there is nothing to describe).
+  var SURGE_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'NA'];
+  //: Codes that carry no observation description.
+  var SURGE_OBS_NON_CODES = ['NA'];
   function surgeObsCell(name, val) {
     var s = '<select name="' + name + '" class="surge-obs-cell px-1 py-0.5 border rounded text-center" style="width:52px">';
     s += '<option value=""' + (!val ? ' selected' : '') + '></option>';
@@ -3623,7 +3707,12 @@
   function surgeUniqueObsCodes() {
     var host = document.getElementById('surge-obs-records'); if (!host) return [];
     var seen = {};
-    host.querySelectorAll('.surge-obs-cell').forEach(function (inp) { var v = (inp.value || '').trim(); if (v) seen[v] = true; });
+    host.querySelectorAll('.surge-obs-cell').forEach(function (inp) {
+      var v = (inp.value || '').trim();
+      // 'NA' means the combination was not tested, so it gets no legend row - otherwise the
+      // mandatory description would block submit for something there is nothing to say about.
+      if (v && SURGE_OBS_NON_CODES.indexOf(v.toUpperCase()) < 0) seen[v] = true;
+    });
     return Object.keys(seen).sort();
   }
 
@@ -3804,7 +3893,7 @@
   /* ---- dynamic Test Observation: columns built from the selected Test Voltage
      (each level as +/- a column, positive -> negative); cells filled by the user. ---- */
   var EFT_COUPLING_PATHS = ['L1', 'N', 'PE', 'L1+N', 'L1+PE', 'N+PE', 'L1+N+PE'];
-  var EFT_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3'];
+  var EFT_OBS_OPTS = ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'NA'];
   function eftCumLevels(level, opts) {
     var sel = -1, i;
     for (i = 0; i < opts.length; i++) { if (eftMatch(level, opts[i])) { sel = i; break; } }

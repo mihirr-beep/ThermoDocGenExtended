@@ -381,6 +381,32 @@ def build_ce_context(form_data):
             except ValueError:
                 pass
     ctx["_img_boxes"] = _img_boxes
+    _ce_normalize_dates(ctx)
+    return ctx
+
+
+#: CE's date-bearing context entries. It predates the schema-driven datasheets and uses its
+#: own key names, so the generic normalizer's schema pass has nothing to read here - but the
+#: FORMATTER is shared, so CE and the other ten cannot drift apart.
+_CE_DATE_SCALARS = ("test_date", "tested_by_date", "date")
+_CE_DATE_ROWS = (("modifications", "date"), ("equipment", "cal_due"))
+
+
+def _ce_normalize_dates(ctx):
+    """Print every CE date as DD/MM/YYYY, in place.
+
+    The form posts ISO from its <input type=date> fields and equipment_candidates() returns
+    calibration_due_date.isoformat(), so both were reaching the document as 2026-07-23.
+    'NA' and any other unparseable text pass through untouched, and the pass is idempotent.
+    """
+    from .generic_service import _fmt_ddmmyyyy
+    for k in _CE_DATE_SCALARS:
+        if isinstance(ctx.get(k), str) and ctx[k]:
+            ctx[k] = _fmt_ddmmyyyy(ctx[k])
+    for key, cell in _CE_DATE_ROWS:
+        for row in ctx.get(key) or []:
+            if isinstance(row, dict) and isinstance(row.get(cell), str) and row[cell]:
+                row[cell] = _fmt_ddmmyyyy(row[cell])
     return ctx
 
 
