@@ -1299,6 +1299,12 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     # protection left in place, Word would log its own field rebuild as
     # revisions and show a markup margin full of balloons
     revisions = T.remove_revision_markup(doc)
+    # The blank form highlights its guidance and reds its example values so a
+    # person filling it in knows what to replace. A finished report shipped with
+    # 24 of those highlights and PASS in red, because writing into a cell
+    # inherits the cell's run formatting. Strip them last, so nothing written
+    # after this point can reintroduce them.
+    marks = T.strip_authoring_marks(doc)
     T.refresh_fields_on_open(doc)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -1314,6 +1320,8 @@ def build_report(request_obj, planner_entries, output_path, now=None):
         "fields_cleared": cleared,
         "toc_entries_cleared": toc_cleared,
         "revision_markup_removed": revisions,
+        "highlights_removed": marks[0],
+        "example_reds_removed": marks[1],
         "images": sum(s["images"] for s in per_test),
         "extra_blocks": sum(s["extra"] for s in per_test),
         "instructions_cleaned": cleaned,
