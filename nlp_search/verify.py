@@ -50,7 +50,15 @@ DEFAULT_VERIFIER_MODEL = "gpt-4o-mini"
 # ("one of the", "both") rather than a claim, and they generate noise. The
 # decimal point must be followed by a digit, or a sentence-final "...in 2026."
 # is captured as the token "2026." and never matches anything.
-_NUMBER_RE = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)(?![\w])")
+#
+# (?<!\w-) drops the tail of a hyphenated identifier. The lab's own names are
+# built that way - AUR-C5-230, DEMO-EMC-201, IEC-EMC-004 - and without this the
+# verifier pulled "230" out of a model number, looked for a cell containing
+# 230, found none, and flagged a correct answer as unsupported. It cannot be
+# the broader (?<!-): a margin of -3.4 dB is a real quantity that must still be
+# checked, and the difference between the two cases is whether the hyphen
+# follows a word character or a space.
+_NUMBER_RE = re.compile(r"(?<![\w.])(?<!\w-)(\d[\d,]*(?:\.\d+)?)(?![\w])")
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 _TRIVIAL = {"0", "1", "2"}
 

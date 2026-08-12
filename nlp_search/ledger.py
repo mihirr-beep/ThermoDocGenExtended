@@ -288,6 +288,14 @@ def _normalise(cell):
             f = float(bare)
             out.add(repr(int(f)) if f == int(f) else repr(f))
             out.add(("%g" % f).lower())
+            # str() as well, for the one form the other two never produce: a
+            # whole number with a decimal point. MySQL hands back a measurement
+            # as DECIMAL(18,6), so 52 dBuV arrives as "52.000000", and the forms
+            # above reduce that to "52" - while an answer quoting the reading
+            # writes "52.0", which is the same number and was rejected as
+            # unsupported. The grounding check then replaced a correct answer
+            # with a raw evidence dump.
+            out.add(str(f).lower())
         except ValueError:
             pass
     # dates: 2026-05-12 00:00:00 is the same fact as 2026-05-12

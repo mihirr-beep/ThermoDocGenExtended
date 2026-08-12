@@ -106,6 +106,39 @@ _CROSS_DOMAIN = re.compile(
     r"\bacross\b|\bboth\b|\bas well as\b", re.I)
 
 
+# Questions about a product ACROSS its tests. These go straight to the
+# datasheets worker, which owns the analyse_history tool.
+#
+# Routing them deterministically rather than letting the orchestrator decide is
+# not an optimisation, it is the only thing that works. Asked why a product
+# failed its first three tests, the orchestrator resolved the name, found four
+# jobs, and asked which one was meant - twice, in different words, after being
+# told twice not to. A small model's pull toward asking a clarifying question
+# beats an instruction telling it not to. The question is recognisable from its
+# shape, so recognise it in code.
+_INSIGHT_RE = re.compile(
+    r"\b(?:"
+    r"why (?:did|was|were|does|is|has|have)"            # why did it fail
+    r"|what (?:changed|was changed|is different|differed)"
+    r"|(?:what|which) .{0,40}\b(?:changed|differ)"
+    r"|(?:greatest|biggest|most) improve|improve(?:d|ment)\b"
+    r"|(?:which|what) .{0,30}\bfrequenc"
+    r"|(?:modification|change|fix|fitted|introduced) .{0,30}\bbefore\b"
+    r"|before (?:it|the \w+) (?:first )?pass"
+    r"|(?:other|another|any other) products?"
+    r"|same (?:failure|problem|issue|pattern)|similar (?:failure|pattern|problem)"
+    r"|happened (?:to anything else|elsewhere|before)"
+    r"|(?:testing|test) history|history of"
+    r"|root cause|what (?:did they|do they|was) change"
+    r"|make (?:them|it) pass|to (?:make|get) .{0,20}pass"
+    r")\b", re.I)
+
+
+def is_insight(question):
+    """True when the question is about a product's history rather than its state."""
+    return bool(_INSIGHT_RE.search(question or ""))
+
+
 def single_domain(question):
     """The one domain that owns this question, or None if it is not clear-cut.
 
@@ -114,7 +147,14 @@ def single_domain(question):
     own allowlist and will report an absence rather than a gap.
     """
     q = (question or "").lower()
-    if not q or _CROSS_DOMAIN.search(q):
+    if not q:
+        return None
+    # Checked before _CROSS_DOMAIN: "why did this PRODUCT fail its TESTS" names
+    # two domains and reads as cross-domain, but analyse_history spans them
+    # itself, so the datasheets worker can answer the whole thing alone.
+    if is_insight(q):
+        return "datasheets"
+    if _CROSS_DOMAIN.search(q):
         return None
     hits = {}
     for domain, words in _DOMAIN_WORDS.items():

@@ -19,7 +19,7 @@ anything reaches the user.
 """
 import os
 
-from . import probes, semantics, sql_tool
+from . import insights, probes, semantics, sql_tool
 from .schema_catalog import DOMAIN_META, index_prompt_text, tables_for
 
 
@@ -43,9 +43,37 @@ user - you are reporting to another agent, so be terse and factual.
 {blurb}
 
 ## How to work
-1. Read the sub-question. If it needs a table you do not have, say so in one
-   line - name what you would need. Do NOT guess and do NOT apologise; the
-   orchestrator will route that part elsewhere.
+0. FIRST, is this a question about a product ACROSS its tests? Why it failed,
+   what changed between two attempts, which frequencies improved, what was
+   fitted before it passed, whether other products failed the same way. If so,
+   call analyse_history BEFORE writing any SQL, and answer from what it gives
+   you. Do not open with run_sql on these.
+
+   This matters more than it looks. A product is tested, changed and tested
+   again, so its history is spread over several jobs, and the measurements sit
+   one row per measured cell keyed by revision. A SELECT written on the spot
+   finds a couple of rows, misses the rest, and reports "there are no datasheet
+   records for this product" - which reads like a fact about the lab and is
+   really a fact about the query. analyse_history already joins it correctly.
+
+   If analyse_history comes back empty, say it came back empty. Do not fall
+   back to a hand-written query and report ITS emptiness as the answer.
+
+   NEVER ask which job is meant. A product tested four times has four jobs;
+   that is its history, not an ambiguity, and every one of them is in scope.
+   Pass the PRODUCT NAME to analyse_history and it spans them for you. Asking
+   "which tco_id did you mean?" hands the question back to someone who already
+   told you the product, and they have to ask twice to get what they wanted.
+
+   timeline alone answers only WHAT happened. A question asking why, by how
+   much, what changed or what was fitted needs a SECOND call - timeline's
+   result ends with the exact calls to make, arguments filled in. Make one.
+   Stopping at the timeline and reporting that no measurements exist is wrong:
+   they exist, you have not fetched them yet.
+
+1. Otherwise: read the sub-question. If it needs a table you do not have, say so
+   in one line - name what you would need. Do NOT guess and do NOT apologise;
+   the orchestrator will route that part elsewhere.
 2. Before you filter on any literal you have not already seen - a status, a
    test code, a result, a name - check it exists:
      * list_values(table, column) for a categorical column;
@@ -289,6 +317,63 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
         """
         return probes.describe_table(tables, allowed_tables=allowed)
 
+    @function_tool(name_override="analyse_history")
+    def analyse_history(analysis: str, product: str = "", tco: str = "",
+                        tco_before: str = "", tco_after: str = "",
+                        reason_code: str = "") -> str:
+        """A product's history ACROSS tests: why it failed, what changed
+        between two attempts, which frequencies improved, what was fitted
+        before it passed, and which other products failed the same way.
+
+        Use this for any question about WHY, WHAT CHANGED, or WHETHER A
+        PATTERN REPEATS. Do not assemble it yourself with run_sql: these need
+        a self-join across two campaigns over a table that stores one row per
+        measured cell, and a version you write may return a number that looks
+        reasonable and is wrong. These are pre-written and checked.
+
+        A product is tested, changed, and tested again - each attempt is its
+        own CAMPAIGN with its own TCO. That is different from a datasheet
+        being sent back in peer review, which produces another revision of the
+        SAME campaign. "Failed" can mean either; timeline shows both, in
+        `result`/`failure_reason_code` for the unit and `record_rejected_for`
+        for the paperwork. Say which one you mean.
+
+        Analyses, and what each needs:
+          timeline                   product= or tco=   every campaign, in order
+          failure_detail             product= or tco=   the failures, with the
+                                                        readings that breached
+          metric_delta               tco_before=, tco_after=   per-frequency
+                                                        change between two campaigns
+          modifications_before_pass  product=           what was fitted before
+                                                        the first pass that was
+                                                        not there at the last failure
+          cohort                     reason_code=       other products that failed
+                                     [exclude_product=] the same way
+          resolved_how               reason_code=       what each of those had
+                                                        fitted by the time it passed
+          config_diff                tco_before=, tco_after=   fields that differ
+          common_config              product=           values shared across campaigns
+
+        Start with timeline when you do not yet know the TCOs - metric_delta and
+        config_diff need two of them, and timeline is where you get them.
+
+        Args:
+            analysis: One name from the list above.
+            product: Product name or part of one, e.g. "Aurora".
+            tco: A single campaign, e.g. "DEMO-EMC-201".
+            tco_before: The earlier campaign, for a comparison.
+            tco_after: The later campaign, for a comparison.
+            reason_code: A failure code such as CE_LIMIT_EXCEEDED or EFT_RESET.
+        """
+        kw = {"product": product, "tco": tco, "tco_before": tco_before,
+              "tco_after": tco_after, "reason_code": reason_code}
+        if analysis == "cohort" and product:
+            # "have OTHER products seen this" - the one the user asked about is
+            # not an answer to its own question, and leaving it in makes a
+            # single stubborn machine look like a fleet-wide pattern.
+            kw["exclude_product"] = kw.pop("product")
+        return insights.run(db_params, analysis, ledger=ledger, **kw)
+
     @function_tool(name_override="read_grid")
     def read_grid(datasheet_id: int, grid: str = "") -> str:
         """The measurement / observation TABLE recorded on one datasheet - the
@@ -333,7 +418,8 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
         model=chosen,
         **({"model_settings": settings} if settings else {}),
         tools=[lab_metric, describe_table, sample_rows, profile_column,
-               run_sql, list_values, resolve_entity, read_grid])
+               run_sql, list_values, resolve_entity, read_grid,
+               analyse_history])
 
 
 # What the orchestrator reads when choosing where to send a sub-question.
@@ -522,7 +608,8 @@ def build_author(db_params, ledger, model=None):
                                       os.environ.get("NLP_SEARCH_MODEL",
                                                      DEFAULT_WORKER_MODEL)),
         tools=[lab_metric, describe_table, sample_rows, profile_column,
-               run_sql, list_values, resolve_entity, read_grid])
+               run_sql, list_values, resolve_entity, read_grid,
+               analyse_history])
 
     description = (
         "Ask the DATABASE. It can read every table in the lab: EMC requests and "

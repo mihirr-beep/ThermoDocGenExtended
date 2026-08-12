@@ -75,6 +75,7 @@ import json
 import os
 import sys
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -355,7 +356,14 @@ def submit_and_decide(db, PJ, entry_id, form, result, fail_code, criteria,
     req = db.session.execute(text(
         "SELECT * FROM iec_emc_requests WHERE id=:r"),
         {"r": ent["test_request_id"]}).mappings().first()
-    PJ.project(rec, dict(ent), dict(req))
+    # _header_values reads the entry and the request with getattr, not [] - it
+    # normally receives ORM objects. Passing plain dicts silently produced None
+    # for tco_id, engineer_name, peer_reviewer_name, job_number, product_name
+    # and eut_class on every seeded datasheet, so the demo rows were missing
+    # header fields real rows have. Nothing raised; the columns were just blank,
+    # and a worker searching datasheet.product_name for the product answered
+    # that no such product existed.
+    PJ.project(rec, SimpleNamespace(**dict(ent)), SimpleNamespace(**dict(req)))
 
     # After project(), because _header_values rebuilds the header from the form
     # and neither of these is a form field.
