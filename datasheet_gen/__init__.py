@@ -36,4 +36,17 @@ def register_datasheet_gen(app):
     # worth recording whether or not anyone ever asks the question - so it lives
     # with the datasheet domain rather than in nlp_search (see insight_schema).
     ensure_insight_schema(app)
+    # The report wizard's draft store. It lives on this hook rather than a new
+    # one because report_gen has no register step - the report is triggered by a
+    # single endpoint in app.py - and inventing a second boot hook for one table
+    # is how a project ends up with four places that create schema.
+    try:
+        from report_gen.draft import ensure_report_draft_table
+        ensure_report_draft_table(app)
+        # The wizard's blueprint rides the same hook for the same reason.
+        from report_gen.wizard_routes import report_wizard_bp
+        if "report_wizard" not in app.blueprints:
+            app.register_blueprint(report_wizard_bp)
+    except Exception as exc:  # noqa: BLE001 - must never stop the app booting
+        app.logger.warning("report draft table skipped: %s", exc)
     return app

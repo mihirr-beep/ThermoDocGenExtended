@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Report - EUT Information - {{ req.tco_id }}{% endblock %}
+
+{# Every input on this page is generated from report_gen/wizard_fields.FIELDS,
+   the same list the builder writes the document from. Hand-writing the inputs
+   here is how the per-test sections of this report ended up with 49 of 92
+   subsections disagreeing between the template and the filler. #}
+
+{% block content %}
+<div class="rw-wrap">
+
+  <div class="rw-head">
+    <div>
+      <h2>Prepare Test Report</h2>
+      <p class="rw-sub">{{ req.tco_id }} &middot; {{ req.product_name or 'unnamed product' }}</p>
+    </div>
+    <div class="rw-steps">
+      <span class="rw-step rw-on">1. EUT information</span>
+      <span class="rw-step">2. Summary review</span>
+      <span class="rw-step">3. Tests</span>
+      <span class="rw-step">4. Generate</span>
+    </div>
+  </div>
+
+  {# The outstanding list is the honest state of the report. Four of these are
+     printed as "NA" today, which reads as a lab decision rather than a gap. #}
+  <div class="rw-note{% if not outstanding %} rw-ok{% endif %}" id="rw-status">
+    {% if outstanding %}
+      <strong>{{ outstanding|length }} field(s) still needed.</strong>
+      The report can be generated without them, but they will be blank or NA in
+      the document.
+    {% else %}
+      <strong>Everything on this page is filled.</strong>
+    {% endif %}
+  </div>
+
+  <form id="rw-form" method="post"
+        action="{{ url_for('report_wizard.eut_save', request_id=request_id) }}"
+        enctype="multipart/form-data">
+
+    {% set groups = [
+      ('Cover page', ['condition_on_receipt','date_of_receipt','test_location',
+                      'report_issue_date','issued_to']),
+      ('2.1 EUT details', ['length','width','height','dimension_unit','weight',
+                           'operating_frequency','power_rating','measured_current']),
+      ('2.3 - 2.8 Descriptions', ['software_firmware','eut_configuration',
+                                  'modes_of_operation','monitoring_parameters']),
+      ('Images', ['img_block_diagram','img_eut_photo','img_eut_label','img_monitoring'])
+    ] %}
+
+    {% for group_name, keys in groups %}
+      <fieldset class="rw-group">
+        <legend>{{ group_name }}</legend>
+        <div class="rw-grid">
+        {% for f in fields %}
+          {% if f[0] in keys %}
+            {% set key = f[0] %}{% set label = f[1] %}{% set kind = f[2] %}
+            {% set store = f[3] %}{% set location = f[4] %}{% set helptext = f[5] %}
+            <div class="rw-field {% if kind in ('textarea',) %}rw-wide{% endif %}">
+              <label for="f_{{ key }}">
+                {{ label }}
+                {% if key in optional %}<span class="rw-opt">optional</span>{% endif %}
+                {% if store == 'request' %}
+                  {# Saved to the request, not to this report, so the next report
+                     for the same product inherits it. #}
+                  <span class="rw-badge" title="Saved on the test request, so it is shared by every report for this product">request</span>
+                {% endif %}
+              </label>
+
+              {% if kind == 'textarea' %}
+                <textarea id="f_{{ key }}" name="{{ key }}" rows="3">{{ values.get(key, '') }}</textarea>
+              {% elif kind == 'date' %}
+                <input id="f_{{ key }}" name="{{ key }}" type="date" value="{{ values.get(key, '') }}">
+              {% elif kind == 'choice' %}
+                <select id="f_{{ key }}" name="{{ key }}">
+                  <option value="">-- select --</option>
+                  {% for opt in choices.get(key, []) %}
+                    <option value="{{ opt }}" {% if values.get(key) == opt %}selected{% endif %}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              {% elif kind == 'image' %}
+                <input id="f_{{ key }}" name="{{ key }}" type="file" accept="image/*">
+                {% if images.get(key) %}
+                  <span class="rw-have">uploaded: {{ images[key].split('\\')|last }}</span>
+                {% endif %}
+              {% else %}
+                <input id="f_{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}">
+              {% endif %}
+
+              <span class="rw-where">{{ location }}</span>
+              {% if helptext %}<span class="rw-help">{{ helptext }}</span>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+
+    <fieldset class="rw-group rw-ro">
+      <legend>Derived - not editable here</legend>
+      <p class="rw-help">
+        These come from the approved datasheets and the request. They are shown so
+        you can see what will appear; they are not editable, because an edited copy
+        would let the report disagree with what peer review signed off. If one is
+        wrong, correct it on the datasheet.
+      </p>
+      <ul class="rw-derived">
+        <li><strong>1.1 Results</strong> - PASS/FAIL per emission test, performance criterion per immunity test</li>
+        <li><strong>1.2 Applicable Standards</strong> - the request's product standards plus the basic standards</li>
+        <li><strong>1.4 Measurement Uncertainty</strong> - the emission tests in this request only</li>
+        <li><strong>Sections 4 onward</strong> - spliced from the approved datasheet of each test</li>
+        <li><strong>ULR NO</strong> - fixed for now: <code>{{ ulr_no }}</code></li>
+      </ul>
+    </fieldset>
+
+    <div class="rw-actions">
+      <button type="submit" class="rw-btn rw-primary" id="rw-save">Save</button>
+      <a class="rw-btn" href="{{ url_for('report_wizard.completeness', request_id=request_id) }}">
+        What will the report contain?
+      </a>
+    </div>
+  </form>
+</div>
+
+<style>
+  .rw-wrap{max-width:1080px;margin:0 auto;padding:18px}
+  .rw-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .rw-head h2{margin:0}
+  .rw-sub{margin:4px 0 0;color:#5a6472}
+  .rw-steps{display:flex;gap:6px;flex-wrap:wrap}
+  .rw-step{font-size:12px;padding:4px 10px;border-radius:999px;background:#eef1f5;color:#5a6472}
+  .rw-step.rw-on{background:#1a73e8;color:#fff}
+  .rw-note{margin:16px 0;padding:10px 14px;border-radius:6px;background:#fff8e1;border:1px solid #ffe082}
+  .rw-note.rw-ok{background:#e8f5e9;border-color:#a5d6a7}
+  .rw-group{border:1px solid #e2e6ea;border-radius:8px;padding:14px 16px;margin:0 0 16px}
+  .rw-group legend{font-weight:600;padding:0 6px}
+  .rw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .rw-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .rw-field.rw-wide{grid-column:1/-1}
+  .rw-field label{font-size:13px;font-weight:600}
+  .rw-field input,.rw-field select,.rw-field textarea{padding:7px 9px;border:1px solid #cfd6dd;border-radius:5px;font:inherit;min-width:0}
+  .rw-field textarea{resize:vertical}
+  .rw-where{font-size:11px;color:#8a94a0}
+  .rw-help{font-size:11px;color:#5a6472}
+  .rw-opt{font-weight:400;color:#8a94a0;font-size:11px}
+  .rw-badge{font-size:10px;background:#e3f2fd;color:#1565c0;border-radius:3px;padding:1px 5px;font-weight:600}
+  .rw-have{font-size:11px;color:#2e7d32}
+  .rw-ro{background:#fafbfc}
+  .rw-derived{margin:6px 0 0;padding-left:20px;font-size:13px;color:#3c4650}
+  .rw-derived li{margin:3px 0}
+  .rw-actions{display:flex;gap:10px;align-items:center}
+  .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
+  .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
+</style>
+
+<script>
+(function () {
+  var form = document.getElementById('rw-form');
+  var status = document.getElementById('rw-status');
+  var btn = document.getElementById('rw-save');
+  if (!form) return;
+
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = 'Saving...';
+    // FormData, so the file inputs come along. Posting JSON here would silently
+    // drop every image.
+    fetch(form.action, {method: 'POST', body: new FormData(form)})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.success) throw new Error(d.message || 'Save failed');
+        status.className = 'rw-note' + (d.outstanding ? '' : ' rw-ok');
+        status.innerHTML = d.outstanding
+          ? '<strong>' + d.outstanding + ' field(s) still needed.</strong> ' +
+            'Saved' + (d.saved_to_request ? ' (' + d.saved_to_request +
+            ' written to the test request)' : '') + '.'
+          : '<strong>Everything on this page is filled.</strong> Saved.';
+        // Mark uploaded files so a reload is not needed to see they landed.
+        if (d.images_saved) {
+          form.querySelectorAll('input[type=file]').forEach(function (i) {
+            if (i.files && i.files.length) { i.value = ''; }
+          });
+        }
+      })
+      .catch(function (e) {
+        status.className = 'rw-note';
+        status.innerHTML = '<strong>Not saved.</strong> ' + e.message;
+      })
+      .finally(function () { btn.disabled = false; btn.textContent = original; });
+  });
+})();
+</script>
+{% endblock %}
