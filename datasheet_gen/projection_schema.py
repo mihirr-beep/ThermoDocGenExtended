@@ -41,8 +41,10 @@ TABLES = (
     "datasheet_software",
     "datasheet_modification",
     "datasheet_observation",
+    "datasheet_measurement",
     "datasheet_observation_legend",
     "datasheet_revision",
+    "datasheet_draft_history",
     "datasheet_status_history",
 )
 
@@ -391,6 +393,39 @@ _DDL = (
   KEY `idx_dso_val` (`test_code`, `value`),
   CONSTRAINT `fk_dso` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    # Every MEASURED number the lab records. Until this table existed, 13 of the
+    # 25 grids on the per-test tables were stored as JSON and nowhere else:
+    # CE's Line and Neutral quasi-peak/average readings, RE's two tables,
+    # harmonic currents, the three flicker grids, and the per-test observation
+    # row tables. Observations had `datasheet_observation`; measurements had
+    # nothing, so "show me every CE reading within 3 dB of its limit" could not
+    # be written in SQL at all - the numbers were in the database and out of
+    # reach of it.
+    #
+    # Same shape as datasheet_observation on purpose: that design already
+    # carries ten different grids with different column counts, so it is known
+    # to work, and a DBA who can read one can read the other. The JSON columns
+    # are kept as well - they hold the grid's own labels and block structure,
+    # which is what regenerates the document - so this is a second view of the
+    # same data, not a migration away from it.
+    """CREATE TABLE IF NOT EXISTS `datasheet_measurement` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `datasheet_id` INT NOT NULL,
+  `revision_no` INT NOT NULL DEFAULT 1,   -- which submitted version this reading belongs to
+  `test_code` VARCHAR(20) NOT NULL,
+  `grid_key`  VARCHAR(60) NOT NULL,    -- line_measurements | re_table1 | harmonic_rows | flicker_meas_rows ...
+  `block_label` VARCHAR(200) NULL,     -- CE repeats its whole grid per Test; this names which
+  `row_no`    INT NULL,
+  `row_label` VARCHAR(200) NULL,
+  `col_key`   VARCHAR(60) NULL,        -- qp_freq | qp | qp_limit | qp_margin ...
+  `col_label` VARCHAR(120) NULL,       -- 'Frequency (MHz)' | 'Q-peak' | 'Limit'
+  `value`     VARCHAR(120) NULL,       -- wider than an observation: these are numbers with units
+  `value_num` DECIMAL(18,6) NULL,      -- the same cell parsed, so a DBA can compare and sort
+  KEY `idx_dsms` (`datasheet_id`, `revision_no`),
+  KEY `idx_dsms_grid` (`test_code`, `grid_key`, `col_key`),
+  UNIQUE KEY `uq_dsms` (`datasheet_id`, `revision_no`, `grid_key`, `block_label`, `row_no`, `col_key`),
+  CONSTRAINT `fk_dsms` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS `datasheet_observation_legend` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `datasheet_id` INT NOT NULL,
@@ -420,6 +455,41 @@ _DDL = (
   `created_at`   DATETIME NOT NULL,    -- when this snapshot was written
   UNIQUE KEY `uq_dsr` (`datasheet_id`, `revision_no`),
   CONSTRAINT `fk_dsr` FOREIGN KEY (`datasheet_id`) REFERENCES `datasheet`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    # Every save an engineer makes, kept.
+    #
+    # datasheet_records holds ONE row per assignment and upserts it in place, so
+    # an engineer who typed 48.2, saved, noticed it should be 48.7 and saved
+    # again left no trace of 48.2 anywhere in the database. datasheet_revision
+    # only froze SUBMITTED versions, which is a coarser grain: a datasheet
+    # submitted once has exactly one snapshot and no record of the hour of
+    # editing that produced it.
+    #
+    # Append-only. Nothing updates or deletes a row here, which is the whole
+    # point - a history you can rewrite is not a history.
+    #
+    # content_hash exists because the autosave fires 1.5 s after typing stops
+    # and does not know whether anything changed. Without it, tabbing through a
+    # form would append identical rows until the table was mostly noise.
+    #
+    # changed_fields is what makes it readable: "which boxes did they touch on
+    # this save" answered without diffing two JSON blobs by eye.
+    """CREATE TABLE IF NOT EXISTS `datasheet_draft_history` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `planner_entry_id` INT NOT NULL,     -- stable: exists before the projection does
+  `datasheet_id` INT NULL,
+  `revision_no` INT NOT NULL DEFAULT 1,
+  `test_code` VARCHAR(20) NULL,
+  `status` VARCHAR(30) NULL,           -- what the save was called: Draft / Submitted
+  `form_json` LONGTEXT NULL,           -- the WHOLE form as it stood after this save
+  `content_hash` CHAR(40) NULL,        -- sha1 of form_json; skips no-op autosaves
+  `changed_fields` TEXT NULL,          -- the keys that differed from the save before
+  `changed_count` INT NOT NULL DEFAULT 0,
+  `saved_by_user_id` INT NULL,
+  `saved_by_name` VARCHAR(200) NULL,
+  `saved_at` DATETIME NOT NULL,
+  KEY `idx_dsdh_entry` (`planner_entry_id`, `saved_at`),
+  KEY `idx_dsdh_sheet` (`datasheet_id`, `revision_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS `datasheet_status_history` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -473,7 +543,241 @@ def ensure_projection_tables(app):
                 app.logger.error("datasheet projection: could not create %s: %s",
                                  name, exc)
 
+        created += _ensure_revision_mirrors(app, db, existing)
+
         if created:
             app.logger.info("datasheet projection: created %d table(s): %s",
                             len(created), ", ".join(created))
+        _ensure_integrity(app, db)
+    return created
+
+
+# --------------------------------------------------------------------------
+# Fixes to tables this module does not own
+# --------------------------------------------------------------------------
+# These were applied by hand on one database, which is exactly how a dev
+# environment ends up quietly different from production. There is no migration
+# framework here - the convention is an idempotent ensure_* at boot - so they
+# belong in one, guarded and logged, and every environment converges by being
+# started.
+#
+# Two of the three touch tables outside datasheet_gen (`users`,
+# `planner_entries`). That is deliberate: putting them somewhere "more correct"
+# would mean inventing a new boot hook, and a fix nobody runs is worth nothing.
+
+_INDEXES = (
+    # A join column on every request-to-datasheet query, previously unindexed.
+    ("datasheet", "test_request_id", "idx_ds_testreq"),
+)
+
+# ON DELETE SET NULL, not CASCADE: deleting a user must not destroy the
+# datasheet they touched, and the NAME survives anyway in
+# datasheet_status_history.actor_name and datasheet.engineer_name. Untouched
+# these columns hold ids with nothing enforcing them, so removing a user leaves
+# a number that looks valid and points at nothing.
+#
+# The STRUCTURAL links are deliberately absent - datasheet.planner_entry_id,
+# datasheet.test_request_id, planner_entries.test_request_id,
+# datasheet_records.planner_entry_id. app.py deletes requests and planner
+# entries, so RESTRICT would block working buttons and CASCADE would silently
+# destroy filled datasheets. What deleting a job should MEAN is a product
+# decision, not a missing constraint.
+_FKS = (
+    ("datasheet", "reviewer_user_id", "users", "fk_ds_reviewer"),
+    ("datasheet", "created_by_user_id", "users", "fk_ds_creator"),
+    ("planner_entries", "engineer_user_id", "users", "fk_pe_engineer"),
+    ("planner_entries", "peer_reviewer_user_id", "users", "fk_pe_reviewer"),
+)
+
+# `users` was the only table in the database on utf8mb4_unicode_ci while all 61
+# others were utf8mb4_0900_ai_ci, so ANY join on a person's name threw MySQL
+# 1267 - including the obvious one a question about engineers leads to.
+_COLLATION = "utf8mb4_0900_ai_ci"
+
+
+def _table_exists(db, name):
+    return bool(db.session.execute(text(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_schema=DATABASE() AND table_name=:t"), {"t": name}).scalar())
+
+
+def _ensure_integrity(app, db):
+    done = []
+
+    for table, column, index in _INDEXES:
+        try:
+            if not _table_exists(db, table):
+                continue
+            if db.session.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.statistics "
+                    "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c"),
+                    {"t": table, "c": column}).scalar():
+                continue
+            db.session.execute(text("CREATE INDEX `%s` ON `%s` (`%s`)"
+                                    % (index, table, column)))
+            db.session.commit()
+            done.append("index %s.%s" % (table, column))
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            if "duplicate" not in str(exc).lower() and "exist" not in str(exc).lower():
+                app.logger.warning("schema: index on %s.%s skipped: %s", table, column, exc)
+
+    # Collation before the foreign keys: a FK between columns of differing
+    # collation is refused, so doing these the other way round fails on a fresh
+    # database and leaves it half-fixed.
+    try:
+        if _table_exists(db, "users"):
+            current = db.session.execute(text(
+                "SELECT table_collation FROM information_schema.tables "
+                "WHERE table_schema=DATABASE() AND table_name='users'")).scalar()
+            if current and current != _COLLATION:
+                db.session.execute(text(
+                    "ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE %s"
+                    % _COLLATION))
+                db.session.commit()
+                done.append("users collation %s -> %s" % (current, _COLLATION))
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: users collation not converted: %s", exc)
+
+    for table, column, ref, name in _FKS:
+        try:
+            if not (_table_exists(db, table) and _table_exists(db, ref)):
+                continue
+            if db.session.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.key_column_usage "
+                    "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c "
+                    "AND referenced_table_name IS NOT NULL"),
+                    {"t": table, "c": column}).scalar():
+                continue
+            # An existing orphan makes the ALTER fail. Report it and move on
+            # rather than half-applying - and never delete the row to make the
+            # constraint fit.
+            orphans = db.session.execute(text(
+                "SELECT COUNT(*) FROM `%s` c LEFT JOIN `%s` p ON p.id=c.`%s` "
+                "WHERE c.`%s` IS NOT NULL AND p.id IS NULL"
+                % (table, ref, column, column))).scalar()
+            if orphans:
+                app.logger.warning(
+                    "schema: %s.%s has %d row(s) pointing at a missing %s - "
+                    "foreign key not added", table, column, orphans, ref)
+                continue
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD CONSTRAINT `%s` FOREIGN KEY (`%s`) "
+                "REFERENCES `%s`(`id`) ON DELETE SET NULL"
+                % (table, name, column, ref)))
+            db.session.commit()
+            done.append("fk %s.%s" % (table, column))
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            if "duplicate" not in str(exc).lower() and "exist" not in str(exc).lower():
+                app.logger.warning("schema: fk on %s.%s skipped: %s", table, column, exc)
+
+    # Link history rows written before their datasheet row existed. The ordering
+    # bug that caused it is fixed in records.upsert_record, but rows already
+    # written carry a NULL and would stay invisible to any query that joins
+    # through `datasheet`.
+    try:
+        if _table_exists(db, "datasheet_draft_history"):
+            res = db.session.execute(text(
+                "UPDATE datasheet_draft_history h "
+                "JOIN `datasheet` d ON d.planner_entry_id = h.planner_entry_id "
+                "SET h.datasheet_id = d.id WHERE h.datasheet_id IS NULL"))
+            if res.rowcount:
+                db.session.commit()
+                done.append("linked %d orphaned draft-history row(s)" % res.rowcount)
+            else:
+                db.session.rollback()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: draft-history backfill skipped: %s", exc)
+
+    if done:
+        app.logger.info("schema: applied %d integrity fix(es): %s",
+                        len(done), "; ".join(done))
+    return done
+
+
+# --------------------------------------------------------------------------
+# Per-revision detail, in columns
+# --------------------------------------------------------------------------
+# datasheet_revision froze a header and a form_json blob, and nothing else. So
+# "what did the CE datasheet say before the reviewer rejected it" meant opening
+# form_json and reading it by eye - which is the complaint that started this:
+# the data was in the database and not in the database's terms.
+#
+# Each mirror is created with CREATE TABLE ... LIKE its live counterpart, so it
+# has exactly the same columns - all 27 of datasheet_ce, all 54 of datasheet_re -
+# and cannot drift when one of them gains a column. Writing sixteen schemas by
+# hand would have guaranteed that drift.
+#
+# Two adjustments after the copy: a revision_no column, and every UNIQUE index
+# that contains datasheet_id is rebuilt to include it. Without the second step
+# datasheet_ce's primary key (which IS datasheet_id) would allow one revision
+# per datasheet and silently reject the rest.
+_MIRRORED = (
+    "datasheet_ce", "datasheet_voltagedips", "datasheet_voltageflicker",
+    "datasheet_harmonic", "datasheet_eft", "datasheet_esd", "datasheet_surge",
+    "datasheet_re", "datasheet_rs_ri", "datasheet_crf", "datasheet_pfmf",
+    "datasheet_equipment", "datasheet_software", "datasheet_modification",
+    "datasheet_observation", "datasheet_observation_legend",
+)
+
+_MIRROR_PREFIX = "datasheet_rev_"
+
+
+def mirror_name(table):
+    """datasheet_ce -> datasheet_rev_ce."""
+    return _MIRROR_PREFIX + table[len("datasheet_"):]
+
+
+def mirrored_tables():
+    return tuple((t, mirror_name(t)) for t in _MIRRORED)
+
+
+def _unique_indexes_with(db, table, column):
+    """[(index_name, [columns...])] for UNIQUE indexes containing ``column``."""
+    rows = db.session.execute(text(
+        "SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) "
+        "FROM information_schema.statistics WHERE table_schema=DATABASE() "
+        "AND table_name=:t AND non_unique=0 GROUP BY index_name"),
+        {"t": table}).fetchall()
+    out = []
+    for name, cols in rows:
+        parts = [c.strip() for c in (cols or "").split(",") if c.strip()]
+        if column in parts:
+            out.append((name, parts))
+    return out
+
+
+def _ensure_revision_mirrors(app, db, existing):
+    created = []
+    for src, dst in mirrored_tables():
+        if src not in existing or dst in existing:
+            continue
+        try:
+            db.session.execute(text("CREATE TABLE `%s` LIKE `%s`" % (dst, src)))
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD COLUMN `revision_no` INT NOT NULL DEFAULT 1" % dst))
+            for name, cols in _unique_indexes_with(db, dst, "datasheet_id"):
+                newcols = ", ".join("`%s`" % c for c in cols + ["revision_no"])
+                if name == "PRIMARY":
+                    db.session.execute(text(
+                        "ALTER TABLE `%s` DROP PRIMARY KEY, ADD PRIMARY KEY (%s)"
+                        % (dst, newcols)))
+                else:
+                    db.session.execute(text(
+                        "ALTER TABLE `%s` DROP INDEX `%s`, ADD UNIQUE KEY `%s` (%s)"
+                        % (dst, name, name[:60], newcols)))
+            db.session.execute(text(
+                "ALTER TABLE `%s` ADD KEY `idx_%s_rev` (`datasheet_id`, `revision_no`)"
+                % (dst, dst[-24:])))
+            db.session.commit()
+            created.append(dst)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            msg = str(exc).lower()
+            if "exist" in msg or "duplicate" in msg:
+                continue
+            app.logger.error("datasheet projection: could not mirror %s: %s", src, exc)
     return created

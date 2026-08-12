@@ -10,6 +10,7 @@ from .schema import ensure_datasheet_columns
 from .records import ensure_datasheet_record_tables
 from .fixed_store import ensure_config_tables
 from .projection_schema import ensure_projection_tables
+from .insight_schema import ensure_insight_schema
 from .admin_routes import datasheet_admin_bp
 
 
@@ -30,4 +31,9 @@ def register_datasheet_gen(app):
     # Ensure the projection tables exist - the queryable copy of the filled forms.
     # Additive only; form_json remains the source of truth (see projection_schema).
     ensure_projection_tables(app)
+    # Ensure the reason taxonomy and the two failure-classification columns
+    # exist. A rejection reason is a lab fact, not a chatbot feature - it is
+    # worth recording whether or not anyone ever asks the question - so it lives
+    # with the datasheet domain rather than in nlp_search (see insight_schema).
+    ensure_insight_schema(app)
     return app

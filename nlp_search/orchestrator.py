@@ -60,38 +60,44 @@ from .ledger import Ledger
 # Set NLP_SINGLE_AUTHOR=1 to run the collapsed variant and re-measure.
 USE_DOMAIN_WORKERS = os.environ.get("NLP_SINGLE_AUTHOR", "") != "1"
 
-# gpt-4o-mini, chosen for cost. Measured per question, cache-adjusted:
-# ~$0.0015 against ~$0.025 on gpt-4o - roughly 17x, which at this lab's
-# volume is the difference between $1 and $30 a month.
+# gpt-5-nano, chosen on measured accuracy at a price that is not the deciding
+# factor. Three questions gpt-4o-mini gets wrong or nearly wrong, same prompts,
+# same data, same afternoon:
 #
-# WHAT IS AND IS NOT KNOWN ABOUT THE ACCURACY COST OF THIS CHOICE:
+#   question                    truth   gpt-4o-mini      gpt-5-nano
+#   most-used instruments       4,4,3   nine tied at 4   correct
+#   requested tests unfilled    78      12               78
+#   requested, never scheduled  64      64               64
 #
-#   gpt-4o, WITH today's fixes, on the 8 complex questions:  16/16 over two
-#   runs, 0 wrong.
-#   gpt-4o-mini, WITHOUT them, measured earlier:             4-7/8, and it
-#   got both of the hard questions wrong every time.
-#   gpt-4o-mini, WITH them:                                  NOT MEASURED.
+# mini lost the first one to the datasheet_equipment -> equipment fan-out,
+# which RELATIONSHIPS warns about and run_sql now reports; and on the second it
+# ignored a reviewed figure of 78 that was already computed and sitting in its
+# prompt. nano heeded both.
 #
-# That last line is the one that matters and it is blank. The fixes - lab
-# rules, declared join paths, pre-computed metric rows - all replace
-# reasoning the model had to do with facts handed to it directly, and that
-# is worth more to a weaker model than a stronger one, so mini's number has
-# probably moved. Probably. Nobody has run it.
+# Cost, measured on those three - which are deliberately the HARD ones, so this
+# is an upper bound: $0.00497 a question, about $1.50 a month at 300 questions.
+# Its input is a third of mini's and its cached rate a tenth, which pays for a
+# lot of reasoning.
 #
-# To find out (~$0.15 and about four minutes):
-#     python -m nlp_search.evals --suite useful --repeat 2
-# and against the gpt-4o baseline for comparison:
-#     NLP_SEARCH_MODEL=gpt-4o python -m nlp_search.evals --suite useful --repeat 2
+# THE PRICE IS PAID IN LATENCY, NOT DOLLARS. The hard question took 129 seconds
+# against mini's 16. That drove two other changes: the ledger's time budget
+# (60s would have cut this question off mid-work) and the chat panel, which
+# showed three dots with no sense of progress.
 #
-# Until then, treat "mini is fine now" as a hope rather than a finding. The
-# questions to watch are the multi-domain ones - job_completeness,
-# never_scheduled, equipment_by_usage - because those are where the weaker
-# model failed before.
+# Reasoning effort is deliberately NOT set. 'low' answered the hard question
+# 82 instead of 78; 'minimal' stopped it acting at all - it ran the SQL and
+# then replied "do you want me to proceed?". The reasoning tokens ARE the
+# correct answer. NLP_REASONING_EFFORT overrides if you want to re-measure.
 #
-# Set NLP_SEARCH_MODEL=gpt-4o to switch back, per question or per
-# deployment. Nothing else needs to change.
-DEFAULT_MODEL = "gpt-4o-mini"
+# NLP_SEARCH_MODEL switches models per question or per deployment; gpt-4o-mini
+# and gpt-4o both still work and neither is sent a reasoning parameter.
+DEFAULT_MODEL = "gpt-5-nano"
 MAX_TURNS = 16
+# Wall-clock budget for one question, handed to the Ledger. 60s was fine
+# for gpt-4o-mini; a reasoning model spends that much thinking, and the
+# question this default was chosen FOR took 129s. Raised so the budget
+# stops runaways rather than stopping normal work.
+DEADLINE_S = int(os.environ.get("NLP_DEADLINE_S", "180"))
 MAX_QUESTION_CHARS = 2000
 
 _INSTRUCTIONS = """You are the EMC Test Lab data assistant for Thermo Fisher's test-plan and
@@ -184,6 +190,13 @@ actually returned, and unsupported claims will be removed.
   ask which is meant. Do not pick one, and do not silently merge them - "2
   datasheets" is a different fact for each of two people, and either answer
   would be wrong half the time.
+  A PRODUCT MATCHING SEVERAL JOBS IS NOT THIS. Two people called Sai are two
+  people; one product tested four times is one product with a history. When the
+  question asks about a product over time - its history, why it failed, what
+  changed, whether it improved - several matching jobs ARE the answer, and
+  asking which single job was meant returns nothing the user did not already
+  know. Only treat multiple matches as ambiguity when they are DIFFERENT THINGS
+  that happen to share a name.
 - ONLY ask when the user NAMED something and the name is ambiguous. A question
   that names nothing is not ambiguous - it is asking about everything, and the
   answer is a query over the whole table. "Are there tests that were requested
@@ -200,6 +213,14 @@ actually returned, and unsupported claims will be removed.
   Identify a job by its job number and tco_id, NEVER by product name alone:
   several jobs share a product, so "Genpure UV xCAD plus WM is behind" does
   not tell the reader which job to go and look at.
+- WRITE FOR A LAB ENGINEER, NOT FOR A DEVELOPER. The reader knows tests,
+  jobs, equipment and calibration. They do not know, and must never be shown,
+  the names of your tools, your measures, your tables or your columns, and
+  never a SQL statement. Write "65 instruments are overdue for maintenance",
+  not "Source: maintenance_overdue with include_rows=False", not "SQL shape:
+  lab_metric(name='maintenance_overdue')", and not a SELECT. All three have
+  been printed to a user. How you found the answer is shown separately by the
+  interface; your job is the answer.
 - A PRE-COMPUTED FIGURE IS THE ANSWER. WORKING OUT YOUR OWN IS NOT.
   When a DEFINED TERMS block above gives you a number for a phrase in the
   question, that number came from SQL a human wrote and reviewed. Quote it.
@@ -224,6 +245,29 @@ actually returned, and unsupported claims will be removed.
 - If the question is ambiguous in a way that changes the answer, ask ONE short
   clarifying question instead of guessing.
 - If workers disagree, say so and give both figures with their sources.
+
+## Questions about WHY, or about change over time
+"Why did it fail", "what changed between the two tests", "which frequencies
+improved", "what was fitted before it passed", "has this happened to anything
+else" - send these to the datasheets specialist and say in the sub-question
+that it should use its analyse_history tool. It has pre-written, checked
+analyses for exactly these; a query assembled on the spot has to self-join one
+row per measured cell across two campaigns, and gets it wrong quietly.
+
+Two things that both get called "failed", and they are not the same:
+  the UNIT failed the standard      - emissions over the limit, EUT reset
+  the RECORD was rejected in review - calibration expired, photographs missing
+A product can fail the standard on a datasheet that was ALSO sent back for a
+missing photograph. Say which one you are answering; if the question could mean
+either, give both, because they have different fixes and different owners.
+
+Report the sequence, not a cause. The database records what was measured, what
+was fitted and what the reviewer wrote - never why. "A common-mode choke was
+fitted between the two tests, and the 0.72 MHz margin improved by 5.3 dB" is
+what the evidence supports. "The choke fixed it" is not, however obvious it
+looks. An engineer will draw that conclusion themselves and be right; you
+stating it as fact is how the tool starts getting believed about things it
+cannot know.
 
 ## Scope
 Answer anything about this lab: requests, jobs, datasheets, results, equipment,
@@ -278,6 +322,11 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True):
     if undefined:
         blocks = blocks + (intent.UNDEFINED_DIRECTIVE.format(
             terms=", ".join("'%s'" % t for t in undefined)),)
+    # Injected per question rather than left in the standing prompt: the phrasing
+    # "what was the confirmed root cause" supplies its own framing, and a static
+    # rule thousands of tokens earlier loses to it.
+    if intent.asks_for_cause(question):
+        blocks = blocks + (intent.CAUSAL_DIRECTIVE,)
 
     # A question that plainly belongs to one domain goes straight to that
     # worker. The orchestrator's own turns were most of the cost - it spends
@@ -343,6 +392,12 @@ def _answer_in_parts(parts, question, db_params, ledger, kind, user, user_id,
                                 "answer": "", "unsupported": [str(exc)[:120]]})
 
     assembled = decompose.assemble(results)
+    if assembled:
+        assembled = verify.strip_machinery(assembled)
+        # The decomposed path shares one ledger across every part, so the
+        # caveats are attached once to the assembled answer rather than
+        # repeated under each part.
+        assembled = semantics.attach_caveats(assembled, ledger)
     ok = [r for r in results if r["verdict"] in ("grounded", "repaired", "clarify")]
     if assembled is None:
         assembled = ("I could not verify an answer to any part of that question. "
@@ -453,10 +508,14 @@ def _build_orchestrator(db_params, ledger, model=None, kind=intent.DATA,
         instructions += intent.SCHEMA_DIRECTIVE.format(
             code_hint=(" and test_code=%r" % code_hint) if code_hint else "")
 
+    chosen = model or os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL)
+    from .model_settings import for_model
+    settings = for_model(chosen)
     return Agent(
         name="EMC Lab Data Assistant",
         instructions=instructions,
-        model=model or os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL),
+        model=chosen,
+        **({"model_settings": settings} if settings else {}),
         tools=tools)
 
 
@@ -617,7 +676,7 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True):
 
     from . import audit
     model_name = os.environ.get("NLP_SEARCH_MODEL", DEFAULT_MODEL)
-    ledger = Ledger()
+    ledger = Ledger(deadline_s=DEADLINE_S)
     t0 = time.time()
     trace_id = None
     # Route before retrieving. A question about WHERE something is recorded is
@@ -662,6 +721,14 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True):
                                       undefined=undefined)
                          if verify_answer else verify.skipped())
             answer_text = verify.plain_text(grounding["answer"] or draft)
+            # Machinery out first, then the caveat in - that order, so the
+            # stripper never sees the Note and cannot take it back out.
+            answer_text = verify.strip_machinery(answer_text)
+            # AFTER verification, deliberately. A caveat is not evidence, so
+            # the repair pass - which rewrites the answer from the ledger and
+            # nothing else - would strip it back out again. Appending here also
+            # means it survives every path: grounded, repaired, or withheld.
+            answer_text = semantics.attach_caveats(answer_text, ledger)
 
             if sp is not None:
                 try:

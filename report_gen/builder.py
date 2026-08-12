@@ -12,6 +12,7 @@ Table numbers, "Page X of Y") back to Word by setting ``w:updateFields``.
 Section 3 (IMMUNITY CRITERIA AND DECISION RULE) is static by specification and
 is only touched to tick the request's chosen decision rule.
 """
+import logging
 import os
 import re
 
@@ -19,6 +20,8 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+
+log = logging.getLogger(__name__)
 
 from . import docx_tools as T
 from . import mapping as M
@@ -1283,9 +1286,34 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     tick_decision_rules(outline, data["meta"])
 
     # 3. one section per test
-    per_test = []
+    #
+    # Preferred: SPLICE the test's own pages out of the datasheet .docx that peer
+    # review approved, replacing the report's hand-maintained copy of the same
+    # tables. Measured against the eleven datasheet templates, 49 of 92 per-test
+    # subsections had drifted apart - SOFTWARE USED 4x2 against 2x3, RESULT two
+    # tables against one - and EFT and SURGE build their observation grid at
+    # generation time, so a fixed copy cannot match by construction.
+    #
+    # Fallback: fill the template section as before. A test approved before this
+    # change, or one whose .docx has been cleaned off disk, has no region to
+    # splice, and a report that builds with an older-looking section beats one
+    # that refuses to build at all. Which path each test took is logged.
+    from . import splice as SPL
+    per_test, spliced = [], []
     for test in tests:
         outline.refresh()
+        path = test.get("datasheet_path")
+        if path:
+            try:
+                info = SPL.replace_section_in_doc(doc, test["code"], path)
+                spliced.append(info)
+                outline.refresh()
+                continue
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not splice %s from %s (%s) - filling the "
+                            "template section instead", test["code"],
+                            os.path.basename(path), exc)
+                outline.refresh()
         per_test.append(fill_test_section(outline, test, data["meta"]))
 
     # 4. finishing passes
@@ -1299,21 +1327,53 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     # protection left in place, Word would log its own field rebuild as
     # revisions and show a markup margin full of balloons
     revisions = T.remove_revision_markup(doc)
+    # The blank form highlights its guidance and reds its example values so a
+    # person filling it in knows what to replace. A finished report shipped with
+    # 24 of those highlights and PASS in red, because writing into a cell
+    # inherits the cell's run formatting. Strip them last, so nothing written
+    # after this point can reintroduce them.
+    marks = T.strip_authoring_marks(doc)
     T.refresh_fields_on_open(doc)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path)
 
+    # Finish the document HERE rather than leaving Word to do it on open.
+    #
+    # refresh_fields_on_open above asks Word to rebuild the contents page, the
+    # lists of figures/photos/tables and "Page X of Y". Asking Word to modify
+    # the document on open has a consequence that took a reader's screenshot to
+    # see: the modification can be RECORDED. With track changes active the
+    # rebuild arrived as revisions - a contents page in red underline and
+    # "Field Code Changed" balloons down the margin - on a file that contained
+    # no revisions when it left here. Cleaning the file cannot prevent that,
+    # because Word creates them afterwards, out of the rebuild we requested.
+    #
+    # So compute the fields now and drop the flag. Best-effort: on a host
+    # without Word this returns False and behaviour is exactly as before -
+    # correct, but with the prompts and the risk.
+    from . import finalise as FZ
+    finalised = FZ.finalise(output_path)
+
     summary = {
         "path": output_path,
+        # {"engine": "word"|"python", "page_numbers": bool, ...} - which host
+        # finished the document, and therefore whether the reader will be asked
+        # to update anything. Was a bare bool when Word was the only path.
+        "finalised": finalised,
+        "finalised_in_word": (finalised or {}).get("engine") == "word",
         "tests": [t["code"] for t in tests],
         "tests_without_data": [t["code"] for t in tests if not t["has_data"]],
         "dropped_sections": dropped,
         "skipped": data["skipped"],
         "per_test": per_test,
+        "spliced": spliced,
+        "spliced_from_datasheet": [i["code"] for i in spliced],
         "fields_cleared": cleared,
         "toc_entries_cleared": toc_cleared,
         "revision_markup_removed": revisions,
+        "highlights_removed": marks[0],
+        "example_reds_removed": marks[1],
         "images": sum(s["images"] for s in per_test),
         "extra_blocks": sum(s["extra"] for s in per_test),
         "instructions_cleaned": cleaned,

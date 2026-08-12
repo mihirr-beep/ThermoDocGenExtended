@@ -50,7 +50,15 @@ DEFAULT_VERIFIER_MODEL = "gpt-4o-mini"
 # ("one of the", "both") rather than a claim, and they generate noise. The
 # decimal point must be followed by a digit, or a sentence-final "...in 2026."
 # is captured as the token "2026." and never matches anything.
-_NUMBER_RE = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)(?![\w])")
+#
+# (?<!\w-) drops the tail of a hyphenated identifier. The lab's own names are
+# built that way - AUR-C5-230, DEMO-EMC-201, IEC-EMC-004 - and without this the
+# verifier pulled "230" out of a model number, looked for a cell containing
+# 230, found none, and flagged a correct answer as unsupported. It cannot be
+# the broader (?<!-): a margin of -3.4 dB is a real quantity that must still be
+# checked, and the difference between the two cases is whether the hyphen
+# follows a word character or a space.
+_NUMBER_RE = re.compile(r"(?<![\w.])(?<!\w-)(\d[\d,]*(?:\.\d+)?)(?![\w])")
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 _TRIVIAL = {"0", "1", "2"}
 
@@ -145,7 +153,12 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                     "notes": ["factual claims with an empty ledger"]}
         return {"verdict": "no-evidence", "answer": draft, "unsupported": [], "notes": []}
 
-    supported = (ledger.values() | _question_tokens(question)
+    # A primary key is not evidence for a quantity. "10 tests assigned" was
+    # passed as grounded because planner_entries.id 10 came back in a result
+    # set; see Ledger.id_only_numbers for the full account. Subtracted BEFORE
+    # the union so a figure that also appears as a genuine value survives.
+    supported = ((ledger.values() - ledger.id_only_numbers())
+                 | _question_tokens(question)
                  | _row_counts(ledger) | _temporal_tokens())
     flagged = [tok for tok in _claim_tokens(draft) if tok.lower() not in supported]
 
@@ -214,19 +227,27 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                            missed, phantom, counting=counting,
                            undisclosed=undisclosed, model=model)
     if verdicts is None:                      # adjudicator unavailable
+        # Do NOT call this grounded. The flags are the reason we are here, and
+        # labelling an unchecked answer "Verified against the data" is the same
+        # failure as the one this pass exists to prevent - it was shown with
+        # exactly that badge over two invented figures. The answer is still
+        # shown; only the claim that it was checked is withdrawn.
         notes.append("adjudication unavailable; flags reported unresolved")
-        return {"verdict": "grounded", "answer": draft, "unsupported": flagged,
-                "notes": notes}
+        return {"verdict": "unsupported" if flagged else "grounded",
+                "answer": draft, "unsupported": flagged, "notes": notes}
 
     bad = verdicts.get("unsupported") or []
     incomplete = bool(verdicts.get("incomplete"))
+    causal = _causal_overreach(question, draft)
     if (not bad and not verdicts.get("absence_unsupported")
-            and not incomplete and not phantom and not undisclosed and not id_leak):
+            and not incomplete and not phantom and not undisclosed and not id_leak
+            and not causal):
         return {"verdict": "grounded", "answer": draft, "unsupported": [], "notes": notes}
 
     repaired = _repair(question, draft, ledger, bad, incomplete=incomplete,
                        phantom=phantom, undisclosed=undisclosed,
-                       id_leak=id_leak.group(0) if id_leak else None, model=model)
+                       id_leak=id_leak.group(0) if id_leak else None,
+                       causal=causal, model=model)
     if repaired:
         notes.append("rewrote the answer without %d unsupported claim(s)" % len(bad))
         return {"verdict": "repaired", "answer": repaired, "unsupported": bad,
@@ -657,8 +678,36 @@ def _adjudicate(question, draft, ledger, flagged, absence, missed, phantom=None,
         return None
 
 
+# An answer that asserts a cause this database does not record.
+#
+# Nothing in the schema holds a diagnosis - no engineer types one in - so any
+# confirmed cause is the model's inference wearing the costume of a record. It
+# was told not to in the standing prompt, then in the tool output beside the
+# rows, then in a directive injected for that one question. All three lost to
+# the question's own framing: asked for "the confirmed root cause", it answered
+# "the confirmed root cause is CE_LIMIT_EXCEEDED" - which is also circular, the
+# code being the name of the failure rather than a reason for it.
+#
+# So it is checked here instead, after the answer exists, where an instruction
+# cannot be crowded out by four thousand tokens of catalog.
+_CAUSE_ASSERT_RE = re.compile(
+    r"(?i)\b(?:the\s+)?(?:confirmed|actual|underlying|true|identified)\s+"
+    r"(?:root\s+)?(?:cause|reason)\b[^.\n]{0,60}?\b(?:is|was|were)\b"
+    r"|\broot cause\b[^.\n]{0,40}?\b(?:is|was)\b"
+    r"|\bwas caused by\b|\bis caused by\b|\bthe cause of\b[^.\n]{0,40}\b(?:is|was)\b")
+
+
+def _causal_overreach(question, draft):
+    """The asserted-cause sentence, when the question asked for one and got one."""
+    from . import intent
+    if not intent.asks_for_cause(question):
+        return None
+    m = _CAUSE_ASSERT_RE.search(draft or "")
+    return m.group(0).strip() if m else None
+
+
 def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
-            undisclosed=None, id_leak=None, model=None):
+            undisclosed=None, id_leak=None, causal=None, model=None):
     """A rewrite constrained to the evidence, or None."""
     extra = ("\n- The original omitted items the evidence lists. Include every one "
              "of them, or state the total and say how many you are showing."
@@ -675,6 +724,17 @@ def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
                   "exactly what rule produced it - which columns, which condition - so "
                   "the reader can disagree with the rule instead of trusting a number "
                   "built on a hidden assumption." % undisclosed)
+    if causal:
+        extra += ("\n- The original says '%s'. This database records no causes - "
+                  "measurements, fitted parts, reviewer comments and dates, but "
+                  "nobody enters a diagnosis - so a confirmed cause cannot come "
+                  "from it. Remove that claim. Open by saying the data does not "
+                  "identify a cause, then give the sequence that bears on it: "
+                  "what the measurement did across attempts, what was changed "
+                  "between them, what the reviewer wrote. Keep every number. "
+                  "Naming the failure code is NOT a cause - 'the cause was "
+                  "CE_LIMIT_EXCEEDED' says the reason it failed was that it "
+                  "failed." % causal)
     if id_leak:
         extra += ("\n- The original says '%s'. A database id means nothing to a "
                   "reader. Replace it with the name - the evidence carries "
@@ -697,3 +757,106 @@ def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
              if b.lower() != ph and _NUMBER_RE.fullmatch(b.replace(",", ""))
              and b.lower() in out.lower()]
     return None if still else out
+
+
+# --------------------------------------------------------------------------
+# Machinery does not belong in a user's answer
+# --------------------------------------------------------------------------
+# The prompt asks for this - "never show tool names, measures, tables or a SQL
+# statement, the interface shows those separately" - and asking did not work.
+# The run immediately after that instruction was added answered:
+#
+#   65 instruments are overdue for maintenance. SQL shape used: SELECT COUNT(*)
+#   FROM maintenance WHERE maintenance_due_date < CURDATE();
+#
+# The statement is also WRONG - the figure came from `equipment`, not
+# `maintenance` - so the model was inventing SQL to display, incorrectly, to
+# somebody who did not ask for it. Earlier runs printed
+# "Source: maintenance_overdue with include_rows=False" and
+# "Total equipment_history rows: missing".
+#
+# Same lesson as the caveats: a prompt is a request, code is a control. The
+# real SQL is already shown in its own panel, straight from the ledger, so
+# nothing is lost by cutting the model's rendition of it.
+_SQL_STMT_RE = re.compile(
+    r"\b(?:SELECT|INSERT|UPDATE|DELETE)\b[\s\S]*?(?:;|(?=\n\s*\n)|$)", re.I)
+# "SQL shape used:", "Source: maintenance_overdue", "SQL behind the figure:".
+# Anchored to a line start OR a sentence end, because these turn up mid-sentence
+# too - "...overdue for maintenance. SQL shape used: SELECT..." - and a
+# start-of-line anchor left the label stranded once the statement was cut.
+# Deliberately NOT matching "Note:", which is how the reader's caveat arrives.
+_MACHINERY_LABEL_RE = re.compile(
+    r"(?im)(?:^|(?<=[.!?])[ \t])[ \t>*-]*"
+    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route"
+    # Labels the insight primitives print above their own output. A user who
+    # asked whether a unit would pass its next test got a reply opening with
+    # 'IN WORDS (quote this, do not re-count):' - scaffolding meant for the
+    # model, quoted verbatim into a lab's answer.
+    r"|counts?[^\n:]{0,60}|in words[^\n:]{0,60}|analy[sz]ed with"
+    r"|analysis|evidence, not cause"
+    # The model narrating its own process, and the repair narrating itself.
+    # A lab-wide summary otherwise ended: "What I did - Ran analyse_history with
+    # analysis = failure_modes ... The original answer included all relevant
+    # figures and details from the evidence provided."
+    r"|what i did|how i (?:did|got) (?:this|it)|method|approach"
+    r")[ \t]*:?[ \t]*-?[^\n]*")
+
+# Same machinery, written as prose instead of a labelled line.
+_PROCESS_PROSE_RE = re.compile(
+    r"(?im)^[ \t>*-]*(?:"
+    r"(?:ran|called|used|invoked|queried)\s+analy[sz]e_history\b"
+    r"|the original (?:answer|draft)\b"
+    r"|(?:the )?(?:evidence|rows) (?:shows?|indicates?) a total of"
+    r")[^\n]*")
+
+# "There are 378 rows of data, but only the results from that date are shown."
+# The size of the evidence is not a fact about the lab, and a reader has no way
+# to tell the two apart.
+_ROWCOUNT_PROSE_RE = re.compile(
+    r"(?i)[-*\s]*\.?\s*(?:there (?:are|were)|it (?:has|had)|"
+    r"the (?:evidence|data) (?:has|have|contains?|includes?|shows?))"
+    r"\s+[\d,]+\s+rows?\s+of\s+(?:data|evidence)"
+    r"[^.\n]*\.?")
+# lab_metric(name='x', include_rows=False) and the bare keyword form.
+# analyse_history joined the list as soon as the primitives went in: answers
+# were signing off with the literal call they had made, arguments and all.
+_TOOL_CALL_RE = re.compile(
+    r"\b(?:lab_metric|run_sql|read_grid|list_values|resolve_entity|find_field|"
+    r"describe_table|sample_rows|profile_column|analyse_history|ask_\w+)"
+    r"\s*\([^)]*\)")
+_KWARG_RE = re.compile(r"\b(?:include_rows|max_rows|name)\s*=\s*[^\s,.;)]+")
+# "Total equipment_history rows: missing" - a count the model could not get,
+# reported as a field rather than dropped.
+#
+# Matches the CLAUSE, not the line. The first version began `^.*` and deleted a
+# whole correct answer along with the stray clause at the end of it - exactly
+# the failure mode this function is supposed to prevent, committed by the
+# function itself.
+_MISSING_FIELD_RE = re.compile(
+    r"(?im)(?:^|(?<=[.!?;])[ \t])[ \t>*-]*(?:total[ \t]+)?"
+    r"\w+(?:[ \t]+\w+){0,2}[ \t]*:[ \t]*(?:missing|unknown|not available|n/?a)[ \t]*\.?")
+
+
+def strip_machinery(text):
+    """Remove SQL, tool calls and internal labels from an answer.
+
+    Deliberately conservative: it only touches text carrying one of the markers
+    above. Bare identifiers are left alone, because a SCHEMA question's answer
+    IS an identifier - "the coupling method is in datasheet_ce.coupling_method"
+    is exactly right and must survive.
+    """
+    if not text:
+        return text
+    out = _SQL_STMT_RE.sub("", text)
+    out = _TOOL_CALL_RE.sub("", out)
+    out = _MACHINERY_LABEL_RE.sub("", out)
+    out = _PROCESS_PROSE_RE.sub("", out)
+    out = _ROWCOUNT_PROSE_RE.sub("", out)
+    out = _MISSING_FIELD_RE.sub("", out)
+    out = _KWARG_RE.sub("", out)
+    # tidy what removal left behind: orphaned punctuation and blank runs
+    out = re.sub(r"[ \t]*\(\s*\)", "", out)
+    out = re.sub(r"[ \t]+([.,;:])", r"\1", out)
+    out = re.sub(r"(?m)^[ \t]*[.;,]+[ \t]*$", "", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()

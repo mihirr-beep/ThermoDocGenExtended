@@ -16,7 +16,9 @@ Design (see datasheet_database_documentation.docx):
 Kept self-contained: raw idempotent DDL (matches schema.py's style), no edits to
 models.py or the main migration path.
 """
+import hashlib
 import json
+import os
 from datetime import datetime
 
 from sqlalchemy import inspect, text
@@ -322,7 +324,8 @@ def upsert_record(assignment, test_code, form_data, images, status,
     # Arrays are replaced, not appended: a grid that loses a row posts the
     # shorter list and the shorter list wins, which is what deleting a row must
     # mean.
-    form_data = dict(_stored_form(assignment.id), **(form_data or {}))
+    previous = _stored_form(assignment.id)
+    form_data = dict(previous, **(form_data or {}))
 
     common = _extract_common(form_data)
     uid = getattr(user, "id", None)
@@ -389,11 +392,103 @@ def upsert_record(assignment, test_code, form_data, images, status,
     db.session.execute(sql, params)
     db.session.commit()
 
+    # Projection FIRST, history second. The other order looks harmless and is
+    # not: on the very first save of a datasheet the `datasheet` row does not
+    # exist yet, so the history row was written with datasheet_id NULL and any
+    # query that joined through `datasheet` silently lost it - losing the first
+    # save, which is usually the one somebody is looking for.
     _refresh_projection(entry_fields, params,
-                        full=(status == SUBMITTED if full_projection is None
-                              else full_projection),
+                        full=_full_tier(status, full_projection),
                         images_known=bool(posted))
+    _append_draft_history(assignment.id, test_code, status, previous,
+                          form_data, params.get("form_json"), user)
     return merged_images
+
+
+def _changed_keys(before, after):
+    """Which form keys this save actually altered, added or cleared."""
+    out = []
+    for k in sorted(set(before) | set(after)):
+        if before.get(k) != after.get(k):
+            out.append(k)
+    return out
+
+
+def _append_draft_history(entry_id, test_code, status, before, after,
+                          form_json, user):
+    """Record this save, if it changed anything, and never touch it again.
+
+    Placed here because upsert_record already holds BOTH versions of the form -
+    it reads the stored one to merge onto. So the history costs one INSERT and
+    no extra read.
+
+    Skipped when nothing changed: the autosave fires on a timer and cannot tell
+    whether the engineer edited a box or just tabbed through, and without this
+    check the table fills with identical rows.
+
+    Best-effort in its own transaction, AFTER form_json is committed. The
+    history must never be the reason a save the engineer was told succeeded did
+    not: losing one audit row is a nuisance, losing their work is not.
+    """
+    from models import db
+    changed = _changed_keys(before or {}, after or {})
+    if before and not changed:
+        return 0
+    try:
+        blob = form_json if isinstance(form_json, str) else json.dumps(after or {})
+        db.session.execute(text("""
+            INSERT INTO datasheet_draft_history
+              (planner_entry_id, datasheet_id, revision_no, test_code, status,
+               form_json, content_hash, changed_fields, changed_count,
+               saved_by_user_id, saved_by_name, saved_at)
+            SELECT :p, d.id, COALESCE(d.revision_no, 1), :tc, :st, :fj, :h, :cf, :cc,
+                   :uid, :un, NOW()
+              FROM (SELECT 1) x
+              LEFT JOIN `datasheet` d ON d.planner_entry_id = :p
+        """), {"p": entry_id, "tc": test_code, "st": status, "fj": blob,
+               "h": hashlib.sha1((blob or "").encode("utf-8")).hexdigest(),
+               # the full list can be long; keep it readable and bounded
+               "cf": ", ".join(changed)[:60000] or None,
+               "cc": len(changed),
+               "uid": getattr(user, "id", None),
+               "un": (getattr(user, "username", None) or "")[:200] or None})
+        db.session.commit()
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        try:
+            from flask import current_app
+            current_app.logger.warning(
+                "draft history not recorded for entry %s: %s", entry_id, exc)
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
+
+# The autosave used to project only the header, leaving the child tables holding
+# the PREVIOUS content of the form. That is worse than leaving them empty: a DBA
+# or a report reading datasheet_ce got last-save's coupling method with a fresh
+# updated_at next to it and no way to tell.
+#
+# Measured cost of doing it properly, one CRF datasheet:
+#
+#     project_header   3 statements, 14 ms local
+#     project (full)  24 statements, 21 ms local
+#
+# 7 ms locally; on the remote production database it is 21 extra round trips,
+# so call it a second. The save is debounced 1.5 s after typing stops and runs
+# async - nobody is waiting on it - and the projection is best-effort in its own
+# transaction, so the cost is DB load, not user-visible latency. Correct tables
+# are worth that.
+#
+# DATASHEET_CHEAP_AUTOSAVE=1 restores the header-only tier if that load ever
+# becomes the problem; a submit projects fully either way.
+def _full_tier(status, full_projection):
+    if full_projection is not None:
+        return bool(full_projection)
+    if status == SUBMITTED:
+        return True
+    return os.environ.get("DATASHEET_CHEAP_AUTOSAVE", "") != "1"
 
 
 def _stored_images(assignment_id):

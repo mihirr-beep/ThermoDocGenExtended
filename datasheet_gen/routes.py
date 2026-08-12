@@ -248,10 +248,20 @@ def prefill_ce(assignment_id):
 
 
 def _read_payload():
-    """Return (form_data dict, assignment_id, tco_id, files) for multipart or JSON."""
-    ctype = request.content_type or ""
-    if "multipart/form-data" in ctype:
-        raw = request.form
+    """Return (form_data dict, assignment_id, tco_id, files) for a form post or JSON.
+
+    Keyed on whether a FORM was posted, not on the content type. The check used
+    to be `"multipart/form-data" in request.content_type`, which meant a plain
+    application/x-www-form-urlencoded post - a form with no file in it, and every
+    non-browser caller - fell through to the JSON branch, got an empty dict, and
+    was rejected with "Assignment ID is required". The id was right there in the
+    body; only the encoding was different.
+
+    request.form covers both encodings, which is what the other ten datasheets'
+    route has always done (generic_routes.g_save_draft). CE was the odd one out.
+    """
+    raw = request.form
+    if raw:
         form_data = {}
         for key in raw.keys():
             form_data[key] = raw.getlist(key) if key.endswith("[]") else raw.get(key)
@@ -312,11 +322,13 @@ def save_draft_ce():
         if not _can_access(assignment):
             return jsonify(success=False, message="Access denied"), 403
         images = _save_images(files, assignment_id)
-        # the Save Draft button marks its save; the autosave timer does not, and
-        # only pays for the header projection (records.upsert_record)
-        full = bool(form_data.pop("_full_save", None))
+        # Every save projects into the queryable tables now, autosave included.
+        # Gating the child tables on this flag left them holding the PREVIOUS
+        # content of the form between manual saves - see records._full_tier for
+        # the measured cost of not doing that.
+        form_data.pop("_full_save", None)
         R.upsert_record(assignment, "CE", form_data, images, R.DRAFT,
-                        user=current_user, full_projection=full)
+                        user=current_user)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()

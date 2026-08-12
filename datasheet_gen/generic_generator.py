@@ -1205,11 +1205,16 @@ def _re_relabel_captions_custom_range(doc, custom_range, bands=None):
     return renamed
 
 
-def _re_drop_captionless_photos(doc):
+def _drop_captionless_photos(doc):
     """Remove a Test-Setup photo caption when nothing was uploaded for that slot. The
     template pairs each '{{ img_photo_N }}' paragraph with its caption, so an empty slot
     would otherwise print 'Photo N: ...' over blank space. Runs before renumbering so the
-    survivors stay 1..N."""
+    survivors stay 1..N.
+
+    Every test shares the fixed img_photo_N slots, so this is not RE-specific and no
+    longer carries the _re_ prefix: SURGE shipped 'Photo 1: Surge test setup - Power
+    Line' over blank space, and because the report now splices the datasheet's own
+    pages, that caption reached LIST OF FIGURES as a figure pointing at nothing."""
     body = doc.element.body
     paras = list(doc.paragraphs)
     removed = []
@@ -2488,7 +2493,7 @@ def _re_finalize(doc, context):
     _re_sync_meas_table_widths(
         doc, (context or {}).get("measurement_groups"),
         extra_header_sets=[t.get("headers") for t in _upload_tables if t.get("has_data")])
-    _re_drop_captionless_photos(doc)  # no upload -> no 'Photo N:' caption over blank space
+    _drop_captionless_photos(doc)  # no upload -> no 'Photo N:' caption over blank space
     _re_renumber_photos(doc)          # 'Photo 1..N' in document order, extras included
     _re_renumber_figures(doc)         # 'Figure 1..N' with no gaps from dropped plot slots
     _re_tidy_caption_whitespace(doc)  # no '_ Vertical' / double spaces in any caption
@@ -2581,6 +2586,16 @@ def render(code, context, img_keys, img_paths, output_path):
         # Same replacement using the generic per-code legend the form posts
         # (obs_legend_code[]/obs_legend_desc[]); left as-is when no code was selected.
         _eft_insert_legend(tpl.docx, context.get("obs_legend"))
+
+    # A fixed photo slot with nothing uploaded renders as an empty paragraph, but its
+    # caption still prints - so the datasheet carried "Photo 1: Surge test setup - Power
+    # Line" above blank space. That used to stop at the datasheet; now the report splices
+    # these pages verbatim, so the phantom caption also claimed a LIST OF FIGURES entry
+    # pointing at no figure. RE has always done this inside _re_finalize, which owns its
+    # own ordering, so it is excluded here rather than cleaned twice. Runs before
+    # pagination so the reclaimed space is laid out.
+    if code != "RE":
+        _drop_captionless_photos(tpl.docx)
 
     # Pagination polish for the rebuilt immunity datasheets (no manual breaks in
     # their templates): rows never split across a page, small tables stay whole,

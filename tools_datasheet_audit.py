@@ -51,7 +51,12 @@ SKIP = {"assignment_id", "tco_id", "_full_save", "csrf_token",
         # supply string and the Test Mode names. A draft value for either is
         # SUPPOSED to be replaced - see harmonic_normalize_values and
         # _re_functional_mode_names.
-        "eut_input_voltage_frequency", "test_mode"}
+        "eut_input_voltage_frequency", "test_mode",
+        # Not part of the datasheet at all: the peer reviewer is the review
+        # ASSIGNMENT, rendered from planner_entries.peer_reviewer_user_id and
+        # set when the datasheet is submitted. A draft save neither carries it
+        # nor should.
+        "peer_reviewer_id"}
 
 # A name is only real if it could come off a live form. These are picked up
 # from <template> blocks and from JavaScript that builds markup by string
@@ -101,6 +106,40 @@ def select_options(body, name):
     return [(v if v else t).strip() for v, t in opts if (v or t).strip()]
 
 
+def is_shown(body, name, val, typ):
+    """Is this value actually IN that field, not merely somewhere on the page?
+
+    A plain substring search is enough for a sentinel, but useless for a
+    <select>: its options are short codes - A, B, C1 - which appear in the
+    legend, in every other dropdown's option list, and in prose. That made the
+    check pass for VOLTAGEDIPS while its observation dropdowns all read
+    "Select", because "A" was findable somewhere in 200 kB of HTML.
+
+    For a select, the value must be the SELECTED option. Selects built in the
+    browser cannot be checked from the server at all, so they are reported
+    separately rather than counted as passes.
+    """
+    if typ != "select":
+        return val in body
+    block = re.search(r'<select[^>]*name="%s"[^>]*>(.*?)</select>' % re.escape(name),
+                      body, re.S)
+    if not block:
+        return None                     # not server-rendered; unknowable here
+    inner = block.group(1)
+    # NOTE: the word-boundary escape is built with chr(92). Writing "\b"
+    # inline here has been eaten twice, once into a literal backspace byte,
+    # which turns the pattern into one that can never match.
+    _B = chr(92) + "b"
+    pat_text = (r'<option[^>]*' + _B + r'selected' + _B
+                + r'[^>]*>\s*%s\s*</option>' % re.escape(val))
+    pat_attr = (r'<option[^>]*value="%s"[^>]*' % re.escape(val)) + _B + "selected" + _B
+    pat_attr2 = (r'<option[^>]*' + _B + r'selected' + _B
+                 + r'[^>]*value="%s"' % re.escape(val))
+    return bool(re.search(pat_text, inner)
+                or re.search(pat_attr, inner)
+                or re.search(pat_attr2, inner))
+
+
 def fill(body, code):
     """(payload, expected) for every field the page renders."""
     payload = {"assignment_id": "", "tco_id": "IEC-EMC-010", "_full_save": "1"}
@@ -125,7 +164,7 @@ def fill(body, code):
             payload[name] = [val]
         else:
             payload[name] = val
-        expect[name] = val
+        expect[name] = (val, typ)
 
     base = LEGEND_PREFIX.get(code, "obs_legend")
     payload[base + "_code[]"] = ["A"]
@@ -191,7 +230,13 @@ def main():
             continue
 
         back = client.get(form_url).get_data(as_text=True)
-        missing = [k for k, v in expect.items() if v not in back]
+        missing, unknown = [], []
+        for k, (v, t) in expect.items():
+            shown = is_shown(back, k, v, t)
+            if shown is None:
+                unknown.append(k)
+            elif not shown:
+                missing.append(k)
         if missing:
             rt_bad.append(code)
         has_legend_widget = ("obs_legend" in body) or ("obs-legend" in body)

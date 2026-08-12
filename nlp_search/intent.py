@@ -106,6 +106,86 @@ _CROSS_DOMAIN = re.compile(
     r"\bacross\b|\bboth\b|\bas well as\b", re.I)
 
 
+# Questions about a product ACROSS its tests. These go straight to the
+# datasheets worker, which owns the analyse_history tool.
+#
+# Routing them deterministically rather than letting the orchestrator decide is
+# not an optimisation, it is the only thing that works. Asked why a product
+# failed its first three tests, the orchestrator resolved the name, found four
+# jobs, and asked which one was meant - twice, in different words, after being
+# told twice not to. A small model's pull toward asking a clarifying question
+# beats an instruction telling it not to. The question is recognisable from its
+# shape, so recognise it in code.
+# Written narrowly the first time, against the eight questions the primitives
+# were built for, and it showed: of seventeen questions phrased the way people
+# actually speak, three matched. "How many attempts before it PASSED" missed on a
+# word boundary after "pass". "Why DO datasheets get sent back" missed because
+# only did/was/were/does/is/has/have were listed. "Fail for the same REASON"
+# missed because only failure/problem/issue/pattern were. Each miss sent the
+# question to a worker with no analyse_history, which answered from hand-written
+# SQL and reported an absence.
+#
+# So this is deliberately generous now. Over-matching is cheap: the datasheets
+# worker still has run_sql and answers ordinary datasheet questions perfectly
+# well, and it is the domain that owns results anyway. Under-matching costs a
+# wrong answer. The control set in the tests keeps ordinary questions - overdue
+# calibration, unfilled datasheets, requests raised in July - out of here.
+_INSIGHT_RE = re.compile(
+    r"(?:"
+    # --- causal
+    r"\bwhy\b"
+    r"|what (?:was|went|is) (?:actually )?wrong"
+    r"|root cause|underlying (?:cause|reason|issue)"
+    r"|\bcaused?\b|what (?:is|was) (?:causing|behind)"
+    # --- repetition / streak
+    r"|\b(?:kept|keeps|repeatedly|again and again|multiple times) (?:on )?fail"
+    r"|fail(?:ed|ing|s)? (?:again|repeatedly|more than once|several times)"
+    r"|how many (?:attempts|tries|times|goes|rounds|iterations)"
+    r"|\bbefore (?:it|they|the \w+) (?:first(?:ly)? )?pass(?:ed|es|ing)?\b"
+    r"|(?:to|and) (?:make|get) (?:it|them|the \w+) (?:to )?pass"
+    r"|get (?:it|them) through\b"
+    # --- change between attempts
+    r"|what (?:changed|differed|was different|had changed)"
+    r"|(?:what|which) .{0,40}\b(?:changed|differ|different)\b"
+    r"|(?:modification|modifications|change|changes|fix|fixes|fitted|retrofit|"
+    r"introduced|added|replaced) .{0,40}\b(?:before|between|prior)\b"
+    r"|what did (?:they|we|he|she) (?:change|do|fit|add|fix)"
+    # --- trend / measurement movement
+    r"|improve(?:d|ment|ments)?\b|got (?:better|worse)"
+    r"|came down|went down|dropped|reduced by|brought .{0,20}down"
+    r"|over (?:time|its tests|the campaigns)|trend"
+    r"|(?:which|what) .{0,30}frequenc"
+    # --- pattern across products
+    r"|(?:other|another|any other|different) products?"
+    r"|same (?:failure|problem|issue|pattern|reason|cause|mode|thing)"
+    r"|similar (?:failure|pattern|problem|issue|reason|cause)"
+    r"|happened (?:to anything else|elsewhere|before|again)"
+    r"|most common (?:reason|failure|cause|mode|problem|issue)"
+    r"|(?:failure|rejection) (?:mode|reason|pattern)s?\b"
+    r"|never passed|still failing|not yet passed|no pass"
+    r"|across (?:all|every|the) (?:products?|lab|tests?|campaigns?)"
+    # --- history
+    r"|(?:testing|test) history|history (?:of|for)\b|track record"
+    # The way a person actually opens a high-level question. "In one short
+    # paragraph, what happened with the Aurora Centrifuge?" matched nothing, so
+    # it went to the equipment domain on the word "Centrifuge" and came back
+    # offering V-LOG ARRAY ANTENNA as the closest match. The most natural
+    # phrasing there is, and it was the one phrasing not covered.
+    r"|what happened|what(?:'s| is) the story|the story (?:of|on|behind)"
+    r"|overall picture|the picture on|big picture|where (?:do|does) .{0,20}stand"
+    r"|summar(?:y|ise|ize)|walk me through|bring me up to speed"
+    r"|tell me about (?:the |what )?"
+    # --- the paperwork axis
+    r"|sent back|bounced|rejected in (?:peer )?review|peer[- ]review reject"
+    r"|(?:why|reason).{0,30}reject"
+    r")", re.I)
+
+
+def is_insight(question):
+    """True when the question is about a product's history rather than its state."""
+    return bool(_INSIGHT_RE.search(question or ""))
+
+
 def single_domain(question):
     """The one domain that owns this question, or None if it is not clear-cut.
 
@@ -114,7 +194,14 @@ def single_domain(question):
     own allowlist and will report an absence rather than a gap.
     """
     q = (question or "").lower()
-    if not q or _CROSS_DOMAIN.search(q):
+    if not q:
+        return None
+    # Checked before _CROSS_DOMAIN: "why did this PRODUCT fail its TESTS" names
+    # two domains and reads as cross-domain, but analyse_history spans them
+    # itself, so the datasheets worker can answer the whole thing alone.
+    if is_insight(q):
+        return "datasheets"
+    if _CROSS_DOMAIN.search(q):
         return None
     hits = {}
     for domain, words in _DOMAIN_WORDS.items():
@@ -250,4 +337,63 @@ it from find_field, which searches column names in the catalog.
   holds the coupling method.
 - You may follow up with one query to show a sample value, but only AFTER you
   have named the real column, and only from that column.
+"""
+
+
+# --------------------------------------------------------------------------
+# the question asks for a CAUSE, and this database records no causes
+# --------------------------------------------------------------------------
+# Asked for "the confirmed root cause" of a conducted emission failure, the
+# answer was: "the confirmed root cause is that it exceeded the class B
+# quasi-peak limit at 0.72 MHz by 4.8 dB". That is circular - the cause of the
+# failure is that it failed - and it asserts a confirmation nothing in the data
+# supports. The exceedance is the symptom that DEFINES the failure.
+#
+# A note in the tool output did not prevent it, because the question itself
+# supplies the framing: "what was the confirmed root cause" invites a confident
+# answer, and a small model will supply one. So this is injected for that one
+# run, where it cannot be crowded out.
+_CAUSAL_RE = re.compile(
+    r"\broot cause|\bcaused? by\b|what caused|\bwhy exactly\b|"
+    r"\b(?:confirmed|actual|underlying|true) (?:cause|reason)|"
+    # "which internal component caused ..." - an adjective sits between the two
+    # words, so requiring them adjacent missed the question this was written for.
+    r"\bwhich(?: \w+){0,2} (?:component|part|board|module|supplier|vendor|batch|"
+    r"chip|cable|filter)\b(?:.{0,30}\bcaus)?|"
+    r"\b(?:component|part|supplier|batch) (?:that |which )?caus", re.I)
+
+
+def asks_for_cause(question):
+    """True when the question wants a causal claim rather than a fact."""
+    return bool(_CAUSAL_RE.search(question or ""))
+
+
+CAUSAL_DIRECTIVE = """
+## THIS QUESTION ASKS FOR A CAUSE. THIS DATABASE DOES NOT RECORD CAUSES.
+
+It records what was measured, what was fitted, what the reviewer wrote and when
+each happened. Nobody enters a diagnosis. So there is no field you can read to
+answer "why", and no amount of querying will produce one.
+
+Do NOT do either of these:
+  * State a cause as confirmed. "The confirmed root cause was the missing
+    common-mode choke" is a claim the data cannot support, and the engineer
+    reading it may act on it.
+  * Answer with the symptom dressed as a cause. "The root cause is that it
+    exceeded the limit at 0.72 MHz" says the cause of failing was failing. It
+    sounds like an answer and contains none.
+
+Do this instead, in one short paragraph:
+  1. Say plainly that the recorded data does not identify a cause.
+  2. Give the sequence that bears on it - what the measurement did, what was
+     changed between attempts, what the reviewer said. Numbers and dates.
+  3. Leave the inference to the reader. "A common-mode choke was fitted between
+     the failing and passing tests, and the 0.72 MHz margin improved by 5.3 dB"
+     is the most useful true thing you can say. An engineer will draw the
+     obvious conclusion and be right; you asserting it is how this tool starts
+     being believed about things it cannot know.
+
+If the question names something the schema has no field for at all - an internal
+component, a supplier, a batch, a cost, hours spent - say that it is not
+recorded, name what IS recorded that is closest, and stop.
 """

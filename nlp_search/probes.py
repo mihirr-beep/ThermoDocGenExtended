@@ -138,6 +138,21 @@ def list_values(db_params, table, column, contains=None, allowed_tables=None,
 
 # What "find me the person / job / product" actually means in this schema.
 # Each entry: (table, id column, [columns to match on], [columns to return]).
+def _same_thing_many_jobs(kind, cands):
+    """True when every candidate is the SAME product, just a different job.
+
+    Products live on iec_emc_requests, which has one row per test campaign, so
+    a product tested four times resolves to four rows. Distinguishing that from
+    a genuine name clash is the difference between answering a history question
+    and asking the user to repeat themselves.
+    """
+    if kind != "product" or len(cands) < 2:
+        return False
+    names = {(str(c.get("product_name") or "").strip().lower(),
+              str(c.get("model_number") or "").strip().lower()) for c in cands}
+    return len(names) == 1
+
+
 _ENTITIES = {
     "person": ("users", "id", ["username", "email"], ["id", "username", "email", "role"]),
     "job": ("iec_emc_requests", "id", ["job_number", "tco_id", "job_id"],
@@ -305,6 +320,22 @@ def resolve_entity(db_params, kind, text, ledger=None, cross_kind=True):
                 "matches any other kind either. Say that no such %s exists - do "
                 "NOT filter on this value and report a count of zero, which "
                 "would mean something different." % (kind, text, kind))
+        elif len(cands) > 1 and _same_thing_many_jobs(kind, cands):
+            # One product tested four times is not four products. The generic
+            # "ask which one" below is right for two people who share a name and
+            # wrong here, and it was wrong in the way that costs most: asked for
+            # a product's testing history, the assistant listed the four jobs it
+            # had just found and asked which one was meant - handing back the
+            # question as the answer.
+            payload["note"] = (
+                "These are %d JOBS ON THE SAME PRODUCT, not %d different "
+                "products - one unit tested more than once. This is a history, "
+                "not an ambiguity: do NOT ask which one is meant. If the "
+                "question is about the product over time (its history, why it "
+                "failed, what changed, whether it improved), ALL of these are "
+                "in scope - hand the product name to the datasheets specialist "
+                "and have it run analyse_history. Only pick a single job if the "
+                "question named one." % (len(cands), len(cands)))
         elif len(cands) > 1:
             payload["note"] = ("More than one match - use the exact value from the "
                                "candidate you mean, or ask which one.")

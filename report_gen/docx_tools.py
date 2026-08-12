@@ -139,6 +139,7 @@ def template_rpr(container, bold=None):
         found = rpr
         break
     rpr = copy.deepcopy(found) if found is not None else _default_rpr()
+    _drop_authoring_marks(rpr)
     if bold is not None:
         for b in rpr.findall(qn("w:b")):
             rpr.remove(b)
@@ -147,6 +148,67 @@ def template_rpr(container, bold=None):
         if bold:
             rpr.insert(0, OxmlElement("w:b"))
     return rpr
+
+
+# The blank form marks itself up for the person filling it in: yellow highlight
+# on the guidance notes, red on the example values that must be replaced. Those
+# are instructions to an author, not content - and inheriting a cell's run
+# formatting inherits them, so a generated report came out with PASS in red and
+# 24 yellow-highlighted patches of template guidance still showing.
+#
+# Typography is kept - font, size, bold, italic, the template's blue for filled
+# values (0070C0), which is its house convention and reads correctly. Only the
+# two marks that mean "an author still has work to do here" are dropped.
+_EXAMPLE_RED = ("FF0000", "ff0000")
+
+
+def _drop_authoring_marks(rpr):
+    """Remove highlight, and red used to flag an example value."""
+    if rpr is None:
+        return rpr
+    for node in rpr.findall(qn("w:highlight")):
+        rpr.remove(node)
+    for node in rpr.findall(qn("w:color")):
+        if (node.get(qn("w:val")) or "") in _EXAMPLE_RED:
+            rpr.remove(node)
+    return rpr
+
+
+def strip_authoring_marks(doc):
+    """Clear the form's author-facing markup from the WHOLE document.
+
+    template_rpr only cleans the runs the builder writes into. The form also
+    carries highlighted guidance the builder never touches - the performance
+    criteria legend, "ISM Band as per table 9 of IEC 60601-1-2", the B1/C/C1
+    rows - and 24 of those patches were still yellow in a finished report. A
+    highlight is an instruction to whoever fills the form in; it has no place in
+    the deliverable.
+
+    Walks headers and footers too, and returns (highlights, reds) removed so the
+    caller can log what it did rather than hope.
+    """
+    parts = [doc.element.body]
+    for section in doc.sections:
+        for part in (section.header, section.footer,
+                     section.first_page_header, section.first_page_footer,
+                     section.even_page_header, section.even_page_footer):
+            if part is not None:
+                parts.append(part._element)
+
+    highlights = reds = 0
+    for root in parts:
+        for node in list(root.iter(qn("w:highlight"))):
+            parent = node.getparent()
+            if parent is not None:
+                parent.remove(node)
+                highlights += 1
+        for node in list(root.iter(qn("w:color"))):
+            if (node.get(qn("w:val")) or "") in _EXAMPLE_RED:
+                parent = node.getparent()
+                if parent is not None:
+                    parent.remove(node)
+                    reds += 1
+    return highlights, reds
 
 
 def make_run(text, rpr=None):

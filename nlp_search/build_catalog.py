@@ -83,11 +83,13 @@ PURPOSES = {
     "datasheet_voltagedips": "Voltage dips/interruptions datasheet: the values RECORDED",
     "datasheet_observation": "EVERY observation cell from every test, flattened: one row per measured cell (grid, row label, column label, value). This is how to answer 'what was observed at X'.",
     "datasheet_observation_legend": "what each observation code (A, B, C1...) means on a given datasheet",
+    "datasheet_measurement": "EVERY measured NUMBER from every test, flattened: one row per cell, with value as text and value_num as a number you can compare and sort. This is where CE Line/Neutral readings, RE tables, harmonic currents and the flicker grids live. revision_no says which submitted version a reading belongs to - filter it, or you will count a rejected version alongside the current one.",
     "datasheet_equipment": "which equipment was USED on each datasheet (as typed on the form)",
     "datasheet_software": "which software was USED on each datasheet",
     "datasheet_modification": "EUT modifications recorded on a datasheet",
     "datasheet_status_history": "audit trail of datasheet review decisions: who approved/rejected, when, and why",
     "datasheet_revision": "frozen snapshot of a datasheet as submitted for each review round",
+    "datasheet_draft_history": "append-only record of EVERY save an engineer made, with changed_fields naming the boxes that changed and form_json holding the whole form as it stood. This is how to answer 'what did it say before', 'who changed this field' and 'when was this value entered'. Finer grained than datasheet_revision, which only captures submissions.",
     "datasheet_records": "the RAW saved form behind each datasheet (draft or submitted). Prefer the `datasheet` tables above - this one stores the form as JSON.",
     "datasheet_fixed_values": "admin-editable fixed values (uncertainty, SOP refs, limits) per datasheet type",
     "basic_standard_map": "admin mapping: product standard -> basic standard used by datasheets",
@@ -106,6 +108,18 @@ EXCLUDE = {
     "nlp_search_audit",                 # this feature's own log; not lab data
 }
 
+# Prefixes dropped wholesale. The datasheet_rev_* mirrors are column-for-column
+# copies of sixteen live tables, one row per frozen revision. Letting the
+# `datasheet_*` wildcard pick them up took the datasheets prompt from 8.8k to
+# 34.5k characters - a quadrupling paid on every question, to describe tables
+# that answer one question ("what did it say before it was rejected"), and to
+# describe them in words nearly identical to the live tables they mirror, which
+# is exactly how a model ends up querying the wrong one.
+#
+# They are still there for a DBA and still named predictably, and the glossary
+# points at them. What they are not is 25k characters of every prompt.
+EXCLUDE_PREFIXES = ("datasheet_rev_",)
+
 # Kept even at zero rows. For these, "the table is there and it is empty" is a
 # real answer - EFT simply has not been run yet, no datasheet has been rejected
 # yet. Dropping them would leave the model with no way to say that.
@@ -120,6 +134,7 @@ CORE_TABLES = {
     "requests": ("iec_emc_requests", "iec_emc_request_tests", "datasheet", "users"),
     "schedule": ("planner_entries", "iec_emc_requests", "datasheet", "users"),
     "datasheets": ("datasheet", "datasheet_equipment", "datasheet_observation",
+                   "datasheet_measurement",
                    "datasheet_software", "planner_entries", "users"),
     "inventory": ("equipment", "datasheet_equipment", "maintenance",
                   "equipment_history", "users"),
@@ -235,11 +250,12 @@ _RECORDS_NOTE = ("form_json / images_json hold the raw form and are not selectab
                  "here. The same values are normalised into `datasheet` and its "
                  "per-test tables - use those.")
 
-_OBS_NOTE = ("the *_json columns hold this test's measurement / observation "
-             "TABLES and are not selectable by SQL. Call read_grid(datasheet_id) "
-             "to get their rows and column headings - that is the ONLY way to "
-             "reach them. (datasheet_observation holds observation cells only, "
-             "not measurement tables like CE Line/Neutral.)")
+_OBS_NOTE = ("the *_json columns hold this test's grids with their own labels "
+             "and block structure. You do NOT have to parse them: every cell is "
+             "also a row in datasheet_measurement (numbers, with value_num for "
+             "comparisons) or datasheet_observation (criterion letters). Prefer "
+             "those - they are plain SQL. read_grid(datasheet_id) is still there "
+             "when you need a grid laid out exactly as the form shows it.")
 
 _GLOSSARY = """How lab vocabulary maps to this schema (read this before writing SQL):
 - "job" / "TCO" / "project" / "request"  -> iec_emc_requests (tco_id, job_number)
@@ -248,6 +264,10 @@ _GLOSSARY = """How lab vocabulary maps to this schema (read this before writing 
 - "test" in the sense of WHAT WAS RUN     -> planner_entries (schedule) and `datasheet` (result)
 - "datasheet" / "the sheet" / "results"   -> `datasheet` + datasheet_<code> + datasheet_observation
 - "observation" / "criterion A|B|C|D"     -> datasheet_observation.value
+- "reading" / "measurement" / "limit"     -> datasheet_measurement.value_num (filter revision_no)
+- "margin" / "how close to the limit"     -> datasheet_measurement, col_key like '%_margin'
+- "previous version" / "before it was rejected" -> datasheet_revision + datasheet_rev_<code>
+- "who changed" / "when was it entered" / "edit history" -> datasheet_draft_history
 - "pass" / "fail" / "outcome"             -> datasheet.result  (per test)
 - "conditions" / "ambient" / "humidity"   -> datasheet.ambient_temperature / relative_humidity
 - "equipment used on a test"              -> datasheet_equipment  (NOT the `equipment` inventory)
@@ -322,6 +342,8 @@ def introspect(conn, database):
             continue
         cur.execute("SELECT COUNT(*) FROM `%s`" % name)
         rows = cur.fetchone()[0]
+        if name.startswith(EXCLUDE_PREFIXES):
+            continue
         if rows == 0 and not name.startswith(KEEP_EMPTY_PREFIXES):
             continue
         cur.execute(

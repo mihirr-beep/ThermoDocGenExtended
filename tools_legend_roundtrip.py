@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
 """Does the observation legend survive a refresh? Strictly checked, per datasheet.
 
-An earlier version of this check searched the whole page for the description
-and reported all ten datasheets passing. It was wrong. Every page carries a
-shared #obs-legend-seed-all block, so the text was found there even on the two
-datasheets whose widget reads a different key entirely and rendered nothing -
-EFT and PFMF seed from prefill['eft_obs_legend'] / ['pfmf_obs_legend'].
+Two earlier versions of this check passed while the feature was broken, and
+both failures were the same mistake: looking for the description ANYWHERE on
+the page. Every page carries the shared #obs-legend-seed-all block, so the
+text is findable even on a datasheet whose widget never reads it.
 
-So this looks only at the seed the widget for that datasheet actually reads,
-and fails if the description is not in THAT one.
+  * first miss: EFT and PFMF read prefill['eft_obs_legend'] /
+    ['pfmf_obs_legend'], not the bare key;
+  * second miss: SURGE read no seed at all - surgeLegendComments was
+    initialised to {} and nothing populated it, so every description rendered
+    blank while the check said yes.
+
+So restores() now requires the data AND a consumer, and the pairing is
+verified: removing the SURGE seed makes this report SURGE failing, and putting
+it back makes it pass.
 """
 import json
 import os
@@ -26,18 +32,39 @@ PLANNER_NAME = {"RE": "RE", "ESD": "ESD", "EFT": "EFT", "CRF": "CRF",
                 "VOLTAGEFLICKER": "VoltageFlicker", "PFMF": "PFMF",
                 "VOLTAGEDIPS": "VoltageDips"}
 
-# Which JSON blob the legend widget on that page reads. EFT and PFMF build
-# their own widget in JS from `var seed = [...]`; the rest read a
+# These three build their own legend widget in JS and seed it from their own
+# namespaced prefill key; the rest read a shared
 # <script type="application/json"> seed block.
-OWN_WIDGET = ("EFT", "PFMF")
+OWN_WIDGET = ("EFT", "PFMF", "SURGE")
+
+# The variable each own-widget datasheet keeps its descriptions in. They are not
+# named consistently - eftLegendComments, surgeLegendComments, pfmfLegend - so
+# match the shape rather than any one name, or the check reports a datasheet
+# broken purely for naming its variable differently.
+_LEGEND_VAR = re.compile(r"[a-z]+Legend(?:Comments)?")
 
 
-def seeds_in(body, code):
-    """Every JSON seed on the page that this datasheet's legend could read."""
+def restores(body, code, token):
+    """Two things must BOTH hold, or the legend cannot come back.
+
+    Not "the token appears somewhere on the page". Every page carries the
+    shared #obs-legend-seed-all block, so the text was findable on SURGE while
+    every description rendered blank - its own widget never read a seed at all
+    (surgeLegendComments was initialised to {} and nothing populated it). That
+    false pass is what let the bug ship.
+
+    1. THE DATA is on the page, as this datasheet's own {code, desc} seed.
+    2. A CONSUMER exists - code that copies a seed row into the legend store.
+       For the three own-widget datasheets that is a `row.desc` read, which is
+       only present when that datasheet's own {% if %} block emits it.
+    """
+    has_data = ('"desc": "%s"' % token) in body or ('"desc":"%s"' % token) in body
     if code in OWN_WIDGET:
-        return re.findall(r"var seed = (\[[^\n]*\]);", body)
-    return re.findall(r'<script type="application/json" id="[^"]*obs-legend-seed[^"]*">(.*?)</script>',
-                      body, re.S)
+        return has_data and ("row.desc" in body)
+    seeds = re.findall(
+        r'<script type="application/json" id="[^"]*obs-legend-seed[^"]*">(.*?)</script>',
+        body, re.S)
+    return has_data and any(token in s for s in seeds)
 
 
 def main():
@@ -70,7 +97,7 @@ def main():
                           base + "_code[]": ["A"], base + "_desc[]": [token]})
         body = client.get("/datasheet/g/%s/%d/form"
                           % (code.lower(), pid)).get_data(as_text=True)
-        found = any(token in s for s in seeds_in(body, code))
+        found = restores(body, code, token)
         if not found:
             failures.append(code)
         print("%-16s %-24s %-8s %s"

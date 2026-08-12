@@ -151,6 +151,22 @@ def _record_form_and_images(record):
     return form, images
 
 
+def _datasheet_path(record, entry):
+    """The generated datasheet .docx for this test, or None.
+
+    Checked in order of trust: the record's own generated_file_path is written by
+    the generator itself, the planner entry's by the send-for-review step. A path
+    that no longer exists on disk is treated as absent rather than returned - the
+    caller would only fail on it later, and less clearly.
+    """
+    for value in ((record or {}).get("generated_file_path"),
+                  getattr(entry, "datasheet_file_path", None)):
+        p = _s(value)
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
 def resolve_tests(request_obj, planner_entries, include_without_data=True):
     """Ordered per-test payloads for the report.
 
@@ -228,6 +244,13 @@ def resolve_tests(request_obj, planner_entries, include_without_data=True):
             "form": form,
             "images": images,
             "has_data": has_data,
+            # Where this test's own generated .docx is, if one exists. The
+            # builder splices that document's per-test pages into the report
+            # rather than filling a second copy of the same tables - see
+            # report_gen/splice.py. Two places record it and either will do:
+            # the record is written when the datasheet is generated, the planner
+            # entry when it is sent for review.
+            "datasheet_path": _datasheet_path(record, entry),
         })
         if not has_data:
             skipped.append({"code": code,
