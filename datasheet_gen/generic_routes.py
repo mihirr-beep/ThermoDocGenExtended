@@ -176,6 +176,12 @@ def g_form(code, assignment_id):
             # extra Test Setup pictures come back on a draft reload, keeping each slot's
             # index so the image already stored under that name still shows
             extra_photos = re_extra_photo_slots(draft)
+            # Met Performance Criteria follows the observation table, so the form shows what
+            # the document will carry rather than the REQUIRED criteria the request set.
+            from .generic_service import rs_ri_met_criteria
+            _rmet = rs_ri_met_criteria(draft)
+            if _rmet:
+                pre["met_performance_criteria"] = _rmet
         if code == "SURGE":
             # ... and its procedure's first line names the BASIC standard, not the product
             # standards an older draft stored there.
@@ -215,10 +221,33 @@ def g_form(code, assignment_id):
             extra_photos = re_extra_photo_slots(draft)
         if code == "ESD":
             # a draft still holding '<Standard name>' gets the basic standard
-            from .generic_service import normalize_procedure_basic, _DERIVED_BASIC_STANDARDS
+            from .generic_service import (normalize_procedure_basic, _DERIVED_BASIC_STANDARDS,
+                                          esd_row_count, esd_met_criteria)
             normalize_procedure_basic(
                 pre, (pre.get("basic_standard") or "").strip()
                 or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
+            # Met Performance Criteria follows the observation grids, so the form shows what
+            # the document will carry. Without this the field kept whatever the request or an
+            # older draft put there - typically the REQUIRED criteria, which is a different
+            # thing. Nothing recorded yet leaves the existing value alone.
+            _met = esd_met_criteria(draft)
+            if _met:
+                pre["met_performance_criteria"] = _met
+            # Test-observation rows the engineer ADDED come back on reload: the draft holds
+            # their cells (<prefix>_r<n>_...), so the grid is grown to the saved count and
+            # the extra rows render with an editable name (they carry no standard name).
+            for _sec in schema.get("sections", []):
+                for _it in _sec.get("items", []):
+                    if _it.get("layout") != "esd_obs":
+                        continue
+                    _pfx = _it.get("key_prefix")
+                    _rows = _it.get("rows") or []
+                    for _i in range(len(_rows) + 1, esd_row_count(draft, _pfx) + 1):
+                        # 'added' is what puts the remove cross on the row: the rows the
+                        # standard defines must stay, the ones the engineer added can go.
+                        _rows.append({"key": "%s_r%d" % (_pfx, _i), "sno": str(_i),
+                                      "added": True})
+                    _it["rows"] = _rows
         if code == "EFT":
             # a draft still holding '<Standard name>' gets the basic standard, and Test Mode
             # becomes the mode NAMES - both would otherwise survive the draft overlay

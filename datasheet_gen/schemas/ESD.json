@@ -118,6 +118,8 @@
           "layout": "esd_obs",
           "label": "Contact Discharge Indirect Method",
           "name_editable": false,
+          "key_prefix": "ind",
+          "allow_add_rows": true,
           "rows": [
             { "key": "ind_r1", "sno": "1", "name": "HCP (0°)" },
             { "key": "ind_r2", "sno": "2", "name": "HCP (90°)" },
@@ -134,6 +136,8 @@
           "layout": "esd_obs",
           "label": "Contact Discharge Direct Method",
           "name_editable": true,
+          "key_prefix": "dir",
+          "allow_add_rows": true,
           "rows": [
             { "key": "dir_r1", "sno": "1" },
             { "key": "dir_r2", "sno": "2" },
@@ -145,6 +149,8 @@
           "layout": "esd_obs",
           "label": "Air Discharge",
           "name_editable": true,
+          "key_prefix": "air",
+          "allow_add_rows": true,
           "rows": [
             { "key": "air_r1", "sno": "1" },
             { "key": "air_r2", "sno": "2" },

@@ -373,9 +373,10 @@ def _eft_build_context(form_data):
 
 
 def _surge_obs(form_data, kind):
-    """Rebuild a Surge observation matrix the form posted (kind='ac'|'dc'|'signal').
-    Columns come from surge_obs_<kind>_cols (pipe-joined, e.g. 'CM L→PE 0°|...'),
-    rows from surge_obs_<kind>_row_<ri> + cells surge_obs_<kind>_<ri>__c<ci>.
+    """Rebuild a Surge observation matrix the form posted (`kind` is a SLOT id: 'ac',
+    'signal', 'dc', or a further instance of one, 'ac2' / 'signal3').
+    Columns come from surge_obs_<slot>_cols (pipe-joined, e.g. 'CM L→PE 0°|...'),
+    rows from surge_obs_<slot>_row_<ri> + cells surge_obs_<slot>_<ri>__c<ci>.
     Returns {'cols':[...], 'rows':[{label, cells}]} or None when nothing was posted."""
     cols = [c for c in _s(form_data.get("surge_obs_%s_cols" % kind)).split("|") if c]
     if not cols:
@@ -387,6 +388,53 @@ def _surge_obs(form_data, kind):
         rows.append({"label": _s(form_data.get("surge_obs_%s_row_%d" % (kind, ri))), "cells": cells})
         ri += 1
     return {"cols": cols, "rows": rows}
+
+
+# TEST OBSERVATION carries as many tables as the engineer adds, in the order they were
+# added, each one of these three kinds. A slot id is its kind plus an instance number for
+# the second and later of that kind ('ac', 'ac2', 'ac3'), so the ids stay stable when one
+# is removed and a draft written before this - which had exactly one of each - still reads.
+_SURGE_OBS_KINDS = {"ac": "AC Power Line:", "signal": "Signal Line:", "dc": "DC Power Line:"}
+_SURGE_SLOT_RE = re.compile(r"^(ac|signal|dc)(\d*)$")
+# The paragraph in SURGE.docx that the generated tables replace.
+_SURGE_OBS_ANCHOR = "[[observation tables]]"
+
+
+def surge_slot_kind(slot):
+    """'ac2' -> 'ac'; '' for anything that is not a slot id."""
+    m = _SURGE_SLOT_RE.match(_s(slot))
+    return m.group(1) if m else ""
+
+
+def surge_obs_slots(form_data):
+    """The ordered slot ids of the TEST OBSERVATION tables: what 'surge_obs_tables' says,
+    or - for a draft saved before the section became a list - whichever of the three
+    original slots carries data, in the order the document used to print them."""
+    fd = form_data or {}
+    listed = [s for s in (_s(fd.get("surge_obs_tables")).split(",")) if surge_slot_kind(s)]
+    if listed:
+        seen, out = set(), []
+        for s in listed:                       # a duplicate id would print the same table twice
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+    return [s for s in ("ac", "dc", "signal")
+            if _s(fd.get("surge_obs_%s_cols" % s))]
+
+
+def surge_obs_tables(form_data):
+    """[{slot, kind, title, cols, rows}] for every table the engineer added, skipping any
+    whose columns were never posted (an empty slot says nothing about the test)."""
+    out = []
+    for slot in surge_obs_slots(form_data):
+        kind = surge_slot_kind(slot)
+        data = _surge_obs(form_data, slot)
+        if not data:
+            continue
+        out.append({"slot": slot, "kind": kind, "title": _SURGE_OBS_KINDS[kind],
+                    "cols": data["cols"], "rows": data["rows"]})
+    return out
 
 
 def _surge_build_context(form_data):
@@ -442,10 +490,12 @@ def _surge_build_context(form_data):
 
     ctx["monitoring_parameters"] = _s(form_data.get("monitoring_parameters")) or "No Error Message"
 
-    # dynamic observation matrices — consumed by the generator after render
-    ctx["surge_obs_ac"] = _surge_obs(form_data, "ac")
-    ctx["surge_obs_dc"] = _surge_obs(form_data, "dc")
-    ctx["surge_obs_signal"] = _surge_obs(form_data, "signal")
+    # TEST OBSERVATION: every table the engineer added, in order — inserted post-render by
+    # the generator, which builds each one to its kind's reference format.
+    ctx["surge_obs_tables"] = surge_obs_tables(form_data)
+    # The paragraph the generator replaces with those tables. Text rather than an empty
+    # paragraph so it can be found after docxtpl has rendered.
+    ctx["surge_obs_anchor"] = _SURGE_OBS_ANCHOR
 
     # Ambient / Humidity / Test Date / Tested by split into 1-3 per-day sections, as on RE
     # and CE. The field bases are the same, so RE's collector is reused verbatim; the
@@ -456,11 +506,11 @@ def _surge_build_context(form_data):
     # generator's resolver all work unchanged.
     ctx["re_extra_photos"] = _re_extra_photos(form_data)
 
-    # Met Performance Criteria = the WORST code observed anywhere in the three matrices,
+    # Met Performance Criteria = the WORST code observed anywhere in the observation tables,
     # reported as a bare letter (a B2 counts as B). A hand-picked value on the form wins, so
     # the engineer can still override what was derived.
-    _obs_cells = [c for _k in ("surge_obs_ac", "surge_obs_dc", "surge_obs_signal")
-                  for _row in (ctx.get(_k) or {}).get("rows", []) for c in (_row.get("cells") or [])]
+    _obs_cells = [c for _t in ctx["surge_obs_tables"]
+                  for _row in _t.get("rows") or [] for c in (_row.get("cells") or [])]
     ctx["met_performance_criteria"] = (_s(form_data.get("met_performance_criteria"))
                                        or worst_performance_code(_obs_cells))
     # The procedure is written against the basic standard, not the product standards; this
@@ -555,6 +605,46 @@ def _pfmf_build_context(form_data):
     return ctx
 
 
+# ESD observation grids: prefix -> (how many rows the schema ships, the standard test-point
+# names for those rows). The engineer can add rows on the form, so the real count comes from
+# what was posted; these are the floor.
+_ESD_OBS_GROUPS = {
+    "ind": (8, ("HCP (0°)", "HCP (90°)", "HCP (180°)", "HCP (270°)",
+                "VCP (0°)", "VCP (90°)", "VCP (180°)", "VCP (270°)")),
+    "dir": (3, ()),
+    "air": (3, ()),
+}
+_ESD_ROW_KEY_RE = re.compile(r"^(ind|dir|air)_r(\d+)_(?:name|c[1-6])$")
+
+
+def esd_row_count(form_data, group):
+    """How many rows the ESD grid `group` has: the schema's own, or more if the engineer
+    added some.
+
+    The form POSTS the count ('esd_rows_<group>'), and that wins: a draft save MERGES, so
+    the cells of a row the engineer removed are still in the saved draft, and counting keys
+    alone would bring the row back. Falling back to the highest '<group>_r<n>_' index keeps
+    drafts saved before the count existed working (an added row that was left blank still
+    posts empty strings, so the index is there either way).
+    """
+    base = _ESD_OBS_GROUPS.get(group, (0, ()))[0]
+    fd = form_data or {}
+    stated = _s(fd.get("esd_rows_%s" % group))
+    if stated.isdigit():
+        return max(base, int(stated))
+    top = base
+    for key in fd:
+        m = _ESD_ROW_KEY_RE.match(_s(key))
+        if m and m.group(1) == group:
+            top = max(top, int(m.group(2)))
+    return top
+
+
+def _esd_row_has_content(fd, group, i):
+    return bool(_s(fd.get("%s_r%d_name" % (group, i))) or
+                any(_s(fd.get("%s_r%d_c%d" % (group, i, c))) for c in range(1, 7)))
+
+
 def _esd_filled_groups(form_data):
     """Which ESD observation groups carry any data: {'ind','dir','air'} subset.
 
@@ -564,14 +654,11 @@ def _esd_filled_groups(form_data):
     """
     fd = form_data or {}
     out = set()
-    for i in range(1, 9):
-        if any(_s(fd.get("ind_r%d_c%d" % (i, c))) for c in range(1, 7)):
-            out.add("ind")
-            break
-    for grp in ("dir", "air"):
-        for i in range(1, 4):
-            if _s(fd.get("%s_r%d_name" % (grp, i))) or \
-               any(_s(fd.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)):
+    for grp in _ESD_OBS_GROUPS:
+        for i in range(1, esd_row_count(fd, grp) + 1):
+            # the Indirect rows carry their names from the standard, so only cells count there
+            if any(_s(fd.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)) or \
+               (grp != "ind" and _s(fd.get("%s_r%d_name" % (grp, i)))):
                 out.add(grp)
                 break
     return out
@@ -598,23 +685,77 @@ def _esd_build_context(form_data):
                               ["±2kV", "±4kV", "±8kV", "Custom"])
     ctx["indirect_contact_discharge_hcp_vcp"] = RunsXml(str(hcp)).add('<w:r><w:br/></w:r>').add(str(vcp))
 
-    for i in range(1, 9):                       # Indirect: 8 fixed rows
-        for c in range(1, 7):
-            k = "ind_r%d_c%d" % (i, c)
-            ctx[k] = _s(form_data.get(k))
-    for grp in ("dir", "air"):                  # Direct / Air: 3 rows + editable name
-        for i in range(1, 4):
-            ctx["%s_r%d_name" % (grp, i)] = _s(form_data.get("%s_r%d_name" % (grp, i)))
+    # The three grids are row loops in the template ({%tr for r in esd_ind_rows %}), so the
+    # engineer can add test points on the form. An ADDED row that was left completely blank
+    # is dropped - it is a row they opened and did not use. The shipped rows always print,
+    # blank or not, which is how this datasheet has always read.
+    for grp, (base, names) in _ESD_OBS_GROUPS.items():
+        rows = []
+        for i in range(1, esd_row_count(form_data, grp) + 1):
+            name = _s(form_data.get("%s_r%d_name" % (grp, i)))
+            if not name and i <= len(names):
+                name = names[i - 1]
+            cells = [_s(form_data.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)]
+            if i > base and not _esd_row_has_content(form_data, grp, i):
+                continue
+            row = {"sno": str(len(rows) + 1), "name": name}
+            row.update({"c%d" % c: cells[c - 1] for c in range(1, 7)})
+            rows.append(row)
+            # kept alongside the loop for anything still reading the flat keys
+            ctx["%s_r%d_name" % (grp, i)] = name
             for c in range(1, 7):
-                k = "%s_r%d_c%d" % (grp, i, c)
-                ctx[k] = _s(form_data.get(k))
+                ctx["%s_r%d_c%d" % (grp, i, c)] = cells[c - 1]
+        ctx["esd_%s_rows" % grp] = rows
+
+    # Met Performance Criteria = the WORST code observed anywhere in the three grids, as a
+    # bare letter: A (no degradation) is the least severe and D the worst, a sub-case such as
+    # B2 counts as its letter, and 'NA' or a blank cannot outrank a real observation. Same
+    # rule as SURGE. What was recorded decides; the field only keeps its own value when not
+    # one cell has been filled in.
+    ctx["met_performance_criteria"] = (
+        worst_performance_code([_c for grp in _ESD_OBS_GROUPS
+                                for _row in ctx.get("esd_%s_rows" % grp, [])
+                                for _c in (_row.get("c%d" % i) for i in range(1, 7))])
+        or _s(form_data.get("met_performance_criteria")))
     return ctx
+
+
+def esd_met_criteria(form_data):
+    """The Met Performance Criteria the ESD observation grids imply, or '' if nothing was
+    recorded. Used on the FORM path too, so the value on screen is the one the document
+    will carry."""
+    cells = []
+    for grp in _ESD_OBS_GROUPS:
+        for i in range(1, esd_row_count(form_data, grp) + 1):
+            cells.extend(_s((form_data or {}).get("%s_r%d_c%d" % (grp, i, c)))
+                         for c in range(1, 7))
+    return worst_performance_code(cells)
+
+
+# RS_RI's TEST OBSERVATION: one row per frequency band, columns 1-2 the test level and the
+# dwell time, then the eight polarisation/angle cells that carry a performance criterion.
+_RS_RI_OBS_CELL_RE = re.compile(r"^(f_\d+_to_\d+)_col_(\d+)$")
+_RS_RI_OBS_FIRST_CODE_COL = 3
+
+
+def rs_ri_met_criteria(form_data):
+    """The Met Performance Criteria the RS_RI observation table implies, or '' if nothing
+    was recorded. Read from whatever bands the form posted rather than a fixed pair, so a
+    band added to the schema is covered without a second edit here."""
+    cells = []
+    for key, value in (form_data or {}).items():
+        m = _RS_RI_OBS_CELL_RE.match(_s(key))
+        if m and int(m.group(2)) >= _RS_RI_OBS_FIRST_CODE_COL:
+            cells.append(_s(value))
+    return worst_performance_code(cells)
 
 
 def _rs_ri_build_context(form_data):
     """RS Field Strength cells: render the ticked options with a fill-in value on
     Custom (e.g. '☐ 3V/m ☐ 10V/m ☐ 30V/m ☒ Custom 5V/m') — the generic checkbox
-    can only tick a fixed option, not carry the custom numeric value."""
+    can only tick a fixed option, not carry the custom numeric value.
+
+    Also derives Met Performance Criteria from the observation table."""
     from .layout import RunsXml, _box_run, _label_run
     fixed = ["3V/m", "10V/m", "30V/m"]
 
@@ -630,10 +771,15 @@ def _rs_ri_build_context(form_data):
         rt.add(_box_run(custom_on)).add(_label_run(" Custom " + (v if custom_on else "______")))
         return rt
 
-    return {
+    out = {
         "field_strength_col_1": fs(form_data.get("field_strength_col_1")),
         "field_strength_col_2": fs(form_data.get("field_strength_col_2")),
     }
+    # What was recorded decides, exactly as on ESD; the field keeps its own value only when
+    # not one observation cell has been filled in.
+    out["met_performance_criteria"] = (rs_ri_met_criteria(form_data)
+                                       or _s(form_data.get("met_performance_criteria")))
+    return out
 
 
 def build_context(schema, form_data, request_obj=None):

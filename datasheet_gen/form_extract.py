@@ -97,7 +97,9 @@ def observation_grids(code, form):
         return [matrix("power", gs._eft_obs(form, "power")),
                 matrix("signal", gs._eft_obs(form, "signal"))]
     if code == "SURGE":
-        return [matrix(k, gs._surge_obs(form, k)) for k in ("ac", "dc", "signal")]
+        # as many tables as the engineer added, in order; the hint is the slot id so two AC
+        # tables stay distinguishable in the projection
+        return [matrix(s, gs._surge_obs(form, s)) for s in gs.surge_obs_slots(form)]
     if code == "VOLTAGEDIPS":
         out = []
         for kind, hint in (("dips", "dips"), ("intr", "interrupt")):

@@ -7,6 +7,7 @@ import re
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Mm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 
 from .generator import strip_trailing_blank_paragraphs, _add_image_borders, _PIC_NS
@@ -224,11 +225,113 @@ def _eft_insert_legend(doc, legend):
         p._p.getparent().remove(p._p)
 
 
+# ---------------------------------------------------------------------------------------
+# SURGE TEST OBSERVATION: as many tables as the engineer added, each built to the format of
+# its kind in the reference document (table format for surge.docx):
+#
+#   AC Power Line   17 cols: Test Level (kV) + Common Mode (L->PE, N->PE, L+N->PE) and
+#                   Differential Mode (L->N), each over 0/90/180/270 deg; one row per
+#                   signed test level.
+#   Signal Line     17 cols: Name of the signal + Test Level (kV) over the signed levels,
+#                   each split CM / DM; one row per signal line.
+#   DC Power Line    2 cols: Test Level (kV) + Differential Mode / Positive -> Negative.
+#
+# Every header cell and every row label is bold and centred, and the observation the
+# engineer recorded is centred. The column proportions come from the reference and tile the
+# text column (9016 twips) exactly.
+_SURGE_TEXT_W = 9016
+
+
+def _surge_cell(tb, r, c, text, bold=False):
+    """Write one cell centred, optionally bold. Vertically centred too, so a one-character
+    observation sits in the middle of the box as it does in the reference."""
+    cell = tb.cell(r, c)
+    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    p = cell.paragraphs[0]
+    for extra in cell.paragraphs[1:]:
+        extra._p.getparent().remove(extra._p)
+    for run in list(p.runs):
+        run._r.getparent().remove(run._r)
+    run = p.add_run(text or "")
+    # None, not False: an explicit w:b val="0" would differ from the reference, where a data
+    # cell simply carries no bold property at all
+    run.bold = True if bold else None
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    return cell
+
+
+def _surge_set_grid(tb, widths):
+    """Write the table grid and every cell's width, span-aware, and fix the layout so Word
+    honours them instead of re-fitting the table to its contents."""
+    tbl = tb._tbl
+    pr = tbl.find(qn("w:tblPr"))
+    if pr is None:
+        pr = tbl.makeelement(qn("w:tblPr"), {})
+        tbl.insert(0, pr)
+    for tag, attrs in (("w:tblW", {"w:w": str(sum(widths)), "w:type": "dxa"}),
+                       ("w:tblLayout", {"w:type": "fixed"})):
+        old = pr.find(qn(tag))
+        if old is not None:
+            pr.remove(old)
+        el = pr.makeelement(qn(tag), {})
+        for k, v in attrs.items():
+            el.set(qn(k), v)
+        pr.append(el)
+    old = tbl.find(qn("w:tblGrid"))
+    if old is not None:
+        tbl.remove(old)
+    grid = tbl.makeelement(qn("w:tblGrid"), {})
+    for w in widths:
+        gc = grid.makeelement(qn("w:gridCol"), {})
+        gc.set(qn("w:w"), str(int(w)))
+        grid.append(gc)
+    pr.addnext(grid)
+    for tr in tbl.findall(qn("w:tr")):
+        for tc, start, span in _tc_spans(tr):
+            tcPr = tc.find(qn("w:tcPr"))
+            if tcPr is None:
+                tcPr = tc.makeelement(qn("w:tcPr"), {})
+                tc.insert(0, tcPr)
+            oldw = tcPr.find(qn("w:tcW"))
+            if oldw is not None:
+                tcPr.remove(oldw)
+            tcw = tcPr.makeelement(qn("w:tcW"), {})
+            tcw.set(qn("w:w"), str(int(sum(widths[start:start + span]))))
+            tcw.set(qn("w:type"), "dxa")
+            tcPr.insert(0, tcw)
+
+
+def _surge_shell(doc, nrows, ncols, label_w):
+    """A bordered, fixed-layout table with the reference's column proportions, detached from
+    the body (the caller puts it where it belongs)."""
+    t = doc.add_table(rows=nrows, cols=ncols)
+    try:
+        t.style = "Table Grid"
+    except Exception:  # noqa: BLE001 - a template without that style still gets the table
+        pass
+    t.autofit = False
+    rest = ncols - 1
+    each = (_SURGE_TEXT_W - label_w) // rest if rest else 0
+    widths = [label_w] + [each] * rest
+    widths[-1] += _SURGE_TEXT_W - sum(widths)      # the rounding goes in the last column
+    _surge_set_grid(t, widths)
+    return t
+
+
+def _surge_col_groups(parsed, depth):
+    """[(first, last), ...] runs of columns that agree on parsed[:depth]."""
+    out, start, n = [], 0, len(parsed)
+    for i in range(1, n + 1):
+        if i == n or parsed[i][:depth] != parsed[start][:depth]:
+            out.append((start, i - 1))
+            start = i
+    return out
+
+
 def _surge_power_matrix(doc, data):
-    """Build one AC/DC Power-Line observation table. Columns = a fixed CM/DM x line x
-    phase grid parsed from the 'CM L→PE 0°'-style meta; rows = the selected test-voltage
-    +/- pairs. A 3-row merged header mirrors the reference (Common/Differential Mode ->
-    coupling line -> phase). Returns the detached <w:tbl> element, or None if no data."""
+    """AC Power Line: 'CM L->PE 0deg'-style column meta becomes the three-row merged header
+    (mode band -> coupling line -> phase) over one row per signed test level. Returns the
+    detached <w:tbl>, or None when the table has no columns."""
     if not data or not data.get("cols"):
         return None
     cols, rows = data["cols"], data.get("rows", [])
@@ -241,44 +344,69 @@ def _surge_power_matrix(doc, data):
         line = " ".join(parts[1:-1]) if len(parts) >= 3 else (parts[1] if len(parts) == 2 else "")
         parsed.append((mode, line, phase))
 
-    def _groups(depth):                            # consecutive cols equal on parsed[:depth]
-        out, start = [], 0
-        for i in range(1, ncol + 1):
-            if i == ncol or parsed[i][:depth] != parsed[start][:depth]:
-                out.append((start, i - 1))
-                start = i
-        return out
-
-    t = doc.add_table(rows=3 + len(rows), cols=1 + ncol)
-    try:
-        t.style = "Table Grid"
-    except Exception:
-        pass
-    lbl = t.cell(0, 0).merge(t.cell(2, 0))         # "Test Level (kV)" spans the 3 header rows
-    lbl.text = "Test Level (kV)"
+    t = _surge_shell(doc, 3 + len(rows), 1 + ncol, 1104)
+    lbl = t.cell(0, 0).merge(t.cell(2, 0))         # "Test Level (kV)" spans the header rows
     MODE = {"CM": "Common Mode", "DM": "Differential Mode"}
-    for a, b in _groups(1):                         # row 0: mode bands
-        cell = t.cell(0, 1 + a).merge(t.cell(0, 1 + b)) if b > a else t.cell(0, 1 + a)
-        cell.text = MODE.get(parsed[a][0], parsed[a][0])
-    for a, b in _groups(2):                         # row 1: coupling lines
-        cell = t.cell(1, 1 + a).merge(t.cell(1, 1 + b)) if b > a else t.cell(1, 1 + a)
-        cell.text = parsed[a][1]
-    for i in range(ncol):                           # row 2: phases
-        t.cell(2, 1 + i).text = parsed[i][2]
-    for r, row in enumerate(rows):                  # data rows
-        t.cell(3 + r, 0).text = row.get("label", "")
-        for j, v in enumerate(row.get("cells", [])):
-            if 1 + j <= ncol:
-                t.cell(3 + r, 1 + j).text = v
+    for a, b in _surge_col_groups(parsed, 1):      # row 0: mode bands
+        if b > a:
+            t.cell(0, 1 + a).merge(t.cell(0, 1 + b))
+        _surge_cell(t, 0, 1 + a, MODE.get(parsed[a][0], parsed[a][0]), bold=True)
+    for a, b in _surge_col_groups(parsed, 2):      # row 1: coupling lines
+        if b > a:
+            t.cell(1, 1 + a).merge(t.cell(1, 1 + b))
+        _surge_cell(t, 1, 1 + a, parsed[a][1], bold=True)
+    for i in range(ncol):                          # row 2: phases
+        _surge_cell(t, 2, 1 + i, parsed[i][2], bold=True)
+    for r, row in enumerate(rows):                 # data rows: bold level, centred cells
+        _surge_cell(t, 3 + r, 0, row.get("label", ""), bold=True)
+        cells = row.get("cells") or []
+        for j in range(ncol):
+            _surge_cell(t, 3 + r, 1 + j, cells[j] if j < len(cells) else "")
+    _surge_cell(t, 0, 0, "Test Level (kV)", bold=True)
+    lbl.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    el = t._tbl
+    el.getparent().remove(el)
+    return el
+
+
+def _surge_dc_matrix(doc, data):
+    """DC Power Line: Test Level (kV) beside one column per coupling path - the reference has
+    the single Differential Mode / 'Positive -> Negative' path, and the meta is read the same
+    way ('DM Positive -> Negative') so a second path would simply add a column."""
+    if not data or not data.get("cols"):
+        return None
+    cols, rows = data["cols"], data.get("rows", [])
+    ncol = len(cols)
+    parsed = []
+    for c in cols:
+        mode, _, path = c.partition(" ")
+        parsed.append((mode, path or mode))
+    t = _surge_shell(doc, 2 + len(rows), 1 + ncol, _SURGE_TEXT_W // 2 if ncol == 1 else 1104)
+    lbl = t.cell(0, 0).merge(t.cell(1, 0))
+    MODE = {"CM": "Common Mode", "DM": "Differential Mode"}
+    for a, b in _surge_col_groups(parsed, 1):      # row 0: the mode band
+        if b > a:
+            t.cell(0, 1 + a).merge(t.cell(0, 1 + b))
+        _surge_cell(t, 0, 1 + a, MODE.get(parsed[a][0], parsed[a][0]), bold=True)
+    for i in range(ncol):                          # row 1: the coupling path
+        _surge_cell(t, 1, 1 + i, parsed[i][1], bold=True)
+    for r, row in enumerate(rows):
+        _surge_cell(t, 2 + r, 0, row.get("label", ""), bold=True)
+        cells = row.get("cells") or []
+        for j in range(ncol):
+            _surge_cell(t, 2 + r, 1 + j, cells[j] if j < len(cells) else "")
+    _surge_cell(t, 0, 0, "Test Level (kV)", bold=True)
+    lbl.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
     el = t._tbl
     el.getparent().remove(el)
     return el
 
 
 def _surge_signal_table(doc, data):
-    """Build the Signal-Line observation table (row per signal line, columns from the
-    posted CM/DM +/- meta). Empty rows are dropped; if the port was tested but nothing
-    entered the blank body is kept. Returns the detached element or None."""
+    """Signal Line: 'CM +0.25'-style meta becomes 'Test Level (kV)' over the signed levels,
+    each split CM / DM, beside 'Name of the signal'; one row per signal line. A row with
+    neither a name nor an observation is dropped, but a table where nothing was filled in
+    still prints its blank body - the engineer added it on purpose."""
     if not data or not data.get("cols"):
         return None
     cols, rows = data["cols"], data.get("rows", [])
@@ -287,47 +415,67 @@ def _surge_signal_table(doc, data):
     if not kept:
         kept = rows
     ncol = len(cols)
-    t = doc.add_table(rows=1 + len(kept), cols=1 + ncol)
-    try:
-        t.style = "Table Grid"
-    except Exception:
-        pass
-    hdr = t.rows[0].cells
-    hdr[0].text = "Name of the signal Line"
-    for j, c in enumerate(cols):
-        hdr[1 + j].text = c
+    parsed = []                                    # [(level, mode), ...] - level-major
+    for c in cols:
+        mode, _, level = c.partition(" ")
+        parsed.append((level or c, mode))
+    t = _surge_shell(doc, 3 + len(kept), 1 + ncol, 1094)
+    lbl = t.cell(0, 0).merge(t.cell(2, 0))
+    if ncol > 1:                                   # row 0: one band over every level
+        t.cell(0, 1).merge(t.cell(0, ncol))
+    _surge_cell(t, 0, 1, "Test Level (kV)", bold=True)
+    for a, b in _surge_col_groups(parsed, 1):      # row 1: the signed levels
+        if b > a:
+            t.cell(1, 1 + a).merge(t.cell(1, 1 + b))
+        _surge_cell(t, 1, 1 + a, parsed[a][0], bold=True)
+    for i in range(ncol):                          # row 2: CM / DM
+        _surge_cell(t, 2, 1 + i, parsed[i][1], bold=True)
     for r, row in enumerate(kept):
-        t.cell(1 + r, 0).text = row.get("label", "")
-        for j, v in enumerate(row.get("cells", [])):
-            if 1 + j <= ncol:
-                t.cell(1 + r, 1 + j).text = v
+        _surge_cell(t, 3 + r, 0, row.get("label", ""))
+        cells = row.get("cells") or []
+        for j in range(ncol):
+            _surge_cell(t, 3 + r, 1 + j, cells[j] if j < len(cells) else "")
+    _surge_cell(t, 0, 0, "Name of the signal Line", bold=True)
+    lbl.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
     el = t._tbl
     el.getparent().remove(el)
     return el
 
 
-def _surge_insert_observation(doc, ac, dc, signal):
-    """Insert the Surge dynamic observation tables after the 'AC Power Line:' /
-    'DC Power Line:' / 'Signal Line:' markers. A marker whose port was not tested
-    (no data) is removed so no empty heading dangles."""
-    def _find(text):
-        for p in doc.paragraphs:
-            if p.text.strip() == text:
-                return p
-        return None
+_SURGE_OBS_BUILDER = {"ac": _surge_power_matrix, "dc": _surge_dc_matrix,
+                      "signal": _surge_signal_table}
 
-    plan = (("AC Power Line:", ac, "power"),
-            ("DC Power Line:", dc, "power"),
-            ("Signal Line:", signal, "signal"))
-    for text, data, kind in plan:
-        marker = _find(text)
-        if marker is None:
+
+def _surge_insert_observation(doc, tables, anchor_text="[[observation tables]]"):
+    """Replace the anchor paragraph in TEST OBSERVATION with the tables the engineer added:
+    a bold title paragraph and its table, in the order they were added. The anchor goes
+    whatever happens, so a datasheet with no observation table prints the section heading
+    and nothing else rather than a sentinel."""
+    anchor = None
+    for p in doc.paragraphs:
+        if p.text.strip() == anchor_text:
+            anchor = p
+            break
+    if anchor is None:
+        return 0
+    style = anchor.style
+    made = 0
+    for spec in tables or ():
+        build = _SURGE_OBS_BUILDER.get(spec.get("kind"))
+        if build is None:
             continue
-        el = _surge_power_matrix(doc, data) if kind == "power" else _surge_signal_table(doc, data)
-        if el is not None:
-            marker._p.addnext(el)
-        else:
-            marker._p.getparent().remove(marker._p)
+        el = build(doc, spec)
+        if el is None:
+            continue
+        title = anchor.insert_paragraph_before(spec.get("title") or "", style=style)
+        for run in title.runs:
+            run.bold = True
+        title._p.addnext(el)
+        made += 1
+        # an empty paragraph after the table, so the next title does not sit on its border
+        anchor.insert_paragraph_before("", style=style)
+    anchor._p.getparent().remove(anchor._p)
+    return made
 
 
 _EMU_PER_CM = 360000
@@ -1428,30 +1576,6 @@ def _surge_bold_port_headings(doc, heading="TEST PROCEDURE"):
     return done
 
 
-def _surge_drop_untested_port(doc, ports):
-    """Remove the observation block of a port that was not tested.
-
-    'AC Power Line:' / 'DC Power Line:' belong to the power port and 'Signal Line:' to the
-    signal port; with only one port applicable the other's heading (and the matrix inserted
-    after it) should not appear at all. Previously both were printed regardless."""
-    if not ports:
-        return 0
-    plan = (("ac power line:", "power"), ("dc power line:", "power"), ("signal line:", "signal"))
-    removed = 0
-    for marker_text, port in plan:
-        if ports.get(port, True):
-            continue                      # tested -> keep
-        for p in list(doc.paragraphs):
-            if (p.text or "").strip().lower() != marker_text:
-                continue
-            nxt = p._p.getnext()
-            if nxt is not None and nxt.tag == qn("w:tbl"):
-                nxt.getparent().remove(nxt)     # the matrix inserted for this port
-            p._p.getparent().remove(p._p)
-            removed += 1
-    return removed
-
-
 #: HARMONIC's spec value area is 2 grid columns; 3 from each gives 6, which divides by
 #: 1, 2 and 3 so every per-day split lands on a boundary.
 _HARMONIC_VALUE_REGRID = (3, 3)
@@ -2200,9 +2324,10 @@ def _surge_finalize(doc, context):
             _ce_center_table(tb2)
     _bullet_monitoring_parameters(doc)
     _surge_bold_port_headings(doc)
-    _surge_drop_untested_port(doc, (context or {}).get("_surge_ports"))
-    # ... and the Test Setup picture of that port goes with it, so an untested port leaves
-    # no empty slot behind. Runs before the renumbering below so the survivors are 1..N.
+    # TEST OBSERVATION is no longer pruned by the Test Port field: the section carries the
+    # tables the engineer chose to add, so its contents are their decision, not something
+    # to be second-guessed here. The Test Setup pictures still follow the tested ports.
+    # Runs before the renumbering below so the survivors are 1..N.
     _surge_prune_photos(doc, (context or {}).get("_surge_ports"))
     # Extra pictures continue the sequence: 'Photo 3:', 'Photo 4:', ... whatever label the
     # engineer typed. Runs after the untested-port pass so a dropped photo leaves no gap.
@@ -2443,8 +2568,8 @@ def render(code, context, img_keys, img_paths, output_path):
         _eft_insert_legend(tpl.docx, context.get("eft_obs_legend"))
 
     if code == "SURGE":
-        _surge_insert_observation(tpl.docx, context.get("surge_obs_ac"),
-                                  context.get("surge_obs_dc"), context.get("surge_obs_signal"))
+        _surge_insert_observation(tpl.docx, context.get("surge_obs_tables"),
+                                  context.get("surge_obs_anchor") or "[[observation tables]]")
         _eft_insert_legend(tpl.docx, context.get("surge_obs_legend"))
 
     if code == "PFMF":
