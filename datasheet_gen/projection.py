@@ -756,7 +756,7 @@ def _project_legend(db, did, code, form):
 
 def record_transition(planner_entry_id, to_status, actor=None, comment="",
                       snapshot=False, submitted=False, decided=False,
-                      from_status=None):
+                      from_status=None, reason_code=None):
     """Append one row to a datasheet's status history; optionally freeze it.
 
     ``snapshot`` also copies the current form into ``datasheet_revision`` under
@@ -799,15 +799,27 @@ def record_transition(planner_entry_id, to_status, actor=None, comment="",
         if snapshot:
             _snapshot_revision(db, did, planner_entry_id, revision, from_status, actor)
 
+        # reason_code sits BESIDE the comment, never instead of it. The comment
+        # is what the reviewer actually told the engineer and is the only thing
+        # that explains a specific finding; the code is what SQL can GROUP BY,
+        # which is the whole reason "have other products failed like this?" is
+        # answerable at all. Written only when the column exists, so a database
+        # that has not taken insight_schema yet still records reviews.
+        cols = _columns(db, "datasheet_status_history")
+        extra = ", reason_code" if "reason_code" in cols else ""
+        extra_val = ", :rc" if extra else ""
+        params = {"d": did, "r": revision, "f": from_status, "t": to_status,
+                  "ui": getattr(actor, "id", None),
+                  "un": (getattr(actor, "username", None) or "")[:200] or None,
+                  "ur": (getattr(actor, "role", None) or "")[:30] or None,
+                  "c": (comment or "").strip() or None}
+        if extra:
+            params["rc"] = (reason_code or "").strip()[:40] or None
         db.session.execute(text(
             "INSERT INTO datasheet_status_history (datasheet_id, revision_no, "
             "from_status, to_status, actor_user_id, actor_name, actor_role, "
-            "comment, created_at) VALUES (:d, :r, :f, :t, :ui, :un, :ur, :c, NOW())"),
-            {"d": did, "r": revision, "f": from_status, "t": to_status,
-             "ui": getattr(actor, "id", None),
-             "un": (getattr(actor, "username", None) or "")[:200] or None,
-             "ur": (getattr(actor, "role", None) or "")[:30] or None,
-             "c": (comment or "").strip() or None})
+            "comment%s, created_at) VALUES (:d, :r, :f, :t, :ui, :un, :ur, :c%s, NOW())"
+            % (extra, extra_val)), params)
 
         sets = ["status=:s"]
         params = {"s": _CURRENT_STATUS.get(to_status, to_status), "d": did}
@@ -843,23 +855,36 @@ def _snapshot_revision(db, did, planner_entry_id, revision, status, actor):
         {"p": planner_entry_id}).first()
     if rec is None:
         return
+    # failure_reason_code rides along with met_performance_criteria because it
+    # answers the same question one level finer: the criteria says the unit did
+    # not meet B, the code says it was a radiated emission excursion. Frozen per
+    # revision so "why did revision 2 fail" survives revision 3 fixing it -
+    # reading it off the live header would report every attempt as whatever the
+    # last one said. Guarded on the column existing so a database that has not
+    # taken insight_schema yet still snapshots.
+    fcol = "failure_reason_code" in _columns(db, "datasheet")
     head = db.session.execute(text(
         "SELECT ambient_temperature, relative_humidity, required_performance_criteria, "
-        "met_performance_criteria, tested_by, deviation FROM `datasheet` WHERE id=:d"),
-        {"d": did}).first()
+        "met_performance_criteria, tested_by, deviation%s FROM `datasheet` WHERE id=:d"
+        % (", failure_reason_code" if fcol else "")), {"d": did}).first()
+    to_rev = fcol and "failure_reason_code" in _columns(db, "datasheet_revision")
+    params = {"d": did, "r": revision, "st": status, "fj": rec[0], "ij": rec[1],
+              "res": rec[2], "td": rec[3], "u": getattr(actor, "id", None) or rec[4],
+              "amb": head[0] if head else None, "rh": head[1] if head else None,
+              "rpc": head[2] if head else None, "mpc": head[3] if head else None,
+              "tb": head[4] if head else None, "dev": head[5] if head else None}
+    if to_rev:
+        params["frc"] = head[6] if head else None
     db.session.execute(text(
         "INSERT INTO datasheet_revision (datasheet_id, revision_no, status, form_json, "
         "images_json, result, test_date, ambient_temperature, relative_humidity, "
-        "required_performance_criteria, met_performance_criteria, tested_by, deviation, "
+        "required_performance_criteria, met_performance_criteria, tested_by, deviation%s, "
         "created_by_user_id, submitted_at, created_at) "
-        "VALUES (:d, :r, :st, :fj, :ij, :res, :td, :amb, :rh, :rpc, :mpc, :tb, :dev, "
+        "VALUES (:d, :r, :st, :fj, :ij, :res, :td, :amb, :rh, :rpc, :mpc, :tb, :dev%s, "
         ":u, NOW(), NOW()) ON DUPLICATE KEY UPDATE form_json=VALUES(form_json), "
-        "images_json=VALUES(images_json), submitted_at=VALUES(submitted_at)"),
-        {"d": did, "r": revision, "st": status, "fj": rec[0], "ij": rec[1],
-         "res": rec[2], "td": rec[3], "u": getattr(actor, "id", None) or rec[4],
-         "amb": head[0] if head else None, "rh": head[1] if head else None,
-         "rpc": head[2] if head else None, "mpc": head[3] if head else None,
-         "tb": head[4] if head else None, "dev": head[5] if head else None})
+        "images_json=VALUES(images_json), submitted_at=VALUES(submitted_at)"
+        % (", failure_reason_code" if to_rev else "", ", :frc" if to_rev else "")),
+        params)
     _snapshot_children(db, did, revision)
     db.session.execute(text(
         "UPDATE `datasheet` SET revision_no=:r WHERE id=:d"),
