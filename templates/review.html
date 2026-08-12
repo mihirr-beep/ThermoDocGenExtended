@@ -172,7 +172,7 @@
         </div>
 
         <!-- Enhanced Statistics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-6">
             <!-- Under Review Card -->
             <div
                 class="group relative bg-gradient-to-br from-white to-blue-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-blue-200/50 overflow-hidden">
@@ -283,6 +283,64 @@
                                 <p
                                     class="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                                     {{ statistics.assigned or 0 }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Draft Report Card -->
+            <div
+                class="group relative bg-gradient-to-br from-white to-amber-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-amber-200/50 overflow-hidden">
+                <div class="relative p-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div
+                                    class="w-14 h-14 bg-gradient-to-br from-amber-500 via-yellow-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-xl">
+                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">TCO Wise</p>
+                                <p class="text-sm font-semibold text-gray-700 leading-tight">Draft Report</p>
+                                <p
+                                    class="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                                    {{ statistics.draft_report or 0 }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Datasheet Uploaded Card -->
+            <div
+                class="group relative bg-gradient-to-br from-white to-teal-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-teal-200/50 overflow-hidden">
+                <div class="relative p-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div
+                                    class="w-14 h-14 bg-gradient-to-br from-teal-500 via-emerald-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-xl">
+                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M7 8h10M7 12h10m-4 4h4m-9 5h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                                        </path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">TCO Wise</p>
+                                <p class="text-sm font-semibold text-gray-700 leading-tight">Datasheet Uploaded</p>
+                                <p
+                                    class="text-3xl font-bold bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">
+                                    {{ statistics.datasheet_uploaded or 0 }}</p>
                             </div>
                         </div>
                     </div>
@@ -3451,6 +3509,40 @@
         `;
     }
 
+
+    function formatConformityDecisionRules(items) {
+        const decisionRuleLabels = {
+            standard_measured: 'As prescribed by the standard (Measured value or observation will be provided with the results)',
+            standard_uncertainty: 'As prescribed by the standard inclusive of measurement uncertainty.',
+            customer_specs: 'As per customer specifications',
+            customer_specs_uncertainty: 'As per customer specification inclusive of measurement uncertainty.'
+        };
+
+        let normalizedItems = items;
+        if (typeof normalizedItems === 'string') {
+            const trimmed = normalizedItems.trim();
+            if (!trimmed) {
+                normalizedItems = [];
+            } else {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    normalizedItems = Array.isArray(parsed) ? parsed : [parsed];
+                } catch (error) {
+                    normalizedItems = [trimmed];
+                }
+            }
+        } else if (!Array.isArray(normalizedItems)) {
+            normalizedItems = normalizedItems ? [normalizedItems] : [];
+        }
+
+        const displayItems = normalizedItems
+            .map(item => String(item ?? '').trim())
+            .filter(Boolean)
+            .map(item => decisionRuleLabels[item] || item);
+
+        return renderBadgeList(displayItems);
+    }
+
     function renderDetailGrid(entries) {
         if (!entries || !entries.length) {
             return '<p class="text-sm text-gray-400 italic py-2">No data available</p>';
@@ -5186,7 +5278,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div class="bg-pink-50 rounded-lg p-4 border border-pink-100">
                 <p class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Decision Rule</p>
-                ${renderBadgeList(data.decision_rule)}
+                ${formatConformityDecisionRules(data.decision_rule)}
             </div>
             <div class="bg-rose-50 rounded-lg p-4 border border-rose-100">
                 <p class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Functional Modes</p>

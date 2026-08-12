@@ -17,11 +17,17 @@ Env:
     LANGFUSE_SERVICE_NAME  (optional span service name)
 """
 import base64
+import importlib.util
+import sys
 import logging
 import os
 
 _log = logging.getLogger("nlp_search.tracing")
 _configured = None  # None = not attempted; True/False = result
+
+
+def _has_logfire():
+    return importlib.util.find_spec("logfire") is not None
 
 
 def available():
@@ -44,6 +50,16 @@ def setup_tracing():
     if _configured is not None:
         return _configured
     if not available():
+        _configured = False
+        return False
+    # logfire is the OTEL SDK this exports through, and it is optional: say so once and
+    # carry on untraced rather than failing the search.
+    if not _has_logfire():
+        _log.info(
+            "Langfuse tracing disabled: optional dependency 'logfire' is not installed "
+            "for the active interpreter (%s). Continuing untraced.",
+            sys.executable,
+        )
         _configured = False
         return False
     try:

@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Test Requests - Test Request Generator{% endblock %}
 
@@ -115,117 +115,7 @@
         </div>
 
         <!-- Enhanced Statistics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <!-- Total Test Requests Card -->
-            <div
-                class="group relative bg-gradient-to-br from-white to-gray-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-gray-200/50 overflow-hidden">
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                                        </path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
-                                <p class="text-sm font-semibold text-gray-700 leading-tight">Test Requests</p>
-                                <p class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"
-                                    data-stat="total">0</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Completed Test Requests Card -->
-            <div
-                class="group relative bg-gradient-to-br from-white to-emerald-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-emerald-200/50 overflow-hidden">
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-gradient-to-br from-emerald-500 via-green-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Completed</p>
-                                <p class="text-sm font-semibold text-gray-700 leading-tight">Plans</p>
-                                <p class="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent"
-                                    data-stat="completed">0</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Draft Test Requests Card -->
-            <div
-                class="group relative bg-gradient-to-br from-white to-amber-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-amber-200/50 overflow-hidden">
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
-                                        </path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Draft</p>
-                                <p class="text-sm font-semibold text-gray-700 leading-tight">Plans</p>
-                                <p class="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent"
-                                    data-stat="draft">0</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- In Progress Test Requests Card -->
-            <div
-                class="group relative bg-gradient-to-br from-white to-red-50 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-red-200/50 overflow-hidden">
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-gradient-to-br from-red-500 via-pink-500 to-rose-500 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">In</p>
-                                <p class="text-sm font-semibold text-gray-700 leading-tight">Progress</p>
-                                <p class="text-3xl font-bold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent"
-                                    data-stat="at_review">0</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <div id="statisticsCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"></div>
 
         <!-- Enhanced Search and Filters -->
         <div class="bg-white rounded-2xl shadow-lg border border-gray-100 mb-4">
@@ -7314,7 +7204,7 @@
 
             // Create a single 3-column grid container like Group/Division/Site
             const gridContainer = document.createElement('div');
-            gridContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+            gridContainer.className = 'grid grid-cols-1 md:grid-cols-3 gap-4';
 
             for (let i = 2; i <= count; i += 1) { // Only samples 2..N
                 // Model Number/SKU Number
@@ -15545,25 +15435,95 @@
                     ${reportAccessRequired ? `
                     <div class="space-y-3">
                         <div id="reportAccessGrantedState_${requestId}" class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 ${reportAccessGranted ? '' : 'hidden'}">
-                            <p class="text-sm font-medium text-emerald-800">Feedback submitted. View and download are enabled for this report.</p>
+                            <p class="text-sm font-medium text-emerald-800">Thank you for the feedback. View and download are enabled for this report.</p>
                         </div>
 
-                        <div id="reportAccessRequiredState_${requestId}" class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 ${reportAccessGranted ? 'hidden' : ''}">
+                        <div id="reportAccessRequiredState_${requestId}" class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-4 ${reportAccessGranted ? 'hidden' : ''}">
                             <div>
-                                <h4 class="text-sm font-semibold text-amber-900">Required Before Report Access</h4>
-                                <p class="mt-1 text-xs text-amber-800">Submit your feedback and confirm that everything is okay and you want to download the report. Until then, the View and Download buttons stay disabled.</p>
+                                <h4 class="text-sm font-semibold text-amber-900">Feedback Required Before Report Access</h4>
+                                <p class="mt-1 text-xs text-amber-800">Rate the draft report below and confirm that you want to unlock View and Download. Until then, the report actions stay disabled.</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <label for="reportAccessOverallSatisfaction_${requestId}" class="text-xs font-semibold text-gray-700">Overall Satisfaction</label>
+                                        <span id="reportAccessOverallSatisfactionValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
+                                    </div>
+                                    <input
+                                        id="reportAccessOverallSatisfaction_${requestId}"
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        value="8"
+                                        data-value-id="reportAccessOverallSatisfactionValue_${requestId}"
+                                        oninput="updateReportAccessSliderValue(this)"
+                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    >
+                                </div>
+
+                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <label for="reportAccessQualityOfTesting_${requestId}" class="text-xs font-semibold text-gray-700">Quality Of Testing</label>
+                                        <span id="reportAccessQualityOfTestingValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
+                                    </div>
+                                    <input
+                                        id="reportAccessQualityOfTesting_${requestId}"
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        value="8"
+                                        data-value-id="reportAccessQualityOfTestingValue_${requestId}"
+                                        oninput="updateReportAccessSliderValue(this)"
+                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    >
+                                </div>
+
+                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <label for="reportAccessCommunication_${requestId}" class="text-xs font-semibold text-gray-700">Communication</label>
+                                        <span id="reportAccessCommunicationValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
+                                    </div>
+                                    <input
+                                        id="reportAccessCommunication_${requestId}"
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        value="8"
+                                        data-value-id="reportAccessCommunicationValue_${requestId}"
+                                        oninput="updateReportAccessSliderValue(this)"
+                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    >
+                                </div>
+
+                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <label for="reportAccessScheduleAdherence_${requestId}" class="text-xs font-semibold text-gray-700">Schedule Adherence</label>
+                                        <span id="reportAccessScheduleAdherenceValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
+                                    </div>
+                                    <input
+                                        id="reportAccessScheduleAdherence_${requestId}"
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        value="8"
+                                        data-value-id="reportAccessScheduleAdherenceValue_${requestId}"
+                                        oninput="updateReportAccessSliderValue(this)"
+                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    >
+                                </div>
                             </div>
 
                             <div>
-                                <label for="reportAccessFeedback_${requestId}" class="block text-xs font-semibold text-gray-700 mb-1">Feedback</label>
+                                <label for="reportAccessComments_${requestId}" class="block text-xs font-semibold text-gray-700 mb-1">Feedback Comments</label>
                                 <textarea
-                                    id="reportAccessFeedback_${requestId}"
+                                    id="reportAccessComments_${requestId}"
                                     rows="3"
-                                    placeholder="Enter your feedback before downloading the report..."
+                                    placeholder="Optional comments about the draft report..."
                                     class="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent resize-none transition-all duration-200"
                                 ></textarea>
                                 <p id="reportAccessFeedbackError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
-                                    Feedback is required before you can access the report.
+                                    All feedback ratings are required before you can access the report.
                                 </p>
                             </div>
 
@@ -15574,7 +15534,7 @@
                                         type="checkbox"
                                         class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
                                     >
-                                    <span class="text-sm text-gray-700">Everything is okay and I want to download the report.</span>
+                                    <span class="text-sm text-gray-700">I have reviewed the draft report and want to unlock View and Download.</span>
                                 </label>
                                 <p id="reportAccessAcknowledgeError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
                                     Please acknowledge before continuing.
@@ -15755,6 +15715,37 @@
         setReportActionButtonsEnabled(requestId, true);
     }
 
+    function updateReportAccessSliderValue(input) {
+        if (!input) return;
+
+        const valueId = input.getAttribute('data-value-id');
+        const valueEl = valueId ? document.getElementById(valueId) : null;
+        if (valueEl) {
+            valueEl.textContent = `${input.value}/10`;
+        }
+    }
+
+    function getReportAccessFeedbackRatings(requestId) {
+        const fieldMap = {
+            overall_satisfaction: `reportAccessOverallSatisfaction_${requestId}`,
+            quality_of_testing: `reportAccessQualityOfTesting_${requestId}`,
+            communication: `reportAccessCommunication_${requestId}`,
+            schedule_adherence: `reportAccessScheduleAdherence_${requestId}`
+        };
+
+        const ratings = {};
+        for (const [key, elementId] of Object.entries(fieldMap)) {
+            const input = document.getElementById(elementId);
+            const value = input ? parseInt(input.value, 10) : NaN;
+            if (!Number.isInteger(value) || value < 1 || value > 10) {
+                return null;
+            }
+            ratings[key] = value;
+        }
+
+        return ratings;
+    }
+
     function viewReportPdf(requestId) {
         const url = `/api/test-requests/${requestId}/view-report`;
         const newTab = window.open(url, '_blank');
@@ -15778,18 +15769,18 @@
 
 
     async function submitReportAccessFeedback(requestId) {
-        const textarea = document.getElementById(`reportAccessFeedback_${requestId}`);
+        const commentsTextarea = document.getElementById(`reportAccessComments_${requestId}`);
         const feedbackErrorEl = document.getElementById(`reportAccessFeedbackError_${requestId}`);
         const acknowledgeCheckbox = document.getElementById(`reportAccessAcknowledge_${requestId}`);
         const acknowledgeErrorEl = document.getElementById(`reportAccessAcknowledgeError_${requestId}`);
         const btn = document.getElementById(`submitReportAccessBtn_${requestId}`);
-        const feedback = textarea ? textarea.value.trim() : '';
+        const ratings = getReportAccessFeedbackRatings(requestId);
+        const comments = commentsTextarea ? commentsTextarea.value.trim() : '';
         const acknowledged = acknowledgeCheckbox ? acknowledgeCheckbox.checked === true : false;
 
         let hasError = false;
-        if (!feedback) {
+        if (!ratings) {
             if (feedbackErrorEl) feedbackErrorEl.classList.remove('hidden');
-            if (textarea) textarea.focus();
             hasError = true;
         } else if (feedbackErrorEl) {
             feedbackErrorEl.classList.add('hidden');
@@ -15823,7 +15814,7 @@
             const response = await fetch(`/api/test-requests/${requestId}/report-access-feedback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ feedback, acknowledged })
+                body: JSON.stringify({ ratings, comments, acknowledged })
             });
 
             const data = await response.json().catch(() => ({}));
@@ -15832,12 +15823,12 @@
                 throw new Error(data.error || 'Failed to submit feedback');
             }
 
-            if (textarea) textarea.value = '';
+            if (commentsTextarea) commentsTextarea.value = '';
             if (acknowledgeCheckbox) acknowledgeCheckbox.checked = false;
 
             markReportAccessGranted(requestId);
             await loadReviewComments(requestId);
-            showToast(data.message || 'Feedback submitted. Report access enabled.', 'success');
+            showToast(data.message || 'Thank you for the feedback. Report access enabled.', 'success');
         } catch (error) {
             console.error('Error submitting report access feedback:', error);
             showToast('Failed to submit feedback: ' + error.message, 'error');
@@ -16361,6 +16352,121 @@
         }
     }
 
+    const INDEX_STATUS_CARD_ORDER = [
+        'Completed',
+        'Testing In Progress',
+        'Draft Report',
+        'Datasheet Uploaded',
+        'At Review',
+        'Partially Scheduled',
+        'Rejected / Cancelled'
+    ];
+
+    function normalizeIndexStatusKey(statusLabel) {
+        return String(statusLabel || '')
+            .trim()
+            .toLowerCase()
+            .replace(/_/g, ' ')
+            .replace(/\s+/g, ' ');
+    }
+
+    function getIndexStatusCardConfig(statusLabel, isTotal = false) {
+        if (isTotal) {
+            return {
+                border: 'border-blue-200',
+                borderTop: 'border-t-4 border-blue-500',
+                iconBg: 'bg-blue-100',
+                iconColor: 'text-blue-600'
+            };
+        }
+
+        const configMap = {
+            'draft': { border: 'border-amber-200', borderTop: 'border-t-4 border-amber-500', iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+            'at review': { border: 'border-blue-200', borderTop: 'border-t-4 border-blue-500', iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+            'testing in progress': { border: 'border-cyan-200', borderTop: 'border-t-4 border-cyan-500', iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600' },
+            'partially scheduled': { border: 'border-violet-200', borderTop: 'border-t-4 border-violet-500', iconBg: 'bg-violet-100', iconColor: 'text-violet-600' },
+            'rejected / cancelled': { border: 'border-rose-200', borderTop: 'border-t-4 border-rose-500', iconBg: 'bg-rose-100', iconColor: 'text-rose-600' },
+            'approved': { border: 'border-emerald-200', borderTop: 'border-t-4 border-emerald-500', iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+            'assigned': { border: 'border-indigo-200', borderTop: 'border-t-4 border-indigo-500', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600' },
+            'assigned lab engineer': { border: 'border-purple-200', borderTop: 'border-t-4 border-purple-500', iconBg: 'bg-purple-100', iconColor: 'text-purple-600' },
+            'test plan approved': { border: 'border-teal-200', borderTop: 'border-t-4 border-teal-500', iconBg: 'bg-teal-100', iconColor: 'text-teal-600' },
+            'test plan to approve': { border: 'border-fuchsia-200', borderTop: 'border-t-4 border-fuchsia-500', iconBg: 'bg-fuchsia-100', iconColor: 'text-fuchsia-600' },
+            'test schedule in progress': { border: 'border-sky-200', borderTop: 'border-t-4 border-sky-500', iconBg: 'bg-sky-100', iconColor: 'text-sky-600' },
+            'in progress': { border: 'border-red-200', borderTop: 'border-t-4 border-red-500', iconBg: 'bg-red-100', iconColor: 'text-red-600' },
+            'need more information': { border: 'border-orange-200', borderTop: 'border-t-4 border-orange-500', iconBg: 'bg-orange-100', iconColor: 'text-orange-600' },
+            'peer review': { border: 'border-violet-200', borderTop: 'border-t-4 border-violet-500', iconBg: 'bg-violet-100', iconColor: 'text-violet-600' },
+            'draft report': { border: 'border-slate-200', borderTop: 'border-t-4 border-slate-500', iconBg: 'bg-slate-100', iconColor: 'text-slate-600' },
+            'datasheet uploaded': { border: 'border-amber-200', borderTop: 'border-t-4 border-amber-500', iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+            'proceed report': { border: 'border-lime-200', borderTop: 'border-t-4 border-lime-500', iconBg: 'bg-lime-100', iconColor: 'text-lime-600' },
+            'admin sign off': { border: 'border-pink-200', borderTop: 'border-t-4 border-pink-500', iconBg: 'bg-pink-100', iconColor: 'text-pink-600' },
+            'report uploaded': { border: 'border-green-200', borderTop: 'border-t-4 border-green-500', iconBg: 'bg-green-100', iconColor: 'text-green-600' },
+            'completed': { border: 'border-emerald-200', borderTop: 'border-t-4 border-emerald-500', iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+            'cancelled': { border: 'border-gray-300', borderTop: 'border-t-4 border-gray-500', iconBg: 'bg-gray-100', iconColor: 'text-gray-600' },
+            'rejected': { border: 'border-rose-200', borderTop: 'border-t-4 border-rose-500', iconBg: 'bg-rose-100', iconColor: 'text-rose-600' },
+            'update plan': { border: 'border-yellow-200', borderTop: 'border-t-4 border-yellow-500', iconBg: 'bg-yellow-100', iconColor: 'text-yellow-600' }
+        };
+
+        return configMap[normalizeIndexStatusKey(statusLabel)] || {
+            border: 'border-gray-200',
+            borderTop: 'border-t-4 border-gray-500',
+            iconBg: 'bg-gray-100',
+            iconColor: 'text-gray-600'
+        };
+    }
+
+    function getIndexStatusCardIcon(statusLabel, isTotal = false) {
+        if (isTotal) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
+        }
+
+        const key = normalizeIndexStatusKey(statusLabel);
+        if (['completed', 'approved', 'test plan approved', 'report uploaded', 'datasheet uploaded'].includes(key)) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+        }
+        if (['rejected', 'cancelled', 'rejected / cancelled'].includes(key)) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+        }
+        if (['need more information', 'peer review', 'at review', 'test plan to approve', 'admin sign off'].includes(key)) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13h2m-1 4h.01"></path>';
+        }
+        if (['draft', 'draft report', 'update plan'].includes(key)) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>';
+        }
+        if (['assigned', 'assigned lab engineer'].includes(key)) {
+            return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2m8 0H9m4-10a4 4 0 11-8 0 4 4 0 018 0z"></path>';
+        }
+        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>';
+    }
+
+    function buildStatisticsCard(card) {
+        const config = getIndexStatusCardConfig(card.title, card.isTotal === true);
+        const iconPath = getIndexStatusCardIcon(card.title, card.isTotal === true);
+        const statKey = normalizeIndexStatusKey(card.title).replace(/\s+/g, '_') || 'total';
+        const countValue = Number(card.count || 0);
+
+        return `
+            <div class="group relative overflow-hidden rounded-3xl border ${config.border} bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                <div class="${config.borderTop}"></div>
+                <div class="relative p-6">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-shrink-0">
+                            <div class="flex h-16 w-16 items-center justify-center rounded-xl ${config.iconBg}">
+                                <svg class="w-8 h-8 ${config.iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                    ${iconPath}
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-bold uppercase tracking-widest text-gray-600">${escapeHtml(card.eyebrow || 'Status')}</p>
+                            <p class="mt-2 text-sm font-semibold leading-tight text-gray-900 break-words">${escapeHtml(card.title || '')}</p>
+                            <p class="mt-4 text-5xl font-extrabold text-gray-900" data-stat="${escapeHtml(statKey)}">${countValue}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     function updateStatistics(counts) {
 
         if (!counts) {
@@ -16368,47 +16474,53 @@
             return;
         }
 
-        // Update statistics cards
-        const totalCard = document.querySelector('[data-stat="total"]');
-        const draftCard = document.querySelector('[data-stat="draft"]');
-        const atReviewCard = document.querySelector('[data-stat="at_review"]');
-        const completedCard = document.querySelector('[data-stat="completed"]');
-
-        // Update total
-        if (totalCard) {
-            const totalValue = counts.total !== undefined ? counts.total : (counts.total_count !== undefined ? counts.total_count : 0);
-            totalCard.textContent = totalValue;
-        } else {
-            console.warn('Total card not found');
+        const statisticsGrid = document.getElementById('statisticsCardsGrid');
+        if (!statisticsGrid) {
+            console.warn('Statistics cards grid not found');
+            return;
         }
 
-        // Update draft
-        if (draftCard) {
-            const draftValue = counts.draft !== undefined ? counts.draft : (counts.draft_count !== undefined ? counts.draft_count : 0);
-            draftCard.textContent = draftValue;
-        } else {
-            console.warn('Draft card not found');
-        }
+        const totalValue = counts.total !== undefined
+            ? counts.total
+            : (counts.total_count !== undefined ? counts.total_count : 0);
 
-        // Update at_review (In Progress)
-        if (atReviewCard) {
-            const atReviewValue = counts.at_review !== undefined
-                ? counts.at_review
-                : (counts.in_progress !== undefined
-                    ? counts.in_progress
-                    : (counts.at_review_count !== undefined ? counts.at_review_count : 0));
-            atReviewCard.textContent = atReviewValue;
-        } else {
-            console.warn('At review card not found');
-        }
+        const exactStatusCounts = counts.exact_status_counts && typeof counts.exact_status_counts === 'object'
+            ? counts.exact_status_counts
+            : {};
 
-        // Update completed
-        if (completedCard) {
-            const completedValue = counts.completed !== undefined ? counts.completed : (counts.completed_count !== undefined ? counts.completed_count : 0);
-            completedCard.textContent = completedValue;
-        } else {
-            console.warn('Completed card not found');
-        }
+        const payloadStatusCards = Array.isArray(counts.status_cards) ? counts.status_cards : [];
+        const payloadLabels = payloadStatusCards
+            .map((item) => String(item && item.label || '').trim())
+            .filter(Boolean);
+        const exactLabels = Object.keys(exactStatusCounts);
+        const extraLabels = [...new Set([...payloadLabels, ...exactLabels])]
+            .filter((label) => !INDEX_STATUS_CARD_ORDER.includes(label))
+            .sort((left, right) => left.localeCompare(right));
+        const orderedLabels = [...INDEX_STATUS_CARD_ORDER, ...extraLabels];
+
+        const cards = [
+            {
+                eyebrow: 'Total',
+                title: 'Total Requests',
+                count: totalValue,
+                isTotal: true
+            },
+            ...orderedLabels.map((label) => {
+                const payloadMatch = payloadStatusCards.find((item) => item && item.label === label);
+                const countValue = payloadMatch && payloadMatch.count !== undefined
+                    ? payloadMatch.count
+                    : (exactStatusCounts[label] !== undefined ? exactStatusCounts[label] : 0);
+
+                return {
+                    eyebrow: 'Status',
+                    title: label,
+                    count: countValue,
+                    isTotal: false
+                };
+            })
+        ];
+
+        statisticsGrid.innerHTML = cards.map(buildStatisticsCard).join('');
     }
 
     function setupTestRequestsFilters() {
@@ -16511,12 +16623,46 @@
         `;
     }
 
+
+    function formatConformityDecisionRules(items) {
+        const decisionRuleLabels = {
+            standard_measured: 'As prescribed by the standard (Measured value or observation will be provided with the results)',
+            standard_uncertainty: 'As prescribed by the standard inclusive of measurement uncertainty.',
+            customer_specs: 'As per customer specifications',
+            customer_specs_uncertainty: 'As per customer specification inclusive of measurement uncertainty.'
+        };
+
+        let normalizedItems = items;
+        if (typeof normalizedItems === 'string') {
+            const trimmed = normalizedItems.trim();
+            if (!trimmed) {
+                normalizedItems = [];
+            } else {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    normalizedItems = Array.isArray(parsed) ? parsed : [parsed];
+                } catch (error) {
+                    normalizedItems = [trimmed];
+                }
+            }
+        } else if (!Array.isArray(normalizedItems)) {
+            normalizedItems = normalizedItems ? [normalizedItems] : [];
+        }
+
+        const displayItems = normalizedItems
+            .map(item => String(item ?? '').trim())
+            .filter(Boolean)
+            .map(item => decisionRuleLabels[item] || item);
+
+        return renderBadgeList(displayItems);
+    }
+
     function renderDetailGrid(entries) {
         if (!entries || !entries.length) {
             return '<p class="text-sm text-gray-400 italic py-2">No data available</p>';
         }
         return `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 ${entries.map(entry => `
                     <div class="bg-white border border-gray-100 rounded-lg p-3 hover:shadow-md transition-shadow">
                         <label class="text-xs font-semibold text-gray-500 tracking-wide uppercase mb-1 block">${entry.label}</label>
@@ -16576,7 +16722,7 @@
                             <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-sm">${index + 1}</div>
                             <div class="text-sm font-semibold text-gray-700">Entry ${index + 1}</div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             ${fields.map(field => `
                                 <div class="bg-white rounded-lg p-3 border border-gray-100">
                                     <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">${formatLabel(field)}</p>
@@ -17439,7 +17585,7 @@
             return '<p class="text-sm text-gray-400 italic">No test parameters available for selected tests.</p>';
         }
 
-        const finalHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards.join('')}</div>`;
+        const finalHtml = `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${cards.join('')}</div>`;
 
         return finalHtml;
     }
@@ -17774,7 +17920,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div class="bg-pink-50 rounded-lg p-4 border border-pink-100">
                     <p class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Decision Rule</p>
-                    ${renderBadgeList(data.decision_rule)}
+                    ${formatConformityDecisionRules(data.decision_rule)}
                 </div>
                 <div class="bg-rose-50 rounded-lg p-4 border border-rose-100">
                     <p class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Functional Modes</p>
@@ -17791,7 +17937,7 @@
                 <div class="w-1 h-6 bg-indigo-500 rounded-full"></div>
                 Files & Attachments
             </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
                     <p class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Generated Files</p>
                     ${renderFileList(data.generated_files)}
@@ -17829,7 +17975,7 @@
             ${renderDetailGrid([
             { label: 'Name', value: data.lab_manager_name },
             { label: 'Date', value: formatDateValue(data.lab_manager_date) },
-            { label: 'Signature', value: data.lab_manager_signature },
+            { label: 'Signature', value: data.lab_manager_signature ? `<span class="italic">${escapeHtml(String(data.lab_manager_signature))}</span>` : '', isRaw: true },
             { label: 'Signed At', value: formatDateTimeValue(data.lab_manager_signed_at) }
         ])}
         </section>
@@ -21091,3 +21237,4 @@
     }, 1000);
 </script>
 {% endblock %}
+

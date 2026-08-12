@@ -143,7 +143,9 @@
                         <div>
                             <p class="text-gray-600 text-sm font-medium">Active Tests</p>
                             <p class="text-2xl font-bold text-gray-900 mt-2">{{ dashboard.summary.active_tests }}</p>
-                            <p class="text-green-600 text-sm mt-1">{{ dashboard.summary.active_requests }} active requests</p>
+                            <p class="text-green-600 text-sm mt-1">
+                                <span class="font-semibold">{{ dashboard.summary.active_test_requests }}</span> active requests
+                            </p>
                         </div>
                         <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                             <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,6 +194,60 @@
                     </div>
                 </div>
 
+                <!-- Testing Hours Completed -->
+                <div
+                    class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg transform hover:scale-105 hover:shadow-xl transition-all duration-300 ease-out hover:-translate-y-1">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-white text-sm font-medium">Testing Hours Completed</p>
+                            <p class="text-3xl font-bold mt-2">{{ dashboard.summary.testing_hours_ytd }}</p>
+                            <p class="text-white text-sm mt-1">YTD</p>
+                        </div>
+                        <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estimated Cost Avoidance -->
+                <div
+                    class="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-6 text-white shadow-lg transform hover:scale-105 hover:shadow-xl transition-all duration-300 ease-out hover:-translate-y-1">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-white text-sm font-medium">Estimated Cost Avoidance</p>
+                            <p class="text-3xl font-bold mt-2">{{ dashboard.summary.cost_avoidance_text }}</p>
+                            <p class="text-white text-sm mt-1">Based on {{ dashboard.summary.testing_hours_ytd }} hours × USD 250/hour</p>
+                        </div>
+                        <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compliance Projects Completed -->
+                <div
+                    class="bg-white rounded-2xl p-6 shadow-lg border border-cyan-200 transform hover:scale-105 hover:shadow-xl transition-all duration-300 ease-out hover:-translate-y-1">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <p class="text-cyan-700 text-sm font-medium">Compliance Projects Completed</p>
+                            <p class="text-3xl font-bold mt-2 text-slate-900">{{ dashboard.summary.compliance_projects_completed }}</p>
+                            <p class="text-slate-500 text-sm mt-1">YTD projects in progress</p>
+                        </div>
+                        <div class="w-12 h-12 bg-cyan-100 text-cyan-600 rounded-xl flex items-center justify-center">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Recent Activity - Wide Card -->
                 <div
                     class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100 transform hover:scale-105 hover:shadow-xl transition-all duration-300 ease-out hover:-translate-y-1">
@@ -228,7 +284,7 @@
                             <span class="text-sm font-medium text-gray-900">{{ item.percent }}%</span>
                         </div>
                         <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="{{ item.bar_class }} h-2 rounded-full" style="width: {{ item.percent }}%"></div>
+                            <div class="{{ item.bar_class }} h-2 rounded-full dashboard-width-bar" data-width="{{ item.percent }}"></div>
                         </div>
                         {% endfor %}
                         {% else %}
@@ -285,10 +341,18 @@
                     class="lg:col-span-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-6 text-white shadow-lg transform hover:scale-105 hover:shadow-2xl transition-all duration-300 ease-out hover:-translate-y-1">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-lg font-semibold">Performance Metrics</h3>
-                        <div class="text-sm text-purple-100">Last 30 days</div>
+                        <div class="text-sm text-white">Last 30 days</div>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {% for metric in dashboard.performance_metrics[:3] %}
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="text-center">
+                            <p class="text-2xl font-bold">{{ dashboard.summary.total_requests }}</p>
+                            <p class="text-white text-sm">Total Requests</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-2xl font-bold">{{ '%.2f'|format(dashboard.summary.avg_hours_per_test) }}</p>
+                            <p class="text-white text-sm">Avg Hours/Test</p>
+                        </div>
+                        {% for metric in dashboard.performance_metrics[:2] %}
                         <div class="text-center">
                             <p class="text-2xl font-bold">
                                 {% if metric.label == 'Avg hours / schedule' %}
@@ -297,29 +361,9 @@
                                 {{ metric.value }}
                                 {% endif %}
                             </p>
-                            <p class="text-purple-100 text-sm">{{ metric.label }}</p>
+                            <p class="text-white text-sm">{{ metric.label }}</p>
                         </div>
                         {% endfor %}
-                    </div>
-                </div>
-
-                <!-- Upcoming Deadlines -->
-                <div class="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Upcoming Deadlines</h3>
-                    <div class="space-y-3">
-                        {% if dashboard.upcoming_deadlines %}
-                        {% for item in dashboard.upcoming_deadlines %}
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm font-medium text-gray-900">{{ item.title }}</p>
-                                <p class="text-xs text-gray-500">{{ item.subtitle }}</p>
-                            </div>
-                            <span class="text-xs px-2 py-1 rounded-full {{ item.badge_class }}">{{ item.badge_text }}</span>
-                        </div>
-                        {% endfor %}
-                        {% else %}
-                        <p class="text-sm text-gray-500">No upcoming deadlines found.</p>
-                        {% endif %}
                     </div>
                 </div>
 
@@ -335,7 +379,7 @@
                                 <span class="font-medium text-gray-900">{{ item.hours_text }}</span>
                             </div>
                             <div class="w-full bg-gray-200 rounded-full h-2">
-                                <div class="{{ item.bar_class }} h-2 rounded-full" style="width: {{ item.percent }}%"></div>
+                                <div class="{{ item.bar_class }} h-2 rounded-full dashboard-width-bar" data-width="{{ item.percent }}"></div>
                             </div>
                         </div>
                         {% endfor %}
@@ -357,7 +401,7 @@
                         {% if dashboard.monthly_trends %}
                         {% for month in dashboard.monthly_trends %}
                         <div class="flex-1 bg-blue-{{ 100 + (loop.index0 * 100) if loop.index0 < 5 else 600 }} rounded-t"
-                            style="height: {{ month.height_pct }}%"></div>
+                            data-height="{{ month.height_pct }}"></div>
                         {% endfor %}
                         {% else %}
                         <div class="text-sm text-gray-500">No monthly trend data available.</div>
@@ -367,6 +411,62 @@
                         {% for month in dashboard.monthly_trends %}
                         <span>{{ month.label }}{% if month.count is not none %} ({{ month.count }}){% endif %}</span>
                         {% endfor %}
+                    </div>
+                </div>
+
+                <!-- YTD Testing Volume Trend Chart -->
+                <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Testing Volume Trend-2026 YTD</h3>
+                    <div class="h-64">
+                        <canvas id="ytdVolumeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- #TCO and Hours vs Test Type Chart -->
+                <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">#TCO and Hours vs Test type</h3>
+                    <div class="h-64">
+                        <canvas id="testTypeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Test Utilization by Name Chart -->
+                <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Test Utilization (Name, Percentage, Hours)</h3>
+                    <div class="h-64">
+                        <canvas id="testUtilizationChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Engineer Performance Chart -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Test Hours & Requests per Engineer</h3>
+                    <div class="h-64">
+                        <canvas id="engineerPerformanceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Hours Consumption by TCO Chart -->
+                <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Hours Consumption TCO Wise</h3>
+                    <div class="h-64">
+                        <canvas id="hoursConsumptionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Utilization by Division -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Utilization by Division</h3>
+                    <div class="h-64">
+                        <canvas id="divisionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Utilization by Division-Dept -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Utilization by Division-Dept</h3>
+                    <div class="h-64">
+                        <canvas id="deptChart"></canvas>
                     </div>
                 </div>
 
@@ -434,9 +534,9 @@
                 <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
                     <div class="flex items-center justify-between">
                         <div>
-                            <p class="text-green-100 text-sm font-medium">Active Lab Engineers</p>
-                            <p class="text-3xl font-bold mt-2">{{ dashboard.summary.active_lab_engineers }}</p>
-                            <p class="text-green-100 text-sm mt-1">Available for assignment and scheduling</p>
+                            <p class="text-white text-sm font-medium">Active Lab Engineers</p>
+                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ dashboard.summary.active_lab_engineers }}</p>
+                            <p class="text-white text-sm mt-1">Available for assignment and scheduling</p>
                         </div>
                         <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -542,4 +642,413 @@
             </div>
         </div>
     </div>
+
+    <script id="dashboard-ytd-data" type="application/json">{{ dashboard.ytd_monthly_volume | tojson }}</script>
+    <script id="dashboard-test-type-data" type="application/json">{{ dashboard.test_type_chart_data | tojson }}</script>
+    <script id="dashboard-test-utilization-data" type="application/json">{{ dashboard.test_utilization | tojson }}</script>
+    <script id="dashboard-engineer-data" type="application/json">{{ dashboard.engineer_performance | tojson }}</script>
+    <script id="dashboard-hours-data" type="application/json">{{ dashboard.hours_consumption_tco | tojson }}</script>
+    <script id="dashboard-division-data" type="application/json">{{ dashboard.division_chart_data | tojson }}</script>
+    <script id="dashboard-dept-data" type="application/json">{{ dashboard.dept_chart_data | tojson }}</script>
+
+    <script>
+        function parseDashboardJson(scriptId) {
+            const source = document.getElementById(scriptId);
+            if (!source) return [];
+
+            try {
+                return JSON.parse(source.textContent || '[]');
+            } catch (error) {
+                console.error(`Failed to parse dashboard JSON for ${scriptId}:`, error);
+                return [];
+            }
+        }
+
+        document.querySelectorAll('.dashboard-width-bar').forEach((bar) => {
+            const value = Number.parseFloat(bar.dataset.width || '0');
+            bar.style.width = `${Math.max(0, Math.min(value, 100))}%`;
+        });
+
+        document.querySelectorAll('[data-height]').forEach((bar) => {
+            const value = Number.parseFloat(bar.dataset.height || '0');
+            bar.style.height = `${Math.max(0, Math.min(value, 100))}%`;
+        });
+
+
+        const dashboardChartColors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1'];
+        // Initialize YTD Volume Chart
+        const ytdVolumeCtx = document.getElementById('ytdVolumeChart');
+        if (ytdVolumeCtx) {
+            const ytdData = parseDashboardJson('dashboard-ytd-data');
+            new Chart(ytdVolumeCtx, {
+                type: 'bar',
+                data: {
+                    labels: ytdData.map(d => d.label),
+                    datasets: [
+                        {
+                            label: 'Compliance',
+                            data: ytdData.map(d => d.compliance || 0),
+                            backgroundColor: '#2563eb',
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'DA',
+                            data: ytdData.map(d => d.da || 0),
+                            backgroundColor: '#f59e0b',
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Pre-Compliance',
+                            data: ytdData.map(d => d.precompliance || 0),
+                            backgroundColor: '#06b6d4',
+                            stack: 'Stack 0'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Test Type Chart
+        const testTypeCtx = document.getElementById('testTypeChart');
+        if (testTypeCtx) {
+            const testTypeData = parseDashboardJson('dashboard-test-type-data');
+            new Chart(testTypeCtx, {
+                type: 'bar',
+                data: {
+                    labels: testTypeData.map(d => d.label),
+                    datasets: [
+                        {
+                            label: '#TCO',
+                            data: testTypeData.map(d => d.count),
+                            backgroundColor: '#3b82f6',
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Hours',
+                            data: testTypeData.map(d => d.hours),
+                            backgroundColor: '#f59e0b',
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '#TCO',
+                                color: '#3b82f6'
+                            },
+                            ticks: {
+                                color: '#3b82f6'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Hours',
+                                color: '#f59e0b'
+                            },
+                            ticks: {
+                                color: '#f59e0b'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Test Utilization Chart
+        const testUtilizationCtx = document.getElementById('testUtilizationChart');
+        if (testUtilizationCtx) {
+            const testData = parseDashboardJson('dashboard-test-utilization-data');
+            new Chart(testUtilizationCtx, {
+                type: 'bar',
+                data: {
+                    labels: testData.map(d => d.name),
+                    datasets: [
+                        {
+                            label: 'Percentage',
+                            data: testData.map(d => d.percentage),
+                            backgroundColor: '#3b82f6',
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Hours',
+                            data: testData.map(d => d.hours),
+                            backgroundColor: '#10b981',
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Percentage (%)',
+                                color: '#3b82f6'
+                            },
+                            ticks: {
+                                color: '#3b82f6'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Hours',
+                                color: '#10b981'
+                            },
+                            ticks: {
+                                color: '#10b981'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Engineer Performance Chart
+        const engineerCtx = document.getElementById('engineerPerformanceChart');
+        if (engineerCtx) {
+            const engineerData = parseDashboardJson('dashboard-engineer-data');
+            new Chart(engineerCtx, {
+                type: 'bar',
+                data: {
+                    labels: engineerData.map(d => d.name),
+                    datasets: [
+                        {
+                            label: 'Hours',
+                            data: engineerData.map(d => d.hours),
+                            backgroundColor: '#f59e0b',
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Test Requests',
+                            data: engineerData.map(d => d.requests),
+                            backgroundColor: '#ef4444',
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Hours',
+                                color: '#f59e0b'
+                            },
+                            ticks: {
+                                color: '#f59e0b'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Test Requests',
+                                color: '#ef4444'
+                            },
+                            ticks: {
+                                color: '#ef4444'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Hours Consumption Chart
+        const hoursConsumptionCtx = document.getElementById('hoursConsumptionChart');
+        if (hoursConsumptionCtx) {
+            const hoursData = parseDashboardJson('dashboard-hours-data');
+            new Chart(hoursConsumptionCtx, {
+                type: 'bar',
+                data: {
+                    labels: hoursData.map(d => d.label),
+                    datasets: [{
+                        label: 'Hours',
+                        data: hoursData.map(d => d.hours),
+                        backgroundColor: '#8b5cf6',
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        },
+                        y: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Utilization by Division - Pie Chart
+        const divisionCtx = document.getElementById('divisionChart');
+        if (divisionCtx) {
+            const divisionData = parseDashboardJson('dashboard-division-data');
+            new Chart(divisionCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: divisionData.map(d => d.label),
+                    datasets: [{
+                        data: divisionData.map(d => d.value),
+                        backgroundColor: dashboardChartColors.slice(0, divisionData.length),
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 12 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Utilization by Division-Department - Pie Chart
+        const deptCtx = document.getElementById('deptChart');
+        if (deptCtx) {
+            const deptData = parseDashboardJson('dashboard-dept-data');
+            new Chart(deptCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: deptData.map(d => d.label),
+                    datasets: [{
+                        data: deptData.map(d => d.value),
+                        backgroundColor: dashboardChartColors.slice(0, deptData.length),
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 12 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
     {% endblock %}

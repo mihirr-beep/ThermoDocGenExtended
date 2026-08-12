@@ -232,6 +232,15 @@ class Equipment(db.Model):
                 self.ic_due_date.isoformat()
                 if self.ic_due_date else None
             ),
+            'maintenance_required': self.maintenance_required,
+            'maintenance_date': (
+                self.maintenance_date.isoformat()
+                if self.maintenance_date else None
+            ),
+            'maintenance_due_date': (
+                self.maintenance_due_date.isoformat()
+                if self.maintenance_due_date else None
+            ),
             'maintenance_records': [
                 record.to_dict() for record in getattr(self, 'maintenance_records', [])
             ],

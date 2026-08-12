@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="min-h-screen bg-gray-50">
-    <div class="max-w-[1500px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-4">
+    <div class="max-w-[1850px] w-full mx-auto px-4 sm:px-6 xl:px-8 2xl:px-10 py-4">
         <!-- Enhanced Header -->
         <div class="mb-4">
             <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
@@ -34,271 +34,112 @@
                         </svg>
                         Add Equipment
                     </button>
+                    <button id="exportEquipmentBtn"
+                        class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-lg hover:shadow-xl transition-all duration-200">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33A3 3 0 0116.5 19.5H6.75z"></path>
+                        </svg>
+                        Export to Excel
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Enhanced Statistics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-6">
-            <!-- Total Equipment Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-gray-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
-                                        </path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    Total</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    Equipment</p>
-                                <p id="cardTotal"
-                                    class="text-3xl font-bold text-blue-600 group-hover:text-blue-700 transition-all duration-300">
-                                    {{ statistics.total or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Trend indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                                </svg>
-                            </div>
-                        </div>
+                <!-- Enhanced Statistics Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 xl:gap-5 mb-6">
+            <div class="rounded-[30px] border border-slate-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-[0_12px_24px_rgba(37,99,235,0.30)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                            </path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Assets</p>
+                        <p id="cardTotal" class="pt-1 text-[2.35rem] font-bold leading-none text-blue-600">{{ statistics.total or 0 }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Available Equipment Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-emerald-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    Ready to</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    Use</p>
-                                <p id="cardAvailable"
-                                    class="text-3xl font-bold text-emerald-600 group-hover:text-emerald-700 transition-all duration-300">
-                                    {{ statistics.available or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Status indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
-                                <div class="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-                            </div>
-                        </div>
+            <div class="rounded-[30px] border border-orange-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(249,115,22,0.12)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-600 shadow-[0_12px_24px_rgba(234,88,12,0.28)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18m6-15v12M7 6h4m2 3h4M7 18h4m2-3h4"></path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Instrument</p>
+                        <p id="cardTotalInstrument" class="pt-1 text-[2.35rem] font-bold leading-none text-orange-600">{{ statistics.total_instruments or 0 }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- In Calibration Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-teal-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-teal-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
-                                        </path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    In</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    Calibration</p>
-                                <p id="cardInCalibration"
-                                    class="text-3xl font-bold text-teal-600 group-hover:text-teal-700 transition-all duration-300">
-                                    {{ statistics.in_calibration or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Status indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
-                                <div class="w-3 h-3 bg-teal-500 rounded-full animate-pulse"></div>
-                            </div>
-                        </div>
+            <div class="rounded-[30px] border border-emerald-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(16,185,129,0.12)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-600 shadow-[0_12px_24px_rgba(5,150,105,0.28)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11h6M9 15h4"></path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Equipment</p>
+                        <p id="cardTotalEquipment" class="pt-1 text-[2.35rem] font-bold leading-none text-emerald-600">{{ statistics.total_equipment or 0 }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Out of Calibration Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-red-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
-                                        </path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    Out of</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    Calibration</p>
-                                <p id="cardOutOfCalibration"
-                                    class="text-3xl font-bold text-red-600 group-hover:text-red-700 transition-all duration-300">
-                                    {{ statistics.out_of_calibration or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Warning indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
-                                    </path>
-                                </svg>
-                            </div>
-                        </div>
+            <div class="rounded-[30px] border border-teal-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(20,184,166,0.12)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 shadow-[0_12px_24px_rgba(13,148,136,0.28)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">In</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
+                        <p id="cardInCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-teal-600">{{ statistics.in_calibration or 0 }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- In Use Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-orange-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-orange-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    Currently</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    In Use</p>
-                                <p id="cardInUse"
-                                    class="text-3xl font-bold text-orange-600 group-hover:text-orange-700 transition-all duration-300">
-                                    {{ statistics.in_use or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Activity indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-orange-600 animate-pulse" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                </svg>
-                            </div>
-                        </div>
+            <div class="rounded-[30px] border border-rose-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(239,68,68,0.12)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 shadow-[0_12px_24px_rgba(220,38,38,0.28)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Out Of</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
+                        <p id="cardOutOfCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-red-600">{{ statistics.out_of_calibration or 0 }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Maintenance Card -->
-            <div
-                class="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-purple-200/50 overflow-hidden">
-
-                <div class="relative p-6">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <div
-                                    class="w-14 h-14 bg-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
-                                    <svg class="w-7 h-7 text-white drop-shadow-lg" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                                        </path>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                    </svg>
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <p
-                                    class="text-xs font-medium text-gray-500 group-hover:text-gray-600 transition-colors duration-300 uppercase tracking-wide">
-                                    Under</p>
-                                <p
-                                    class="text-sm font-semibold text-gray-700 group-hover:text-gray-800 transition-colors duration-300 leading-tight">
-                                    Maintenance</p>
-                                <p id="cardMaintenance"
-                                    class="text-3xl font-bold text-purple-600 group-hover:text-purple-700 transition-all duration-300">
-                                    {{ statistics.maintenance or 0 }}
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Maintenance indicator -->
-                        <div class="hidden group-hover:block animate-fade-in">
-                            <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                                    </path>
-                                </svg>
-                            </div>
-                        </div>
+            <div class="rounded-[30px] border border-violet-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(147,51,234,0.12)]">
+                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 shadow-[0_12px_24px_rgba(126,34,206,0.28)]">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Under</p>
+                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Maintenance</p>
+                        <p id="cardMaintenance" class="pt-1 text-[2.35rem] font-bold leading-none text-violet-600">{{ statistics.maintenance or 0 }}</p>
                     </div>
                 </div>
             </div>
@@ -402,7 +243,7 @@
                         </select>
                     </div>
 
-                    <!-- Status Filter Section -->
+                    <!-- Equipment Status Filter Section -->
                     <div class="lg:w-56">
                         <label for="statusFilter" class="block text-sm font-semibold text-gray-800 mb-2">
                             <div class="flex items-center">
@@ -414,21 +255,17 @@
                                         </path>
                                     </svg>
                                 </div>
-                                Status Filter
+                                Equipment Status
                             </div>
                         </label>
                         <select id="statusFilter"
                             class="w-full border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-purple-100 focus:border-purple-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white py-3 px-4">
-                            <option value="" {% if not status_filter %}selected{% endif %}>All Status</option>
-                            <option value="Available" {% if status_filter=='Available' %}selected{% endif %}>Available
-                            </option>
-                            <option value="in_use" {% if status_filter=='in_use' %}selected{% endif %}>In Use</option>
-                            <option value="maintenance" {% if status_filter=='maintenance' %}selected{% endif %}>Under
-                                maintenance</option>
-                            <option value="out_of_calibration" {% if status_filter in ['out_of_calibration', 'calibration'] %}selected{% endif %}>Needs
-                                Calibration</option>
-                            <option value="out_of_service" {% if status_filter=='out_of_service' %}selected{% endif %}>
-                                Out of Service</option>
+                            <option value="" {% if not status_filter %}selected{% endif %}>All Equipment Statuses</option>
+                            <option value="Available" {% if status_filter=='Available' %}selected{% endif %}>Available / Ready to Use</option>
+                            <option value="in_use" {% if status_filter=='in_use' %}selected{% endif %}>Currently In Use</option>
+                            <option value="maintenance" {% if status_filter=='maintenance' %}selected{% endif %}>Under Maintenance</option>
+                            <option value="out_of_calibration" {% if status_filter in ['out_of_calibration', 'calibration'] %}selected{% endif %}>Calibration Overdue</option>
+                            <option value="out_of_service" {% if status_filter=='out_of_service' %}selected{% endif %}>Out of Service</option>
                         </select>
                     </div>
                 </div>
@@ -505,52 +342,52 @@
                 </div>
             </div>
 
-            <div>
-                <table class="w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+            <div class="equipment-table-wrap">
+                <table class="equipment-table w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50 sticky top-0">
                         <tr>
                             <th
-                                class="hidden px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/12">
+                                class="hidden px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                                 Asset ID</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/5">
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Name</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
-                                Make</th>
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
+                                Make / Model / Serial</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
-                                Model</th>
-                            <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
-                                Serial</th>
-                            <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Calibration</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
+                                Intermediate Check</th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
+                                Maintenance Check</th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Test Type</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Document</th>
                             <th
-                                class="px-2 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Status</th>
-                            <th
-                                class="px-2 py-2 text-right text-xs font-bold text-gray-700 uppercase tracking-wider w-1/8">
+                            <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max" style="min-width: 210px; width: 210px;">
                                 Action</th>
                         </tr>
                     </thead>
                     <tbody id="equipmentTableBody" class="bg-white divide-y divide-gray-200">
                         {% for equipment in pagination.items %}
                         <tr class="hover:bg-blue-50 transition-all duration-200" data-status="{{ equipment.status }}"
-                            data-calibration-status="{{ equipment.calibration_status_col or '' }}">
-                            <td class="hidden px-2 py-2">
+                            data-type="{{ equipment.type or '' }}" data-calibration-status="{{ equipment.calibration_status_col or '' }}"
+                            data-has-upcoming-due="{{ 'true' if equipment.has_upcoming_due else 'false' }}">
+                            <td class="hidden px-4 py-3">
                                 <div class="text-xs font-mono text-gray-700 break-words">{{ equipment.asset_id or 'N/A'
                                     }}
                                 </div>
                             </td>
-                            <td class="px-2 py-2 max-w-xs">
+                            <td class="px-4 py-3 whitespace-nowrap">
                                 <div class="flex items-start">
                                     <div
                                         class="w-5 h-5 bg-blue-500 rounded-lg flex items-center justify-center mr-2 flex-shrink-0 mt-0.5">
@@ -561,27 +398,27 @@
                                             </path>
                                         </svg>
                                     </div>
-                                    <div class="text-xs font-semibold text-gray-900 break-words">{{ equipment.name }}
+                                    <div class="text-xs font-semibold text-gray-900">{{ equipment.name }}
                                     </div>
                                 </div>
                             </td>
-                            <td class="px-2 py-2 text-xs text-gray-900 break-words max-w-xs">{{ equipment.make or 'N/A'
-                                }}
+                            <td class="px-4 py-3 text-xs text-gray-900">
+                                <div class="flex flex-col gap-1">
+                                    <div><strong>Make:</strong> {{ equipment.make or 'N/A' }}</div>
+                                    <div><strong>Model:</strong> {{ equipment.model_no or 'N/A' }}</div>
+                                    <div><strong>Serial:</strong> {{ equipment.serial_no or 'N/A' }}</div>
+                                </div>
                             </td>
-                            <td class="px-2 py-2 text-xs text-gray-900 break-words max-w-xs">{{ equipment.model_no or
-                                'N/A'
-                                }}</td>
-                            <td class="px-2 py-2 text-xs text-gray-900 break-words max-w-xs">{{ equipment.serial_no or
-                                'N/A' }}</td>
-                            <td class="px-2 py-2">
+                            <td class="px-4 py-3">
                                 <div class="text-xs text-gray-900">
-                                    {% if equipment.calibration_due_date %}
-                                    <div class="flex flex-col">
-                                        <span class="break-words">{{ equipment.calibration_due_date.strftime('%Y-%m-%d')
-                                            }}</span>
+                                    {% if equipment.calibration_date or equipment.calibration_due_date %}
+                                    <div class="flex flex-col gap-1">
+                                        <span class="break-words"><strong>Cal:</strong> {{ equipment.calibration_date.strftime('%Y-%m-%d') if equipment.calibration_date else 'Not set' }}</span>
+                                        <span class="break-words"><strong>Due:</strong> {{ equipment.calibration_due_date.strftime('%Y-%m-%d') if equipment.calibration_due_date else 'Not set' }}</span>
+                                        {% if equipment.calibration_due_date %}
                                         {% if equipment.is_calibrated %}
                                         <span
-                                            class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                                            class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1 whitespace-nowrap">
                                             <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fill-rule="evenodd"
                                                     d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -591,7 +428,7 @@
                                         </span>
                                         {% else %}
                                         <span
-                                            class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
+                                            class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1 whitespace-nowrap">
                                             <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fill-rule="evenodd"
                                                     d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
@@ -600,18 +437,78 @@
                                             Expired
                                         </span>
                                         {% endif %}
+                                        {% if equipment.calibration_due_badge %}
+                                        <span class="status-badge inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium mt-1 whitespace-nowrap {{ equipment.calibration_due_badge.class_name }}">
+                                            {{ equipment.calibration_due_badge.text }}
+                                        </span>
+                                        {% endif %}
+                                        {% endif %}
                                     </div>
                                     {% else %}
                                     <span class="text-gray-500 text-xs">Not set</span>
                                     {% endif %}
                                 </div>
                             </td>
-                            <td class="px-2 py-2 text-xs text-gray-900 break-words max-w-xs">{{ equipment.test_type or
+                            <td class="px-4 py-3">
+                                <div class="text-xs text-gray-900">
+                                    {% if equipment.ic_date or equipment.ic_due_date %}
+                                    <div class="flex flex-col gap-1">
+                                        <span class="break-words"><strong>Date:</strong> {{ equipment.ic_date.strftime('%Y-%m-%d') if equipment.ic_date else 'Not set' }}</span>
+                                        <span class="break-words"><strong>Due:</strong> {{ equipment.ic_due_date.strftime('%Y-%m-%d') if equipment.ic_due_date else 'Not set' }}</span>
+                                        {% if equipment.ic_required %}
+                                        <span class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mt-1 whitespace-nowrap">
+                                            <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd"
+                                                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                                                    clip-rule="evenodd"></path>
+                                            </svg>
+                                            Required
+                                        </span>
+                                        {% endif %}
+                                        {% if equipment.ic_due_badge %}
+                                        <span class="status-badge inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium mt-1 whitespace-nowrap {{ equipment.ic_due_badge.class_name }}">
+                                            {{ equipment.ic_due_badge.text }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                    {% else %}
+                                    <span class="text-gray-500 text-xs">Not set</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="text-xs text-gray-900">
+                                    {% if equipment.maintenance_date or equipment.maintenance_due_date %}
+                                    <div class="flex flex-col gap-1">
+                                        <span class="break-words"><strong>Date:</strong> {{ equipment.maintenance_date.strftime('%Y-%m-%d') if equipment.maintenance_date else 'Not set' }}</span>
+                                        <span class="break-words"><strong>Due:</strong> {{ equipment.maintenance_due_date.strftime('%Y-%m-%d') if equipment.maintenance_due_date else 'Not set' }}</span>
+                                        {% if equipment.maintenance_required %}
+                                        <span class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mt-1 whitespace-nowrap">
+                                            <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd"
+                                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                                                    clip-rule="evenodd"></path>
+                                            </svg>
+                                            Required
+                                        </span>
+                                        {% endif %}
+                                        {% if equipment.maintenance_due_badge %}
+                                        <span class="status-badge inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium mt-1 whitespace-nowrap {{ equipment.maintenance_due_badge.class_name }}">
+                                            {{ equipment.maintenance_due_badge.text }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                    {% else %}
+                                    <span class="text-gray-500 text-xs">Not set</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 text-xs text-gray-900 whitespace-nowrap">{{ equipment.test_type or
                                 'N/A' }}</td>
-                            <td class="px-2 py-2">
+                            <td class="px-4 py-3">
                                 {% if equipment.document_link %}
                                 <a href="{{ equipment.document_link }}" target="_blank" rel="noopener noreferrer"
-                                    class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200">
+                                    class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200 whitespace-nowrap">
                                     <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
@@ -623,8 +520,8 @@
                                 <span class="text-xs text-gray-400">N/A</span>
                                 {% endif %}
                             </td>
-                            <td class="px-2 py-2">
-                                <span class="inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold min-w-fit 
+                            <td class="px-4 py-3">
+                                <span class="inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap 
                                     {% if equipment.status == 'Available' %}bg-green-100 text-green-800 border border-green-200
                                     {% elif equipment.status == 'in_use' %}bg-blue-100 text-blue-800 border border-blue-200
                                     {% elif equipment.status == 'maintenance' %}bg-red-100 text-red-800 border border-red-200
@@ -675,10 +572,10 @@
                                     {% else %}{{ equipment.status.title() }}{% endif %}
                                 </span>
                             </td>
-                            <td class="px-2 py-2 text-right text-xs font-medium">
-                                <div class="flex items-center justify-end space-x-1">
+                            <td class="px-4 py-3 text-right text-xs font-medium" style="min-width: 210px; width: 210px;">
+                                <div class="flex items-center justify-end gap-1 flex-nowrap whitespace-nowrap">
                                     <button type="button"
-                                        class="history-equipment-btn inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200 shadow-sm hover:shadow-md"
+                                        class="history-equipment-btn inline-flex items-center flex-shrink-0 px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
                                         data-equipment-id="{{ equipment.id }}"
                                         data-equipment-name="{{ equipment.name|e }}" title="View History">
                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -689,7 +586,7 @@
                                         History
                                     </button>
                                     <button type="button"
-                                        class="edit-equipment-btn inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md"
+                                        class="edit-equipment-btn inline-flex items-center flex-shrink-0 px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
                                         data-equipment-id="{{ equipment.id }}" title="Edit Equipment">
                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -698,17 +595,19 @@
                                         </svg>
                                         Edit
                                     </button>
+                                    {% if current_user.role == 'admin' %}
                                     <button type="button"
-                                        class="delete-equipment-btn inline-flex items-center justify-center px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 shadow-sm hover:shadow-md"
+                                        class="delete-equipment-btn inline-flex items-center justify-center flex-shrink-0 px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
                                         data-equipment-id="{{ equipment.id }}"
-                                        data-equipment-name="{{ equipment.name|e }}" title="Delete Equipment">
+                                        data-equipment-name="{{ equipment.name|e }}" title="Admin: Delete or Hide Equipment">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
                                             </path>
                                         </svg>
-                                        <span class="sr-only">Delete</span>
+                                        <span class="sr-only">Admin Actions</span>
                                     </button>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -1045,7 +944,7 @@
                         <select id="equipmentStatus"
                             class="w-full px-3 py-2 border-2 border-gray-200 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
                             <option value="Available" selected>Available</option>
-                            <option value="in_use">In Use</option>
+                            <option value="in_use">Currently In Use</option>
                             <option value="maintenance">Under maintenance</option>
                             <option value="calibration">Needs Calibration</option>
                             <option value="out_of_service">Out of Service</option>
@@ -1354,7 +1253,7 @@
     </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
+<!-- Delete/Hide Confirmation Modal -->
 <div id="deleteConfirmationModal" class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 hidden">
     <div class="flex items-center justify-center min-h-screen p-4">
         <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 transform transition-all duration-300 scale-95 opacity-0"
@@ -1362,16 +1261,16 @@
             <!-- Modal Header -->
             <div class="flex items-center justify-between p-6 border-b border-gray-200">
                 <div class="flex items-center">
-                    <div class="w-12 h-12 bg-red-500 rounded-2xl flex items-center justify-center shadow-lg mr-4">
+                    <div class="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg mr-4">
                         <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
+                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
                             </path>
                         </svg>
                     </div>
                     <div>
-                        <h3 class="text-xl font-bold text-gray-900">Delete Equipment</h3>
-                        <p class="text-sm text-gray-600">This action cannot be undone</p>
+                        <h3 class="text-xl font-bold text-gray-900">Admin: Manage Equipment</h3>
+                        <p class="text-sm text-gray-600">Choose an action</p>
                     </div>
                 </div>
                 <button onclick="closeDeleteConfirmation()"
@@ -1385,39 +1284,63 @@
 
             <!-- Modal Body -->
             <div class="p-6">
-                <div class="flex items-start space-x-4">
+                <div class="flex items-start space-x-4 mb-6">
                     <div class="flex-shrink-0">
-                        <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                            <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div class="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
                                 </path>
                             </svg>
                         </div>
                     </div>
                     <div class="flex-1">
-                        <h4 class="text-lg font-semibold text-gray-900 mb-2">Are you sure?</h4>
-                        <p class="text-gray-600 mb-4">
-                            You are about to delete <span class="font-semibold text-red-600"
-                                id="deleteEquipmentName"></span>.
-                            This action will permanently remove the equipment from the system.
+                        <h4 class="text-lg font-semibold text-gray-900 mb-1">What would you like to do?</h4>
+                        <p class="text-sm text-gray-600">
+                            Choose how to manage <span class="font-semibold text-gray-900"
+                                id="deleteEquipmentName"></span>
                         </p>
-                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
-                                        </path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <h5 class="text-sm font-medium text-red-800">Warning</h5>
-                                    <p class="text-sm text-red-700 mt-1">
-                                        This will also remove all associated data and cannot be recovered.
-                                    </p>
-                                </div>
+                    </div>
+                </div>
+
+                <!-- Options -->
+                <div class="space-y-3">
+                    <!-- Hide Option -->
+                    <div class="p-4 border-2 border-blue-200 rounded-lg hover:bg-blue-50 cursor-pointer transition-all duration-200"
+                        onclick="setDeleteAction('hide')">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0M15 12a3 3 0 11-6 0 3 3 0 016 0z">
+                                    </path>
+                                </svg>
+                            </div>
+                            <div class="ml-3 flex-1">
+                                <h5 class="text-sm font-medium text-gray-900">Hide Equipment</h5>
+                                <p class="text-xs text-gray-600 mt-0.5">Equipment will be hidden but not deleted. It can be
+                                    unhidden later.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delete Option -->
+                    <div class="p-4 border-2 border-red-200 rounded-lg hover:bg-red-50 cursor-pointer transition-all duration-200"
+                        onclick="setDeleteAction('delete')">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                    </path>
+                                </svg>
+                            </div>
+                            <div class="ml-3 flex-1">
+                                <h5 class="text-sm font-medium text-gray-900">Permanently Delete</h5>
+                                <p class="text-xs text-gray-600 mt-0.5">Equipment will be permanently removed from the system.
+                                    This cannot be undone.</p>
                             </div>
                         </div>
                     </div>
@@ -1434,14 +1357,14 @@
                     </svg>
                     Cancel
                 </button>
-                <button onclick="confirmDelete()"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 transform hover:scale-105 shadow-lg">
+                <button id="confirmActionBtn" onclick="confirmDelete()"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-all duration-200 transform hover:scale-105 shadow-lg">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
                         </path>
                     </svg>
-                    Delete Equipment
+                    <span id="confirmActionText">Choose Action</span>
                 </button>
             </div>
         </div>
@@ -2063,6 +1986,73 @@
     document.getElementById('addEquipmentBtn').addEventListener('click', () => {
         openModal('Add Equipment');
     });
+
+    // Export equipment button
+    document.getElementById('exportEquipmentBtn').addEventListener('click', () => {
+        exportEquipmentToExcel();
+    });
+
+    function exportEquipmentToExcel() {
+        // Show loading state
+        const exportBtn = document.getElementById('exportEquipmentBtn');
+        const originalHTML = exportBtn.innerHTML;
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = `
+            <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Exporting...
+        `;
+
+        // Get current filter parameters
+        const searchTerm = document.getElementById('searchInput')?.value || '';
+        const testTypeFilter = document.getElementById('testTypeFilter')?.value || '';
+        const testNameFilter = document.getElementById('testNameFilter')?.value || '';
+        const statusFilter = document.getElementById('statusFilter')?.value || '';
+
+        // Create query string
+        const params = new URLSearchParams({
+            search_term: searchTerm,
+            test_type_filter: testTypeFilter,
+            test_name_filter: testNameFilter,
+            status_filter: statusFilter
+        });
+
+        // Trigger download
+        fetch(`/api/equipment/export/excel?${params.toString()}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Export failed');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Create a download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `equipment_list_${new Date().toISOString().split('T')[0]}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showMessage('Equipment list exported successfully!', 'success');
+                
+                // Reset button
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = originalHTML;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('Failed to export equipment list', 'error');
+                
+                // Reset button
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = originalHTML;
+            });
+    }
 
     function getTodayIsoDate() {
         const today = new Date();
@@ -3044,7 +3034,9 @@
 
         // Capture old status and calibration status from row dataset for card updates
         const oldStatus = (row.dataset && row.dataset.status) ? row.dataset.status : null;
+        const oldType = (row.dataset && row.dataset.type) ? row.dataset.type : null;
         const oldCalibrationStatus = (row.dataset && row.dataset.calibrationStatus) ? row.dataset.calibrationStatus : null;
+        const oldHasUpcomingDue = row.dataset && row.dataset.hasUpcomingDue === 'true';
 
         // Helper function to format date
         function formatDate(dateStr) {
@@ -3127,35 +3119,137 @@
             </span>`;
         }
 
+        // Helper function to format due badges
+        function isYesFlag(value) {
+            return String(value || '').trim().toLowerCase() === 'yes';
+        }
+
+        function isNotNoFlag(value) {
+            const normalized = String(value || '').trim().toLowerCase();
+            return normalized !== '' && normalized !== 'no';
+        }
+
+        function getUpcomingWindowDays(eouStatus) {
+            return String(eouStatus || '').trim().toUpperCase() === 'EOU' ? 60 : 30;
+        }
+
+        function getDueBadgeInfo(dateStr, eouStatus) {
+            if (!dateStr) return null;
+            const dueDate = new Date(`${dateStr}T00:00:00`);
+            if (Number.isNaN(dueDate.getTime())) return null;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const msPerDay = 24 * 60 * 60 * 1000;
+            const daysRemaining = Math.round((dueDate.getTime() - today.getTime()) / msPerDay);
+
+            if (daysRemaining < 0) {
+                const overdueDays = Math.abs(daysRemaining);
+                return {
+                    kind: 'overdue',
+                    text: `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}`,
+                    className: 'bg-red-100 text-red-800 border border-red-200'
+                };
+            }
+            if (daysRemaining === 0) {
+                return {
+                    kind: 'upcoming',
+                    text: 'Due Today',
+                    className: 'bg-amber-100 text-amber-800 border border-amber-200'
+                };
+            }
+            if (daysRemaining === 1) {
+                return {
+                    kind: 'upcoming',
+                    text: 'Due Tomorrow',
+                    className: 'bg-amber-100 text-amber-800 border border-amber-200'
+                };
+            }
+            if (daysRemaining <= getUpcomingWindowDays(eouStatus)) {
+                return {
+                    kind: 'upcoming',
+                    text: `Due in ${daysRemaining} days`,
+                    className: 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                };
+            }
+            return null;
+        }
+
+        function getDueBadgeHtml(dateStr, eouStatus) {
+            const badge = getDueBadgeInfo(dateStr, eouStatus);
+            if (!badge) return '';
+            return `<span class="status-badge inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium mt-1 whitespace-nowrap ${badge.className}">${escapeHtml(badge.text)}</span>`;
+        }
+
         // Helper function to format calibration status
-        function getCalibrationStatus(calibrationDueDate, isCalibrated) {
-            if (!calibrationDueDate) return '<span class="text-gray-500 text-xs">Not set</span>';
-            const dateStr = formatDate(calibrationDueDate);
-            if (isCalibrated) {
+        function getCalibrationStatus(calibrationDate, calibrationDueDate, isCalibrated, eouStatus) {
+            if (!calibrationDate && !calibrationDueDate) return '<span class="text-gray-500 text-xs">Not set</span>';
+            const calibrationDateStr = calibrationDate ? formatDate(calibrationDate) : 'Not set';
+            const dueDateStr = calibrationDueDate ? formatDate(calibrationDueDate) : 'Not set';
+            const dueBadgeHtml = calibrationDueDate ? getDueBadgeHtml(calibrationDueDate, eouStatus) : '';
+            const detailsHtml = `<span class="text-xs break-words"><strong>Cal:</strong> ${escapeHtml(calibrationDateStr)}</span><span class="text-xs break-words"><strong>Due:</strong> ${escapeHtml(dueDateStr)}</span>`;
+            if (calibrationDueDate && isCalibrated) {
                 return `<div class="text-xs text-gray-900">
-                    <div class="flex flex-col">
-                        <span class="text-xs break-words">${dateStr}</span>
+                    <div class="flex flex-col gap-1">
+                        ${detailsHtml}
                         <span class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
                             <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                             </svg>
                             Valid
                         </span>
+                        ${dueBadgeHtml}
                     </div>
                 </div>`;
-            } else {
+            }
+            if (calibrationDueDate) {
                 return `<div class="text-xs text-gray-900">
-                    <div class="flex flex-col">
-                        <span class="text-xs break-words">${dateStr}</span>
+                    <div class="flex flex-col gap-1">
+                        ${detailsHtml}
                         <span class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
                             <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
                             </svg>
                             Expired
                         </span>
+                        ${dueBadgeHtml}
                     </div>
                 </div>`;
             }
+            return `<div class="text-xs text-gray-900"><div class="flex flex-col gap-1">${detailsHtml}</div></div>`;
+        }
+
+        function getRequiredDueStatus(dateValue, dueDate, requiredValue, tone, eouStatus) {
+            if (!dateValue && !dueDate) return '<span class="text-gray-500 text-xs">Not set</span>';
+            const dateStr = dateValue ? formatDate(dateValue) : 'Not set';
+            const dueDateStr = dueDate ? formatDate(dueDate) : 'Not set';
+            const dueBadgeHtml = dueDate ? getDueBadgeHtml(dueDate, eouStatus) : '';
+            const toneMap = {
+                blue: {
+                    className: 'bg-blue-100 text-blue-800',
+                    iconPath: 'M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z'
+                },
+                purple: {
+                    className: 'bg-purple-100 text-purple-800',
+                    iconPath: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
+                }
+            };
+            const toneInfo = toneMap[tone] || toneMap.blue;
+            const requiredHtml = isYesFlag(requiredValue)
+                ? `<span class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium ${toneInfo.className} mt-1 whitespace-nowrap">
+                        <svg class="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="${toneInfo.iconPath}" clip-rule="evenodd"></path>
+                        </svg>
+                        Required
+                    </span>`
+                : '';
+            return `<div class="text-xs text-gray-900">
+                <div class="flex flex-col gap-1">
+                    <span class="text-xs break-words"><strong>Date:</strong> ${escapeHtml(dateStr)}</span>
+                    <span class="text-xs break-words"><strong>Due:</strong> ${escapeHtml(dueDateStr)}</span>
+                    ${requiredHtml}
+                    ${dueBadgeHtml}
+                </div>
+            </div>`;
         }
 
         // Update each cell in the row
@@ -3187,32 +3281,52 @@
                 <div class="text-xs font-semibold text-gray-900 break-words">${escapeHtml(equipmentData.name)}</div>
             </div>`;
 
-            // Make (cell 2)
-            cells[2].className = 'px-2 py-2 text-xs text-gray-900 break-words max-w-xs';
-            cells[2].textContent = equipmentData.make || 'N/A';
+            // Make / Model / Serial (cell 2)
+            cells[2].className = 'px-4 py-3 text-xs text-gray-900';
+            cells[2].innerHTML = `<div class="flex flex-col gap-1">
+                <div><strong>Make:</strong> ${escapeHtml(equipmentData.make || 'N/A')}</div>
+                <div><strong>Model:</strong> ${escapeHtml(equipmentData.model_no || 'N/A')}</div>
+                <div><strong>Serial:</strong> ${escapeHtml(equipmentData.serial_no || 'N/A')}</div>
+            </div>`;
 
-            // Model (cell 3)
-            cells[3].className = 'px-2 py-2 text-xs text-gray-900 break-words max-w-xs';
-            cells[3].textContent = equipmentData.model_no || 'N/A';
+            const calibrationDueInfo = getDueBadgeInfo(equipmentData.calibration_due_date, equipmentData.eou_status);
+            const isCalibrated = !!equipmentData.calibration_due_date && (!calibrationDueInfo || calibrationDueInfo.kind !== 'overdue');
 
-            // Serial (cell 4)
-            cells[4].className = 'px-2 py-2 text-xs text-gray-900 break-words max-w-xs';
-            cells[4].textContent = equipmentData.serial_no || 'N/A';
+            // Calibration (cell 3)
+            cells[3].innerHTML = getCalibrationStatus(
+                equipmentData.calibration_date,
+                equipmentData.calibration_due_date,
+                isCalibrated,
+                equipmentData.eou_status
+            );
 
-            // Calibration (cell 5)
-            const isCalibrated = equipmentData.calibration_due_date &&
-                new Date(equipmentData.calibration_due_date) >= new Date();
-            cells[5].innerHTML = getCalibrationStatus(equipmentData.calibration_due_date, isCalibrated);
+            // Intermediate Check (cell 4)
+            cells[4].innerHTML = getRequiredDueStatus(
+                equipmentData.ic_date,
+                equipmentData.ic_due_date,
+                equipmentData.ic_required,
+                'blue',
+                equipmentData.eou_status
+            );
+
+            // Maintenance Check (cell 5)
+            cells[5].innerHTML = getRequiredDueStatus(
+                equipmentData.maintenance_date,
+                equipmentData.maintenance_due_date,
+                equipmentData.maintenance_required,
+                'purple',
+                equipmentData.eou_status
+            );
 
             // Test Type (cell 6)
-            cells[6].className = 'px-2 py-2 text-xs text-gray-900 break-words max-w-xs';
+            cells[6].className = 'px-4 py-3 text-xs text-gray-900 whitespace-nowrap';
             cells[6].textContent = equipmentData.test_type || 'N/A';
 
             // Document Link (cell 7)
             if (equipmentData.document_link) {
                 const escapedLink = escapeHtml(equipmentData.document_link);
                 cells[7].innerHTML = `<a href="${escapedLink}" target="_blank" rel="noopener noreferrer"
-                    class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200">
+                    class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200 whitespace-nowrap">
                     <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
@@ -3228,9 +3342,23 @@
             cells[8].innerHTML = getStatusBadge(equipmentData.status);
 
             // Update row dataset with new status and calibration status
+            const newHasIcDue = !!equipmentData.ic_due_date && isYesFlag(equipmentData.ic_required);
+            const newHasMaintenanceDue = !!equipmentData.maintenance_due_date && isNotNoFlag(equipmentData.maintenance_required);
+            const newHasUpcomingDue = [
+                getDueBadgeInfo(equipmentData.calibration_due_date, equipmentData.eou_status),
+                newHasIcDue ? getDueBadgeInfo(equipmentData.ic_due_date, equipmentData.eou_status) : null,
+                newHasMaintenanceDue ? getDueBadgeInfo(equipmentData.maintenance_due_date, equipmentData.eou_status) : null
+            ].some(badge => badge && badge.kind === 'upcoming');
+
             if (row.dataset) {
                 row.dataset.status = equipmentData.status || '';
+                row.dataset.type = equipmentData.type || '';
                 row.dataset.calibrationStatus = equipmentData.calibration_status_col || '';
+                row.dataset.hasUpcomingDue = newHasUpcomingDue ? 'true' : 'false';
+            }
+
+            if (oldType !== (equipmentData.type || null)) {
+                updateTypeCards(oldType, equipmentData.type);
             }
 
             // Update status cards if status changed
@@ -3242,6 +3370,10 @@
             const newCalibrationStatus = equipmentData.calibration_status_col || null;
             if (oldCalibrationStatus !== newCalibrationStatus) {
                 updateCalibrationCards(oldCalibrationStatus, newCalibrationStatus);
+            }
+
+            if (oldHasUpcomingDue !== newHasUpcomingDue) {
+                updateUpcomingDueCard(oldHasUpcomingDue, newHasUpcomingDue);
             }
 
             // Action buttons (cell 9) - update the data-equipment-name attribute
@@ -3267,11 +3399,37 @@
         console.log('Row update complete');
     }
 
+    // Adjust statistics cards based on type change
+    function updateTypeCards(oldType, newType) {
+        const normalizeType = (value) => String(value || '').trim().toLowerCase();
+        const idMap = {
+            equipment: 'cardTotalEquipment',
+            accessory: 'cardTotalEquipment',
+            instrument: 'cardTotalInstrument'
+        };
+
+        function adjust(id, delta) {
+            if (!id) return;
+            const el = document.getElementById(id);
+            if (!el) return;
+            const current = parseInt((el.textContent || '0').replace(/[^0-9-]/g, ''), 10) || 0;
+            el.textContent = String(Math.max(0, current + delta));
+        }
+
+        const normalizedOldType = normalizeType(oldType);
+        const normalizedNewType = normalizeType(newType);
+
+        if (normalizedOldType === normalizedNewType) {
+            return;
+        }
+
+        if (idMap[normalizedOldType]) adjust(idMap[normalizedOldType], -1);
+        if (idMap[normalizedNewType]) adjust(idMap[normalizedNewType], +1);
+    }
+
     // Adjust statistics cards based on status change
     function updateStatusCards(oldStatus, newStatus) {
         const idMap = {
-            'Available': 'cardAvailable',
-            'in_use': 'cardInUse',
             'maintenance': 'cardMaintenance',
             'calibration': 'cardOutOfCalibration'
         };
@@ -3315,6 +3473,14 @@
         if (newCalibrationStatus && statusMap[newCalibrationStatus]) {
             adjust(statusMap[newCalibrationStatus], +1);
         }
+    }
+
+    function updateUpcomingDueCard(oldHasUpcomingDue, newHasUpcomingDue) {
+        const el = document.getElementById('cardUpcomingDue');
+        if (!el || oldHasUpcomingDue === newHasUpcomingDue) return;
+        const current = parseInt((el.textContent || '0').replace(/[^0-9-]/g, ''), 10) || 0;
+        const next = current + (newHasUpcomingDue ? 1 : 0) - (oldHasUpcomingDue ? 1 : 0);
+        el.textContent = String(Math.max(0, next));
     }
 
     function editEquipment(id) {
@@ -3507,10 +3673,15 @@
 
     // Delete confirmation modal functions
     let equipmentToDelete = null;
+    let deleteAction = null; // 'delete' or 'hide'
 
     function showDeleteConfirmation(id, name) {
         equipmentToDelete = id;
+        deleteAction = null; // Reset action
         document.getElementById('deleteEquipmentName').textContent = name;
+        document.getElementById('confirmActionBtn').disabled = true;
+        document.getElementById('confirmActionBtn').classList.add('opacity-50', 'cursor-not-allowed');
+        document.getElementById('confirmActionText').textContent = 'Choose Action';
 
         const modal = document.getElementById('deleteConfirmationModal');
         const modalContent = document.getElementById('deleteModalContent');
@@ -3526,6 +3697,27 @@
         }, 10);
     }
 
+    function setDeleteAction(action) {
+        deleteAction = action;
+        const confirmBtn = document.getElementById('confirmActionBtn');
+        const confirmText = document.getElementById('confirmActionText');
+
+        // Update button styling based on action
+        confirmBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500', 
+                                     'bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
+        
+        if (action === 'delete') {
+            confirmBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
+            confirmText.textContent = 'Permanently Delete';
+        } else if (action === 'hide') {
+            confirmBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
+            confirmText.textContent = 'Hide Equipment';
+        }
+
+        confirmBtn.disabled = false;
+        confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+
     function closeDeleteConfirmation() {
         const modal = document.getElementById('deleteConfirmationModal');
         const modalContent = document.getElementById('deleteModalContent');
@@ -3538,43 +3730,55 @@
             modal.classList.remove('show');
             modal.classList.add('hidden');
             equipmentToDelete = null;
+            deleteAction = null;
         }, 300);
     }
 
     function confirmDelete() {
-        if (!equipmentToDelete) return;
+        if (!equipmentToDelete || !deleteAction) {
+            showMessage('Please choose an action', 'error');
+            return;
+        }
 
         // Show loading state
-        const deleteBtn = document.querySelector('#deleteConfirmationModal button[onclick="confirmDelete()"]');
+        const deleteBtn = document.getElementById('confirmActionBtn');
         const originalText = deleteBtn.innerHTML;
         deleteBtn.innerHTML = `
             <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            Deleting...
+            Processing...
         `;
         deleteBtn.disabled = true;
 
+        // Send request with action parameter
         fetch(`/api/equipment/${equipmentToDelete}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ action: deleteAction })
         })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showMessage('Equipment deleted successfully!', 'success');
+                    const message = deleteAction === 'delete' 
+                        ? 'Equipment permanently deleted successfully!' 
+                        : 'Equipment hidden successfully!';
+                    showMessage(message, 'success');
                     closeDeleteConfirmation();
                     // Reload page to refresh data
                     setTimeout(() => window.location.reload(), 500);
                 } else {
-                    showMessage(data.error || 'Delete failed', 'error');
+                    showMessage(data.error || 'Action failed', 'error');
                     // Reset button
                     deleteBtn.innerHTML = originalText;
                     deleteBtn.disabled = false;
                 }
             })
             .catch(error => {
-                showMessage('An error occurred while deleting equipment', 'error');
+                showMessage('An error occurred while performing the action', 'error');
                 console.error('Error:', error);
                 // Reset button
                 deleteBtn.innerHTML = originalText;
