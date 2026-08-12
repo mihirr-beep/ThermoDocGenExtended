@@ -166,6 +166,15 @@ _INSIGHT_RE = re.compile(
     r"|across (?:all|every|the) (?:products?|lab|tests?|campaigns?)"
     # --- history
     r"|(?:testing|test) history|history (?:of|for)\b|track record"
+    # The way a person actually opens a high-level question. "In one short
+    # paragraph, what happened with the Aurora Centrifuge?" matched nothing, so
+    # it went to the equipment domain on the word "Centrifuge" and came back
+    # offering V-LOG ARRAY ANTENNA as the closest match. The most natural
+    # phrasing there is, and it was the one phrasing not covered.
+    r"|what happened|what(?:'s| is) the story|the story (?:of|on|behind)"
+    r"|overall picture|the picture on|big picture|where (?:do|does) .{0,20}stand"
+    r"|summar(?:y|ise|ize)|walk me through|bring me up to speed"
+    r"|tell me about (?:the |what )?"
     # --- the paperwork axis
     r"|sent back|bounced|rejected in (?:peer )?review|peer[- ]review reject"
     r"|(?:why|reason).{0,30}reject"

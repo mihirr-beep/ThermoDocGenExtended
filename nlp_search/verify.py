@@ -794,7 +794,29 @@ _MACHINERY_LABEL_RE = re.compile(
     # model, quoted verbatim into a lab's answer.
     r"|counts?[^\n:]{0,60}|in words[^\n:]{0,60}|analy[sz]ed with"
     r"|analysis|evidence, not cause"
-    r")[ \t]*:[^\n]*")
+    # The model narrating its own process, and the repair narrating itself.
+    # A lab-wide summary otherwise ended: "What I did - Ran analyse_history with
+    # analysis = failure_modes ... The original answer included all relevant
+    # figures and details from the evidence provided."
+    r"|what i did|how i (?:did|got) (?:this|it)|method|approach"
+    r")[ \t]*:?[ \t]*-?[^\n]*")
+
+# Same machinery, written as prose instead of a labelled line.
+_PROCESS_PROSE_RE = re.compile(
+    r"(?im)^[ \t>*-]*(?:"
+    r"(?:ran|called|used|invoked|queried)\s+analy[sz]e_history\b"
+    r"|the original (?:answer|draft)\b"
+    r"|(?:the )?(?:evidence|rows) (?:shows?|indicates?) a total of"
+    r")[^\n]*")
+
+# "There are 378 rows of data, but only the results from that date are shown."
+# The size of the evidence is not a fact about the lab, and a reader has no way
+# to tell the two apart.
+_ROWCOUNT_PROSE_RE = re.compile(
+    r"(?i)[-*\s]*\.?\s*(?:there (?:are|were)|it (?:has|had)|"
+    r"the (?:evidence|data) (?:has|have|contains?|includes?|shows?))"
+    r"\s+[\d,]+\s+rows?\s+of\s+(?:data|evidence)"
+    r"[^.\n]*\.?")
 # lab_metric(name='x', include_rows=False) and the bare keyword form.
 # analyse_history joined the list as soon as the primitives went in: answers
 # were signing off with the literal call they had made, arguments and all.
@@ -828,6 +850,8 @@ def strip_machinery(text):
     out = _SQL_STMT_RE.sub("", text)
     out = _TOOL_CALL_RE.sub("", out)
     out = _MACHINERY_LABEL_RE.sub("", out)
+    out = _PROCESS_PROSE_RE.sub("", out)
+    out = _ROWCOUNT_PROSE_RE.sub("", out)
     out = _MISSING_FIELD_RE.sub("", out)
     out = _KWARG_RE.sub("", out)
     # tidy what removal left behind: orphaned punctuation and blank runs

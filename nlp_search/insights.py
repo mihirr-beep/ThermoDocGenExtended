@@ -36,12 +36,16 @@ than saying nothing.
 """
 import json
 import logging
+import re
 
 log = logging.getLogger(__name__)
 
 # Every primitive returns rows carrying the campaign's TCO and the product name,
 # never a bare number. A metric with nothing naming the thing it measures is how
 # an answer ends up attached to the wrong product.
+# XXX-XXX-999 with at least one dash and a trailing number.
+_TCO_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}$")
+
 _CAMPAIGN_JOIN = """
     FROM `datasheet` d
     JOIN planner_entries p ON p.id = d.planner_entry_id
@@ -102,6 +106,16 @@ def timeline(conn, product=None, tco=None, limit=60):
         ORDER BY d.test_date, r.tco_id LIMIT %(lim)s
     """
     rows = _rows(conn, sql, **params)
+    # Say what the letter MEANS, per row. Handed result='D' the model wrote "it
+    # received a D in ESD and EFT" and then, in the next sentence, "it did meet
+    # performance criteria in ESD and EFT" - a self-contradiction inside one
+    # answer, because D is a grade whose direction you have to know. outcome()
+    # already knows; the model should not have to.
+    for r in rows:
+        o = outcome(r)
+        r["outcome"] = {"pass": "COMPLIANT - met its performance criterion",
+                        "fail": "NOT COMPLIANT - did not meet its criterion",
+                        "unknown": "no outcome recorded"}[o]
     _attach_worst_breach(conn, rows)
     return rows
 
@@ -708,6 +722,18 @@ def run(db_params, name, ledger=None, **kwargs):
     if prod in ("all", "any", "every", "all products", "any product",
                 "everything", "*", "n/a", "none"):
         kwargs.pop("product", None)
+    # A TCO is IEC-EMC-004 / DEMO-EMC-201 - letters, dashes, digits. Asked to
+    # summarise "the DEMO Orion Analyzer O9", the model read the model-suffix as
+    # an identifier and called timeline with product="Orion Analyzer", tco="O9".
+    # Those are ANDed, so a real product plus a fictional TCO matched nothing and
+    # the answer was "no timeline history available for this product" about a
+    # product with three campaigns. Silently dropping the junk is right: the
+    # product name was correct and sufficient.
+    for key in ("tco", "tco_before", "tco_after"):
+        val = str(kwargs.get(key) or "").strip()
+        if val and not _TCO_RE.match(val):
+            kwargs.pop(key, None)
+            log.info("insight %s: ignoring %s=%r, not a TCO", name, key, val)
     # "have OTHER products failed like this" - the product asked about is not an
     # answer to its own question. Done here rather than only in the tool wrapper
     # so every caller gets it, including a direct call from a test or a future
@@ -748,11 +774,36 @@ def run(db_params, name, ledger=None, **kwargs):
     summary = _summarise(data)
     pairs = _flatten(data) + list(summary.items())
     if ledger is not None:
-        ledger.record("insights", "%s(%s)" % (name, kwargs),
+        # Recorded as REAL ROWS, one per result, not as one row per field.
+        # Flattening two failure modes into fourteen (field, value) pairs made the
+        # evidence digest look like fourteen records, and the answer duly said
+        # "these findings include 14 failure modes and 15 rejection modes" -
+        # 2x7 and 3x5. The numbers were arithmetically present in the evidence,
+        # which is why grounding passed them, and they described nothing.
+        # The flattened pairs still go in as a second entry so individual values
+        # stay citable; only the shape the model counts has changed.
+        rows = [r for r in (data if isinstance(data, list) else [data])
+                if isinstance(r, dict)]
+        if rows:
+            cols = list(rows[0].keys())
+            ledger.record("insights", "%s(%s) -> %d row(s)" % (name, kwargs, len(rows)),
+                          columns=cols,
+                          rows=[[r.get(c) for c in cols] for r in rows])
+        ledger.record("insights", "%s(%s) values" % (name, kwargs),
                       columns=["field", "value"],
                       rows=[[k, v] for k, v in pairs])
-        ledger.note("insight", "%s returned %d value(s)" % (name, len(pairs)))
+        ledger.note("insight", "%s returned %d row(s)"
+                    % (name, len(rows) if rows else 0))
     text = _render(name, data, kwargs)
+    # How many rows this actually is, in words, because the model guessed. Given
+    # two failure modes it wrote "there are 14 failure modes identified, but only
+    # two are detailed here" - 14 being a row count from elsewhere in the
+    # evidence, which is why the grounding check passed it: the number was
+    # present, the sentence around it was invented.
+    if isinstance(data, list) and name in ("failure_modes", "rejection_modes",
+                                           "cohort", "resolved_how"):
+        text += ("\n\nThat is the COMPLETE list: %d row(s), nothing withheld. Do "
+                 "not say more exist." % len(data))
     if summary:
         text += "\n\n" + _counts_sentence(summary)
     nxt = _next_steps(name, data, kwargs)
