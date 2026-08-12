@@ -116,22 +116,59 @@ _CROSS_DOMAIN = re.compile(
 # told twice not to. A small model's pull toward asking a clarifying question
 # beats an instruction telling it not to. The question is recognisable from its
 # shape, so recognise it in code.
+# Written narrowly the first time, against the eight questions the primitives
+# were built for, and it showed: of seventeen questions phrased the way people
+# actually speak, three matched. "How many attempts before it PASSED" missed on a
+# word boundary after "pass". "Why DO datasheets get sent back" missed because
+# only did/was/were/does/is/has/have were listed. "Fail for the same REASON"
+# missed because only failure/problem/issue/pattern were. Each miss sent the
+# question to a worker with no analyse_history, which answered from hand-written
+# SQL and reported an absence.
+#
+# So this is deliberately generous now. Over-matching is cheap: the datasheets
+# worker still has run_sql and answers ordinary datasheet questions perfectly
+# well, and it is the domain that owns results anyway. Under-matching costs a
+# wrong answer. The control set in the tests keeps ordinary questions - overdue
+# calibration, unfilled datasheets, requests raised in July - out of here.
 _INSIGHT_RE = re.compile(
-    r"\b(?:"
-    r"why (?:did|was|were|does|is|has|have)"            # why did it fail
-    r"|what (?:changed|was changed|is different|differed)"
-    r"|(?:what|which) .{0,40}\b(?:changed|differ)"
-    r"|(?:greatest|biggest|most) improve|improve(?:d|ment)\b"
-    r"|(?:which|what) .{0,30}\bfrequenc"
-    r"|(?:modification|change|fix|fitted|introduced) .{0,30}\bbefore\b"
-    r"|before (?:it|the \w+) (?:first )?pass"
-    r"|(?:other|another|any other) products?"
-    r"|same (?:failure|problem|issue|pattern)|similar (?:failure|pattern|problem)"
-    r"|happened (?:to anything else|elsewhere|before)"
-    r"|(?:testing|test) history|history of"
-    r"|root cause|what (?:did they|do they|was) change"
-    r"|make (?:them|it) pass|to (?:make|get) .{0,20}pass"
-    r")\b", re.I)
+    r"(?:"
+    # --- causal
+    r"\bwhy\b"
+    r"|what (?:was|went|is) (?:actually )?wrong"
+    r"|root cause|underlying (?:cause|reason|issue)"
+    # --- repetition / streak
+    r"|\b(?:kept|keeps|repeatedly|again and again|multiple times) (?:on )?fail"
+    r"|fail(?:ed|ing|s)? (?:again|repeatedly|more than once|several times)"
+    r"|how many (?:attempts|tries|times|goes|rounds|iterations)"
+    r"|\bbefore (?:it|they|the \w+) (?:first(?:ly)? )?pass(?:ed|es|ing)?\b"
+    r"|(?:to|and) (?:make|get) (?:it|them|the \w+) (?:to )?pass"
+    r"|get (?:it|them) through\b"
+    # --- change between attempts
+    r"|what (?:changed|differed|was different|had changed)"
+    r"|(?:what|which) .{0,40}\b(?:changed|differ|different)\b"
+    r"|(?:modification|modifications|change|changes|fix|fixes|fitted|retrofit|"
+    r"introduced|added|replaced) .{0,40}\b(?:before|between|prior)\b"
+    r"|what did (?:they|we|he|she) (?:change|do|fit|add|fix)"
+    # --- trend / measurement movement
+    r"|improve(?:d|ment|ments)?\b|got (?:better|worse)"
+    r"|came down|went down|dropped|reduced by|brought .{0,20}down"
+    r"|over (?:time|its tests|the campaigns)|trend"
+    r"|(?:which|what) .{0,30}frequenc"
+    # --- pattern across products
+    r"|(?:other|another|any other|different) products?"
+    r"|same (?:failure|problem|issue|pattern|reason|cause|mode|thing)"
+    r"|similar (?:failure|pattern|problem|issue|reason|cause)"
+    r"|happened (?:to anything else|elsewhere|before|again)"
+    r"|most common (?:reason|failure|cause|mode|problem|issue)"
+    r"|(?:failure|rejection) (?:mode|reason|pattern)s?\b"
+    r"|never passed|still failing|not yet passed|no pass"
+    r"|across (?:all|every|the) (?:products?|lab|tests?|campaigns?)"
+    # --- history
+    r"|(?:testing|test) history|history (?:of|for)\b|track record"
+    # --- the paperwork axis
+    r"|sent back|bounced|rejected in (?:peer )?review|peer[- ]review reject"
+    r"|(?:why|reason).{0,30}reject"
+    r")", re.I)
 
 
 def is_insight(question):

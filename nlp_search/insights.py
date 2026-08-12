@@ -117,7 +117,7 @@ def _attach_worst_breach(conn, rows):
     summary and failure_detail is still the place for the full breach list.
     """
     for c in rows:
-        if str(c.get("result") or "").upper() != "FAIL":
+        if outcome(c) != "fail":
             continue
         worst = _rows(conn, """
             SELECT f.value AS frequency_mhz, q.value AS measured,
@@ -177,7 +177,7 @@ def failure_detail(conn, product=None, tco=None, limit=40):
     frequency. A re-issued record is the same test, not another failure.
     """
     camps = [c for c in timeline(conn, product=product, tco=tco, limit=limit)
-             if (c.get("result") or "").upper() == "FAIL"]
+             if outcome(c) == "fail"]
     out = []
     for c in camps:
         breaches = _rows(conn, """
@@ -274,13 +274,13 @@ def modifications_before_pass(conn, product):
     would credit the wrong change.
     """
     camps = timeline(conn, product=product)
-    passed = next((c for c in camps if (c.get("result") or "").upper() == "PASS"), None)
+    passed = next((c for c in camps if outcome(c) == "pass"), None)
     if not passed:
         return {"passed": None, "introduced": [], "already_present": []}
     before = [c for c in camps
               if c["test_date"] and passed["test_date"]
               and c["test_date"] < passed["test_date"]
-              and (c.get("result") or "").upper() == "FAIL"]
+              and outcome(c) == "fail"]
     last_fail = before[-1] if before else None
 
     def mods(tco):
@@ -511,6 +511,30 @@ _CAUSATION_NOTE = (
     "improved by 5.3 dB' - rather than asserting that X caused it.")
 
 
+def outcome(row):
+    """"pass", "fail" or "unknown" for one campaign, whichever way it is recorded.
+
+    The demo corpus writes result = PASS / FAIL. Real datasheets in this lab do
+    not: they carry the IEC 61000-4 performance CRITERION in the same column, so
+    result reads 'A' on eleven compliant tests and 'D' on the ones that failed,
+    and a handful say FAIL outright. Counting only the literals PASS and FAIL
+    reported "11 campaigns: 0 failed, 0 passed" for a real product - true of the
+    strings, useless as an answer.
+
+    A, B and C all mean the unit met its criterion and is compliant; D means it
+    did not. That is the standard's own scale, not a guess.
+    """
+    r = str(row.get("result") or "").strip().upper()
+    c = str(row.get("met_performance_criteria") or "").strip().upper()
+    if r in ("PASS", "COMPLIES", "COMPLIANT") or r in ("A", "B", "C"):
+        return "pass"
+    if r in ("FAIL", "FAILED", "DOES NOT COMPLY") or r == "D":
+        return "fail"
+    if not r and c:                      # result blank, criterion recorded
+        return "pass" if c in ("A", "B", "C") else ("fail" if c == "D" else "unknown")
+    return "unknown"
+
+
 def _summarise(data):
     """Counts the answer is likely to quote, computed here rather than by eye.
 
@@ -526,10 +550,12 @@ def _summarise(data):
     rows = [r for r in data if isinstance(r, dict)]
     if not rows or "result" not in rows[0]:
         return {}
-    res = [str(r.get("result") or "").upper() for r in rows]
+    res = [outcome(r) for r in rows]
     out = {"campaigns_total": len(rows),
-           "campaigns_failed": res.count("FAIL"),
-           "campaigns_passed": res.count("PASS")}
+           "campaigns_failed": res.count("fail"),
+           "campaigns_passed": res.count("pass")}
+    if res.count("unknown"):
+        out["campaigns_with_no_recorded_outcome"] = res.count("unknown")
     codes = [r.get("failure_reason_code") for r in rows if r.get("failure_reason_code")]
     if codes:
         out["failure_reason_codes"] = ", ".join(sorted(set(codes)))
@@ -696,8 +722,8 @@ def _next_steps(name, data, kwargs):
     """
     if name != "timeline" or not isinstance(data, list) or not data:
         return ""
-    fails = [c for c in data if str(c.get("result") or "").upper() == "FAIL"]
-    passes = [c for c in data if str(c.get("result") or "").upper() == "PASS"]
+    fails = [c for c in data if outcome(c) == "fail"]
+    passes = [c for c in data if outcome(c) == "pass"]
     product = kwargs.get("product") or ""
     lines = []
     if fails:
