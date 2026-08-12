@@ -55,11 +55,21 @@ _GAVE_UP = ("could not verify", "i have no rows to show you",
 
 # Ways of saying "the data does not support this". Any one of them, on a question
 # whose honest answer is a refusal, is a pass.
+# Grown four times, each time after failing a CORRECT answer for phrasing its
+# limitation in words the list did not happen to contain. "not identified in the
+# data" was the last one, on the root-cause question this whole guard exists for
+# - the system said exactly the right thing and scored zero. A keyword list is a
+# poor judge of whether an answer was honest; it is used here only because the
+# alternative is an LLM grading an LLM, and that has its own failure mode. Treat
+# every score from this file as a floor.
 _LIMITS = ("not recorded", "no record", "not captured", "not stored", "no field",
            "not available", "cannot", "can not", "can't", "unable", "does not "
            "record", "no data", "nothing in the", "not tracked", "no such",
            "not something", "do not have", "does not exist", "no information",
-           "not possible", "would need", "not held")
+           "not possible", "would need", "not held", "not identified",
+           "not determined", "not diagnosed", "no diagnosed", "not specified",
+           "not stated", "does not identify", "not in the data", "not derivable",
+           "not guaranteed", "no way to know", "not predict")
 
 # (id, category, question, must_have, must_not_have)
 # must_have: each entry is a tuple of alternatives - any one satisfies it.

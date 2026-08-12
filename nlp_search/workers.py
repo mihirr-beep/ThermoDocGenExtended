@@ -339,6 +339,12 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
         for the paperwork. Say which one you mean.
 
         Analyses, and what each needs:
+          failure_modes              (nothing)          what products fail for
+                                                        across the WHOLE lab, with
+                                                        how many products each
+                                                        mode affects
+          rejection_modes            (nothing)          why RECORDS are sent back
+                                                        in peer review, lab-wide
           timeline                   product= or tco=   every campaign, in order
           failure_detail             product= or tco=   the failures, with the
                                                         readings that breached
@@ -356,6 +362,13 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
 
         Start with timeline when you do not yet know the TCOs - metric_delta and
         config_diff need two of them, and timeline is where you get them.
+
+        A question about the WHOLE LAB rather than one product - "what do things
+        fail for most", "which problem affects the most products", "why do
+        datasheets get sent back" - goes to failure_modes or rejection_modes,
+        which take no arguments. Do NOT call timeline or failure_detail with an
+        empty product for these: they are per-product, and an empty result is
+        not the same as "there are no failures".
 
         Args:
             analysis: One name from the list above.

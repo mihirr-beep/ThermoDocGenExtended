@@ -238,13 +238,16 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
 
     bad = verdicts.get("unsupported") or []
     incomplete = bool(verdicts.get("incomplete"))
+    causal = _causal_overreach(question, draft)
     if (not bad and not verdicts.get("absence_unsupported")
-            and not incomplete and not phantom and not undisclosed and not id_leak):
+            and not incomplete and not phantom and not undisclosed and not id_leak
+            and not causal):
         return {"verdict": "grounded", "answer": draft, "unsupported": [], "notes": notes}
 
     repaired = _repair(question, draft, ledger, bad, incomplete=incomplete,
                        phantom=phantom, undisclosed=undisclosed,
-                       id_leak=id_leak.group(0) if id_leak else None, model=model)
+                       id_leak=id_leak.group(0) if id_leak else None,
+                       causal=causal, model=model)
     if repaired:
         notes.append("rewrote the answer without %d unsupported claim(s)" % len(bad))
         return {"verdict": "repaired", "answer": repaired, "unsupported": bad,
@@ -675,8 +678,36 @@ def _adjudicate(question, draft, ledger, flagged, absence, missed, phantom=None,
         return None
 
 
+# An answer that asserts a cause this database does not record.
+#
+# Nothing in the schema holds a diagnosis - no engineer types one in - so any
+# confirmed cause is the model's inference wearing the costume of a record. It
+# was told not to in the standing prompt, then in the tool output beside the
+# rows, then in a directive injected for that one question. All three lost to
+# the question's own framing: asked for "the confirmed root cause", it answered
+# "the confirmed root cause is CE_LIMIT_EXCEEDED" - which is also circular, the
+# code being the name of the failure rather than a reason for it.
+#
+# So it is checked here instead, after the answer exists, where an instruction
+# cannot be crowded out by four thousand tokens of catalog.
+_CAUSE_ASSERT_RE = re.compile(
+    r"(?i)\b(?:the\s+)?(?:confirmed|actual|underlying|true|identified)\s+"
+    r"(?:root\s+)?(?:cause|reason)\b[^.\n]{0,60}?\b(?:is|was|were)\b"
+    r"|\broot cause\b[^.\n]{0,40}?\b(?:is|was)\b"
+    r"|\bwas caused by\b|\bis caused by\b|\bthe cause of\b[^.\n]{0,40}\b(?:is|was)\b")
+
+
+def _causal_overreach(question, draft):
+    """The asserted-cause sentence, when the question asked for one and got one."""
+    from . import intent
+    if not intent.asks_for_cause(question):
+        return None
+    m = _CAUSE_ASSERT_RE.search(draft or "")
+    return m.group(0).strip() if m else None
+
+
 def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
-            undisclosed=None, id_leak=None, model=None):
+            undisclosed=None, id_leak=None, causal=None, model=None):
     """A rewrite constrained to the evidence, or None."""
     extra = ("\n- The original omitted items the evidence lists. Include every one "
              "of them, or state the total and say how many you are showing."
@@ -693,6 +724,17 @@ def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
                   "exactly what rule produced it - which columns, which condition - so "
                   "the reader can disagree with the rule instead of trusting a number "
                   "built on a hidden assumption." % undisclosed)
+    if causal:
+        extra += ("\n- The original says '%s'. This database records no causes - "
+                  "measurements, fitted parts, reviewer comments and dates, but "
+                  "nobody enters a diagnosis - so a confirmed cause cannot come "
+                  "from it. Remove that claim. Open by saying the data does not "
+                  "identify a cause, then give the sequence that bears on it: "
+                  "what the measurement did across attempts, what was changed "
+                  "between them, what the reviewer wrote. Keep every number. "
+                  "Naming the failure code is NOT a cause - 'the cause was "
+                  "CE_LIMIT_EXCEEDED' says the reason it failed was that it "
+                  "failed." % causal)
     if id_leak:
         extra += ("\n- The original says '%s'. A database id means nothing to a "
                   "reader. Replace it with the name - the evidence carries "
@@ -745,11 +787,21 @@ _SQL_STMT_RE = re.compile(
 # Deliberately NOT matching "Note:", which is how the reader's caveat arrives.
 _MACHINERY_LABEL_RE = re.compile(
     r"(?im)(?:^|(?<=[.!?])[ \t])[ \t>*-]*"
-    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route)[ \t]*:[^\n]*")
-# lab_metric(name='x', include_rows=False) and the bare keyword form
+    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route"
+    # Labels the insight primitives print above their own output. A user who
+    # asked whether a unit would pass its next test got a reply opening with
+    # 'IN WORDS (quote this, do not re-count):' - scaffolding meant for the
+    # model, quoted verbatim into a lab's answer.
+    r"|counts?[^\n:]{0,60}|in words[^\n:]{0,60}|analy[sz]ed with"
+    r"|analysis|evidence, not cause"
+    r")[ \t]*:[^\n]*")
+# lab_metric(name='x', include_rows=False) and the bare keyword form.
+# analyse_history joined the list as soon as the primitives went in: answers
+# were signing off with the literal call they had made, arguments and all.
 _TOOL_CALL_RE = re.compile(
     r"\b(?:lab_metric|run_sql|read_grid|list_values|resolve_entity|find_field|"
-    r"describe_table|sample_rows|profile_column|ask_\w+)\s*\([^)]*\)")
+    r"describe_table|sample_rows|profile_column|analyse_history|ask_\w+)"
+    r"\s*\([^)]*\)")
 _KWARG_RE = re.compile(r"\b(?:include_rows|max_rows|name)\s*=\s*[^\s,.;)]+")
 # "Total equipment_history rows: missing" - a count the model could not get,
 # reported as a field rather than dropped.

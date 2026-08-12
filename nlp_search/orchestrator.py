@@ -322,6 +322,11 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True):
     if undefined:
         blocks = blocks + (intent.UNDEFINED_DIRECTIVE.format(
             terms=", ".join("'%s'" % t for t in undefined)),)
+    # Injected per question rather than left in the standing prompt: the phrasing
+    # "what was the confirmed root cause" supplies its own framing, and a static
+    # rule thousands of tokens earlier loses to it.
+    if intent.asks_for_cause(question):
+        blocks = blocks + (intent.CAUSAL_DIRECTIVE,)
 
     # A question that plainly belongs to one domain goes straight to that
     # worker. The orchestrator's own turns were most of the cost - it spends

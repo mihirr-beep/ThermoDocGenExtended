@@ -136,6 +136,7 @@ _INSIGHT_RE = re.compile(
     r"\bwhy\b"
     r"|what (?:was|went|is) (?:actually )?wrong"
     r"|root cause|underlying (?:cause|reason|issue)"
+    r"|\bcaused?\b|what (?:is|was) (?:causing|behind)"
     # --- repetition / streak
     r"|\b(?:kept|keeps|repeatedly|again and again|multiple times) (?:on )?fail"
     r"|fail(?:ed|ing|s)? (?:again|repeatedly|more than once|several times)"
@@ -327,4 +328,63 @@ it from find_field, which searches column names in the catalog.
   holds the coupling method.
 - You may follow up with one query to show a sample value, but only AFTER you
   have named the real column, and only from that column.
+"""
+
+
+# --------------------------------------------------------------------------
+# the question asks for a CAUSE, and this database records no causes
+# --------------------------------------------------------------------------
+# Asked for "the confirmed root cause" of a conducted emission failure, the
+# answer was: "the confirmed root cause is that it exceeded the class B
+# quasi-peak limit at 0.72 MHz by 4.8 dB". That is circular - the cause of the
+# failure is that it failed - and it asserts a confirmation nothing in the data
+# supports. The exceedance is the symptom that DEFINES the failure.
+#
+# A note in the tool output did not prevent it, because the question itself
+# supplies the framing: "what was the confirmed root cause" invites a confident
+# answer, and a small model will supply one. So this is injected for that one
+# run, where it cannot be crowded out.
+_CAUSAL_RE = re.compile(
+    r"\broot cause|\bcaused? by\b|what caused|\bwhy exactly\b|"
+    r"\b(?:confirmed|actual|underlying|true) (?:cause|reason)|"
+    # "which internal component caused ..." - an adjective sits between the two
+    # words, so requiring them adjacent missed the question this was written for.
+    r"\bwhich(?: \w+){0,2} (?:component|part|board|module|supplier|vendor|batch|"
+    r"chip|cable|filter)\b(?:.{0,30}\bcaus)?|"
+    r"\b(?:component|part|supplier|batch) (?:that |which )?caus", re.I)
+
+
+def asks_for_cause(question):
+    """True when the question wants a causal claim rather than a fact."""
+    return bool(_CAUSAL_RE.search(question or ""))
+
+
+CAUSAL_DIRECTIVE = """
+## THIS QUESTION ASKS FOR A CAUSE. THIS DATABASE DOES NOT RECORD CAUSES.
+
+It records what was measured, what was fitted, what the reviewer wrote and when
+each happened. Nobody enters a diagnosis. So there is no field you can read to
+answer "why", and no amount of querying will produce one.
+
+Do NOT do either of these:
+  * State a cause as confirmed. "The confirmed root cause was the missing
+    common-mode choke" is a claim the data cannot support, and the engineer
+    reading it may act on it.
+  * Answer with the symptom dressed as a cause. "The root cause is that it
+    exceeded the limit at 0.72 MHz" says the cause of failing was failing. It
+    sounds like an answer and contains none.
+
+Do this instead, in one short paragraph:
+  1. Say plainly that the recorded data does not identify a cause.
+  2. Give the sequence that bears on it - what the measurement did, what was
+     changed between attempts, what the reviewer said. Numbers and dates.
+  3. Leave the inference to the reader. "A common-mode choke was fitted between
+     the failing and passing tests, and the 0.72 MHz margin improved by 5.3 dB"
+     is the most useful true thing you can say. An engineer will draw the
+     obvious conclusion and be right; you asserting it is how this tool starts
+     being believed about things it cannot know.
+
+If the question names something the schema has no field for at all - an internal
+component, a supplier, a batch, a cost, hours spent - say that it is not
+recorded, name what IS recorded that is closest, and stop.
 """

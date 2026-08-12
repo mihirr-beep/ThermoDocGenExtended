@@ -389,6 +389,67 @@ def cohort(conn, reason_code=None, exclude_product=None, limit=40):
     return _rows(conn, sql, **params)
 
 
+def failure_modes(conn, limit=40):
+    """Every classified failure mode in the lab: how many campaigns, how many products.
+
+    The one primitive that takes no arguments, because the question it answers -
+    "what do things fail for around here" - names nothing. Without it the model
+    called failure_detail with an empty product, got an empty list, and reported
+    that it could not identify a most common failure reason. Meanwhile a nearly
+    identical question phrased "which mode affects the most products" was
+    answered correctly from hand-written SQL, and a third one counted 4 products
+    where there are 3 by treating a blank result as a failure. Same data, three
+    phrasings, three different outcomes - which is exactly the variance a
+    reviewed query removes.
+
+    Ordered by products affected, not campaign count: three failing campaigns of
+    one stubborn unit is a product problem, two products failing the same way is
+    a pattern, and the second is what a manager needs to see first.
+    """
+    return _rows(conn, """
+        SELECT d.failure_reason_code AS reason_code,
+               COALESCE(e.label, d.failure_reason_code) AS what_it_means,
+               COUNT(*) AS failing_campaigns,
+               COUNT(DISTINCT r.product_name) AS products_affected,
+               GROUP_CONCAT(DISTINCT r.product_name
+                            ORDER BY r.product_name SEPARATOR '; ') AS products,
+               MIN(d.test_date) AS first_seen, MAX(d.test_date) AS last_seen
+        FROM `datasheet` d
+        JOIN planner_entries p ON p.id = d.planner_entry_id
+        JOIN iec_emc_requests r ON r.id = p.test_request_id
+        LEFT JOIN emc_reason_code e ON e.code = d.failure_reason_code
+        WHERE d.failure_reason_code IS NOT NULL
+        GROUP BY d.failure_reason_code, e.label
+        ORDER BY products_affected DESC, failing_campaigns DESC
+        LIMIT %(lim)s
+    """, lim=int(limit))
+
+
+def rejection_modes(conn, limit=40):
+    """Why RECORDS get sent back in peer review, lab-wide. The other axis.
+
+    Counted two ways on purpose. A datasheet bounced three times is three events
+    and one datasheet, and the honest answer to "how many have been rejected"
+    depends which was meant - a question that has already been got wrong once
+    here, by me, when I wrote 9 as the expected answer to a question asking how
+    many datasheets.
+    """
+    return _rows(conn, """
+        SELECT COALESCE(h.reason_code, '(unclassified)') AS reason_code,
+               COALESCE(e.label, 'no code recorded - see the reviewer comment')
+                   AS what_it_means,
+               COUNT(*) AS rejection_events,
+               COUNT(DISTINCT h.datasheet_id) AS datasheets_affected,
+               MIN(SUBSTRING(h.comment, 1, 90)) AS example_comment
+        FROM datasheet_status_history h
+        LEFT JOIN emc_reason_code e ON e.code = h.reason_code
+        WHERE h.to_status = 'Rejected'
+        GROUP BY COALESCE(h.reason_code, '(unclassified)'), e.label
+        ORDER BY rejection_events DESC
+        LIMIT %(lim)s
+    """, lim=int(limit))
+
+
 def resolved_how(conn, reason_code=None, limit=40):
     """For a failure mode, what each product had fitted by the time it passed.
 
@@ -490,6 +551,8 @@ def common_config(conn, tcos):
 # of them stripped as ungrounded.
 
 PRIMITIVES = {
+    "failure_modes": failure_modes,
+    "rejection_modes": rejection_modes,
     "timeline": timeline,
     "failure_detail": failure_detail,
     "metric_delta": metric_delta,
@@ -657,6 +720,18 @@ def run(db_params, name, ledger=None, **kwargs):
                 "failed the same way, call resolved_how with that failure's "
                 "reason_code instead - it reports what each of them had fitted "
                 "by the time it passed." % name)
+    # An empty list is not an empty lab. timeline and failure_detail both need a
+    # product or a TCO, and returning [] without one made the model announce
+    # that it "could not identify a most common failure reason from history" -
+    # reporting a missing argument as a finding about the data. Name the mistake
+    # and name the primitive that does answer it.
+    if name in ("timeline", "failure_detail") and not (kwargs.get("product")
+                                                      or kwargs.get("tco")):
+        return ("%s is per-product: it needs product= or tco=. This looks like a "
+                "question about the whole lab, so call failure_modes (no "
+                "arguments) for what products fail for and how many are "
+                "affected, or rejection_modes for why records are sent back in "
+                "peer review. Do NOT report this as 'no failures found'." % name)
     conn = _open(db_params)
     try:
         data = fn(conn, **kwargs)
@@ -706,7 +781,14 @@ def _counts_sentence(s):
         bits.append("separately, %d record(s) were sent back in peer review (%s)"
                     % (s["records_rejected_in_review"],
                        s.get("record_rejection_codes", "")))
-    return "IN WORDS (quote this, do not re-count): " + ". ".join(bits) + "."
+    # The instruction goes on its OWN line, above the sentence. When the two were
+    # one string the model quoted the whole thing, and a user asking whether a
+    # unit would pass its next test received a reply opening with
+    # 'IN WORDS (quote this, do not re-count):' - my scaffolding, verbatim, in a
+    # lab's answer. Give it a clean sentence to lift and the instruction stays
+    # behind.
+    return ("COUNTS - use these rather than re-counting the rows:\n"
+            + ". ".join(bits) + ".")
 
 
 def _next_steps(name, data, kwargs):
