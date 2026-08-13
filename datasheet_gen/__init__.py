@@ -47,6 +47,9 @@ def register_datasheet_gen(app):
         from report_gen.wizard_routes import report_wizard_bp
         if "report_wizard" not in app.blueprints:
             app.register_blueprint(report_wizard_bp)
+        from report_gen.wizard_pages import report_wizard_pages_bp
+        if "report_wizard_pages" not in app.blueprints:
+            app.register_blueprint(report_wizard_pages_bp)
     except Exception as exc:  # noqa: BLE001 - must never stop the app booting
         app.logger.warning("report draft table skipped: %s", exc)
     return app

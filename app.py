@@ -11371,6 +11371,7 @@ Please do not reply to this email.
                 )
 
                 show_upload_report = False
+                show_prepare_report = False
                 if parsed_assignments:
                     all_terminal = all(
                         a['status'] in ('cancelled', 'datasheet_uploaded')
@@ -11399,6 +11400,33 @@ Please do not reply to this email.
                         and all_datasheet_uploaded_have_file
                         and not remaining_tests
                         and not report_already_uploaded
+                    )
+                    # The report WIZARD needs the datasheets finished, and nothing
+                    # more. Two conditions above are deliberately relaxed:
+                    #
+                    #  * report_already_uploaded - the commonest moment to want the
+                    #    wizard is just after reading a generated report and finding
+                    #    the EUT details blank, and it is the only route that
+                    #    collects them.
+                    #  * all_terminal - generating a report moves every assignment
+                    #    from 'datasheet_uploaded' to 'report_uploaded', which is
+                    #    not in that tuple. So the button vanished the instant a
+                    #    report existed, i.e. precisely when it is needed. A
+                    #    reported test is at least as finished as an uploaded one.
+                    wizard_terminal = all(
+                        a['status'] in ('cancelled', 'datasheet_uploaded',
+                                        'report_uploaded')
+                        for a in parsed_assignments
+                    )
+                    has_any_datasheet_file = any(
+                        a['status'] in ('datasheet_uploaded', 'report_uploaded')
+                        and bool(a.get('datasheet_file_path'))
+                        for a in parsed_assignments
+                    )
+                    show_prepare_report = (
+                        wizard_terminal
+                        and has_any_datasheet_file
+                        and not remaining_tests
                     )
 
                 aggregated_status = derive_review_status(
@@ -11445,6 +11473,7 @@ Please do not reply to this email.
                     'service_types': service_types,
                     # âœ… FIX: show_upload_report now correctly hides when report is uploaded
                     'show_upload_report': show_upload_report,
+                    'show_prepare_report': show_prepare_report,
                     # âœ… FIX: report fields now correctly read from PlannerEntry
                     'report_file_path': report_file_path,
                     'report_comments': report_comments,

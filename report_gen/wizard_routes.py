@@ -131,6 +131,9 @@ def eut_page(request_id):
         req=row, request_id=request_id, values=values,
         images=d["images"], fields=WF.FIELDS, choices=WF.CHOICES,
         optional=WF.OPTIONAL, ulr_no=WF.ULR_NO,
+        # from builder.py's own DIAGRAM_BOX / PHOTO_BOX, so the crop frame in the
+        # form is the box the .docx will use and not a second opinion about it
+        image_boxes=WF.image_boxes(),
         outstanding=WF.outstanding(values, row))
 
 

@@ -113,6 +113,26 @@ CHOICES = {
     "dimension_unit": ["mm", "cm", "m"],
 }
 
+# The box each image is fitted into IN THE DOCUMENT, in millimetres, taken from
+# builder.py's DIAGRAM_BOX / PHOTO_BOX rather than restated - if those move, this
+# moves with them.
+#
+# It matters that these are the REPORT's boxes and not the datasheet's. The
+# datasheet form fits every test-setup photo into 159.2 x 95 mm (_box() in
+# generic_generator); the report uses 150 x 95 for the block diagram and
+# 140 x 90 for the EUT pictures. Cropping in the wizard against the datasheet's
+# ratio would frame the picture to a shape the report never uses, and the
+# difference shows up as a letterboxed or clipped image on the client's copy.
+def image_box_mm(key):
+    """(width_mm, height_mm) the document will fit this image into."""
+    from .builder import DIAGRAM_BOX, PHOTO_BOX
+    return DIAGRAM_BOX if key == "img_block_diagram" else PHOTO_BOX
+
+
+def image_boxes():
+    """{key: [w_mm, h_mm]} for every image field, for the form's JS."""
+    return {k: list(image_box_mm(k)) for k in image_keys()}
+
 # Fields whose absence should stop nobody. Everything else is reported as
 # outstanding in the completeness check - not silently turned into NA, which is
 # the behaviour this whole phase exists to remove.

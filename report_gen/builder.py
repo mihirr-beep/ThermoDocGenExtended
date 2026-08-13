@@ -463,8 +463,13 @@ def fill_eut_information(outline, data):
     _fill_text_block(outline, sec, "DESCRIPTION OF EUT", meta.get("description"))
     _fill_text_block(outline, sec, "EUT CONFIGURATION DURING TEST",
                      meta.get("configuration"))
-    # 2.3 SOFTWARE AND FIRMWARE DETAILS has no source in the request - its
-    # <placeholder> is kept on purpose so it is visibly pending.
+    # ---- 2.3 SOFTWARE AND FIRMWARE DETAILS ----
+    # It had no source in the REQUEST, which is what the old comment here meant,
+    # and that was mistaken for having no source at all: every datasheet records
+    # the software it ran under, so the report can list them per test. Written as
+    # a table because the reader's question is "what ran MY test", and a
+    # paragraph of comma-separated names does not answer it.
+    _fill_software_table(outline, sec, meta.get("software_rows") or [])
 
     # ---- 2.4 EUT MODIFICATION RECORD ----
     tabs = outline.tables_in(sec, "EUT MODIFICATION RECORD")
@@ -506,6 +511,37 @@ def fill_eut_information(outline, data):
         T.fill_table_rows(tabs[0], meta["accessories"])
     if len(tabs) >= 2 and meta.get("cables"):
         T.fill_table_rows(tabs[1], meta["cables"])
+
+
+def _fill_software_table(outline, sec, rows):
+    """2.3: replace the placeholder paragraph with a Test / Software / Version table.
+
+    The template gives this subsection one <placeholder> paragraph and no table,
+    so the table is created rather than filled. It is inserted BEFORE the
+    placeholder and the placeholder is then dropped, which keeps the new table
+    inside the subsection - appending after it would land in 2.4 the moment the
+    placeholder happened to be the last block.
+
+    Silent no-op when there are no rows: leaving the visible <placeholder> is
+    honest about a datasheet that recorded no software, where an empty table
+    would look like a finished answer of "none".
+    """
+    if not rows:
+        return 0
+    blocks = outline.sub_blocks(sec, "SOFTWARE AND FIRMWARE DETAILS")
+    anchor = _first_body_paragraph(blocks)
+    if anchor is None:
+        return 0
+    try:
+        T.insert_table_before(anchor, outline.doc,
+                              ["Test", "Software / Firmware", "Version"], rows)
+    except Exception as exc:  # noqa: BLE001 - a table must not cost the report
+        log.warning("2.3 software table not inserted: %s", exc)
+        return 0
+    _drop_placeholder_paragraphs(outline.sub_blocks(
+        sec, "SOFTWARE AND FIRMWARE DETAILS"))
+    outline.refresh()          # a new block shifts every index after it
+    return len(rows)
 
 
 def _fill_text_block(outline, section, sub, text):

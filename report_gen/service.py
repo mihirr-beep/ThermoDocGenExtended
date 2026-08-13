@@ -19,6 +19,7 @@ tests) can work without a document.
 import json
 import os
 import re
+from . import section2 as _section2
 from datetime import date, datetime
 
 # request-side test_code (iec_emc_request_tests) -> datasheet registry code.
@@ -374,7 +375,63 @@ def modification_rows(tests):
                 continue
             seen.add(key)
             rows.append(row)
-    return rows or [["0", "Initial state", "", ""]]
+    return _fill_state_gaps(rows) or [["0", "Initial state", "", ""]]
+
+
+def _fill_state_gaps(rows):
+    """Expand the merged rows to every state from 0 to the highest one reached.
+
+    2.4 is the EUT's modification HISTORY, not a list of what each test happened
+    to record. Each test states the modification state it was tested at, so with
+    three tests at states 0, 0 and 2 the report must list 0, 1 and 2 - including
+    1, which no single test mentions and which merging alone therefore drops. A
+    record that jumps from 0 to 2 reads as though a state was lost.
+
+    A state nobody described still gets its row with an empty description. Naming
+    it something plausible would be inventing history in a document an assessor
+    reads.
+    """
+    numbered = {}
+    highest = -1
+    for row in rows:
+        n = _state_number(row[0])
+        if n is None:
+            continue
+        highest = max(highest, n)
+        prev = numbered.get(n)
+        # the same state appears on every test; keep the row that says the most
+        if prev is None or len(_s(row[1])) > len(_s(prev[1])):
+            numbered[n] = row
+    if highest < 0:
+        return rows          # nothing numeric to order by - leave as recorded
+
+    out = [numbered.get(n) or [str(n), "", "", ""] for n in range(highest + 1)]
+    # An unnumbered state the engineer actually described ("as received") is kept
+    # after the ordered ones, because they wrote it deliberately. The DESCRIPTION
+    # is what makes a row a modification: every datasheet ships a blank spare row
+    # whose only content is the template's "As applicable" in fitted-by and date,
+    # and testing "any field is non-empty" let that through into the report's
+    # modification record as a ghost second state.
+    out.extend(r for r in rows
+               if _state_number(r[0]) is None and _s(r[1])
+               and _s(r[1]).lower() not in ("as applicable", "na", "n/a"))
+    return out
+
+
+def _state_number(value):
+    """The leading integer of a modification state, or None.
+
+    Engineers write "0", "0 - initial", "State 2". Only the number can order
+    them, and a state carrying none cannot take part in "the highest so far".
+    """
+    s = _s(value).strip()
+    num = ""
+    for ch in s:
+        if ch.isdigit():
+            num += ch
+        elif num:
+            break
+    return int(num) if num else None
 
 
 def test_date_span(tests, req):
@@ -491,9 +548,20 @@ def collect(request_obj, planner_entries, now=None):
             "measured_current": _measured_current(spec),
             "description": _s(getattr(request_obj, "product_description", "")),
             "configuration": _s(getattr(request_obj, "test_configuration", "")),
-            "modes": (_plain_rows(getattr(request_obj, "functional_modes", []), "mode_value")
-                      or [x for x in re.split(r"[\r\n]+",
-                          _s(getattr(request_obj, "operation_modes", ""))) if x.strip()]),
+            # Labelled "Mode A:", "Mode B:" in the order the request records them.
+            # The letter is positional and is in no column - it can only be
+            # derived - and the report prints the label, not the bare description.
+            "modes": _section2.mode_lines(
+                request_obj=request_obj,
+                request_id=getattr(request_obj, "id", None)),
+            # 2.3, from every test's DATASHEET. builder.py carried a comment
+            # saying this had "no source in the request", which was true of the
+            # request and wrong about datasheet_software, where the name and
+            # version have been sitting all along.
+            "software_rows": (_section2.software_rows(
+                getattr(request_obj, "id", None),
+                include_tests=[t["code"] for t in tests])
+                if getattr(request_obj, "id", None) else []),
             "monitoring": _s(getattr(request_obj, "monitoring_parameters", "")),
             "product_standards": _plain_rows(
                 getattr(request_obj, "product_standards", []), "standard_value"),
