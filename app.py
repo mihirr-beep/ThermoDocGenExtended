@@ -6120,6 +6120,20 @@ Please do not reply to this email.
 
         assigned_test_keys = set()
         for entry in planner_entries:
+            # A CANCELLED run is not an assignment.
+            #
+            # The review page has always skipped these (see the
+            # active_entries_by_test filter), which is why it shows such a test as
+            # "Not Assigned". This payload did not, so the same test was
+            # simultaneously unassigned on the page and assigned to the dialog
+            # that offers unassigned tests - and the dialog, having nothing left
+            # to offer, said everything was already assigned.
+            #
+            # Measured on IEC-EMC-004: EFT is selected on the request, its only
+            # planner entry (id 10) is 'cancelled', and it could not be
+            # re-assigned from the UI at all.
+            if str(getattr(entry, 'status', '') or '').strip().lower() == 'cancelled':
+                continue
             test_name = getattr(entry, 'test_name', None)
             if test_name:
                 assigned_key = _normalize_assignment_test_key(test_name)

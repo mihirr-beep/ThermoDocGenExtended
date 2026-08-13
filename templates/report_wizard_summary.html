@@ -73,29 +73,39 @@
         </tbody>
       </table>
     </div>
-    <p class="rw-help">
-      <strong>Results</strong> shows PASS or FAIL for an emission test, and the
-      performance criterion that was met (A, B, C or D) for an immunity test - the
-      same value the engineer recorded on the datasheet.
-    </p>
-    {% else %}
-      <p class="rw-help">No test in this request resolved to a 1.1 row.</p>
     {% endif %}
 
-    {% if preview.omitted %}
-      <p class="rw-help">
-        The blank form lists every test the laboratory offers. This request does not
-        include the following <strong>{{ preview.omitted|length }}</strong>, so they will
-        not appear in the report:
-        {% for o in preview.omitted %}{{ o.test }}{% if not loop.last %}, {% endif %}{% endfor %}.
-      </p>
-    {% endif %}
+    {# One block for the notes ABOUT the table, opened and closed outside the
+       if/else - a wrapper that opens in one branch and closes after the endif
+       leaves an unmatched </div> whenever the other branch runs. #}
+    <div class="rw-notes">
+      {% if preview.method %}
+        <p class="rw-help">
+          <strong>Results</strong> shows PASS or FAIL for an emission test, and the
+          performance criterion that was met (A, B, C or D) for an immunity test -
+          the same value the engineer recorded on the datasheet.
+        </p>
+      {% else %}
+        <p class="rw-help">No test in this request resolved to a 1.1 row.</p>
+      {% endif %}
+      {% if preview.omitted %}
+        <p class="rw-help">
+          The blank form lists every test the laboratory offers. This request does not
+          include the following <strong>{{ preview.omitted|length }}</strong>, so they will
+          not appear in the report:
+          {% for o in preview.omitted %}{{ o.test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+        </p>
+      {% endif %}
+    </div>
 
-    {# The five paragraphs the document prints under this table. Fixed on every
-       report and read straight out of the template, so this cannot drift from
-       what the .docx says. #}
+    {# The five paragraphs the document prints under this table. They ran straight
+       on from the help text with nothing between them, so the table, two notes
+       about the table and five paragraphs of standing legal text read as one wall.
+       Titled and set apart, they are recognisable as what they are. #}
     {% if preview.static and preview.static.disclaimers %}
       <div class="rw-fixed">
+        <p class="rw-fixed-h">Printed below this table on every report
+          <span>&middot; fixed wording, not editable</span></p>
         {% for para in preview.static.disclaimers %}<p>{{ para }}</p>{% endfor %}
       </div>
     {% endif %}
@@ -258,9 +268,25 @@
   /* The fixed disclaimer paragraphs the document prints under 1.1. Set smaller
      and greyer than the table so they read as the standing text they are, not as
      something waiting to be filled in. */
-  .rw-fixed{margin-top:12px;padding-top:10px;border-top:1px solid #eceff1}
-  .rw-fixed p{font-size:12px;color:#46505c;margin:0 0 8px;line-height:1.5}
+  /* Three distinct things used to run together under 1.1: the table, the notes
+     about the table, and five paragraphs of standing legal text. Each is now
+     visibly its own block. */
+  .rw-notes{margin-top:10px;padding:8px 10px;background:#f8fafc;
+    border-left:3px solid #cbd5e1;border-radius:0 6px 6px 0}
+  .rw-notes p{margin:0}
+  .rw-notes p + p{margin-top:6px}
+  .rw-fixed{margin-top:14px;padding:12px 14px;background:#fcfcfd;
+    border:1px solid #e3e8ee;border-radius:8px}
+  .rw-fixed p{font-size:12px;color:#46505c;margin:0 0 8px;line-height:1.55}
   .rw-fixed p:last-child{margin-bottom:0}
+  .rw-fixed-h{font-size:11px !important;font-weight:700;text-transform:uppercase;
+    letter-spacing:.04em;color:#64748b !important;margin:0 0 10px !important;
+    padding-bottom:6px;border-bottom:1px solid #e8ecf1}
+  .rw-fixed-h span{font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8}
+  /* The table itself reads as a table: a full grid, not row rules only. */
+  .rw-table th,.rw-table td{border:1px solid #cbd5e1}
+  .rw-table thead th{background:#eef2f7;text-align:center;text-transform:uppercase;
+    font-size:11.5px;letter-spacing:.02em;color:#334155}
   .rw-list{margin:2px 0 0;padding-left:18px;font-size:13px}
   .rw-list li{margin:2px 0}
 </style>

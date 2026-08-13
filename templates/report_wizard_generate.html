@@ -24,6 +24,7 @@
     <div>
       <h2>Prepare Test Report</h2>
       <p class="rw-sub">{{ state.tco_id or '' }} &middot; {{ state.product or 'unnamed product' }}</p>
+      <p class="rw-sub">Last step: write the .docx and send it for report approval.</p>
     </div>
     <div class="rw-steps">
       {% for s in nav.steps %}
@@ -39,13 +40,10 @@
       <strong>This report cannot be generated yet.</strong>
       {{ state.blockers|length }} thing(s) must be fixed first.
     {% elif state.outstanding %}
-      <strong>Ready to generate, with {{ state.outstanding|length }} field(s) still missing.</strong>
-      Those will be blank or "NA" in the document.
+      <strong>Ready to generate.</strong>
+      {{ state.outstanding|length }} field(s) below will be blank in the document.
     {% else %}
-      <strong>Ready to generate. Everything the wizard asks for is filled.</strong>
-    {% endif %}
-    {% if state.filled is defined and state.total %}
-      <span class="rw-help">{{ state.filled }} of the {{ state.total }} fields you fill in are complete.</span>
+      <strong>Ready to generate.</strong> Everything is filled.
     {% endif %}
   </div>
 
@@ -65,12 +63,8 @@
       {% if state.outstanding %}({{ state.outstanding|length }}){% else %}(none){% endif %}
     </legend>
     {% if state.outstanding %}
-      <p class="rw-help">
-        None of these stops the build. Each one is a place the finished report will
-        be blank, or will read "NA" as though the lab decided it was not
-        applicable. Fill them on
-        <a href="{{ nav.steps[0].url }}">page 1</a> if they apply.
-      </p>
+      <p class="rw-help">Nothing here blocks the build. Fill them on
+        <a href="{{ nav.steps[1].url }}">EUT information</a> if they apply.</p>
       <div class="rw-scroll">
         <table class="rw-table">
           <thead><tr><th>Field</th><th>Where it appears in the report</th></tr></thead>
@@ -82,10 +76,7 @@
         </table>
       </div>
     {% else %}
-      <p class="rw-help">
-        Every required field is filled. Optional ones - the monitoring screenshot,
-        Issued To and Measured EUT Current - are not counted here.
-      </p>
+      <p class="rw-help">Every required field is filled.</p>
     {% endif %}
 
     {% if state.images %}
@@ -112,31 +103,19 @@
     {% if state.pdf_available %}
       {% if state.existing_report %}
         <p class="rw-help">
-          A report already exists for this request:
-          <code>{{ state.existing_report }}</code>. It can be rendered to PDF with
-          {{ state.pdf_backend }} and read here. The preview is of the LAST
-          GENERATED file, not of the changes you have made since - generate again
-          first if you want those in it.
+          <code>{{ state.existing_report }}</code> &mdash; the last generated file,
+          not the changes you have made since.
         </p>
         <a class="rw-btn" href="{{ pdf_url }}" target="_blank" rel="noopener">
           Open the last report as PDF
         </a>
       {% else %}
-        <p class="rw-help">
-          A PDF preview is available on this server ({{ state.pdf_backend }}), but
-          nothing has been generated for this request yet - there is no document to
-          render. Generate below, then come back for the PDF.
-        </p>
+        <p class="rw-help">Nothing generated yet &mdash; generate below, then come
+          back to read it as a PDF.</p>
       {% endif %}
     {% else %}
-      <p class="rw-help">{{ state.pdf_note }}</p>
-      <p class="rw-help">
-        The pages before this one are the check instead: what section 1 will say,
-        which datasheet each test's section comes from, and which fields are still
-        missing. There is no substitute converter on purpose - the one available
-        here produced a PDF that looked complete but had dropped every measured
-        value, which is worse than no preview at all.
-      </p>
+      <p class="rw-help">{{ state.pdf_note }} Use the earlier steps to check the
+        content instead.</p>
     {% endif %}
   </fieldset>
 
@@ -147,9 +126,8 @@
     {% if state.already_generated %}
       <div class="rw-note">
         <strong>This will REGENERATE the report.</strong>
-        A report has already been generated for this request. Generating again
-        writes a new file, points every test on the request at it, and sends the
-        request back for report approval. The earlier file is kept, not deleted.
+        A new file is written and the request goes back for report approval.
+        The earlier file is kept.
       </div>
     {% endif %}
 
@@ -157,10 +135,7 @@
       <label for="rw-comments">Comments for the report approval flow</label>
       <textarea id="rw-comments" rows="3"
                 placeholder="Left empty, this records: EMI EMC Test Report generated from {{ state.with_data or 0 }} approved datasheet(s)."></textarea>
-      <span class="rw-help">
-        This is what the reviewer sees next to the report. Leave it empty to accept
-        the default sentence above.
-      </span>
+      <span class="rw-help">Shown to the reviewer. Leave empty for the default.</span>
     </div>
 
     <div class="rw-actions">

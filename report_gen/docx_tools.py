@@ -782,6 +782,83 @@ def insert_image_before(paragraph, image, width_mm=None, height_mm=None,
     return p
 
 
+_NUMBERED_HEADINGS = ("Heading 1", "Heading 2", "Heading 3")
+
+
+def heading_numbering(doc):
+    """{ilvl: numId} for headings, taken from the document's OWN numbered headings.
+
+    Call this BEFORE splicing anything in, so the answer is the report template's
+    own numbering and not one imported with a datasheet.
+    """
+    out = {}
+    for p in doc.paragraphs:
+        if style_name(p) not in _NUMBERED_HEADINGS:
+            continue
+        pr = p._p.find(qn("w:pPr"))
+        numPr = pr.find(qn("w:numPr")) if pr is not None else None
+        if numPr is None:
+            continue
+        num = numPr.find(qn("w:numId"))
+        lvl = numPr.find(qn("w:ilvl"))
+        if num is None:
+            continue
+        key = lvl.get(qn("w:val")) if lvl is not None else "0"
+        out.setdefault(key, num.get(qn("w:val")))
+    return out
+
+
+def renumber_headings(doc, num_by_level):
+    """Point every heading at the report's own numbering list. Returns the count.
+
+    WHY THIS IS NEEDED AT ALL
+    -------------------------
+    Splicing a test's pages out of its datasheet brings that document's numbering
+    definitions with it, and docxcompose renumbers them to fresh ids to avoid
+    collisions. So each spliced section ended up on a list of its own - measured
+    on a four-test report, numId 19, 20, 21 and 24 against the report's own 6 -
+    and every one of those lists starts at 1. The result: four Heading-1 sections
+    all printing "1.", and their subsections "1.1", "1.2", instead of 4, 4.1 ...
+    7.9. Word was numbering them correctly; they were four separate sequences.
+
+    Re-pointing them at the report's list also inherits its number FORMAT, which
+    is what makes the spliced sections continue the document rather than restart
+    inside it.
+    """
+    if not num_by_level:
+        return 0
+    changed = 0
+    for p in doc.paragraphs:
+        if style_name(p) not in _NUMBERED_HEADINGS:
+            continue
+        pPr = p._p.get_or_add_pPr()
+        numPr = pPr.find(qn("w:numPr"))
+        if numPr is None:
+            numPr = OxmlElement("w:numPr")
+            # numPr belongs early in pPr; append is tolerated by Word but the
+            # schema order is not optional for every consumer of this file.
+            pPr.insert(0, numPr)
+        lvl = numPr.find(qn("w:ilvl"))
+        if lvl is None:
+            lvl = OxmlElement("w:ilvl")
+            # A Heading 2 with no explicit level is level 1 by its style; the
+            # level is taken from the style name rather than assumed to be 0.
+            lvl.set(qn("w:val"),
+                    str(_NUMBERED_HEADINGS.index(style_name(p))))
+            numPr.append(lvl)
+        want = num_by_level.get(lvl.get(qn("w:val")))
+        if not want:
+            continue
+        num = numPr.find(qn("w:numId"))
+        if num is None:
+            num = OxmlElement("w:numId")
+            numPr.append(num)
+        if num.get(qn("w:val")) != want:
+            num.set(qn("w:val"), want)
+            changed += 1
+    return changed
+
+
 def set_cell_image(cell, image, max_width_mm=40.0, max_height_mm=20.0):
     """Replace a cell's content with one centred, aspect-fitted picture.
 

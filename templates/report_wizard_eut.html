@@ -25,6 +25,7 @@
              data-img-key="{{ key }}"
              class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
       <button type="button" data-edit-key="{{ key }}"
+              title="The frame below is the exact box the report fits this picture into. Edit chooses which part of the photo lands inside it."
               class="shrink-0 px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50">
         <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit
       </button>
@@ -45,12 +46,36 @@
        next save would merge it straight back in - the picture would reappear
        after being removed. eut_save reads remove_<key> and clears that key. #}
     <input type="hidden" name="remove_{{ key }}" id="rm_{{ key }}" value="">
-    <p class="mt-1 text-xs text-gray-400">
-      The frame above is the exact box the report fits this picture into &mdash;
-      use <strong>Edit</strong> to choose which part lands inside it.
-    </p>
   </div>
 {% endmacro %}
+
+{# A few classes rather than repeating twenty Tailwind utilities per cell. Every
+   table on this page is a preview of a table in the DOCUMENT, so they all get the
+   same visible grid - the faint row-only rules made the cover page read as a list
+   of sentences instead of the bordered table the client receives. #}
+{% block extra_css %}
+<style>
+  .rw-doc{width:100%;font-size:13.5px;border-collapse:collapse;background:#fff}
+  .rw-doc th,.rw-doc td{border:1px solid #cbd5e1;padding:8px 10px;vertical-align:middle}
+  .rw-doc thead th{background:#eef2f7;font-weight:700;color:#334155;text-align:center;
+    font-size:12px;letter-spacing:.02em;text-transform:uppercase}
+  .rw-doc .rw-lbl{background:#f6f8fa;font-weight:600;color:#334155;text-align:left;width:19rem}
+  .rw-doc td.rw-num{text-align:center;width:4.5rem;color:#475569}
+  .rw-doc td.rw-mid{text-align:center}
+  .rw-doc tbody tr:hover td{background:#fcfdfe}
+  .rw-empty-cell{color:#94a3b8;font-style:italic}
+  /* Section blocks inside a card, so 2.2-2.9 read as separate subsections and not
+     as one long scroll. */
+  .rw-sub{border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;background:#fff}
+  .rw-sub + .rw-sub{margin-top:14px}
+  .rw-sub-h{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
+  .rw-sub-n{font-size:11px;font-weight:700;color:#1a73e8;background:#e8f0fe;
+    border-radius:5px;padding:2px 7px;letter-spacing:.03em}
+  .rw-sub-t{font-size:13px;font-weight:700;color:#1f2933;letter-spacing:.02em}
+  .rw-tcap{font-size:12px;font-weight:600;color:#475569;margin:0 0 6px}
+  .rw-tcap span{font-weight:400;color:#8a94a0}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 py-6">
@@ -109,14 +134,12 @@
         <span class="text-xs text-gray-400 shrink-0">TEST REPORT NO: {{ req.tco_id }}</span>
       </div>
       <div class="p-5">
-        <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+        <table class="rw-doc">
           <tbody>
           {% for row in cover_rows %}
-            <tr class="border-b border-gray-100 last:border-0 align-top">
-              <th class="w-72 text-left font-semibold text-gray-700 bg-gray-50 px-3 py-2 border-r border-gray-200">
-                {{ row.label }}
-              </th>
-              <td class="px-3 py-2">
+            <tr>
+              <th class="rw-lbl">{{ row.label }}</th>
+              <td>
                 {% if row.editable %}
                   {% set key = row.editable %}{% set kind = field_kinds.get(key, 'text') %}
                   {% if kind == 'textarea' %}
@@ -135,9 +158,6 @@
                   {% else %}
                     <input id="f_{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}"
                       class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                  {% endif %}
-                  {% if key not in optional and not values.get(key) %}
-                    <p class="mt-1 text-xs text-amber-600">Not filled &mdash; this row will be blank in the report.</p>
                   {% endif %}
                 {% else %}
                   <span class="text-gray-800 whitespace-pre-line">{% if row.value %}{{ row.value }}{% else %}<span class="text-gray-400">&mdash;</span>{% endif %}</span>
@@ -200,29 +220,36 @@
           <h2 class="text-sm font-bold text-gray-800 uppercase tracking-wide">{{ group_name }}</h2>
           {% if group_hint %}<p class="text-xs text-gray-500 mt-0.5">{{ group_hint }}</p>{% endif %}
         </div>
-        <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {# Four across: length, width, height and unit are ONE row of the document's
+           2.1 table, and weight / frequency / power / current the next. Two columns
+           split that pairing down the middle and read as eight unrelated boxes. #}
+        <div class="p-5 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-5">
         {% for f in fields %}
           {% if f[0] in keys %}
             {% set key = f[0] %}{% set label = f[1] %}{% set kind = f[2] %}
             {% set store = f[3] %}{% set location = f[4] %}{% set helptext = f[5] %}
-            <div class="{% if kind == 'textarea' %}md:col-span-2{% endif %}">
+            {# The old grey line under every input is now the control's tooltip: an
+               admin filling in eight numbered boxes does not need eight sentences
+               of provenance on screen, but the information is a hover away. #}
+            {% set hint = location ~ (' - ' ~ helptext if helptext else '') %}
+            <div class="{% if kind == 'textarea' %}col-span-2 md:col-span-4{% endif %}">
               <label for="f_{{ key }}" class="block text-sm font-medium text-gray-700 mb-1">
                 {{ label }}
                 {% if key in optional %}<span class="text-xs font-normal text-gray-400">(optional)</span>{% endif %}
               </label>
 
               {% if kind == 'textarea' %}
-                <textarea id="f_{{ key }}" name="{{ key }}" rows="3"
+                <textarea id="f_{{ key }}" name="{{ key }}" rows="3" title="{{ hint }}"
                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">{{ values.get(key, '') }}</textarea>
               {% elif kind == 'date' %}
-                <input id="f_{{ key }}" name="{{ key }}" type="date" value="{{ values.get(key, '') }}"
+                <input id="f_{{ key }}" name="{{ key }}" type="date" value="{{ values.get(key, '') }}" title="{{ hint }}"
                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               {% elif kind == 'number' %}
-                <input id="f_{{ key }}" name="{{ key }}" type="text" inputmode="decimal"
+                <input id="f_{{ key }}" name="{{ key }}" type="text" inputmode="decimal" title="{{ hint }}"
                   value="{{ values.get(key, '') }}"
                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               {% elif kind == 'choice' %}
-                <select id="f_{{ key }}" name="{{ key }}"
+                <select id="f_{{ key }}" name="{{ key }}" title="{{ hint }}"
                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                   <option value="">-- select --</option>
                   {% for opt in choices.get(key, []) %}
@@ -230,11 +257,10 @@
                   {% endfor %}
                 </select>
               {% else %}
-                <input id="f_{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}"
+                <input id="f_{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}" title="{{ hint }}"
                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               {% endif %}
 
-              <p class="mt-1 text-xs text-gray-400">{{ location }}{% if helptext %} &mdash; {{ helptext }}{% endif %}</p>
             </div>
           {% endif %}
         {% endfor %}
@@ -248,14 +274,12 @@
           <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
             Also in 2.1, from the test request
           </p>
-          <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <table class="rw-doc">
             <tbody>
             {% for r in eut_readonly_rows %}
-              <tr class="border-b border-gray-100 last:border-0">
-                <th class="w-64 text-left font-medium text-gray-600 bg-gray-50 px-3 py-1.5 border-r border-gray-200">{{ r.label }}</th>
-                <td class="px-3 py-1.5 text-gray-800">
-                  {% if r.value %}{{ r.value }}{% else %}<span class="text-amber-600">empty on the test request</span>{% endif %}
-                </td>
+              <tr>
+                <th class="rw-lbl">{{ r.label }}</th>
+                <td>{% if r.value %}{{ r.value }}{% else %}<span class="rw-empty-cell">empty on the test request</span>{% endif %}</td>
               </tr>
             {% endfor %}
             </tbody>
@@ -278,20 +302,22 @@
           built from the test request and the approved datasheets.
         </p>
       </div>
-      <div class="divide-y divide-gray-100">
+      <div class="p-5 space-y-0">
       {% for b in section2 %}
-        <div class="px-5 py-4">
-          <h3 class="text-sm font-bold text-gray-800 mb-2">{{ b.no }} {{ b.title }}</h3>
+        <div class="rw-sub">
+          <div class="rw-sub-h">
+            <span class="rw-sub-n">{{ b.no }}</span>
+            <span class="rw-sub-t">{{ b.title }}</span>
+          </div>
 
           {% if b.kind == 'text' and b.editable %}
             {% set key = b.editable %}
             <textarea id="f_{{ key }}" name="{{ key }}" rows="4"
               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">{{ values.get(key, '') }}</textarea>
-            <p class="mt-1 text-xs text-gray-400">
-              Saved on the test request, so the next report for this product inherits it.
-            </p>
           {% elif b.kind == 'text' %}
-            <p class="text-sm text-gray-800 whitespace-pre-line">{% if b.value %}{{ b.value }}{% else %}<span class="text-amber-600">empty on the {{ b.source }} &mdash; this subsection will be blank</span>{% endif %}</p>
+            {# b.source was dropped when the derived/you-fill chips were removed, so
+               this printed "empty on the  -" with a hole in it. #}
+            <p class="text-sm text-gray-800 whitespace-pre-line">{% if b.value %}{{ b.value }}{% else %}<span class="text-amber-600">Nothing recorded &mdash; this subsection will be blank in the report.</span>{% endif %}</p>
 
           {% elif b.kind == 'list' %}
             {% if b.lines %}
@@ -303,16 +329,24 @@
             {% endif %}
 
           {% elif b.kind == 'table' %}
+            {# The caption names the table, because 2.9 prints TWO of them and a bare
+               grid of accessories above a bare grid of cables gives a reader nothing
+               to tell them apart. These are the document's own captions. #}
+            {% if b.caption %}<p class="rw-tcap">{{ b.caption }}</p>{% endif %}
             {% if b.rows %}
               <div class="overflow-x-auto">
-                <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                  <thead class="bg-gray-50">
-                    <tr>{% for h in b.headers %}<th class="text-left font-semibold text-gray-600 px-3 py-1.5 border-b border-gray-200">{{ h }}</th>{% endfor %}</tr>
+                <table class="rw-doc">
+                  <thead>
+                    <tr>{% for h in b.headers %}<th>{{ h }}</th>{% endfor %}</tr>
                   </thead>
                   <tbody>
                   {% for r in b.rows %}
-                    <tr class="border-b border-gray-100 last:border-0">
-                      {% for cell in r %}<td class="px-3 py-1.5 text-gray-800">{{ cell }}</td>{% endfor %}
+                    <tr>
+                      {% for cell in r %}
+                        <td class="{% if loop.first %}rw-num{% elif cell|length < 14 %}rw-mid{% endif %}">
+                          {% if cell %}{{ cell }}{% else %}<span class="rw-empty-cell">empty</span>{% endif %}
+                        </td>
+                      {% endfor %}
                     </tr>
                   {% endfor %}
                   </tbody>
@@ -322,19 +356,26 @@
               <p class="text-sm text-amber-600">nothing recorded &mdash; this table will be empty</p>
             {% endif %}
             {% if b.extra %}
-              <div class="mt-3 overflow-x-auto">
-                <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                  <thead class="bg-gray-50">
-                    <tr>{% for h in b.extra.headers %}<th class="text-left font-semibold text-gray-600 px-3 py-1.5 border-b border-gray-200">{{ h }}</th>{% endfor %}</tr>
-                  </thead>
-                  <tbody>
-                  {% for r in b.extra.rows %}
-                    <tr class="border-b border-gray-100 last:border-0">
-                      {% for cell in r %}<td class="px-3 py-1.5 text-gray-800">{{ cell }}</td>{% endfor %}
-                    </tr>
-                  {% endfor %}
-                  </tbody>
-                </table>
+              <div class="mt-4">
+                {% if b.extra.caption %}<p class="rw-tcap">{{ b.extra.caption }}</p>{% endif %}
+                <div class="overflow-x-auto">
+                  <table class="rw-doc">
+                    <thead>
+                      <tr>{% for h in b.extra.headers %}<th>{{ h }}</th>{% endfor %}</tr>
+                    </thead>
+                    <tbody>
+                    {% for r in b.extra.rows %}
+                      <tr>
+                        {% for cell in r %}
+                          <td class="{% if loop.first %}rw-num{% elif cell|length < 14 %}rw-mid{% endif %}">
+                            {% if cell %}{{ cell }}{% else %}<span class="rw-empty-cell">empty</span>{% endif %}
+                          </td>
+                        {% endfor %}
+                      </tr>
+                    {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             {% endif %}
           {% endif %}

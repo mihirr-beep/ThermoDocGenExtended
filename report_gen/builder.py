@@ -1370,6 +1370,10 @@ def build_report(request_obj, planner_entries, output_path, now=None):
 
     doc = Document(REG.TEMPLATE_PATH)
     outline = Outline(doc)
+    # The report template's OWN heading numbering, read before anything is
+    # spliced in. Splicing imports each datasheet's numbering definitions, so
+    # after the loop below there is no way to tell which list was the report's.
+    native_numbering = T.heading_numbering(doc)
 
     # 1. drop the sections for tests that are not part of this request
     keep = {t["code"] for t in tests}
@@ -1437,6 +1441,15 @@ def build_report(request_obj, planner_entries, output_path, now=None):
                 outline.refresh()
         per_test.append(fill_test_section(outline, test, data["meta"]))
 
+    # Every spliced section arrived on a numbering list of its own, so each one
+    # restarted at 1: four Heading-1 test sections all printing "1." and their
+    # subsections "1.1". Put them back on the report's list so they continue the
+    # document as 4, 4.1 ... 7.9.
+    renumbered = T.renumber_headings(doc, native_numbering)
+    if renumbered:
+        log.info("re-pointed %d spliced heading(s) at the report's own numbering",
+                 renumbered)
+
     # 4. finishing passes
     outline.refresh()
     cleaned = cleanup_instructions(outline, data["meta"])
@@ -1498,6 +1511,7 @@ def build_report(request_obj, planner_entries, output_path, now=None):
         "images": sum(s["images"] for s in per_test),
         "extra_blocks": sum(s["extra"] for s in per_test),
         "instructions_cleaned": cleaned,
+        "headings_renumbered": renumbered,
         # what the wizard actually put in the document, and what it could not.
         # "missing" is the honest list: nobody entered it, or the write failed.
         "draft_written": drafted.get("written", []),

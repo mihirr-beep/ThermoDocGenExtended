@@ -42,6 +42,51 @@
   var embedded = param("embed") === "1";
   if (!wanted) return;
 
+  // Sections hidden when the form is shown INSIDE THE REPORT WIZARD (embed=1).
+  //
+  // Every one of them is either front matter the datasheet repeats identically on
+  // all eleven tests, or something the report already states once elsewhere:
+  //
+  //   EUT Details, EUT Modification Record, Functional Check
+  //                            -> the report's section 2, once for the whole report
+  //   Measurement Uncertainty  -> the report's 1.4, once, emission tests only
+  //   Software Used            -> the report's 2.3, listed per test
+  //   Result                   -> the report's 1.1, listed per test
+  //
+  // So an admin stepping through eleven test tabs was reading the same four blocks
+  // eleven times and two more they had already approved two pages earlier. The lab
+  // engineer's own view is untouched - this list only applies to the embed.
+  //
+  // Matched on the heading TEXT, not on a section index: the eleven schemas have
+  // different section counts (RE has 16, others fewer), so "hide sections 1-4 and
+  // the last 2" is a different set of numbers in each one. "UNCERTAINITY" is the
+  // spelling in the templates and the schemas; both are listed rather than
+  // corrected, because correcting it would change the document.
+  var HIDE_IN_REPORT = ["eutdetails", "eutmodificationrecord",
+                        "measurementuncertainty", "measurementuncertainity",
+                        "functionalcheck", "softwareused", "result"];
+
+  function headingKey(text) {
+    // "12. Software Used" -> "softwareused"; also drops "12)" and stray spacing.
+    return String(text || "").replace(/^\s*\d+\s*[.)]\s*/, "")
+                             .replace(/[^a-z]+/gi, "").toLowerCase();
+  }
+
+  function hideCommonSections() {
+    if (!embedded) return 0;
+    var n = 0;
+    Array.prototype.forEach.call(document.querySelectorAll("h2"), function (h) {
+      if (HIDE_IN_REPORT.indexOf(headingKey(h.textContent)) < 0) return;
+      // The card, not the heading: hiding only the h2 would leave the fields.
+      var card = h.closest("section") || h.parentElement;
+      if (card && card.style.display !== "none") {
+        card.style.display = "none";
+        n += 1;
+      }
+    });
+    return n;
+  }
+
   var FORM_IDS = ["dsForm", "ceForm"];
   // The action bar's controls, by id, in both forms. The bar itself is found by
   // walking up from whichever of these exists rather than by matching a class -
@@ -108,6 +153,7 @@
 
   function apply() {
     banner();
+    hideCommonSections();
     lockAll(document);
     hideActions();
     // Autosave fires on input. Nothing can change now, but the form also calls it
