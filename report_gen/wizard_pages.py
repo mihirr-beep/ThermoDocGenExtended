@@ -353,6 +353,9 @@ def generate_page(request_id):
         "report_wizard_generate.html",
         request_id=request_id, state=state,
         nav=_nav(request_id, last, pages),
+        # {key: label} so the page can name the pictures that were uploaded
+        # instead of printing the stored filenames at the reader.
+        image_labels={f[0]: f[1] for f in WF.FIELDS if f[2] == "image"},
         generate_url=_generate_url(request_id),
         pdf_url=url_for("report_wizard_pages.preview_pdf", request_id=request_id),
         fields_total=len(WF.FIELDS))

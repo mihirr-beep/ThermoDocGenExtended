@@ -280,13 +280,23 @@ def fill_summary(outline, data):
             t = by_code[code]
             cells = T.distinct_cells(row)
             if len(cells) >= 4:
+                # WRITTEN UNCONDITIONALLY, even when empty.
+                #
+                # The blank form ships an EXAMPLE in these cells - "CD: <±4kV>
+                # AD: <±8kV>" for ESD, "±1 kV" for EFT, "<FAIL>/<PASS>" for the
+                # first Results cell. Writing only `if spec` left that example
+                # standing whenever no datasheet supplied the value, so a
+                # client-facing report stated a test level, angle brackets and
+                # all, that nobody had entered. Measured on IEC-EMC-900: 1.1 said
+                # the ESD test ran at "CD: <±4kV>AD: <±8kV>".
+                #
+                # An empty cell is the honest answer: the wizard lists the field
+                # as outstanding, and a reader can see it is unanswered rather
+                # than reading the form's placeholder as a measurement.
                 spec = _test_method_spec(code, t["form"], meta)
-                if spec:
-                    T.set_cell_text(cells[1], spec)
+                T.set_cell_text(cells[1], spec or "")
                 T.set_cell_text(cells[2], REG.TEST_METHOD_PORT.get(code, ""))
-                verdict = _verdict(code, t["form"])
-                if verdict:
-                    T.set_cell_text(cells[3], verdict)
+                T.set_cell_text(cells[3], _verdict(code, t["form"]) or "")
 
     # ---- 1.2 APPLICABLE STANDARDS ----
     tabs = outline.tables_in("TEST REPORT SUMMARY", "APPLICABLE STANDARDS")

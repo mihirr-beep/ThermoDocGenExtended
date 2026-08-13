@@ -334,6 +334,7 @@
                to tell them apart. These are the document's own captions. #}
             {% if b.caption %}<p class="rw-tcap">{{ b.caption }}</p>{% endif %}
             {% if b.rows %}
+              {% set align = b.align or [] %}
               <div class="overflow-x-auto">
                 <table class="rw-doc">
                   <thead>
@@ -343,9 +344,13 @@
                   {% for r in b.rows %}
                     <tr>
                       {% for cell in r %}
-                        <td class="{% if loop.first %}rw-num{% elif cell|length < 14 %}rw-mid{% endif %}">
-                          {% if cell %}{{ cell }}{% else %}<span class="rw-empty-cell">empty</span>{% endif %}
-                        </td>
+                        {# Alignment is decided per COLUMN, from the widest value in
+                           it, not per cell: "FB900 Monitor" (13 chars) was centred
+                           while "EMC32 Measurement Suite" in the same column was
+                           left, so one column had two alignments. An empty cell is
+                           left empty - a grid of italic "empty" markers is noisier
+                           than the gaps it labels. #}
+                        <td class="{{ align[loop.index0] if loop.index0 < align|length else '' }}">{{ cell }}</td>
                       {% endfor %}
                     </tr>
                   {% endfor %}
@@ -358,6 +363,7 @@
             {% if b.extra %}
               <div class="mt-4">
                 {% if b.extra.caption %}<p class="rw-tcap">{{ b.extra.caption }}</p>{% endif %}
+                {% set align2 = b.extra.align or [] %}
                 <div class="overflow-x-auto">
                   <table class="rw-doc">
                     <thead>
@@ -367,9 +373,7 @@
                     {% for r in b.extra.rows %}
                       <tr>
                         {% for cell in r %}
-                          <td class="{% if loop.first %}rw-num{% elif cell|length < 14 %}rw-mid{% endif %}">
-                            {% if cell %}{{ cell }}{% else %}<span class="rw-empty-cell">empty</span>{% endif %}
-                          </td>
+                          <td class="{{ align2[loop.index0] if loop.index0 < align2|length else '' }}">{{ cell }}</td>
                         {% endfor %}
                       </tr>
                     {% endfor %}

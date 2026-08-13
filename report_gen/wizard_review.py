@@ -17,13 +17,10 @@ the splice decision from ``splice.region_start``. Nothing is recomputed.
 
 THE THREE THINGS collect() DOES NOT KNOW, AND WHY THEY ARE HERE
 --------------------------------------------------------------
-1. An unfilled 1.1 cell is not blank in the document - the shipped template
-   prints its own example there ("<Class A/B>150kHz to 30MHz"), or
-   ``cleanup_instructions`` turns a whole-bracket example into "NA". Showing that
-   cell as empty would hide the same silent-NA defect this wizard exists to
-   remove, one section higher up. ``_template_fallbacks`` reads the real values
-   out of the template and ``_after_cleanup`` predicts what survives, using the
-   builder's own predicates.
+1. An unfilled 1.1 cell is now BLANK in the document: fill_summary clears it
+   rather than leaving the blank form's example ("CD: <±4kV>AD: <±8kV>") standing
+   in a client-facing report. So this page shows it blank too, and there is no
+   longer a "from the template" state for 1.1.
 2. 1.4 falls back the same way: ``fill_summary`` writes only ``if unc.get(code)``,
    so a kept row with no ``datasheet_fixed_values.measurement_uncertainty`` ships
    the template's printed figure.
@@ -167,12 +164,32 @@ def _after_cleanup(text):
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip() or B.NOT_APPLICABLE
 
 
-def _sourced(value, fallback):
-    """(text, source) for one 1.1 cell.
+def _sourced(value, fallback=None):
+    """(text, source) for one 1.1 cell: "datasheet", or empty.
 
-    source is "datasheet" when the build writes it, "template" when the build
-    leaves the template's own example standing, and "" when the cell is genuinely
-    empty in the document.
+    THERE IS NO LONGER A "template" SOURCE. This used to report the blank form's
+    own example - "CD: <±4kV>AD: <±8kV>" for ESD - because fill_summary left it
+    standing when no datasheet supplied the value, and the page had to show what
+    the document would really print.
+
+    fill_summary now clears those cells instead, so an unsourced cell is empty in
+    the document and empty here. ``fallback`` is still accepted so the 1.4 caller,
+    where the template's printed uncertainty IS the laboratory's real figure, does
+    not have to change shape.
+    """
+    if value:
+        return value, "datasheet"
+    return "", ""
+
+
+def _sourced_or_template(value, fallback):
+    """(text, source) where the template's own printed value DOES still survive.
+
+    Only 1.4 uses this. fill_summary writes an uncertainty only when the fixed
+    values carry one, so the figure the blank form prints - the laboratory's own
+    +/- dB - is what a reader gets otherwise. That is a real value the lab stands
+    behind, not a placeholder like 1.1's "<±4kV>", so it is shown, marked as
+    coming from the template rather than from a datasheet.
     """
     if value:
         return value, "datasheet"
@@ -321,6 +338,28 @@ def eut_detail_rows(data):
     return rows
 
 
+# Centre a column only when the WHOLE column is short - an index, a state number,
+# a "Power"/"Signal". Deciding per cell put "FB900 Monitor" in the middle of a
+# column whose other value, "EMC32 Measurement Suite", sat on the left.
+_NARROW = 12
+
+
+def _col_align(headers, rows):
+    """One CSS class per column, from the widest value in that column."""
+    out = []
+    for i in range(len(headers or [])):
+        vals = [str(r[i]).strip() for r in (rows or [])
+                if i < len(r) and str(r[i]).strip()]
+        widest = max((len(v) for v in vals), default=0)
+        out.append("rw-mid" if 0 < widest <= _NARROW else "")
+    return out
+
+
+def _drop_empty_rows(rows):
+    """Rows where every cell is blank say nothing; the gap is the message."""
+    return [r for r in (rows or []) if any(str(c).strip() for c in r)]
+
+
 def section2_preview(request_id, request_obj=None, data=None, loaded_draft=None):
     """2.2 to 2.9, in document order, with the value each will actually print.
 
@@ -350,7 +389,10 @@ def section2_preview(request_id, request_obj=None, data=None, loaded_draft=None)
     def has(key):
         return bool(str(images.get(key) or "").strip())
 
-    mods = meta.get("modifications") or []
+    mods = _drop_empty_rows(meta.get("modifications") or [])
+    software = _drop_empty_rows(meta.get("software_rows") or [])
+    accessories = _drop_empty_rows(meta.get("accessories") or [])
+    cables = _drop_empty_rows(meta.get("cables") or [])
     # "pics" is the uniform shape for image slots, so the template renders the
     # real upload control - file input, Edit, document-shaped thumbnail - inside
     # the subsection the picture belongs to. It used to print a status line and a
@@ -363,12 +405,15 @@ def section2_preview(request_id, request_obj=None, data=None, loaded_draft=None)
         {"no": "2.3", "title": "SOFTWARE AND FIRMWARE DETAILS", "kind": "table",
          "caption": "Software and firmware recorded on each test's datasheet",
          "headers": ["Test", "Software / Firmware", "Version"],
-         "rows": meta.get("software_rows") or []},
+         "rows": software,
+         "align": _col_align(["Test", "Software / Firmware", "Version"], software)},
         {"no": "2.4", "title": "EUT MODIFICATION RECORD", "kind": "table",
          "caption": "Modification states across every test on this request",
          "headers": ["State", "Description of modification still fitted",
                      "Fitted by", "Date fitted"],
-         "rows": mods},
+         "rows": mods,
+         "align": _col_align(["State", "Description of modification still fitted",
+                              "Fitted by", "Date fitted"], mods)},
         {"no": "2.5", "title": "EUT CONFIGURATION DURING TEST", "kind": "text",
          "value": meta.get("configuration") or "",
          "editable": "test_configuration"},
@@ -390,11 +435,15 @@ def section2_preview(request_id, request_obj=None, data=None, loaded_draft=None)
         {"no": "2.9", "title": "ACCESSORIES, CABLES AND PICTURES", "kind": "table",
          "caption": "Table 1 - List of accessories used for testing",
          "headers": ["S. No.", "Accessory", "Make", "Model No.", "Serial No."],
-         "rows": meta.get("accessories") or [],
+         "rows": accessories,
+         "align": _col_align(["S. No.", "Accessory", "Make", "Model No.",
+                              "Serial No."], accessories),
          "extra": {"caption": "Table 2 - List of cables connected to the EUT",
                    "headers": ["S. No.", "Cable", "Length (m)", "Power/Signal",
                                "Shielded"],
-                   "rows": meta.get("cables") or []},
+                   "rows": cables,
+                   "align": _col_align(["S. No.", "Cable", "Length (m)",
+                                        "Power/Signal", "Shielded"], cables)},
          "pics": [{"key": "img_eut_photo", "label": "Photo 1 - the EUT",
                    "has_image": has("img_eut_photo")},
                   {"key": "img_eut_label",
@@ -472,7 +521,7 @@ def uncertainty_rows(data):
     for label, code in REG.UNCERTAINTY_ROWS:
         if code not in codes:
             continue                        # fill_summary removes this row
-        value, source = _sourced(unc.get(code, ""), tpl.get(code))
+        value, source = _sourced_or_template(unc.get(code, ""), tpl.get(code))
         rows.append({"code": code, "test": label, "value": value,
                      "source": source})
     return rows

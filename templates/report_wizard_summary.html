@@ -205,12 +205,15 @@
           </tbody>
         </table>
       </div>
-      <p class="rw-help">
-        A value marked <strong>not from a datasheet</strong> has no uncertainty
-        recorded for that test, so the figure already printed in the blank form is
-        what the report will carry. It is editable under the laboratory's fixed
-        values, not here.
-      </p>
+      {# Only when a row actually carries that badge - it was explaining a mark
+         that is not on the page whenever every test has its own figure. #}
+      {% if preview.uncertainty | selectattr('source', 'equalto', 'template') | list %}
+        <p class="rw-help">
+          A value marked <strong>not from a datasheet</strong> has no uncertainty
+          recorded for that test, so the figure already in the blank form is what the
+          report will carry. It is editable under the laboratory's fixed values.
+        </p>
+      {% endif %}
     {% else %}
       <p class="rw-help">
         <strong>No rows.</strong> This table covers emission tests only - Conducted,

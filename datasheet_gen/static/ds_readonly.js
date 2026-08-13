@@ -50,6 +50,7 @@
   //   EUT Details, EUT Modification Record, Functional Check
   //                            -> the report's section 2, once for the whole report
   //   Measurement Uncertainty  -> the report's 1.4, once, emission tests only
+  //   Monitoring Parameters    -> the report's 2.8, once for the whole report
   //   Software Used            -> the report's 2.3, listed per test
   //   Result                   -> the report's 1.1, listed per test
   //
@@ -62,9 +63,12 @@
   // the last 2" is a different set of numbers in each one. "UNCERTAINITY" is the
   // spelling in the templates and the schemas; both are listed rather than
   // corrected, because correcting it would change the document.
+  // "MONITORING PARAMETERS:" carries a trailing colon on the seven immunity
+  // schemas; headingKey strips punctuation before matching.
   var HIDE_IN_REPORT = ["eutdetails", "eutmodificationrecord",
                         "measurementuncertainty", "measurementuncertainity",
-                        "functionalcheck", "softwareused", "result"];
+                        "functionalcheck", "monitoringparameters",
+                        "softwareused", "result"];
 
   function headingKey(text) {
     // "12. Software Used" -> "softwareused"; also drops "12)" and stray spacing.
