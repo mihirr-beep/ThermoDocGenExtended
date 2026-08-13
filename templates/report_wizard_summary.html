@@ -13,9 +13,9 @@
     <span class="rw-cell">{{ text }}</span>
   {% elif source == 'template' %}
     <span class="rw-cell rw-unsourced">{{ text }}</span>
-    <span class="rw-badge rw-warn" title="Nothing in any datasheet fills this cell. The document keeps the blank form's own example, or cleanup turns it into NA.">from the template</span>
+    <span class="rw-badge rw-warn" title="No datasheet supplies this value, so the report will print the blank form's example text or NA. Correct it on the datasheet.">not from a datasheet</span>
   {% else %}
-    <span class="rw-cell rw-empty">blank in the document</span>
+    <span class="rw-cell rw-empty">will be blank</span>
   {% endif %}
 {%- endmacro %}
 
@@ -26,6 +26,9 @@
     <div>
       <h2>Prepare Test Report</h2>
       <p class="rw-sub">{{ preview.tco_id or '' }} &middot; {{ preview.product or 'unnamed product' }}</p>
+      <p class="rw-sub">Section 1 of the report, as it will print. Everything here is
+        taken from the test request and the approved datasheets - correct a wrong
+        value at that source, not on this page.</p>
     </div>
     <div class="rw-steps">
       {% for s in nav.steps %}
@@ -39,13 +42,6 @@
       <strong>Section 1 could not be previewed.</strong> {{ preview.reason }}
     </div>
   {% else %}
-
-  <div class="rw-note rw-ok">
-    <strong>Read-only.</strong> Section 1 is computed from the approved datasheets
-    and the request. It is shown so you can see what the report will say; if a
-    value here is wrong, correct it on the datasheet - an editable copy would let
-    the report disagree with what peer review signed off.
-  </div>
 
   {% for n in preview.notes %}
     <div class="rw-note">{{ n }}</div>
@@ -78,9 +74,9 @@
       </table>
     </div>
     <p class="rw-help">
-      Results is PASS/FAIL for an emission test and the performance criterion that
-      was met (A/B/C/D) for an immunity test - the same value the datasheet
-      recorded.
+      <strong>Results</strong> shows PASS or FAIL for an emission test, and the
+      performance criterion that was met (A, B, C or D) for an immunity test - the
+      same value the engineer recorded on the datasheet.
     </p>
     {% else %}
       <p class="rw-help">No test in this request resolved to a 1.1 row.</p>
@@ -88,54 +84,98 @@
 
     {% if preview.omitted %}
       <p class="rw-help">
-        <strong>{{ preview.omitted|length }} row(s) will be deleted from this table</strong>
-        because the request does not include those tests:
+        The blank form lists every test the laboratory offers. This request does not
+        include the following <strong>{{ preview.omitted|length }}</strong>, so they will
+        not appear in the report:
         {% for o in preview.omitted %}{{ o.test }}{% if not loop.last %}, {% endif %}{% endfor %}.
       </p>
+    {% endif %}
+
+    {# The five paragraphs the document prints under this table. Fixed on every
+       report and read straight out of the template, so this cannot drift from
+       what the .docx says. #}
+    {% if preview.static and preview.static.disclaimers %}
+      <div class="rw-fixed">
+        {% for para in preview.static.disclaimers %}<p>{{ para }}</p>{% endfor %}
+      </div>
     {% endif %}
   </fieldset>
 
   <!-- ------------------------------------------------------- 1.2 -->
+  {# Shown as the four-column table the report actually prints, not as two lists.
+     The standards are paired two per row, so an odd count leaves a genuinely
+     empty cell in the last row - which a reader can only judge by seeing the
+     cells. #}
   <fieldset class="rw-group">
     <legend>1.2 APPLICABLE STANDARDS</legend>
-    <div class="rw-grid">
-      <div class="rw-field">
-        <label>Product standards <span class="rw-opt">from the request</span></label>
-        {% if preview.standards.products %}
-          <ul class="rw-list">
-            {% for s in preview.standards.products %}<li>{{ s }}</li>{% endfor %}
-          </ul>
-        {% else %}
-          <span class="rw-cell rw-empty">none on the request</span>
-        {% endif %}
+    {% if preview.standards.grid and (preview.standards.products or preview.standards.basics) %}
+      <div class="rw-scroll">
+        <table class="rw-table">
+          <thead>
+            <tr>
+              <th colspan="2">Product standards</th>
+              <th colspan="2">Basic standards</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview.standards.grid %}
+              <tr>
+                {% for c in row %}
+                  <td>{% if c %}{{ c }}{% else %}<span class="rw-cell rw-empty">empty</span>{% endif %}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      <div class="rw-field">
-        <label>Basic standards <span class="rw-opt">from the datasheets in this report</span></label>
-        {% if preview.standards.basics %}
-          <ul class="rw-list">
-            {% for s in preview.standards.basics %}<li>{{ s }}</li>{% endfor %}
-          </ul>
-        {% else %}
-          <span class="rw-cell rw-empty">none recorded</span>
+      <p class="rw-help">
+        This is the table as the report will print it:
+        <strong>{{ preview.standards.products|length }}</strong> product standard(s)
+        from the test request and
+        <strong>{{ preview.standards.basics|length }}</strong> basic standard(s)
+        from the datasheets, two per row.
+        {% if preview.standards.blanks %}
+          Because the counts are not even, <strong>{{ preview.standards.blanks }}</strong>
+          cell(s) will be blank in the report. Add another standard to the test
+          request to fill them, or leave them if that is correct.
         {% endif %}
-      </div>
-    </div>
-    <p class="rw-help">
-      The table is four columns - two product standards and two basic standards per
-      row - so it will be sized to
-      <strong>{{ preview.standards.rows }}</strong> data row(s), growing or
-      shrinking from the ten the template ships with.
-    </p>
+      </p>
+    {% else %}
+      <p class="rw-help">
+        No standards recorded. Product standards come from the test request and
+        basic standards from each test's datasheet - add them there and they will
+        appear here.
+      </p>
+    {% endif %}
   </fieldset>
 
   <!-- ------------------------------------------------------- 1.3 -->
+  {# Fixed on every report - the laboratory's own accreditation. Shown in full
+     rather than described, for the same reason the cover rows are: being told a
+     section exists is not the same as being able to check it. #}
   <fieldset class="rw-group rw-ro">
     <legend>1.3 ACCREDITATION DETAILS</legend>
-    <p class="rw-help">
-      Static in the template - NABL accreditation and the laboratory's TC number.
-      No code writes it and nothing is missing here; it is listed so its absence
-      from this page is not read as a gap.
-    </p>
+    {% if preview.static and preview.static.accreditation.rows %}
+      {% if preview.static.accreditation.intro %}
+        <p class="rw-help">{{ preview.static.accreditation.intro }}</p>
+      {% endif %}
+      <div class="rw-scroll">
+        <table class="rw-table">
+          {% for row in preview.static.accreditation.rows %}
+            {% if loop.first %}
+              <thead><tr>{% for c in row %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+              <tbody>
+            {% else %}
+              <tr>{% for c in row %}<td>{{ c }}</td>{% endfor %}</tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="rw-help">Static in the template - NABL accreditation and the
+        laboratory's TC number.</p>
+    {% endif %}
   </fieldset>
 
   <!-- ------------------------------------------------------- 1.4 -->
@@ -156,16 +196,16 @@
         </table>
       </div>
       <p class="rw-help">
-        A value marked "from the template" has no
-        <code>measurement_uncertainty</code> in the admin-editable fixed values, so
-        the figure printed in the blank form survives into this report.
+        A value marked <strong>not from a datasheet</strong> has no uncertainty
+        recorded for that test, so the figure already printed in the blank form is
+        what the report will carry. It is editable under the laboratory's fixed
+        values, not here.
       </p>
     {% else %}
       <p class="rw-help">
-        <strong>No rows.</strong> This table covers the four emission tests only
-        (Radiated, Conducted, Harmonic, Flicker) and this request has none of them,
-        so every data row is deleted and 1.4 ships as its heading and the sentence
-        above it.
+        <strong>No rows.</strong> This table covers emission tests only - Conducted,
+        Radiated, Harmonic and Flicker - and this request has none of them, so the
+        report will print 1.4's heading and lead-in sentence with no table under it.
       </p>
     {% endif %}
   </fieldset>
@@ -181,7 +221,7 @@
 
   <div class="rw-actions">
     {% if nav.back %}<a class="rw-btn" href="{{ nav.back }}">Back</a>{% endif %}
-    {% if nav.next %}<a class="rw-btn rw-primary" href="{{ nav.next }}">Next: Tests</a>{% endif %}
+    {% if nav.next %}<a class="rw-btn rw-primary" href="{{ nav.next }}">Next: EUT information</a>{% endif %}
   </div>
 </div>
 
@@ -194,7 +234,6 @@
   .rw-step{font-size:12px;padding:4px 10px;border-radius:999px;background:#eef1f5;color:#5a6472;text-decoration:none}
   .rw-step.rw-on{background:#1a73e8;color:#fff}
   .rw-note{margin:16px 0;padding:10px 14px;border-radius:6px;background:#fff8e1;border:1px solid #ffe082}
-  .rw-note.rw-ok{background:#e8f5e9;border-color:#a5d6a7}
   .rw-group{border:1px solid #e2e6ea;border-radius:8px;padding:14px 16px;margin:0 0 16px}
   .rw-group legend{font-weight:600;padding:0 6px}
   .rw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
@@ -216,6 +255,12 @@
   .rw-cell.rw-unsourced{color:#b25000}
   .rw-cell.rw-empty{color:#8a94a0;font-style:italic}
   .rw-code{display:block;font-size:10px;color:#8a94a0;font-family:monospace}
+  /* The fixed disclaimer paragraphs the document prints under 1.1. Set smaller
+     and greyer than the table so they read as the standing text they are, not as
+     something waiting to be filled in. */
+  .rw-fixed{margin-top:12px;padding-top:10px;border-top:1px solid #eceff1}
+  .rw-fixed p{font-size:12px;color:#46505c;margin:0 0 8px;line-height:1.5}
+  .rw-fixed p:last-child{margin-bottom:0}
   .rw-list{margin:2px 0 0;padding-left:18px;font-size:13px}
   .rw-list li{margin:2px 0}
 </style>

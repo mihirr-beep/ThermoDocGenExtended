@@ -35,11 +35,13 @@
     <legend>3. IMMUNITY CRITERIA AND DECISION RULE</legend>
 
     <p class="rw-help">
-      <strong>3.1 PERFORMANCE CRITERIA</strong> is static prose in the template -
-      criteria {{ preview.criteria.criteria_letters }}. No code touches it.
+      <strong>3.1 PERFORMANCE CRITERIA</strong> prints the same definitions of
+      criteria {{ preview.criteria.criteria_letters }} on every report. Nothing on
+      this page changes it.
       {% if preview.criteria.no_d_paragraph %}
-        Note that the template has no paragraph for criterion <strong>D</strong>,
-        while 1.1 prints whichever criterion the datasheet recorded.
+        Worth knowing: the report defines those criteria only. If a datasheet
+        recorded criterion <strong>D</strong>, section 1.1 will show D but 3.1 will
+        not define it.
       {% endif %}
     </p>
 
@@ -68,8 +70,8 @@
 
     {% if not preview.tests %}
       <p class="rw-help">
-        No test resolved to a section. The report cannot be built in this state -
-        see the Generate page.
+        None of this request's tests could be matched to a report section, so
+        there is nothing to build. The Generate page explains what is missing.
       </p>
     {% endif %}
 
@@ -117,7 +119,7 @@
             {% if t.revision %}
               rev {{ t.revision }}
               {% if t.live_revision %}
-                <span class="rw-help">(the datasheet row is now at rev {{ t.live_revision }} - submitting a revision freezes it and moves the row on, so rev {{ t.revision }} is what peer review saw)</span>
+                <span class="rw-help">(peer review approved revision {{ t.revision }}; the datasheet has since moved on to revision {{ t.live_revision }})</span>
               {% endif %}
             {% else %}
               <span class="rw-empty">no frozen revision recorded</span>
@@ -149,7 +151,7 @@
             {% if t.has_data %}
               saved datasheet data present, {{ t.images }} image(s)
             {% else %}
-              <span class="rw-empty">no saved datasheet data - this section ships as the blank form</span>
+              <span class="rw-empty">no datasheet data saved - this test's section will print as the empty form</span>
             {% endif %}
           </dd>
         </dl>

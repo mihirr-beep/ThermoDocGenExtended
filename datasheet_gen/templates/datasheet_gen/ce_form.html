@@ -24,7 +24,9 @@
     <input type="hidden" name="assignment_id" value="{{ assignment_id }}">
     <input type="hidden" name="tco_id" value="{{ tco_id }}">
 
-    {% if draft_status %}
+    {# Not in a read-only render: every sentence in it is about what happens when
+       you edit and save, and here you cannot. #}
+    {% if draft_status and not readonly %}
     <div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2 text-sm flex items-center justify-between gap-3">
       <div>
         {% if draft_status == 'Not Submitted' %}A saved <strong>draft</strong> was loaded — continue where you left off.{% else %}This datasheet was already <strong>submitted</strong>; edits will update the saved record when you generate again.{% endif %}
@@ -504,6 +506,11 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script src="{{ url_for('datasheet_gen.static', filename='ds_section_lock.js') }}"></script>
+{# Loaded only when the route was asked for a read-only render (?view=1), which is
+   how the report wizard embeds this form. The pass itself lives in one shared file
+   and walks whatever the form rendered, so a field added here later is locked
+   without anyone remembering to. #}
+{% if readonly %}<script src="{{ url_for('datasheet_gen.static', filename='ds_readonly.js') }}"></script>{% endif %}
 <script>
 // Auto-save debounced function
   var autoSaveTimeout = null;

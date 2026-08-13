@@ -218,18 +218,22 @@ def fill_cover(outline, meta):
         if who:
             T.set_cell_text(T.distinct_cells(row)[-1], "\n".join(who))
 
-    # signature block: Name row gets the people, Date row gets the issue date
+    # Signature block: only the Name row is derivable - who submitted the
+    # datasheets, who peer reviewed them, who manages the laboratory.
+    #
+    # The Date row is deliberately NOT filled here any more. It used to receive
+    # the report's issue date in all three cells, which put a date against a
+    # signature nobody had given: a reader sees "Reviewed By / signature blank /
+    # dated 13 Aug" and the document asserts an approval that has not happened.
+    # The date somebody signs is theirs to state, so the wizard asks for it and
+    # draft_fill writes it. Unsigned and undated is the honest resting state.
     if len(tables) > 1:
         sign = tables[1]
-        names = ["", meta["prepared_by"], meta["reviewed_by"], meta["lab_manager_name"]]
-        for label, values in (("Name", names),
-                              ("Date", ["", meta["issue_date"], meta["issue_date"],
-                                        meta["issue_date"]])):
-            row = _find_row(sign, label)
-            if row is None:
-                continue
+        row = _find_row(sign, "Name")
+        if row is not None:
             cells = T.distinct_cells(row)
-            for i, val in enumerate(values):
+            for i, val in enumerate(["", meta["prepared_by"], meta["reviewed_by"],
+                                     meta["lab_manager_name"]]):
                 if i and val and i < len(cells):
                     T.set_cell_text(cells[i], val)
 
@@ -280,7 +284,7 @@ def fill_summary(outline, data):
                 if spec:
                     T.set_cell_text(cells[1], spec)
                 T.set_cell_text(cells[2], REG.TEST_METHOD_PORT.get(code, ""))
-                verdict = _verdict(t["form"])
+                verdict = _verdict(code, t["form"])
                 if verdict:
                     T.set_cell_text(cells[3], verdict)
 
@@ -308,21 +312,39 @@ def fill_summary(outline, data):
                 T.set_cell_text(T.distinct_cells(row)[-1], unc[code])
 
 
-def _verdict(form):
+def _vdips_criteria(form):
+    """Voltage Dips records one criterion per level, not a single value."""
+    met = form.get("vdips_met_criteria[]") or []
+    met = [str(x).strip() for x in (met if isinstance(met, list) else [met])
+           if str(x).strip()]
+    seen = []
+    for x in met:
+        if x not in seen:
+            seen.append(x)
+    return ", ".join(seen)
+
+
+def _verdict(code, form):
     """The 1.1 summary's Results cell: PASS/FAIL for emissions, the met
-    performance criteria for immunity tests."""
-    v = (M._val(form, "overall_result") or M._val(form, "result")
-         or M._val(form, "met_performance_criteria"))
-    if not v:
-        # Voltage Dips records one criterion per level rather than a single value
-        met = form.get("vdips_met_criteria[]") or []
-        met = [str(x).strip() for x in (met if isinstance(met, list) else [met])
-               if str(x).strip()]
-        seen = []
-        for x in met:
-            if x not in seen:
-                seen.append(x)
-        v = ", ".join(seen)
+    performance criteria for immunity tests.
+
+    The split is on the TEST KIND, not on whichever key happens to be filled.
+    Every immunity datasheet carries both a PASS/FAIL radio and an A/B/C/D
+    select, and both get filled, so reading ``result`` first made 1.1 print PASS
+    for ESD and EFT while their own RESULT tables a few pages later printed A and
+    B. One document, two answers to the same question - and the criterion, which
+    is the whole reason an assessor reads an immunity row, never reached the
+    summary at all.
+
+    Each branch still falls back to the other key: an immunity record saved
+    before the criterion was mandatory prints its PASS rather than an empty cell.
+    """
+    if code in REG.IMMUNITY_CODES:
+        v = (M._val(form, "met_performance_criteria") or _vdips_criteria(form)
+             or M._val(form, "overall_result") or M._val(form, "result"))
+    else:
+        v = (M._val(form, "overall_result") or M._val(form, "result")
+             or M._val(form, "met_performance_criteria") or _vdips_criteria(form))
     return v.upper() if v and v.lower() in ("pass", "fail", "incomplete") else v
 
 
@@ -392,6 +414,31 @@ def _test_method_spec(code, form, meta):
     return ""
 
 
+def standards_cells(products, basics):
+    """1.2's data rows, cell by cell: [[prod, prod, basic, basic], ...].
+
+    The table is four columns - two for product standards, two for basic - so
+    each row carries two of each and the table grows to whichever list is longer.
+    An odd-length list therefore leaves a REAL EMPTY CELL in the last row, which
+    is a thing worth being able to see before the document is built: with four
+    product standards and three basic ones this returns two rows and the fourth
+    cell of the second is "".
+
+    Public and returning data rather than writing, so the wizard's preview shows
+    the cells this function will actually produce instead of keeping a second copy
+    of the pairing arithmetic beside it.
+    """
+    products, basics = list(products or []), list(basics or [])
+    rows_needed = max(-(-len(products) // 2), -(-len(basics) // 2), 1)
+    out = []
+    for i in range(rows_needed):
+        out.append([products[2 * i] if 2 * i < len(products) else "",
+                    products[2 * i + 1] if 2 * i + 1 < len(products) else "",
+                    basics[2 * i] if 2 * i < len(basics) else "",
+                    basics[2 * i + 1] if 2 * i + 1 < len(basics) else ""])
+    return out
+
+
 def _fill_standards(table, meta, tests):
     """1.2 APPLICABLE STANDARDS: the request's product standards + the basic
     standards actually used by the tests in this report."""
@@ -407,16 +454,10 @@ def _fill_standards(table, meta, tests):
                 basics.append(part)
     if not products and not basics:
         return
-    # 4 columns: two for product standards, two for basic standards, so each
-    # row carries two of each and the table grows to whichever list is longer
-    rows_needed = max(-(-len(products) // 2), -(-len(basics) // 2), 1)
-    T.ensure_row_count(table, rows_needed, template_row_index=-1, first_data_row=1)
-    for i in range(rows_needed):
+    rows = standards_cells(products, basics)
+    T.ensure_row_count(table, len(rows), template_row_index=-1, first_data_row=1)
+    for i, vals in enumerate(rows):
         cells = T.distinct_cells(table.rows[1 + i])
-        vals = [products[2 * i] if 2 * i < len(products) else "",
-                products[2 * i + 1] if 2 * i + 1 < len(products) else "",
-                basics[2 * i] if 2 * i < len(basics) else "",
-                basics[2 * i + 1] if 2 * i + 1 < len(basics) else ""]
         for ci, v in enumerate(vals):
             if ci < len(cells):
                 T.set_cell_text(cells[ci], v)
@@ -754,27 +795,58 @@ _DECISION_RULE_LABELS = {
 }
 
 
+def _decision_rule_of(paragraph_norm):
+    """Which rule key this 3.2 line IS - the longest label that prefixes it.
+
+    Matching each selected rule against every line ticked too many boxes. The
+    label for ``standard_measured`` normalises to "standard", which is a prefix
+    of "standardinclusiveofmeasurementuncertainty", so a request that chose one
+    decision rule produced a report claiming two. Every request in the database
+    chooses exactly that rule, so every report shipped with the extra tick.
+
+    Asking instead "which rule is this LINE" and taking the longest match makes
+    the two Standard lines and the two Customer specification lines distinct,
+    because the longer label always wins where one is a prefix of the other.
+    """
+    best, best_len = None, -1
+    for key, label in _DECISION_RULE_LABELS.items():
+        n = M.norm_label(label)
+        if n and paragraph_norm.startswith(n) and len(n) > best_len:
+            best, best_len = key, len(n)
+    return best
+
+
 def tick_decision_rules(outline, meta):
     """Tick the decision rule(s) the request selected in 3.2 DECISION RULE."""
     rules = meta.get("decision_rules") or []
     if not rules:
         return
-    wanted = [_DECISION_RULE_LABELS.get(r, r) for r in rules]
-    wanted_norm = [M.norm_label(w) for w in wanted]
+    # A value with no entry in the label map is matched on itself rather than
+    # dropped, so a rule added to the request form still ticks its line.
+    chosen = set(rules)
+    unmapped = {M.norm_label(r) for r in rules if r not in _DECISION_RULE_LABELS}
+    ticked = 0
     for p in outline.paragraphs_in("IMMUNITY CRITERIA AND DECISION RULE",
                                    "DECISION RULE"):
         txt = T.text_of(p)
         if not txt or not T.has_checkboxes(p):
             continue
         n = M.norm_label(txt)
-        if any(w and (w in n or n.startswith(w[:18])) for w in wanted_norm):
-            slots = T.checkbox_slots(p)
-            if slots:
-                T.set_checkbox(slots[0][0], True)
-            else:
-                lit = T.literal_checkbox_slots(p)
-                if lit:
-                    T.set_literal_checkbox(lit[0][0], lit[0][1], True)
+        key = _decision_rule_of(n)
+        hit = (key in chosen) or any(u and n.startswith(u) for u in unmapped)
+        if not hit:
+            continue
+        slots = T.checkbox_slots(p)
+        if slots:
+            T.set_checkbox(slots[0][0], True)
+        else:
+            lit = T.literal_checkbox_slots(p)
+            if lit:
+                T.set_literal_checkbox(lit[0][0], lit[0][1], True)
+        ticked += 1
+    if ticked != len(chosen):
+        log.info("3.2 decision rules: request selected %s, ticked %d line(s)",
+                 sorted(chosen), ticked)
 
 
 # ==========================================================================
@@ -1321,6 +1393,19 @@ def build_report(request_obj, planner_entries, output_path, now=None):
     outline.refresh()
     tick_decision_rules(outline, data["meta"])
 
+    # 2b. everything the admin typed into the wizard, over the top of what the
+    # request supplied. This runs AFTER the request-driven fills on purpose: for
+    # the five cover rows and the 2.1 details the draft is the later, more
+    # specific answer - the issue date, the condition on receipt and the
+    # Permanent/Onsite choice exist nowhere else - and for the rest it fills only
+    # what is still blank. Without this call the wizard collected every one of
+    # its fields into a document that never read them.
+    from . import draft_fill as DF
+    outline.refresh()
+    drafted = DF.apply_draft(outline, doc, getattr(request_obj, "id", None),
+                             meta=data["meta"])
+    outline.refresh()
+
     # 3. one section per test
     #
     # Preferred: SPLICE the test's own pages out of the datasheet .docx that peer
@@ -1413,5 +1498,14 @@ def build_report(request_obj, planner_entries, output_path, now=None):
         "images": sum(s["images"] for s in per_test),
         "extra_blocks": sum(s["extra"] for s in per_test),
         "instructions_cleaned": cleaned,
+        # what the wizard actually put in the document, and what it could not.
+        # "missing" is the honest list: nobody entered it, or the write failed.
+        "draft_written": drafted.get("written", []),
+        "draft_images": drafted.get("images", []),
+        # in the document, written by something other than the draft - the 2.1
+        # spec rows and the 2.5/2.8 request columns. Neither written nor missing.
+        "draft_satisfied": drafted.get("satisfied", []),
+        "draft_missing": drafted.get("missing", []),
+        "draft_notes": drafted.get("notes", []),
     }
     return output_path, summary

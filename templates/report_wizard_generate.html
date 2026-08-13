@@ -45,7 +45,7 @@
       <strong>Ready to generate. Everything the wizard asks for is filled.</strong>
     {% endif %}
     {% if state.filled is defined and state.total %}
-      <span class="rw-help">{{ state.filled }} of {{ state.total }} admin-entered fields filled.</span>
+      <span class="rw-help">{{ state.filled }} of the {{ state.total }} fields you fill in are complete.</span>
     {% endif %}
   </div>
 
@@ -131,11 +131,11 @@
     {% else %}
       <p class="rw-help">{{ state.pdf_note }}</p>
       <p class="rw-help">
-        The pages above are that check: what section 1 will say, which datasheet
-        each per-test section comes from, and which fields are still missing. A
-        converter was tested for this and produced a plausible 26-page PDF with
-        every measured value dropped, so there is deliberately no fallback
-        rendering here.
+        The pages before this one are the check instead: what section 1 will say,
+        which datasheet each test's section comes from, and which fields are still
+        missing. There is no substitute converter on purpose - the one available
+        here produced a PDF that looked complete but had dropped every measured
+        value, which is worse than no preview at all.
       </p>
     {% endif %}
   </fieldset>
@@ -147,10 +147,9 @@
     {% if state.already_generated %}
       <div class="rw-note">
         <strong>This will REGENERATE the report.</strong>
-        One has been generated before, and the endpoint has no gate against
-        repeating it: a new file is written, every planner entry is pointed at it,
-        and the request goes back into the report approval flow. The previous file
-        is left on disk, not deleted.
+        A report has already been generated for this request. Generating again
+        writes a new file, points every test on the request at it, and sends the
+        request back for report approval. The earlier file is kept, not deleted.
       </div>
     {% endif %}
 

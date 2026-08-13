@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Report - {{ test.code }} - {{ request_id }}{% endblock %}
+
+{# One wizard step per test, showing THE DATASHEET FORM ITSELF at its own URL.
+
+   Nothing about that form is reimplemented here. The report's per-test sections
+   already drifted once from the datasheet's - 49 of 92 subsections - which is why
+   the document now splices the approved .docx rather than keeping its own copy of
+   those tables. Re-rendering the form's HTML here would repeat that mistake in the
+   UI: two thousand lines of grids and per-test JavaScript kept in step by hand.
+
+   So it is embedded. There is one implementation of every table, checkbox row and
+   image slot, and a change to the datasheet form appears here on the next page
+   load with nothing to update. #}
+
+{% block content %}
+<div class="rw-wrap">
+
+  <div class="rw-head">
+    <div>
+      <h2>Prepare Test Report</h2>
+      <p class="rw-sub">{{ test.name }} &middot; {{ test.section|title }}</p>
+      <p class="rw-sub">
+        This is the datasheet for this test, on the same page the lab engineer
+        fills in, shown read-only. A datasheet goes through its own peer-review
+        approval before the report is built from it, so it is not edited from here.
+      </p>
+    </div>
+    <div class="rw-steps">
+      {% for s in nav.steps %}
+        <a class="rw-step{% if s.current %} rw-on{% endif %}" href="{{ s.url }}">{{ s.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if not test.has_data %}
+    <div class="rw-note">
+      <strong>Nothing saved for this test yet.</strong> The form below is blank, and
+      this test's section of the report will print as the empty form until it is
+      filled in and approved.
+    </div>
+  {% endif %}
+
+  <div class="rw-note">
+    <strong>Read-only.</strong> To change anything, open the test from the planner
+    and take it back through peer review &mdash; the report is built from the
+    approved datasheet, so a change made outside that review would not be recorded
+    as one.
+    <br>
+    The form's first block (job number, EUT details) and its sign-off block at the
+    end are part of the datasheet, not of the report &mdash; the report takes only
+    this test's own pages, so those two never appear in it.
+  </div>
+
+  {% if form_url %}
+    <div class="rw-frame">
+      <div class="rw-frame-bar">
+        <span>{{ test.code }} datasheet &middot; read-only</span>
+        {% if edit_url %}
+          <a href="{{ edit_url }}" target="_blank" rel="noopener">Open the editable form in a new tab &rsaquo;</a>
+        {% endif %}
+      </div>
+      {# scrolling="no" and no fixed height: the frame is resized to its content
+         by the script below, so this page scrolls as one document. A fixed-height
+         frame means scrolling a small window inside a page that also scrolls, and
+         losing sight of the section you were reading.
+
+         title, not aria-hidden: this is the page's main content, and a screen
+         reader needs to be able to enter it. #}
+      <iframe id="rwTestFrame" src="{{ form_url }}" scrolling="no"
+              title="{{ test.name }} datasheet form"></iframe>
+    </div>
+  {% else %}
+    <div class="rw-note rw-bad">
+      <strong>The datasheet form for {{ test.code }} could not be located.</strong>
+      Open the test from the planner instead. This page only embeds that form; it
+      does not hold a copy of it.
+    </div>
+  {% endif %}
+
+  <div class="rw-actions">
+    {% if nav.back %}<a class="rw-btn" href="{{ nav.back }}">Back</a>{% endif %}
+    {% if nav.next %}<a class="rw-btn rw-primary" href="{{ nav.next }}">Next</a>{% endif %}
+  </div>
+</div>
+
+<style>
+  /* Matching report_wizard_summary.html rather than inventing a third look. */
+  .rw-wrap{max-width:1400px;margin:0 auto;padding:18px 16px 40px;font-size:14px;color:#1f2933}
+  .rw-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+  .rw-head h2{margin:0;font-size:20px}
+  .rw-sub{margin:2px 0 0;color:#5a6472;font-size:12px;max-width:70ch}
+  .rw-steps{display:flex;flex-wrap:wrap;gap:6px}
+  .rw-step{font-size:12px;padding:6px 12px;border-radius:999px;background:#eef1f4;color:#5a6472;text-decoration:none}
+  .rw-step.rw-on{background:#1a73e8;color:#fff;font-weight:600}
+  .rw-note{border:1px solid #dfe3e8;background:#f7f9fa;border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:12px;color:#46505c}
+  .rw-note.rw-bad{background:#fdecea;border-color:#f5c6c2}
+  .rw-actions{display:flex;gap:10px;align-items:center;margin-top:14px}
+  .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
+  .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
+  /* The frame is the page's content, so it gets the height. 260px is the chrome
+     above and below it; min-height keeps it usable on a short window. */
+  .rw-frame{border:1px solid #dfe3e8;border-radius:8px;overflow:hidden;background:#fff}
+  .rw-frame-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:6px 12px;background:#f5f7f9;border-bottom:1px solid #e2e6ea;font-size:12px;color:#5a6472}
+  .rw-frame-bar a{color:#1a73e8;text-decoration:none}
+  /* No height here on purpose - the script sets it from the frame's content, so
+     the datasheet is shown in full and this page is the only thing that scrolls.
+     The starting height is only what is shown for the moment before load. */
+  #rwTestFrame{display:block;width:100%;height:600px;border:0;overflow:hidden}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var f = document.getElementById('rwTestFrame');
+  if (!f) return;
+  var raf = null;
+
+  // Same-origin, so the frame's real content height is readable.
+  //
+  // MEASURE THE BODY, NEVER documentElement.scrollHeight. The latter is at least
+  // the frame's own viewport, so once the frame has been made tall it can never
+  // report anything smaller and the height only ever ratchets up: collapse a
+  // section and you are left staring at a screenful of blank frame. Measured -
+  // with 1800px of content in a 3000px frame, documentElement.scrollHeight said
+  // 3000 while body.scrollHeight correctly said 1800, and 900 after a shrink.
+  //
+  // The body's own margins are added because they sit outside its box and would
+  // otherwise be cut off; base.html's reset makes them 0, which is not a reason to
+  // assume it.
+  function measure() {
+    try {
+      var d = f.contentDocument;
+      if (!d || !d.body) return 0;
+      var b = d.body;
+      var h = Math.max(b.scrollHeight, b.offsetHeight,
+                       Math.ceil(b.getBoundingClientRect().height));
+      var cs = d.defaultView ? d.defaultView.getComputedStyle(b) : null;
+      if (cs) {
+        h += (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+      }
+      return h;
+    } catch (e) { return 0; }   // never same-origin-blocked here, but never fatal
+  }
+
+  function fit() {
+    var h = measure();
+    // +4 absorbs a sub-pixel rounding difference that would otherwise leave a
+    // 1px inner scrollbar on some zoom levels.
+    if (h > 0) f.style.height = (h + 4) + 'px';
+  }
+
+  function fitSoon() {
+    if (raf) return;
+    raf = window.requestAnimationFrame(function () { raf = null; fit(); });
+  }
+
+  f.addEventListener('load', function () {
+    fit();
+    try {
+      var d = f.contentDocument, w = d.defaultView;
+      // The forms build their grids, observation rows and photo slots AFTER load,
+      // and a section can be expanded at any time, so one measurement is never
+      // enough. Both observers are cheap and coalesced through rAF.
+      if (w && w.ResizeObserver && d.body) new w.ResizeObserver(fitSoon).observe(d.body);
+      if (w && w.MutationObserver && d.body) {
+        new w.MutationObserver(fitSoon).observe(
+          d.body, {childList: true, subtree: true, attributes: true});
+      }
+      if (w) w.addEventListener('resize', fitSoon);
+    } catch (e) { /* the timed passes below still cover it */ }
+    // Belt and braces for anything that renders on a timer inside the form.
+    [200, 700, 1500, 3000].forEach(function (ms) { window.setTimeout(fit, ms); });
+  });
+
+  window.addEventListener('resize', fitSoon);
+})();
+</script>
+{% endblock %}

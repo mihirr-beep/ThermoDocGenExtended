@@ -30,6 +30,10 @@ from werkzeug.utils import secure_filename
 
 from . import draft
 from . import wizard_fields as WF
+# Imported lazily inside the view would be tidier for start-up, but wizard_review
+# imports builder which imports docx - all of which app.py has already loaded by
+# the time any blueprint is registered.
+from . import wizard_review as WR
 
 log = logging.getLogger(__name__)
 
@@ -77,8 +81,9 @@ def _image_dir():
 def _save_images(request_id):
     """Save any uploaded image and return {key: path}.
 
-    Only the four keys the spec declares. An unrecognised file field is ignored
-    rather than written - a wizard page is not an upload endpoint.
+    Only the keys the spec declares - the four section-2 pictures and the three
+    cover signatures. An unrecognised file field is ignored rather than written:
+    a wizard page is not an upload endpoint.
     """
     out = {}
     if not request.files:
@@ -126,15 +131,55 @@ def eut_page(request_id):
         key = f[0]
         if not values.get(key) and row.get(key) not in (None, ""):
             values[key] = row[key]
+    # Every cover row, not just the five that are typed here. An admin cannot
+    # notice a wrong serial number on a page they were never shown, and the cover
+    # is the first thing the client reads. Best-effort: a preview that fails must
+    # not take the form down with it, because the form still works without it.
+    cover, signature, section2, eut_rows = [], [], [], []
+    collected = None
+    try:
+        req_obj, entries, data = WR.preview_source(request_id)
+        if data is not None:
+            collected = data
+            cover = WR.cover_preview(request_id, req_obj, data, d)
+            signature = WR.signature_preview(request_id, req_obj, data, d)
+            section2 = WR.section2_preview(request_id, req_obj, data, d)
+            eut_rows = WR.eut_detail_rows(data)
+    except Exception as exc:  # noqa: BLE001
+        log.info("wizard: cover preview unavailable for request %s: %s",
+                 request_id, exc)
+
+    # The step chips were hardcoded in this template, which made the order a
+    # second opinion: moving section 1 in front of section 2 would have renamed
+    # the steps everywhere except here. Imported inside the function because
+    # wizard_pages imports _can_admin from this module.
+    #
+    # `data=collected` so the per-test chips are labelled from the payload above
+    # rather than from a second S.collect() - the chips list one step per test now,
+    # and this database is remote.
+    try:
+        from .wizard_pages import _nav
+        nav = _nav(request_id, 2, data=collected)
+    except Exception as exc:  # noqa: BLE001
+        log.info("wizard: nav unavailable for request %s: %s", request_id, exc)
+        nav = {"steps": [], "back": None, "next": None}
+
     return render_template(
         "report_wizard_eut.html",
-        req=row, request_id=request_id, values=values,
-        images=d["images"], fields=WF.FIELDS, choices=WF.CHOICES,
-        optional=WF.OPTIONAL, ulr_no=WF.ULR_NO,
+        req=row, request_id=request_id, values=values, nav=nav,
+        fields=WF.FIELDS, choices=WF.CHOICES, optional=WF.OPTIONAL,
+        cover_rows=cover, signature_cols=signature,
+        section2=section2, eut_readonly_rows=eut_rows,
+        # {key: kind}, so the cover table can render the right control without
+        # the template keeping its own opinion of which field is a date.
+        field_kinds={f[0]: f[2] for f in WF.FIELDS},
         # from builder.py's own DIAGRAM_BOX / PHOTO_BOX, so the crop frame in the
         # form is the box the .docx will use and not a second opinion about it
         image_boxes=WF.image_boxes(),
-        outstanding=WF.outstanding(values, row))
+        # d["images"], not values: an uploaded picture lives in the draft's
+        # images map and never in its form, so omitting it here reported every
+        # required photo as outstanding no matter how many were uploaded.
+        outstanding=WF.outstanding(values, row, d["images"]))
 
 
 @report_wizard_bp.route("/report/wizard/<int:request_id>/eut", methods=["POST"])
@@ -163,6 +208,19 @@ def eut_save(request_id):
             posted[key] = val
 
     images = _save_images(request_id)
+    # The red "x" on an image slot sets remove_<key>=1. draft.save MERGES, so an
+    # absent key means "unchanged" and only an empty string clears one - without
+    # this loop, removing a picture saved on an earlier visit would appear to work
+    # and the picture would be back on the next page load.
+    #
+    # An upload in the same post wins: the flag is reset in the browser when a
+    # file is chosen, and this ordering means even a stale flag cannot delete the
+    # file the admin just picked.
+    for key in WF.image_keys():
+        if key in images:
+            continue
+        if str(request.form.get("remove_%s" % key, "")).strip() == "1":
+            images[key] = ""
     owned = {f[0] for f in WF.by_store("request")}
     to_request = {k: v for k, v in posted.items() if k in owned}
     to_draft = {k: v for k, v in posted.items() if k not in owned}
@@ -171,7 +229,7 @@ def eut_save(request_id):
     # "12.4 kg" into a FLOAT column; MySQL raised 1265 and the 500 that followed
     # discarded fourteen good fields and an uploaded image along with it. One
     # unparseable number must cost that number, not the page.
-    draft.save(request_id, form=to_draft, images=images, page=1,
+    draft.save(request_id, form=to_draft, images=images, page=2,
                user_id=getattr(current_user, "id", None))
 
     written = 0
@@ -191,7 +249,7 @@ def eut_save(request_id):
     for f in WF.by_store("request"):
         if fresh_row.get(f[0]) not in (None, ""):
             merged[f[0]] = fresh_row[f[0]]
-    left = WF.outstanding(merged, fresh_row)
+    left = WF.outstanding(merged, fresh_row, d["images"])
     msg = "Saved. %d field(s) still outstanding." % len(left)
     if bad:
         # Partial success is reported as such. Saying "saved" while a value was
@@ -224,11 +282,12 @@ def completeness(request_id):
     for f in WF.by_store("request"):
         if row.get(f[0]) not in (None, ""):
             merged[f[0]] = row[f[0]]
-    left = WF.outstanding(merged, row)
+    left = WF.outstanding(merged, row, d["images"])
     from . import render as R
     return jsonify(success=True, tco_id=row.get("tco_id"),
                    product=row.get("product_name"),
-                   filled=WF.filled_count(merged, row), total=len(WF.FIELDS),
+                   filled=WF.filled_count(merged, row, d["images"]),
+                   total=len(WF.FIELDS),
                    outstanding=left,
                    images={k: os.path.basename(v) for k, v in (d["images"] or {}).items()},
                    pdf_backend=R.backend(),

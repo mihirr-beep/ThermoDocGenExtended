@@ -9,6 +9,49 @@
    framing has to match the box the .docx will fit the picture into, and that
    logic already exists and is already correct. #}
 
+{# One upload slot: file input, Edit, and a thumbnail frame in the DOCUMENT's
+   aspect ratio. Defined once and called from whichever subsection the picture
+   belongs to, so no image field is ever rendered twice - two file inputs sharing
+   a name means the empty one clears the other on submit. The ids and the
+   data-img-key / data-edit-key hooks are what extra_js binds to. #}
+{% macro img_slot(key, label, has_image, optional=False, height=120) %}
+  <div>
+    <label for="f_{{ key }}" class="block text-sm font-medium text-gray-700 mb-1">
+      {{ label }}
+      {% if optional %}<span class="text-xs font-normal text-gray-400">(optional)</span>{% endif %}
+    </label>
+    <div class="flex items-center gap-2">
+      <input type="file" id="f_{{ key }}" name="{{ key }}" accept="image/*"
+             data-img-key="{{ key }}"
+             class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <button type="button" data-edit-key="{{ key }}"
+              class="shrink-0 px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50">
+        <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit
+      </button>
+    </div>
+    {# position:relative so the datasheet's red "x" badge can pin to the frame's
+       top-right corner, exactly as it does on the datasheet form. #}
+    <div class="mt-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 flex items-center justify-center overflow-hidden"
+         id="thumb_{{ key }}" style="height:{{ height }}px;position:relative"
+         data-thumb-for="{{ key }}" data-has-image="{{ 1 if has_image else 0 }}">
+      {% if has_image %}
+        <span class="text-xs text-green-700 px-2 text-center">image uploaded</span>
+      {% else %}
+        <span class="text-xs text-gray-400">no image uploaded</span>
+      {% endif %}
+    </div>
+    {# Clearing the file input only drops a PENDING upload. An image saved on an
+       earlier visit lives in report_draft.images_json, and without this flag the
+       next save would merge it straight back in - the picture would reappear
+       after being removed. eut_save reads remove_<key> and clears that key. #}
+    <input type="hidden" name="remove_{{ key }}" id="rm_{{ key }}" value="">
+    <p class="mt-1 text-xs text-gray-400">
+      The frame above is the exact box the report fits this picture into &mdash;
+      use <strong>Edit</strong> to choose which part lands inside it.
+    </p>
+  </div>
+{% endmacro %}
+
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 py-6">
 
@@ -20,17 +63,18 @@
         {{ req.tco_id }} &middot; {{ req.product_name or 'unnamed product' }}
       </p>
     </div>
+    {# From wizard_pages._nav, the one place that knows the page order. #}
     <ol class="flex flex-wrap items-center gap-1 text-xs">
-      <li class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-semibold">1. EUT information</li>
-      <li class="text-gray-300">&rsaquo;</li>
-      <li><a href="{{ url_for('report_wizard_pages.summary_page', request_id=request_id) }}"
-             class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 block">2. Summary review</a></li>
-      <li class="text-gray-300">&rsaquo;</li>
-      <li><a href="{{ url_for('report_wizard_pages.tests_page', request_id=request_id) }}"
-             class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 block">3. Tests</a></li>
-      <li class="text-gray-300">&rsaquo;</li>
-      <li><a href="{{ url_for('report_wizard_pages.generate_page', request_id=request_id) }}"
-             class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 block">4. Generate</a></li>
+      {% for s in nav.steps %}
+        {% if not loop.first %}<li class="text-gray-300">&rsaquo;</li>{% endif %}
+        <li>
+          {% if s.current %}
+            <span class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-semibold block">{{ s.label }}</span>
+          {% else %}
+            <a href="{{ s.url }}" class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 block">{{ s.label }}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
     </ol>
   </div>
 
@@ -51,13 +95,103 @@
         action="{{ url_for('report_wizard.eut_save', request_id=request_id) }}"
         enctype="multipart/form-data">
 
+    {# COVER PAGE - laid out as the report's own front-page table, every row of
+       it. The five you can type are inputs; the rest are shown with where they
+       come from, because an admin cannot notice a wrong serial number on a page
+       they were never shown. #}
+    {% if cover_rows %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-5">
+      <div class="px-5 py-3 border-b border-gray-100 flex items-baseline justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-bold text-gray-800 uppercase tracking-wide">Cover page</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Every row of the report's front-page table, in the order it prints</p>
+        </div>
+        <span class="text-xs text-gray-400 shrink-0">TEST REPORT NO: {{ req.tco_id }}</span>
+      </div>
+      <div class="p-5">
+        <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <tbody>
+          {% for row in cover_rows %}
+            <tr class="border-b border-gray-100 last:border-0 align-top">
+              <th class="w-72 text-left font-semibold text-gray-700 bg-gray-50 px-3 py-2 border-r border-gray-200">
+                {{ row.label }}
+              </th>
+              <td class="px-3 py-2">
+                {% if row.editable %}
+                  {% set key = row.editable %}{% set kind = field_kinds.get(key, 'text') %}
+                  {% if kind == 'textarea' %}
+                    <textarea id="f_{{ key }}" name="{{ key }}" rows="4"
+                      class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">{{ values.get(key, '') }}</textarea>
+                  {% elif kind == 'date' %}
+                    <input id="f_{{ key }}" name="{{ key }}" type="date" value="{{ values.get(key, '') }}"
+                      class="w-full md:w-64 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  {% elif kind == 'choice' %}
+                    <select id="f_{{ key }}" name="{{ key }}"
+                      class="w-full md:w-64 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                      {% for opt in choices.get(key, []) %}
+                        <option value="{{ opt }}" {% if values.get(key) == opt or (not values.get(key) and loop.first) %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                    </select>
+                  {% else %}
+                    <input id="f_{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}"
+                      class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  {% endif %}
+                  {% if key not in optional and not values.get(key) %}
+                    <p class="mt-1 text-xs text-amber-600">Not filled &mdash; this row will be blank in the report.</p>
+                  {% endif %}
+                {% else %}
+                  <span class="text-gray-800 whitespace-pre-line">{% if row.value %}{{ row.value }}{% else %}<span class="text-gray-400">&mdash;</span>{% endif %}</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <p class="mt-2 text-xs text-gray-400">
+          A row shown as plain text is filled from the test request or the approved
+          datasheets. If one is wrong, correct it there.
+        </p>
+      </div>
+    </div>
+
+    {# SIGNATURE BLOCK - Name comes from the database; Signature and Date record
+       an act that happens when a person signs, so only a person can supply them. #}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-5">
+      <div class="px-5 py-3 border-b border-gray-100">
+        <h2 class="text-sm font-bold text-gray-800 uppercase tracking-wide">Cover signature block</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          Names are fetched automatically. Signature and date are yours &mdash; left blank,
+          the report prints an unsigned, undated block rather than dating a signature nobody gave.
+        </p>
+      </div>
+      <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-5">
+      {% for col in signature_cols %}
+        <div class="border border-gray-200 rounded-lg p-4">
+          <p class="text-sm font-bold text-gray-800">{{ col.column }}</p>
+          <p class="mt-1 text-sm text-gray-700">
+            {% if col.name %}{{ col.name }}{% else %}<span class="text-gray-400">&mdash;</span>{% endif %}
+          </p>
+          <label class="block text-xs font-medium text-gray-600 mt-3 mb-1" for="f_{{ col.date_key }}">Date</label>
+          <input id="f_{{ col.date_key }}" name="{{ col.date_key }}" type="date"
+                 value="{{ values.get(col.date_key, '') }}"
+                 class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          {# The same img_slot as every other picture on this page, so the crop
+             dialog, the document-ratio frame and the red "x" all behave here
+             too. It used to be a hand-written copy of the control, which is how
+             the signatures ended up as the only slots with no way to remove an
+             upload. Its 40 x 20 mm box comes from wizard_fields.image_box_mm. #}
+          <div class="mt-3">
+            {{ img_slot(col.image_key, 'Signature image', col.has_image, True, 72) }}
+          </div>
+        </div>
+      {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% set groups = [
-      ('Cover page', 'Appears on the report front page',
-       ['condition_on_receipt','date_of_receipt','test_location','report_issue_date','issued_to']),
       ('2.1 EUT details', 'The size and weight fields are saved on the TEST REQUEST, so the next report for this product inherits them',
-       ['length','width','height','dimension_unit','weight','operating_frequency','power_rating','measured_current']),
-      ('2.3 - 2.8 Descriptions', 'These four are printed as "NA" today because nothing supplies them',
-       ['software_firmware','eut_configuration','modes_of_operation','monitoring_parameters'])
+       ['length','width','height','dimension_unit','weight','operating_frequency','power_rating','measured_current'])
     ] %}
 
     {% for group_name, group_hint, keys in groups %}
@@ -75,10 +209,6 @@
               <label for="f_{{ key }}" class="block text-sm font-medium text-gray-700 mb-1">
                 {{ label }}
                 {% if key in optional %}<span class="text-xs font-normal text-gray-400">(optional)</span>{% endif %}
-                {% if store == 'request' %}
-                  <span class="ml-1 text-2xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold align-middle"
-                        title="Saved on the test request, shared by every report for this product">request</span>
-                {% endif %}
               </label>
 
               {% if kind == 'textarea' %}
@@ -109,77 +239,161 @@
           {% endif %}
         {% endfor %}
         </div>
+
+        {# The rest of 2.1, which the request supplies. Shown for the same reason
+           the cover rows are: an admin cannot notice a wrong serial number on a
+           page that never displays it. #}
+        {% if eut_readonly_rows and 'EUT details' in group_name %}
+        <div class="px-5 pb-5">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Also in 2.1, from the test request
+          </p>
+          <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+            <tbody>
+            {% for r in eut_readonly_rows %}
+              <tr class="border-b border-gray-100 last:border-0">
+                <th class="w-64 text-left font-medium text-gray-600 bg-gray-50 px-3 py-1.5 border-r border-gray-200">{{ r.label }}</th>
+                <td class="px-3 py-1.5 text-gray-800">
+                  {% if r.value %}{{ r.value }}{% else %}<span class="text-amber-600">empty on the test request</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
       </div>
     {% endfor %}
 
-    <!-- IMAGES: the same upload + Edit + document-size thumbnail the datasheet uses -->
+    {# SECTION 2.2 - 2.9. What the report derives is SHOWN with its real value;
+       what a person still supplies is an input. This replaced four textareas
+       under a heading claiming all four printed as NA - which had stopped being
+       true for three of them. #}
+    {% if section2 %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-5">
       <div class="px-5 py-3 border-b border-gray-100">
-        <h2 class="text-sm font-bold text-gray-800 uppercase tracking-wide">Images</h2>
+        <h2 class="text-sm font-bold text-gray-800 uppercase tracking-wide">2.2 &ndash; 2.9 EUT information</h2>
         <p class="text-xs text-gray-500 mt-0.5">
-          Each frame below is the exact box the report fits that picture into. Use
-          <strong>Edit</strong> to choose which part of the photo lands inside it.
+          Each subsection as it will print. Boxes you can type in are yours; the rest are
+          built from the test request and the approved datasheets.
         </p>
       </div>
-      <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-      {% for f in fields %}
-        {% if f[2] == 'image' %}
-          {% set key = f[0] %}
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
-              {{ f[1] }}
-              {% if key in optional %}<span class="text-xs font-normal text-gray-400">(optional)</span>{% endif %}
-            </label>
-            <div class="flex items-center gap-2">
-              <input type="file" id="f_{{ key }}" name="{{ key }}" accept="image/*"
-                     data-img-key="{{ key }}"
-                     class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-              <button type="button" data-edit-key="{{ key }}"
-                      class="shrink-0 px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50">
-                <span style="display:inline-block;transform:scaleX(-1)">&#9998;</span> Edit
-              </button>
+      <div class="divide-y divide-gray-100">
+      {% for b in section2 %}
+        <div class="px-5 py-4">
+          <h3 class="text-sm font-bold text-gray-800 mb-2">{{ b.no }} {{ b.title }}</h3>
+
+          {% if b.kind == 'text' and b.editable %}
+            {% set key = b.editable %}
+            <textarea id="f_{{ key }}" name="{{ key }}" rows="4"
+              class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">{{ values.get(key, '') }}</textarea>
+            <p class="mt-1 text-xs text-gray-400">
+              Saved on the test request, so the next report for this product inherits it.
+            </p>
+          {% elif b.kind == 'text' %}
+            <p class="text-sm text-gray-800 whitespace-pre-line">{% if b.value %}{{ b.value }}{% else %}<span class="text-amber-600">empty on the {{ b.source }} &mdash; this subsection will be blank</span>{% endif %}</p>
+
+          {% elif b.kind == 'list' %}
+            {% if b.lines %}
+              <ul class="text-sm text-gray-800 list-disc pl-5 space-y-0.5">
+                {% for it in b.lines %}<li>{{ it }}</li>{% endfor %}
+              </ul>
+            {% else %}
+              <p class="text-sm text-amber-600">no functional modes on the test request</p>
+            {% endif %}
+
+          {% elif b.kind == 'table' %}
+            {% if b.rows %}
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                  <thead class="bg-gray-50">
+                    <tr>{% for h in b.headers %}<th class="text-left font-semibold text-gray-600 px-3 py-1.5 border-b border-gray-200">{{ h }}</th>{% endfor %}</tr>
+                  </thead>
+                  <tbody>
+                  {% for r in b.rows %}
+                    <tr class="border-b border-gray-100 last:border-0">
+                      {% for cell in r %}<td class="px-3 py-1.5 text-gray-800">{{ cell }}</td>{% endfor %}
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="text-sm text-amber-600">nothing recorded &mdash; this table will be empty</p>
+            {% endif %}
+            {% if b.extra %}
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                  <thead class="bg-gray-50">
+                    <tr>{% for h in b.extra.headers %}<th class="text-left font-semibold text-gray-600 px-3 py-1.5 border-b border-gray-200">{{ h }}</th>{% endfor %}</tr>
+                  </thead>
+                  <tbody>
+                  {% for r in b.extra.rows %}
+                    <tr class="border-b border-gray-100 last:border-0">
+                      {% for cell in r %}<td class="px-3 py-1.5 text-gray-800">{{ cell }}</td>{% endfor %}
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          {% endif %}
+
+          {# The real upload control, in the subsection the picture belongs to.
+             2.6 IS a picture and nothing else, so a status line and a link to a
+             card further down the page read as a subsection with no way to fill
+             it. Each key appears here exactly once: the standalone Images card
+             that used to hold them is gone, because two file inputs sharing a
+             name means the empty one clears the other on submit. #}
+          {% if b.pics %}
+            {# Always the two-column grid, so a lone slot occupies half the width
+               rather than stretching a 120 px dashed frame across the page. #}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5{% if b.kind != 'image' %} mt-4 pt-4 border-t border-gray-100{% endif %}">
+              {% for p in b.pics %}
+                {{ img_slot(p.key, p.label, p.has_image, p.key in optional) }}
+              {% endfor %}
             </div>
-            <div class="mt-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 flex items-center justify-center overflow-hidden"
-                 id="thumb_{{ key }}" style="height:120px">
-              {% if images.get(key) %}
-                <span class="text-xs text-green-700 px-2 text-center">uploaded &middot; {{ images[key].replace('\\','/').split('/')|last }}</span>
-              {% else %}
-                <span class="text-xs text-gray-400">no image uploaded</span>
-              {% endif %}
-            </div>
-            <p class="mt-1 text-xs text-gray-400">{{ f[4] }}</p>
-          </div>
-        {% endif %}
+          {% endif %}
+        </div>
       {% endfor %}
       </div>
     </div>
+    {% endif %}
 
-    <!-- derived, read-only -->
-    <div class="bg-gray-50 rounded-xl border border-gray-200 mb-5 p-5">
-      <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Derived &mdash; not editable here</h2>
-      <p class="text-xs text-gray-500 mb-3">
-        These come from the approved datasheets and the request. They are shown so you
-        can see what will appear; editing them here would let the report disagree with
-        what peer review signed off. If one is wrong, correct it on the datasheet.
-      </p>
-      <ul class="text-sm text-gray-700 space-y-1 list-disc pl-5">
-        <li><span class="font-semibold">1.1 Results</span> &mdash; PASS/FAIL per emission test, performance criterion per immunity test</li>
-        <li><span class="font-semibold">1.2 Applicable Standards</span> &mdash; the request's product standards plus the basic standards</li>
-        <li><span class="font-semibold">1.4 Measurement Uncertainty</span> &mdash; the emission tests in this request only</li>
-        <li><span class="font-semibold">Sections 4 onward</span> &mdash; spliced from the approved datasheet of each test</li>
-        <li><span class="font-semibold">ULR NO</span> &mdash; fixed for now: <code class="text-xs bg-white px-1 py-0.5 rounded border">{{ ulr_no }}</code></li>
-      </ul>
-    </div>
+    {# The standalone IMAGES card and the DERIVED summary that used to sit here
+       are both gone.
+
+       IMAGES held one upload slot per section-2 picture, away from the
+       subsection each belonged to. Every slot now renders inside its own
+       subsection through the img_slot macro, so 2.6 - a subsection whose entire
+       content IS a picture - carries its own upload instead of a status line and
+       a link. The signature pictures were already in the cover block.
+
+       DERIVED listed which sections the report computes for itself. It answered
+       a question nobody had: what a person needs to type is now simply the boxes
+       on this page, and what the report derives is shown above with its real
+       values, which is more informative than being told it exists. #}
 
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" id="rwSave"
               class="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700">
         Save
       </button>
-      <a href="{{ url_for('report_wizard_pages.summary_page', request_id=request_id) }}"
-         class="px-5 py-2 border border-gray-300 text-sm font-semibold rounded-lg hover:bg-gray-50">
-        Save &amp; continue to review &rsaquo;
-      </a>
+      {# nav.back / nav.next, not named endpoints: this page moved from first to
+         second when section 1 was put in front of section 2, and a hardcoded
+         "continue to review" would have sent the admin backwards. #}
+      {% if nav.back %}
+        <a href="{{ nav.back }}"
+           class="px-5 py-2 border border-gray-300 text-sm font-semibold rounded-lg hover:bg-gray-50">
+          &lsaquo; Back
+        </a>
+      {% endif %}
+      {% if nav.next %}
+        <a href="{{ nav.next }}"
+           class="px-5 py-2 border border-gray-300 text-sm font-semibold rounded-lg hover:bg-gray-50">
+          Save &amp; continue &rsaquo;
+        </a>
+      {% endif %}
     </div>
   </form>
 </div>
@@ -211,6 +425,43 @@
     el.files = dt.files;
   }
 
+  // The datasheet's control, lifted verbatim from generic_form.html's
+  // makeRemoveBadge: a small red "x" pinned to the top-right of the frame. Same
+  // markup and same styling on purpose - an admin moving between the datasheet
+  // form and this one should not have to learn a second way to drop a picture.
+  function makeRemoveBadge(key) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.title = 'Remove image';
+    b.setAttribute('aria-label', 'Remove image');
+    b.innerHTML = '&times;';
+    b.style.cssText = 'position:absolute;top:3px;right:3px;width:20px;height:20px;' +
+      'line-height:16px;text-align:center;border-radius:50%;border:1px solid #dc2626;' +
+      'background:#fff;color:#dc2626;font-size:15px;font-weight:bold;cursor:pointer;' +
+      'box-shadow:0 1px 3px rgba(0,0,0,.25);padding:0;z-index:5;';
+    b.onclick = function () { removeImage(key); };
+    return b;
+  }
+
+  function emptyThumb(key, host) {
+    host.innerHTML = '<span class="text-xs text-gray-400">no image uploaded</span>';
+    host.setAttribute('data-has-image', '0');
+  }
+
+  // Removal has to reach the SERVER, not just the file input. An image saved on
+  // an earlier visit is in report_draft.images_json, and draft.save merges - so
+  // clearing only the input would let the next save put the picture straight
+  // back. The hidden remove_<key> field is what eut_save clears the key from.
+  function removeImage(key) {
+    var el = document.getElementById('f_' + key);
+    if (el) { try { el.value = ''; } catch (e) {} }
+    delete originals[key];
+    var flag = document.getElementById('rm_' + key);
+    if (flag) flag.value = '1';
+    var host = document.getElementById('thumb_' + key);
+    if (host) emptyThumb(key, host);
+  }
+
   function drawThumb(key) {
     var box = boxOf(key), f = fileOf(key), host = document.getElementById('thumb_' + key);
     if (!host) return;
@@ -220,7 +471,8 @@
     // the report will show - that is the whole point of previewing at all.
     host.innerHTML = '';
     var frame = document.createElement('div');
-    frame.style.cssText = 'height:110px;aspect-ratio:' + box[0] + '/' + box[1] +
+    frame.style.cssText = 'height:' + Math.max(40, host.clientHeight - 10) +
+      'px;aspect-ratio:' + box[0] + '/' + box[1] +
       ';background:#fff;border:1px solid #e5e7eb;overflow:hidden;display:flex;align-items:center;justify-content:center';
     var img = document.createElement('img');
     img.src = url;
@@ -228,7 +480,18 @@
     img.onload = function () { URL.revokeObjectURL(url); };
     frame.appendChild(img);
     host.appendChild(frame);
+    host.appendChild(makeRemoveBadge(key));
+    host.setAttribute('data-has-image', '1');
   }
+
+  // A picture already saved server-side has no URL to preview here, but it still
+  // needs its "x": without one, the only way to undo an upload from a previous
+  // visit was to replace it with a different file.
+  document.querySelectorAll('[data-thumb-for]').forEach(function (host) {
+    if (host.getAttribute('data-has-image') === '1') {
+      host.appendChild(makeRemoveBadge(host.getAttribute('data-thumb-for')));
+    }
+  });
 
   // Conform a freshly-picked image to the document slot immediately, keeping the
   // raw upload so Edit can still reframe a different portion of it.
@@ -250,7 +513,14 @@
   }
 
   document.querySelectorAll('input[data-img-key]').forEach(function (el) {
-    el.addEventListener('change', function () { autoFit(el.getAttribute('data-img-key')); });
+    el.addEventListener('change', function () {
+      var key = el.getAttribute('data-img-key');
+      // Picking a new file cancels a pending removal, or the save would clear
+      // the key the upload just filled.
+      var flag = document.getElementById('rm_' + key);
+      if (flag) flag.value = '';
+      autoFit(key);
+    });
   });
 
   document.querySelectorAll('button[data-edit-key]').forEach(function (btn) {

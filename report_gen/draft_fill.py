@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS
 ---------------
-The wizard collects twenty-one values that the database has no source for, saves
+The wizard collects the values the database has no source for, saves
 them in ``report_draft``, and until now nothing read them back. Generating a
 report today ignores all of them: measured on a real build, six of their
 destinations ship blank, four ship "NA" - DATE OF RECEIPT OF EUT, SOFTWARE AND
@@ -66,10 +66,24 @@ class _Log(object):
 
     def __init__(self):
         self.written, self.images, self.missing, self.notes = [], [], [], []
+        self.satisfied = []
 
     def wrote(self, key, where):
         self.written.append(key)
         self.notes.append("%s -> %s" % (key, where))
+
+    def satisfy(self, key, where):
+        """This module did not write it, and it is in the document anyway.
+
+        Not the same as written and emphatically not the same as missing. 2.5
+        and 2.8 are filled from the request columns the wizard saves them to,
+        and the 2.1 spec rows outrank the draft by design - calling any of them
+        "missing" would report the report as short an answer that is printed on
+        the page.
+        """
+        if key not in self.satisfied:
+            self.satisfied.append(key)
+        self.notes.append("%s: %s" % (key, where))
 
     def wrote_many(self, keys, where):
         """One destination, several spec keys - 2.1's size is built from four."""
@@ -91,7 +105,8 @@ class _Log(object):
 
     def as_dict(self):
         return {"written": self.written, "images": self.images,
-                "missing": self.missing, "notes": self.notes}
+                "satisfied": self.satisfied, "missing": self.missing,
+                "notes": self.notes}
 
 
 def _safe(rec, what, fn, key=None):
@@ -126,7 +141,7 @@ def _s(v):
 
 
 def _request_fields(request_id):
-    """The six store="request" columns, as a plain dict. {} when unreadable.
+    """The store="request" columns, as a plain dict. {} when unreadable.
 
     Reuses the wizard's own reader so there is one SELECT and one column list -
     a second copy here is how the form and the document would start disagreeing
@@ -290,6 +305,66 @@ def _fill_cover(outline, form, rec):
         _safe(rec, "cover " + label, _write, key=key)
 
 
+# Prepared By / Reviewed By / Authorized Signatory, in the template's column
+# order. distinct_cells gives [row label, col1, col2, col3], so the nth column
+# is cell n+1.
+_SIGN_COLUMNS = (
+    ("sign_date_prepared", "img_sign_prepared", "Prepared By"),
+    ("sign_date_reviewed", "img_sign_reviewed", "Reviewed By"),
+    ("sign_date_authorized", "img_sign_authorized", "Authorized Signatory"),
+)
+
+
+def _fill_signature_block(outline, form, images, rec):
+    """The cover's Signature and Date rows. Name: is filled from the database.
+
+    builder.fill_cover deliberately stops after the Name row now, so nothing
+    else writes here: an unsigned block stays blank rather than carrying the
+    report's issue date against a signature nobody gave.
+    """
+    tables = [b for b in outline.blocks[:6] if isinstance(b, Table)]
+    if len(tables) < 2:
+        rec.note("cover: signature table not found - no signature field written")
+        for dkey, ikey, _who in _SIGN_COLUMNS:
+            rec.absent(dkey, "signature table not found")
+            rec.absent(ikey, "signature table not found")
+        return
+    sign = tables[1]
+
+    date_row = B._find_row(sign, "Date")
+    sig_row = B._find_row(sign, "Signature")
+    for i, (dkey, ikey, who) in enumerate(_SIGN_COLUMNS, start=1):
+        value = S.fmt_date(_s(form.get(dkey)))
+        if not value:
+            rec.absent(dkey)
+        elif date_row is None:
+            rec.absent(dkey, "signature block has no Date row")
+        else:
+            cells = T.distinct_cells(date_row)
+            if i < len(cells):
+                T.set_cell_text(cells[i], value)
+                rec.wrote(dkey, "cover signature Date / %s" % who)
+            else:
+                rec.absent(dkey, "Date row has no column %d" % i)
+
+        path = _image_path(images, ikey, rec)
+        if not path:
+            continue
+        if sig_row is None:
+            rec.absent(ikey, "signature block has no Signature row")
+            continue
+        cells = T.distinct_cells(sig_row)
+        if i >= len(cells):
+            rec.absent(ikey, "Signature row has no column %d" % i)
+            continue
+        box = WF.image_box_mm(ikey)
+        if T.set_cell_image(cells[i], path, max_width_mm=box[0],
+                            max_height_mm=box[1]):
+            rec.wrote_image(ikey, "cover signature / %s" % who)
+        else:
+            rec.absent(ikey, "not a readable image (%s)" % os.path.basename(path))
+
+
 def _fill_eut_details(outline, form, row, rec):
     """2.1 EUT DETAILS - five rows, two different precedence rules.
 
@@ -353,8 +428,10 @@ def _fill_eut_details(outline, form, row, rec):
             if value:
                 # said out loud: the admin typed something the document did not
                 # use, which is the kind of silence this phase exists to remove
-                rec.note("2.1 %s: kept the EUT-spec value, the wizard's %r was "
-                         "not used" % (label, value))
+                rec.satisfy(key, "2.1 %s already carried the EUT-spec value; "
+                                 "the wizard's %r was not used" % (label, value))
+            else:
+                rec.satisfy(key, "2.1 %s filled from the EUT spec" % label)
             continue
         if not value:
             rec.absent(key)
@@ -369,37 +446,25 @@ def _fill_eut_details(outline, form, row, rec):
         _safe(rec, "2.1 " + label, _write, key=key)
 
 
-def _fill_text_blocks(outline, form, rec):
-    """2.3, 2.5, 2.7, 2.8 - four free-text subsections.
-
-    2.3 is new: builder deliberately left its placeholder alone because nothing
-    sourced it, which is what prints NA today. 2.5, 2.7 and 2.8 already have a
-    writer; supplying them here rather than through meta keeps the draft's value
-    ahead of the request's for the two that have both. 2.7 goes through the same
-    _fill_text_block as the rest - one textarea line per mode, and the leftover
-    <Mode B: ...> prompt is dropped by _drop_placeholder_paragraphs inside it.
-    """
-    for key, sub in (("software_firmware", "SOFTWARE AND FIRMWARE DETAILS"),
-                     ("eut_configuration", "EUT CONFIGURATION DURING TEST"),
-                     ("modes_of_operation", "EUT MODES OF OPERATION"),
-                     ("monitoring_parameters", "EUT MONITORING PARAMETERS")):
-        value = _s(form.get(key))
-        if not value:
-            rec.absent(key)
-            continue
-
-        def _write(key=key, sub=sub, value=value):
-            blocks = outline.sub_blocks(SEC, sub)
-            if not blocks:
-                rec.absent(key, "subsection %r not in the template" % sub)
-                return False
-            if B._first_body_paragraph(blocks) is None:
-                rec.absent(key, "%r has no body paragraph to write into" % sub)
-                return False
-            B._fill_text_block(outline, SEC, sub, value)
-            rec.wrote(key, sub)
-            return True
-        _safe(rec, sub, _write, key=key)
+# ---------------------------------------------------------------------------
+# 2.3, 2.5, 2.7 and 2.8 are NOT written from here. There used to be a
+# _fill_text_blocks() that wrote all four out of the draft, and every one of
+# them has since found a real source:
+#
+#   2.3  a table _fill_software_table builds from every test's
+#        datasheet_software rows.
+#   2.7  the request's functional modes, labelled "Mode A:" by position.
+#   2.5  iec_emc_requests.test_configuration    - fill_eut_information writes it
+#   2.8  iec_emc_requests.monitoring_parameters - fill_eut_information writes it
+#
+# 2.5 and 2.8 are still typed by a person, but the wizard now saves them onto
+# the REQUEST, so they are in meta by the time build_report runs and the
+# request-driven fill has already put them in the document. Writing them again
+# here did not overwrite - _fill_text_block sets the first paragraph and inserts
+# siblings for the rest - so the report printed both subsections TWICE, the
+# second copy missing its first line. Measured on IEC-EMC-900 before this was
+# removed. One writer per destination.
+# ---------------------------------------------------------------------------
 
 
 def _write_ulr(doc, rec):
@@ -593,6 +658,10 @@ def apply_draft(outline, doc, request_id, meta=None):
     at what meta intended.
     """
     rec = _Log()
+    # Bound before the try: the closing sweep reads `row`, and an exception on
+    # the first line inside would leave it unbound and turn a recoverable draft
+    # failure into a NameError that costs the whole report.
+    row = {}
     try:
         d = draft.load(request_id)              # one round trip, never raises
         form = d.get("form") or {}
@@ -603,11 +672,14 @@ def apply_draft(outline, doc, request_id, meta=None):
                      "in the wizard" % request_id)
 
         _safe(rec, "cover rows", lambda: _fill_cover(outline, form, rec))
+        _safe(rec, "cover signature block",
+              lambda: _fill_signature_block(outline, form, images, rec))
         _safe(rec, "2.1 EUT DETAILS",
               lambda: _fill_eut_details(outline, form, row, rec))
         _safe(rec, "header ULR NO", lambda: _write_ulr(doc, rec), key="ulr_no")
-        _safe(rec, "2.3/2.5/2.7/2.8 text",
-              lambda: _fill_text_blocks(outline, form, rec))
+        # 2.3 / 2.5 / 2.7 / 2.8 are written by their own single source - see the
+        # block comment above _write_ulr for which, and for the duplicated
+        # subsections that proved why a second writer here was wrong.
 
         # The text writes above insert sibling paragraphs, which leaves
         # outline.blocks' positional indices stale. Refresh before the images:
@@ -625,7 +697,15 @@ def apply_draft(outline, doc, request_id, meta=None):
     # Anything the spec declares and nobody wrote is missing, including keys a
     # branch above never reached. Computed from WF.FIELDS rather than accumulated
     # by hand, so a field added to the spec cannot be quietly forgotten here.
-    done = set(rec.written) | set(rec.images)
+    #
+    # ELSEWHERE is not MISSING. 2.5 and 2.8 are wizard fields whose destination
+    # is written by fill_eut_information out of the request columns the wizard
+    # saved them to.
+    for key, sub in (("test_configuration", "2.5 EUT CONFIGURATION DURING TEST"),
+                     ("monitoring_parameters", "2.8 EUT MONITORING PARAMETERS")):
+        if _s(row.get(key)):
+            rec.satisfy(key, "%s written from the request column" % sub)
+    done = set(rec.written) | set(rec.images) | set(rec.satisfied)
     for key in WF.keys():
         if key not in done:
             rec.absent(key)
@@ -644,7 +724,7 @@ def apply_draft(outline, doc, request_id, meta=None):
 #
 #     1284    fill_eut_information(outline, data)
 #     1285    outline.refresh()
-#     1286+   # The wizard's twenty-one admin-entered values. Must land here:
+#     1286+   # The wizard's admin-entered values. Must land here:
 #     1287+   # after the spec-derived 2.1 rows so it only fills the gaps, and
 #     1288+   # before cleanup_instructions (line 1321) turns any <placeholder>
 #     1289+   # it left alone into "NA".
@@ -661,7 +741,7 @@ def apply_draft(outline, doc, request_id, meta=None):
 # {"written": [...], "images": [...], "missing": [...], "notes": [...]}, so
 # `drafted` needs no try/except. Surface it in the summary dict that build_report
 # returns (alongside `cleaned`, `dropped`, `spliced`) - a build that omitted twelve
-# of the twenty-one fields must not look identical to a complete one (request 15's
+# of the fields must not look identical to a complete one (request 15's
 # draft holds nine, so that is the live case, not a hypothetical):
 #
 #     "draft": drafted,
@@ -677,18 +757,18 @@ def apply_draft(outline, doc, request_id, meta=None):
 #    honest options are to block generation while a required field is missing, or
 #    to keep the visible <placeholder>. Either way it is now reported, not silent.
 #
-# 2. `_COVER_DEFAULTS` (builder.py:572-575) still prints "Permanent" for
-#    LOCATION OF PERFORMANCE OF TEST when the admin left it blank. It is
-#    placeholder-guarded, so a supplied `test_location` already wins - but it is
-#    the same "looks decided, was guessed" defect, now for a field the wizard
-#    asks about, and should probably be deleted.
+# 2. SETTLED. `_COVER_DEFAULTS` prints "Permanent" for LOCATION OF PERFORMANCE
+#    OF TEST when the admin left it blank, which read as a guess dressed up as a
+#    decision. It is not: the laboratory's rule is that Permanent is the default
+#    and Onsite is the exception, which is why the wizard offers exactly those
+#    two. The default stays, and a supplied `test_location` still wins because
+#    the default is placeholder-guarded.
 #
-# 3. The signature block's Date cells are written by fill_cover (builder.py:226)
-#    from meta["issue_date"] = today. apply_draft rewrites only the cover's TEST
-#    REPORT ISSUE DATE row, so an admin-entered issue date will differ from the
-#    three signature dates. Signature is out of scope per the brief; if you want
-#    them to agree, set data["meta"]["issue_date"] from the draft BEFORE
-#    fill_cover (line 1280) and apply_draft's write becomes a no-op-equivalent.
+# 3. SETTLED. The signature block's Date cells used to be written by fill_cover
+#    from meta["issue_date"] = today, dating a signature nobody had given.
+#    fill_cover now writes only the Name row; _fill_signature_block writes the
+#    three dates and the three signature pictures from the wizard, and an
+#    unsigned block stays blank.
 #
 # ALSO WORTH KNOWING: an empty image slot leaves its caption pointing at blank
 # space, and those captions are real SEQ fields - so LIST OF FIGURES / LIST OF

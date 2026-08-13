@@ -183,6 +183,223 @@ def _sourced(value, fallback):
 
 
 # ==========================================================================
+# page 1: the cover page, every row of it
+# ==========================================================================
+
+# The address block printed under ISSUED BY. It is the laboratory's own name and
+# address, identical on every report this system will ever produce, and it is
+# already in the template - this copy exists so the wizard can SHOW the admin
+# what that row will say. builder.py does not read it: nothing writes that row,
+# because the template already carries it.
+ISSUED_BY = (
+    "Thermo Fisher Scientific Product Testing Laboratory\n"
+    "Warehouse No 1A Plot No 6, Survey No 315 434/1,\n"
+    "All Cargo Logistics & Industrial Park,\n"
+    "Ramachandrapuram Mandal, Velmula Village,\n"
+    "Sangareddy 502300, Telangana, India"
+)
+
+
+def _span_text(meta):
+    """The DATES ON WHICH TESTS WERE PERFORMED row, as fill_cover composes it."""
+    frm, to = meta.get("tests_from"), meta.get("tests_to")
+    if not frm:
+        return ""
+    if to and to != frm:
+        return "From %s to %s" % (frm, to)
+    return "On %s" % frm
+
+
+def cover_preview(request_id, request_obj=None, data=None, loaded_draft=None):
+    """Every row of the cover table, in the template's order, with its source.
+
+    WHY THE READ-ONLY ROWS ARE HERE AND NOT JUST IN THE DOCUMENT
+    -----------------------------------------------------------
+    The wizard used to show the five rows the admin can type and nothing else,
+    so the front page of a client-facing report was two-thirds invisible until
+    the .docx existed. An admin cannot notice that the serial number is wrong on
+    a page they were never shown.
+
+    So every row is listed. ``editable`` says whether this page can change it;
+    the rest are shown with where the value comes from, and are changed by fixing
+    the test request or the datasheets rather than here.
+
+    Values match what build_report will print because they come from the same
+    ``S.collect`` meta, with the draft layered on exactly where draft_fill layers
+    it.
+    """
+    if data is None or request_obj is None:
+        request_obj, _entries, data = preview_source(request_id)
+    if data is None:
+        return []
+    meta = data["meta"]
+    form = (loaded_draft or draft.load(request_id)).get("form") or {}
+
+    def drafted(key, fallback="", is_date=False):
+        v = str(form.get(key) or "").strip()
+        if v:
+            return S.fmt_date(v) if is_date else v
+        return fallback
+
+    return [
+        {"label": "MANUFACTURER", "value": meta["manufacturer"], "editable": None},
+        {"label": "ADDRESS", "value": meta["manufacturer_address"], "editable": None},
+        {"label": "EUT NAME", "value": meta["eut_name"], "editable": None},
+        {"label": "EUT MODEL/SKU NUMBER", "value": meta["eut_model"], "editable": None},
+        {"label": "EUT SERIAL NUMBER", "value": meta["eut_serial"], "editable": None},
+        {"label": "CONDITION OF EUT ON RECEIPT",
+         "value": drafted("condition_on_receipt", meta["sample_condition"]),
+         "editable": "condition_on_receipt"},
+        {"label": "DATE OF RECEIPT OF EUT",
+         "value": drafted("date_of_receipt", meta["sample_received"], is_date=True),
+         "editable": "date_of_receipt"},
+        {"label": "DATES ON WHICH TESTS WERE PERFORMED",
+         "value": _span_text(meta), "editable": None},
+        {"label": "LOCATION OF PERFORMANCE OF TEST",
+         "value": drafted("test_location", "Permanent"), "editable": "test_location"},
+        {"label": "TEST REPORT ISSUE DATE",
+         "value": drafted("report_issue_date", meta["issue_date"], is_date=True),
+         "editable": "report_issue_date"},
+        {"label": "ISSUED TO: NAME AND CONTACT INFORMATION OF CUSTOMER",
+         "value": drafted("issued_to"), "editable": "issued_to"},
+        {"label": "ISSUED BY: NAME AND ADDRESS OF TEST LABORATORY",
+         "value": ISSUED_BY, "editable": None},
+    ]
+
+
+def signature_preview(request_id, request_obj=None, data=None, loaded_draft=None):
+    """The three signature columns: who signs, on what date, with which picture.
+
+    Name comes from the database - whoever submitted the datasheets, whoever peer
+    reviewed them, whoever manages the laboratory. Date and Signature are the
+    admin's, because they record an act rather than a fact already stored.
+    """
+    if data is None or request_obj is None:
+        request_obj, _entries, data = preview_source(request_id)
+    if data is None:
+        return []
+    meta = data["meta"]
+    d = loaded_draft or draft.load(request_id)
+    form, images = d.get("form") or {}, d.get("images") or {}
+    cols = (("Prepared By", meta["prepared_by"], "prepared"),
+            ("Reviewed By", meta["reviewed_by"], "reviewed"),
+            ("Authorized Signatory", meta["lab_manager_name"], "authorized"))
+    return [{"column": col, "name": name,
+             "date_key": "sign_date_%s" % suffix,
+             "date": S.fmt_date(str(form.get("sign_date_%s" % suffix) or "").strip()),
+             "image_key": "img_sign_%s" % suffix,
+             "has_image": bool(str(images.get("img_sign_%s" % suffix) or "").strip())}
+            for col, name, suffix in cols]
+
+
+# ==========================================================================
+# page 1: section 2, every subsection of it
+# ==========================================================================
+
+# The 2.1 rows that no wizard field touches. Size, weight, operating frequency,
+# power rating and measured current are inputs on this page and are deliberately
+# not repeated here.
+_EUT_DETAIL_READONLY = (
+    ("Manufacturer", "manufacturer"),
+    ("EUT Name", "eut_name"),
+    ("EUT Model/SKU Number", "eut_model"),
+    ("EUT Serial Number", "eut_serial"),
+    ("Number of Test Samples", "test_samples"),
+    ("EUT Operating Voltage", "operating_voltage"),
+)
+
+
+def eut_detail_rows(data):
+    """The 2.1 rows that come from the request and are not editable here."""
+    meta = data["meta"]
+    rows = [{"label": label, "value": meta.get(key) or "", "source": "test request"}
+            for label, key in _EUT_DETAIL_READONLY]
+    cats = ", ".join(meta.get("categories") or [])
+    rows.append({"label": "EUT Category", "value": cats, "source": "test request"})
+    rows.append({"label": "Type of Equipment", "value": meta.get("product_type") or "",
+                 "source": "test request"})
+    return rows
+
+
+def section2_preview(request_id, request_obj=None, data=None, loaded_draft=None):
+    """2.2 to 2.9, in document order, with the value each will actually print.
+
+    WHY THIS REPLACED FOUR TEXTAREAS
+    --------------------------------
+    The wizard used to offer free-text boxes for 2.3, 2.5, 2.7 and 2.8 under a
+    heading saying all four print as NA because nothing supplies them. Three of
+    those four statements had stopped being true:
+
+      2.3 is a table built from every test's datasheet_software rows.
+      2.7 is the request's functional modes, labelled Mode A/B/C by position.
+      2.5 and 2.8 are request columns, filled on ten of the thirty requests.
+
+    So an admin was being asked to retype content the report already had, and
+    the completeness banner counted four already-answered questions as
+    outstanding. What is derived is now SHOWN, with its real value; what is
+    typed is still typed, and lands on the request rather than in a private copy.
+    """
+    if data is None or request_obj is None:
+        request_obj, _entries, data = preview_source(request_id)
+    if data is None:
+        return []
+    meta = data["meta"]
+    d = loaded_draft or draft.load(request_id)
+    images = d.get("images") or {}
+
+    def has(key):
+        return bool(str(images.get(key) or "").strip())
+
+    mods = meta.get("modifications") or []
+    # "pics" is the uniform shape for image slots, so the template renders the
+    # real upload control - file input, Edit, document-shaped thumbnail - inside
+    # the subsection the picture belongs to. It used to print a status line and a
+    # link to an Images card at the bottom of the page, which made 2.6 read as
+    # broken: the one subsection whose entire content IS a picture showed no way
+    # to supply one.
+    return [
+        {"no": "2.2", "title": "DESCRIPTION OF EUT", "kind": "text",
+         "value": meta.get("description") or ""},
+        {"no": "2.3", "title": "SOFTWARE AND FIRMWARE DETAILS", "kind": "table",
+         "headers": ["Test", "Software / Firmware", "Version"],
+         "rows": meta.get("software_rows") or []},
+        {"no": "2.4", "title": "EUT MODIFICATION RECORD", "kind": "table",
+         "headers": ["State", "Description of modification still fitted",
+                     "Fitted by", "Date fitted"],
+         "rows": mods},
+        {"no": "2.5", "title": "EUT CONFIGURATION DURING TEST", "kind": "text",
+         "value": meta.get("configuration") or "",
+         "editable": "test_configuration"},
+        {"no": "2.6", "title": "EUT SETUP DETAILS", "kind": "image",
+         "pics": [{"key": "img_block_diagram",
+                   "label": "Figure 1 - block diagram of the EUT setup",
+                   "has_image": has("img_block_diagram")}]},
+        # "lines", not "items": Jinja resolves b.items to dict.items before it
+        # ever looks for a key of that name, so the template rendered a builtin
+        # and raised "object is not iterable".
+        {"no": "2.7", "title": "EUT MODES OF OPERATION", "kind": "list",
+         "lines": meta.get("modes") or []},
+        {"no": "2.8", "title": "EUT MONITORING PARAMETERS", "kind": "text",
+         "value": meta.get("monitoring") or "",
+         "editable": "monitoring_parameters",
+         "pics": [{"key": "img_monitoring",
+                   "label": "Screenshot of the monitoring software (optional)",
+                   "has_image": has("img_monitoring")}]},
+        {"no": "2.9", "title": "ACCESSORIES, CABLES AND PICTURES", "kind": "table",
+         "headers": ["S. No.", "Accessory", "Make", "Model No.", "Serial No."],
+         "rows": meta.get("accessories") or [],
+         "extra": {"headers": ["S. No.", "Cable", "Length (m)", "Power/Signal",
+                               "Shielded"],
+                   "rows": meta.get("cables") or []},
+         "pics": [{"key": "img_eut_photo", "label": "Photo 1 - the EUT",
+                   "has_image": has("img_eut_photo")},
+                  {"key": "img_eut_label",
+                   "label": "Photo 2 - model / serial label",
+                   "has_image": has("img_eut_label")}]},
+    ]
+
+
+# ==========================================================================
 # page 2: section 1
 # ==========================================================================
 
@@ -203,7 +420,7 @@ def method_rows(data):
             log.info("wizard review: 1.1 spec failed for %s: %s", code, exc)
             spec = ""
         try:
-            verdict = B._verdict(t["form"])
+            verdict = B._verdict(code, t["form"])
         except Exception as exc:  # noqa: BLE001
             log.info("wizard review: 1.1 verdict failed for %s: %s", code, exc)
             verdict = ""
@@ -257,6 +474,63 @@ def uncertainty_rows(data):
     return rows
 
 
+_SECTION1_STATIC = None
+
+
+def section1_static():
+    """The FIXED text of section 1, read out of the blank template.
+
+    1.1 carries five disclaimer paragraphs under its table - what the results
+    relate to, that the report may not be reproduced except in full, that the
+    laboratory is not responsible for customer-supplied data or for sampling, and
+    that manufacturer/configuration/criteria come from the request. 1.3 is the
+    laboratory's NABL accreditation and TC number. None of it varies by request.
+
+    Read from the template rather than pasted here. This page exists so an admin
+    can see what the report will say, and a second copy of a legal disclaimer is a
+    copy that can disagree with the document the moment the lab edits the form.
+
+    Cached: one file read that cannot change while the process lives.
+    """
+    global _SECTION1_STATIC
+    if _SECTION1_STATIC is not None:
+        return _SECTION1_STATIC
+    out = {"disclaimers": [], "accreditation": {"intro": "", "rows": []}}
+    try:
+        from docx import Document
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+        from . import docx_tools as T
+        outline = B.Outline(Document(REG.TEMPLATE_PATH))
+
+        # 1.1: the paragraphs AFTER the table. Everything before it is the
+        # heading; the table itself is previewed row by row already.
+        seen_table = False
+        for b in outline.sub_blocks("TEST REPORT SUMMARY", "TEST METHOD"):
+            if isinstance(b, Table):
+                seen_table = True
+                continue
+            if seen_table and isinstance(b, Paragraph):
+                txt = T.text_of(b).strip()
+                if txt:
+                    out["disclaimers"].append(txt)
+
+        for b in outline.sub_blocks("TEST REPORT SUMMARY", "ACCREDITATION DETAILS"):
+            if isinstance(b, Paragraph):
+                txt = T.text_of(b).strip()
+                if txt and not txt.upper().startswith("ACCREDITATION DETAILS"):
+                    out["accreditation"]["intro"] = txt
+            elif isinstance(b, Table):
+                for row in b.rows:
+                    cells = [T.full_text(c).strip() for c in T.distinct_cells(row)]
+                    if any(cells):
+                        out["accreditation"]["rows"].append(cells)
+    except Exception as exc:  # noqa: BLE001 - a preview must not need the template
+        log.info("wizard review: section 1 static text unavailable: %s", exc)
+    _SECTION1_STATIC = out
+    return out
+
+
 def summary_preview(request_id):
     """Everything section 1 will contain, as the document will contain it."""
     req, entries, data = preview_source(request_id)
@@ -265,24 +539,31 @@ def summary_preview(request_id):
     products, basics = standards(data)
     rows = method_rows(data)
     unc = uncertainty_rows(data)
+    # These are read by a test engineer, not by whoever wrote the builder. The
+    # first version of them named a private function (_fill_standards) and
+    # described the blank form's internals, which tells the reader nothing they
+    # can act on. Each note now says what the report will look like and what to do
+    # about it.
     notes = []
     if not rows:
-        notes.append("No test has data, so 1.1 TEST METHOD will have no data rows "
-                     "at all - the build raises \"no completed tests\" first.")
+        notes.append("No test on this request has any datasheet data yet, so 1.1 "
+                     "would have no rows. Generating will be refused until at "
+                     "least one datasheet is complete.")
     if any(r["spec_source"] == "template" or r["result_source"] == "template"
            for r in rows):
-        notes.append("Cells marked \"from the template\" are not sourced from any "
-                     "datasheet. The document prints the blank form's own example "
-                     "there, or NA - the same defect the EUT page exists to remove, "
-                     "one section higher. Fix it on the datasheet, not here.")
+        notes.append("Some cells below are marked \"not from a datasheet\". No "
+                     "datasheet supplies them, so the report will print the blank "
+                     "form's example text or \"NA\" there. Fix those on the "
+                     "datasheet - they cannot be typed on this page.")
     if not products and not basics:
-        notes.append("1.2 APPLICABLE STANDARDS will be left exactly as the template "
-                     "ships it: _fill_standards returns without writing when both "
-                     "lists are empty.")
+        notes.append("No standards are recorded on the request or on any datasheet, "
+                     "so 1.2 will print the blank form's example standards. Add them "
+                     "to the test request.")
     if not unc:
-        notes.append("1.4 MEASUREMENT UNCERTAINITY will be a heading and a sentence "
-                     "with no table rows: it covers the four emission tests only, "
-                     "and this request has none of them.")
+        notes.append("1.4 lists measurement uncertainty for emission tests only "
+                     "(Conducted, Radiated, Harmonic, Flicker). This request has "
+                     "none of those, so 1.4 will print its heading and lead-in "
+                     "sentence with no table.")
     return {
         "ok": True,
         "tco_id": S._s(getattr(req, "tco_id", "")),
@@ -291,14 +572,24 @@ def summary_preview(request_id):
         "omitted": omitted_method_rows(data),
         "standards": {
             "products": products, "basics": basics,
-            # the same arithmetic _fill_standards uses to size the table
-            "rows": max(-(-len(products) // 2), -(-len(basics) // 2), 1),
+            # The cells builder._fill_standards will write, from that function's
+            # own pairing - so the page shows the table the report will have,
+            # including any cell the pairing leaves empty. Two loose lists could
+            # not show that, and an empty cell in a client-facing table is
+            # something the admin should see here rather than in the .docx.
+            "grid": B.standards_cells(products, basics),
+            "blanks": sum(1 for row in B.standards_cells(products, basics)
+                          for c in row if not c),
         },
         "uncertainty": unc,
         "codes": data["codes"],
         "skipped": data["skipped"],
         "notes": notes,
         "entries": len(entries),
+        # 1.1's five disclaimer paragraphs and 1.3's accreditation table, from
+        # the template. Fixed on every report, and shown because "read-only" is
+        # not a reason to hide what the page will carry.
+        "static": section1_static(),
     }
 
 
@@ -403,7 +694,7 @@ def tests_preview(request_id):
         required = M._val(t["form"], "required_performance_criteria")
         met = M._val(t["form"], "met_performance_criteria")
         try:
-            verdict = B._verdict(t["form"])
+            verdict = B._verdict(t["code"], t["form"])
         except Exception:  # noqa: BLE001
             verdict = ""
         out.append({
@@ -519,7 +810,7 @@ def readiness(request_id):
 
     d = draft.load(request_id)
     merged, row = _merged_form(req, d)
-    left = WF.outstanding(merged, row)
+    left = WF.outstanding(merged, row, d.get("images"))
 
     warnings = []
     unapproved = []
@@ -562,7 +853,7 @@ def readiness(request_id):
         "warnings": warnings,
         "tco_id": S._s(getattr(req, "tco_id", "")),
         "product": S._s(getattr(req, "product_name", "")),
-        "filled": WF.filled_count(merged, row),
+        "filled": WF.filled_count(merged, row, d.get("images")),
         "total": len(WF.FIELDS),
         "images": {k: os.path.basename(v)
                    for k, v in (d.get("images") or {}).items() if v},

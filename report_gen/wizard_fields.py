@@ -55,7 +55,29 @@ FIELDS = [
     ("report_issue_date", "Test report issue date", "date", "draft",
      "cover: TEST REPORT ISSUE DATE", ""),
     ("issued_to", "Issued to - name and contact information", "textarea", "draft",
-     "cover: ISSUED TO", ""),
+     "cover: ISSUED TO",
+     "Filled here by hand. The request's requester is not always who the report "
+     "is issued to."),
+
+    # ------------------------------------------- cover signature block
+    # Name: is filled from the database - who submitted the datasheets, who peer
+    # reviewed them, who manages the laboratory. Signature and Date are not
+    # derivable from anything: they record an act that happens when a person
+    # signs, which is why they are asked for here. Until this existed the report
+    # printed the ISSUE date in all three Date cells, which dated a signature
+    # that had not been given.
+    ("sign_date_prepared", "Date - Prepared By", "date", "draft",
+     "cover signature block: Date / Prepared By", ""),
+    ("sign_date_reviewed", "Date - Reviewed By", "date", "draft",
+     "cover signature block: Date / Reviewed By", ""),
+    ("sign_date_authorized", "Date - Authorized Signatory", "date", "draft",
+     "cover signature block: Date / Authorized Signatory", ""),
+    ("img_sign_prepared", "Signature - Prepared By", "image", "draft",
+     "cover signature block: Signature / Prepared By", ""),
+    ("img_sign_reviewed", "Signature - Reviewed By", "image", "draft",
+     "cover signature block: Signature / Reviewed By", ""),
+    ("img_sign_authorized", "Signature - Authorized Signatory", "image", "draft",
+     "cover signature block: Signature / Authorized Signatory", ""),
 
     # ------------------------------------------------- 2.1 EUT DETAILS
     # These six have a column on iec_emc_requests already and are empty on every
@@ -84,18 +106,35 @@ FIELDS = [
     ("measured_current", "Measured EUT current", "text", "draft",
      "2.1 Measured EUT Current", "As measured during the test, e.g. 2.8 A"),
 
-    # ------------------------------------------- 2.3 / 2.5 / 2.6 / 2.7 text
-    ("software_firmware", "Software and firmware details", "textarea", "draft",
-     "2.3 SOFTWARE AND FIRMWARE DETAILS",
-     "Currently printed as NA on every report because nothing supplies it."),
-    ("eut_configuration", "EUT configuration during test", "textarea", "draft",
-     "2.5 EUT CONFIGURATION DURING TEST", ""),
-    ("modes_of_operation", "EUT modes of operation", "textarea", "draft",
-     "2.7 EUT MODES OF OPERATION",
-     "One mode per line, e.g. 'Mode A: idle, display on'"),
-    ("monitoring_parameters", "EUT monitoring parameters", "textarea", "draft",
+    # ----------------------------------------------- 2.5 and 2.8 free text
+    #
+    # 2.3 and 2.7 USED TO BE HERE and are gone on purpose. Neither is typed any
+    # more:
+    #
+    #   2.3 SOFTWARE AND FIRMWARE is a table built from datasheet_software -
+    #       every test's software and version, one row each. It was listed here
+    #       as "printed as NA because nothing supplies it", which was true of the
+    #       REQUEST and never true of the datasheets.
+    #
+    #   2.7 EUT MODES OF OPERATION is the request's functional modes, labelled
+    #       "Mode A:", "Mode B:" by position. A textarea beside it invited an
+    #       admin to retype the modes and disagree with the request.
+    #
+    # Both are shown read-only on the wizard page with their real values, the
+    # same as the cover rows the request supplies.
+    #
+    # 2.5 and 2.8 are not derived - but they are not homeless either. Both have a
+    # column on iec_emc_requests that ten of the thirty requests already fill, so
+    # they are written BACK to the request like the size and weight fields rather
+    # than kept as a private second copy that the next report would not inherit.
+    # The key IS the column name, which is why 2.5 is `test_configuration` here
+    # and not the `eut_configuration` it was called while it lived in the draft.
+    ("test_configuration", "EUT configuration during test", "textarea", "request",
+     "2.5 EUT CONFIGURATION DURING TEST",
+     "Prefilled from the test request. Editing it here updates the request."),
+    ("monitoring_parameters", "EUT monitoring parameters", "textarea", "request",
      "2.8 EUT MONITORING PARAMETERS",
-     "How the EUT was monitored, and with what software"),
+     "Prefilled from the test request. How the EUT was monitored, and with what."),
 
     # ------------------------------------------------------------- images
     ("img_block_diagram", "Block diagram of the EUT setup", "image", "draft",
@@ -125,8 +164,15 @@ CHOICES = {
 # difference shows up as a letterboxed or clipped image on the client's copy.
 def image_box_mm(key):
     """(width_mm, height_mm) the document will fit this image into."""
-    from .builder import DIAGRAM_BOX, PHOTO_BOX
-    return DIAGRAM_BOX if key == "img_block_diagram" else PHOTO_BOX
+    from .builder import DIAGRAM_BOX, PHOTO_BOX, SIGNATURE_BOX
+    if key == "img_block_diagram":
+        return DIAGRAM_BOX
+    # A signature goes into a table cell, not onto the page. The Signature row
+    # of the cover block is 20 mm tall; anything framed to the 140 x 90 photo
+    # box would be scaled down to a smear or would stretch the row.
+    if key.startswith("img_sign_"):
+        return SIGNATURE_BOX
+    return PHOTO_BOX
 
 
 def image_boxes():
@@ -136,7 +182,12 @@ def image_boxes():
 # Fields whose absence should stop nobody. Everything else is reported as
 # outstanding in the completeness check - not silently turned into NA, which is
 # the behaviour this whole phase exists to remove.
-OPTIONAL = {"img_monitoring", "issued_to", "measured_current"}
+#
+# The three signature images are optional because a laboratory that signs on
+# paper is doing nothing wrong; the three signature DATES are not, because an
+# unsigned date column is what this replaced.
+OPTIONAL = {"img_monitoring", "measured_current",
+            "img_sign_prepared", "img_sign_reviewed", "img_sign_authorized"}
 
 # FLOAT columns. A value that will not parse is rejected with a message rather
 # than sent to MySQL, which truncates and raises 1265 for the whole statement.
@@ -162,16 +213,33 @@ def coerce(key, raw):
     return float(m.group(0)), None
 
 
-def filled_count(draft_form, request_row):
-    """How many of the 21 fields actually have a value.
+def _value_of(key, kind, store, draft_form, request_row, images):
+    """Where this field's value actually lives.
+
+    THE IMAGE CASE IS THE WHOLE REASON THIS EXISTS. An uploaded picture is stored
+    in report_draft's ``images`` map, never in ``form`` - so reading the form for
+    an image key returns nothing however many files were uploaded, and every
+    required picture was reported outstanding forever. Measured: uploading the
+    block diagram returned images_saved=1 and left img_block_diagram in the
+    outstanding list on the same response.
+    """
+    if kind == "image":
+        return (images or {}).get(key)
+    if store == "request":
+        return (request_row or {}).get(key)
+    return (draft_form or {}).get(key)
+
+
+def filled_count(draft_form, request_row, images=None):
+    """How many of FIELDS actually have a value.
 
     Not "total minus outstanding": outstanding skips the optional ones, so that
     subtraction counted an empty optional field as filled and reported 3/21 for a
     request where nothing at all had been entered.
     """
     n = 0
-    for key, _l, _k, store, _loc, _h in FIELDS:
-        v = (request_row or {}).get(key) if store == "request" else (draft_form or {}).get(key)
+    for key, _l, kind, store, _loc, _h in FIELDS:
+        v = _value_of(key, kind, store, draft_form, request_row, images)
         if v is not None and str(v).strip() != "":
             n += 1
     return n
@@ -197,20 +265,18 @@ def spec(key):
     return None
 
 
-def outstanding(draft_form, request_row):
+def outstanding(draft_form, request_row, images=None):
     """Which required fields are still unsupplied. The completeness check.
 
-    Reads the request for store="request" fields and the draft for the rest, so
-    a value the admin already entered on the request form is not asked for twice.
+    Reads the request for store="request" fields, the images map for pictures and
+    the draft for the rest, so a value the admin has already supplied is not asked
+    for twice - and an uploaded picture actually counts as supplied.
     """
     missing = []
     for key, label, kind, store, location, _help in FIELDS:
         if key in OPTIONAL:
             continue
-        if store == "request":
-            v = (request_row or {}).get(key)
-        else:
-            v = (draft_form or {}).get(key)
+        v = _value_of(key, kind, store, draft_form, request_row, images)
         if v is None or str(v).strip() == "":
             missing.append({"key": key, "label": label, "location": location,
                             "kind": kind})

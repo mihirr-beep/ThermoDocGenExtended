@@ -782,6 +782,40 @@ def insert_image_before(paragraph, image, width_mm=None, height_mm=None,
     return p
 
 
+def set_cell_image(cell, image, max_width_mm=40.0, max_height_mm=20.0):
+    """Replace a cell's content with one centred, aspect-fitted picture.
+
+    Used for the cover signature block, where the picture has to live inside a
+    fixed-height table cell rather than on the page. Reuses the cell's FIRST
+    paragraph instead of appending one, because a table cell always has at least
+    one paragraph and appending would leave an empty line above the signature,
+    pushing the picture out of a row the template sizes to 20 mm.
+
+    Returns True, or False when the image could not be read - in which case the
+    cell is left exactly as it was.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+    saved = list(p._p)
+    for r in list(p.runs):
+        r._r.getparent().remove(r._r)
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run()
+    try:
+        w, h = _fit(image, max_width_mm, max_height_mm)
+        run.add_picture(image, width=Mm(w), height=Mm(h))
+    except Exception:
+        for el in list(p._p):
+            p._p.remove(el)
+        for el in saved:
+            p._p.append(el)
+        return False
+    for extra in cell.paragraphs[1:]:
+        remove(extra)
+    return True
+
+
 def _fit(image, max_w_mm, max_h_mm):
     """Aspect-fit an image into a box, in mm. Falls back to the full box."""
     try:

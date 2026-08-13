@@ -3,7 +3,7 @@
 
 WHY THESE PAGES EXIST AT ALL
 ----------------------------
-Page 1 collects the twenty-one fields nothing else supplies. These three show
+Page 1 collects the fields nothing else supplies. These three show
 what the admin is about to sign their name under: what section 1 will actually
 say, which datasheet each per-test section will be built from, and whether the
 build can succeed. Sections 1 and 3 and everything from 4 onward are derived, so
@@ -45,19 +45,121 @@ log = logging.getLogger(__name__)
 
 report_wizard_pages_bp = Blueprint("report_wizard_pages", __name__)
 
-# Wizard page number -> endpoint. Page 1 lives in the other blueprint.
-_PAGE_ENDPOINTS = {
-    1: "report_wizard.eut_page",
-    2: "report_wizard_pages.summary_page",
-    3: "report_wizard_pages.tests_page",
-    4: "report_wizard_pages.generate_page",
-}
+# The fixed steps, in the order the REPORT reads: section 1, then section 2, then
+# the per-test overview. The tests themselves are inserted after these, one step
+# each, and Generate is always last - see _pages().
+#
+# Section 1 comes before section 2 because the document reads that way. The
+# data-entry page was first because it is where the work is, but that put the
+# admin in section 2 before they had seen section 1, and numbered the report's own
+# sections backwards.
+_FIXED_STEPS = (
+    ("summary", "Report summary", "report_wizard_pages.summary_page"),
+    ("eut", "EUT information", "report_wizard.eut_page"),
+    ("tests", "Tests", "report_wizard_pages.tests_page"),
+)
 
 
 def _deny():
     """The same 403 body page 1 returns, so the fetch handlers can share it."""
     return jsonify(success=False,
                    message="Only an admin can prepare a test report"), 403
+
+
+def _test_steps(request_id, data=None):
+    """One step per test on this request, in the order the report prints them.
+
+    ``data`` is an already-collected S.collect() payload. The EUT page builds one
+    for its cover preview and would otherwise pay for a second full collect just
+    to label its step chips - and this database is remote, where the cost that
+    matters is round trips.
+
+    Read from wizard_review.preview_source, which is the same S.collect() the
+    build makes - so the tabs are exactly the sections the document will contain,
+    and a test that resolves to no section cannot appear as a tab that leads
+    nowhere.
+
+    Each step carries the URL of the test's OWN datasheet form: the page the lab
+    engineer fills in. Nothing about that form is reimplemented here.
+    """
+    out = []
+    try:
+        if data is None:
+            _req, _entries, data = WR.preview_source(request_id)
+        if data is None:
+            return out
+        for t in data["tests"]:
+            entry = t.get("entry")
+            entry_id = getattr(entry, "id", None)
+            if entry_id is None:
+                continue
+            out.append({"code": t["code"], "name": t["name"],
+                        "section": t["section"], "entry_id": entry_id,
+                        "has_data": bool(t.get("has_data"))})
+    except Exception as exc:  # noqa: BLE001 - a missing tab must not 500 the page
+        log.info("wizard: per-test steps unavailable for request %s: %s",
+                 request_id, exc)
+    return out
+
+
+def datasheet_form_url(code, entry_id, readonly=True):
+    """The URL of the datasheet form for one test - the engineer's own page.
+
+    CE is the bespoke form with its own blueprint and route; the other ten share
+    the generic one. Resolved with url_for so a route rename cannot silently break
+    the embed, and returns None rather than a guess when neither endpoint exists.
+
+    ``readonly`` adds ?view=1, and defaults to it. A datasheet is only meaningful
+    to this report once it has gone Draft -> Peer Review -> Approved, and the
+    report is built from the approved document; an admin editing or re-submitting
+    from inside the report wizard would change a reviewed record outside that
+    pipeline. The wizard shows the datasheet, it does not edit it - and the
+    "Open in a new tab" link goes to the editable form, where such a change
+    belongs and is logged as the engineer's own action.
+    """
+    code = (code or "").upper()
+    try:
+        if code == "CE":
+            url = url_for("datasheet_gen.ce_form", assignment_id=int(entry_id))
+        else:
+            url = url_for("datasheet_generic.g_form", code=code.lower(),
+                          assignment_id=int(entry_id))
+    except Exception as exc:  # noqa: BLE001
+        log.info("wizard: no datasheet form URL for %s/%s: %s", code, entry_id, exc)
+        return None
+    if not readonly:
+        return url
+    # view=1 locks the fields and hides the action bar; embed=1 drops the app
+    # chrome so the frame shows the datasheet and not a second copy of the navbar.
+    return url + ("&" if "?" in url else "?") + "view=1&embed=1"
+
+
+def _pages(request_id, data=None):
+    """Every wizard step for this request, in order, numbered from 1.
+
+    DYNAMIC BY DESIGN. The fixed steps are followed by one per test and then
+    Generate, so a request with four tests has eight steps and one with eleven has
+    fifteen. Everything that needs to know the order - the chips, Back/Next and
+    /resume - reads this one list, which is why adding the per-test steps did not
+    mean touching four templates.
+    """
+    pages = []
+    for kind, label, endpoint in _FIXED_STEPS:
+        pages.append({"kind": kind, "label": label, "code": None,
+                      "url": url_for(endpoint, request_id=request_id)})
+    for t in _test_steps(request_id, data=data):
+        pages.append({
+            "kind": "test", "label": t["code"], "code": t["code"],
+            "name": t["name"], "entry_id": t["entry_id"],
+            "has_data": t["has_data"],
+            "url": url_for("report_wizard_pages.test_page",
+                           request_id=request_id, code=t["code"].lower())})
+    pages.append({"kind": "generate", "label": "Generate", "code": None,
+                  "url": url_for("report_wizard_pages.generate_page",
+                                 request_id=request_id)})
+    for i, p in enumerate(pages, 1):
+        p["n"] = i
+    return pages
 
 
 def _mark_page(request_id, page):
@@ -74,19 +176,21 @@ def _mark_page(request_id, page):
     return d
 
 
-def _nav(request_id, page):
-    """Back/next targets and the step chips, so no template hardcodes an endpoint."""
-    steps = []
-    for n, label in ((1, "1. EUT information"), (2, "2. Summary review"),
-                     (3, "3. Tests"), (4, "4. Generate")):
-        steps.append({"n": n, "label": label, "current": n == page,
-                      "url": url_for(_PAGE_ENDPOINTS[n], request_id=request_id)})
+def _nav(request_id, page, pages=None, data=None):
+    """Back/next targets and the step chips, so no template hardcodes an endpoint.
+
+    ``page`` is a 1-based index into _pages(). Callers that already built the list
+    pass it in - or pass the collected ``data`` - rather than paying for a second
+    S.collect().
+    """
+    pages = pages if pages is not None else _pages(request_id, data=data)
+    steps = [{"n": p["n"], "label": "%d. %s" % (p["n"], p["label"]),
+              "current": p["n"] == page, "url": p["url"]} for p in pages]
+    by_n = {p["n"]: p for p in pages}
     return {
         "steps": steps,
-        "back": (url_for(_PAGE_ENDPOINTS[page - 1], request_id=request_id)
-                 if page > 1 else None),
-        "next": (url_for(_PAGE_ENDPOINTS[page + 1], request_id=request_id)
-                 if page < 4 else None),
+        "back": by_n[page - 1]["url"] if (page - 1) in by_n else None,
+        "next": by_n[page + 1]["url"] if (page + 1) in by_n else None,
     }
 
 
@@ -124,10 +228,10 @@ def summary_page(request_id):
         data = {"ok": False, "reason": "The preview could not be assembled: %s" % exc}
     if not data.get("ok") and data.get("reason") == "Request not found":
         return jsonify(success=False, message="Request not found"), 404
-    _mark_page(request_id, 2)
+    _mark_page(request_id, 1)
     return render_template("report_wizard_summary.html",
                            request_id=request_id, preview=data,
-                           nav=_nav(request_id, 2))
+                           nav=_nav(request_id, 1))
 
 
 # ==========================================================================
@@ -155,7 +259,67 @@ def tests_page(request_id):
 
 
 # ==========================================================================
-# page 4 - readiness, preview, generate
+# one page per test - the engineer's own datasheet form, embedded
+# ==========================================================================
+
+@report_wizard_pages_bp.route("/report/wizard/<int:request_id>/test/<code>",
+                              methods=["GET"])
+@login_required
+def test_page(request_id, code):
+    """One test's section, shown as THE DATASHEET FORM THE LAB ENGINEER USES.
+
+    WHY AN IFRAME AND NOT A COPY OF THE FORM
+    ----------------------------------------
+    The per-test sections of this report already drifted once: the report template
+    kept its own copy of the datasheet's tables and 49 of 92 subsections had
+    quietly diverged by the time anyone measured. That is what splicing the
+    approved .docx fixed.
+
+    Re-rendering the datasheet FORM inside this page would repeat the same
+    mistake in HTML - two thousand lines of grids, checkbox rows and per-test
+    JavaScript, kept in step by hand. Instead the real form is embedded at its own
+    URL: /datasheet/g/<code>/<id>/form, or /datasheet/ce/<id>/form for CE. There is
+    one implementation, and a change an engineer makes to the datasheet UI shows up
+    here on the next page load with nothing to update.
+
+    ACCESS: the embedded route enforces its own permission check
+    (datasheet_gen.routes._can_access), which admits any admin - the same people
+    this wizard already admits. Nothing is loosened to make the embed work.
+
+    THE FIRST AND LAST PARTS ARE LEFT ALONE. The datasheet's front matter (job
+    number, EUT details) and its sign-off block are visible in the form because
+    that is the form, but they never reach the report: splice.py lifts only the
+    test's own section out of the approved .docx. Hiding them here would mean
+    editing the embedded page, which is exactly the coupling this avoids.
+    """
+    if not _can_admin():
+        return _deny()
+    pages = _pages(request_id)
+    want = (code or "").upper()
+    page = next((p for p in pages
+                 if p["kind"] == "test" and p["code"] == want), None)
+    if page is None:
+        # A code that is not a test on this request, or a request with no tests.
+        # Redirect rather than 404: the tab list is built from the same source, so
+        # this is only reachable by a hand-typed or stale URL.
+        log.info("wizard: %s is not a test on request %s", want, request_id)
+        return redirect(url_for("report_wizard_pages.tests_page",
+                                request_id=request_id))
+    _mark_page(request_id, page["n"])
+    return render_template(
+        "report_wizard_test.html",
+        request_id=request_id, nav=_nav(request_id, page["n"], pages),
+        test=page,
+        form_url=datasheet_form_url(page["code"], page["entry_id"]),
+        # The editable form, for the "open in a new tab" link. Changing a
+        # datasheet is the engineer's action in their own pipeline, not something
+        # to be done inside a report the wizard is about to generate.
+        edit_url=datasheet_form_url(page["code"], page["entry_id"],
+                                    readonly=False))
+
+
+# ==========================================================================
+# the last page - readiness, preview, generate
 # ==========================================================================
 
 @report_wizard_pages_bp.route("/report/wizard/<int:request_id>/generate",
@@ -178,11 +342,17 @@ def generate_page(request_id):
                  "pdf_note": None if R.available() else R.unavailable_note()}
     if state.get("reason") == "Request not found":
         return jsonify(success=False, message="Request not found"), 404
-    if int(state.get("page_reached") or 1) < 4:
-        draft.save(request_id, page=4, user_id=getattr(current_user, "id", None))
+    # Generate is the LAST step, and how many there are depends on how many
+    # tests the request has - four tests make it step 8, eleven make it 15.
+    pages = _pages(request_id)
+    last = len(pages)
+    if int(state.get("page_reached") or 1) < last:
+        draft.save(request_id, page=last,
+                   user_id=getattr(current_user, "id", None))
     return render_template(
         "report_wizard_generate.html",
-        request_id=request_id, state=state, nav=_nav(request_id, 4),
+        request_id=request_id, state=state,
+        nav=_nav(request_id, last, pages),
         generate_url=_generate_url(request_id),
         pdf_url=url_for("report_wizard_pages.preview_pdf", request_id=request_id),
         fields_total=len(WF.FIELDS))
@@ -200,9 +370,12 @@ def resume(request_id):
     """Send the admin back to the furthest page they reached."""
     if not _can_admin():
         return _deny()
+    pages = _pages(request_id)
     page = int((draft.load(request_id) or {}).get("page") or 1)
-    page = min(max(page, 1), 4)
-    return redirect(url_for(_PAGE_ENDPOINTS[page], request_id=request_id))
+    # Clamped to what EXISTS now. A draft saved when the request had six tests
+    # would otherwise resume past the end after one was cancelled.
+    page = min(max(page, 1), len(pages))
+    return redirect(pages[page - 1]["url"])
 
 
 # ==========================================================================
