@@ -5931,6 +5931,20 @@ Please do not reply to this email.
         selected_tests = list(request_data.get('selected_tests') or [])
         assigned_test_keys = set()
         for entry in planner_entries:
+            # A CANCELLED run is not an assignment.
+            #
+            # The review page has always skipped these (see the
+            # active_entries_by_test filter), which is why it shows such a test as
+            # "Not Assigned". This payload did not, so the same test was
+            # simultaneously unassigned on the page and assigned to the dialog
+            # that offers unassigned tests - and the dialog, having nothing left
+            # to offer, said everything was already assigned.
+            #
+            # Measured on IEC-EMC-004: EFT is selected on the request, its only
+            # planner entry (id 10) is 'cancelled', and it could not be
+            # re-assigned from the UI at all.
+            if str(getattr(entry, 'status', '') or '').strip().lower() == 'cancelled':
+                continue
             test_name = getattr(entry, 'test_name', None)
             if test_name:
                 assigned_key = _normalize_assignment_test_key(test_name)
@@ -11537,6 +11551,7 @@ Please do not reply to this email.
                     None
                 )
                 show_upload_report = False
+                show_prepare_report = False
                 if parsed_assignments:
                     all_terminal = all(
                         a['status'] in ('cancelled', 'datasheet_uploaded')
@@ -11566,6 +11581,34 @@ Please do not reply to this email.
                         and not remaining_tests
                         and not report_already_uploaded
                     )
+                    # The report WIZARD needs the datasheets finished, and nothing
+                    # more. Two conditions above are deliberately relaxed:
+                    #
+                    #  * report_already_uploaded - the commonest moment to want the
+                    #    wizard is just after reading a generated report and finding
+                    #    the EUT details blank, and it is the only route that
+                    #    collects them.
+                    #  * all_terminal - generating a report moves every assignment
+                    #    from 'datasheet_uploaded' to 'report_uploaded', which is
+                    #    not in that tuple. So the button vanished the instant a
+                    #    report existed, i.e. precisely when it is needed. A
+                    #    reported test is at least as finished as an uploaded one.
+                    wizard_terminal = all(
+                        a['status'] in ('cancelled', 'datasheet_uploaded',
+                                        'report_uploaded')
+                        for a in parsed_assignments
+                    )
+                    has_any_datasheet_file = any(
+                        a['status'] in ('datasheet_uploaded', 'report_uploaded')
+                        and bool(a.get('datasheet_file_path'))
+                        for a in parsed_assignments
+                    )
+                    show_prepare_report = (
+                        wizard_terminal
+                        and has_any_datasheet_file
+                        and not remaining_tests
+                    )
+
                 aggregated_status = derive_review_status(
                     request.status,
                     remaining_tests,
@@ -11609,6 +11652,7 @@ Please do not reply to this email.
                     'service_types': service_types,
                     # ✅ FIX: show_upload_report now correctly hides when report is uploaded
                     'show_upload_report': show_upload_report,
+                    'show_prepare_report': show_prepare_report,
                     # ✅ FIX: report fields now correctly read from PlannerEntry
                     'report_file_path': report_file_path,
                     'report_comments': report_comments,

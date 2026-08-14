@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Report - Generate - {{ state.tco_id or request_id }}{% endblock %}
+
+{# Page 4. Two lists that must never be conflated:
+
+     blockers    the generate endpoint's OWN preconditions. Any one of them and
+                 the POST fails (404/400), so Generate is disabled.
+     outstanding field gaps from wizard_fields.outstanding(). These do NOT stop
+                 the build - they come out blank, or as "NA", which is the exact
+                 thing this wizard exists to stop happening silently. Generate
+                 stays enabled: an incomplete report is a lab decision, not an
+                 error, as long as it is made knowingly.
+
+   The button posts to the report endpoint that already exists. That endpoint is
+   the only place that writes report_file_path, moves the request into the report
+   approval flow and mails a Developmental Assistance request as complete; a
+   second generate path here would have to keep all of that in step. #}
+
+{% block content %}
+<div class="rw-wrap">
+
+  <div class="rw-head">
+    <div>
+      <h2>Prepare Test Report</h2>
+      <p class="rw-sub">{{ state.tco_id or '' }} &middot; {{ state.product or 'unnamed product' }}</p>
+      <p class="rw-sub">Last step: write the .docx and send it for report approval.</p>
+    </div>
+    <div class="rw-steps">
+      {% for s in nav.steps %}
+        <a class="rw-step{% if s.current %} rw-on{% endif %}" href="{{ s.url }}">{{ s.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------- readiness -->
+  <div class="rw-note{% if state.ready and not state.outstanding %} rw-ok{% elif state.ready %}{% else %} rw-bad{% endif %}"
+       id="rw-status">
+    {% if not state.ready %}
+      <strong>This report cannot be generated yet.</strong>
+      {{ state.blockers|length }} thing(s) must be fixed first.
+    {% elif state.outstanding %}
+      <strong>Ready to generate.</strong>
+      {{ state.outstanding|length }} field(s) below will be blank in the document.
+    {% else %}
+      <strong>Ready to generate.</strong> Everything is filled.
+    {% endif %}
+  </div>
+
+  {% if state.blockers %}
+    <fieldset class="rw-group rw-bad-group">
+      <legend>Blockers</legend>
+      <ul class="rw-list">
+        {% for b in state.blockers %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+    </fieldset>
+  {% endif %}
+
+  <!-- ---------------------------------------------- outstanding -->
+  <fieldset class="rw-group">
+    <legend>
+      Outstanding fields
+      {% if state.outstanding %}({{ state.outstanding|length }}){% else %}(none){% endif %}
+    </legend>
+    {% if state.outstanding %}
+      <p class="rw-help">Nothing here blocks the build. Fill them on
+        <a href="{{ nav.steps[1].url }}">EUT information</a> if they apply.</p>
+      <div class="rw-scroll">
+        <table class="rw-table">
+          <thead><tr><th>Field</th><th>Where it appears in the report</th></tr></thead>
+          <tbody>
+            {% for o in state.outstanding %}
+              <tr><td>{{ o.label }}</td><td class="rw-where">{{ o.location }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="rw-help">Every required field is filled.</p>
+    {% endif %}
+
+    {% if state.images %}
+      <p class="rw-help">
+        {# The stored FILENAMES were printed here - "66_img_sign_prepared_20260813
+           _115829_sig_a.png" three times over. Nobody recognises a picture by the
+           name the uploader gave it; what they want to know is which slots are
+           filled. #}
+        {{ state.images|length }} image(s) uploaded:
+        {% for k in state.images %}{{ image_labels.get(k, k) }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      </p>
+    {% endif %}
+  </fieldset>
+
+  <!-- ---------------------------------------------- warnings -->
+  {% if state.warnings %}
+    <fieldset class="rw-group">
+      <legend>Worth knowing before you generate</legend>
+      <ul class="rw-list">
+        {% for w in state.warnings %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+    </fieldset>
+  {% endif %}
+
+  <!-- ---------------------------------------------- preview -->
+  <fieldset class="rw-group rw-ro">
+    <legend>Preview</legend>
+    {% if state.pdf_available %}
+      {% if state.existing_report %}
+        <p class="rw-help">
+          <code>{{ state.existing_report }}</code> &mdash; the last generated file,
+          not the changes you have made since.
+        </p>
+        <a class="rw-btn" href="{{ pdf_url }}" target="_blank" rel="noopener">
+          Open the last report as PDF
+        </a>
+      {% else %}
+        <p class="rw-help">Nothing generated yet &mdash; generate below, then come
+          back to read it as a PDF.</p>
+      {% endif %}
+    {% else %}
+      <p class="rw-help">{{ state.pdf_note }} Use the earlier steps to check the
+        content instead.</p>
+    {% endif %}
+  </fieldset>
+
+  <!-- ---------------------------------------------- generate -->
+  <fieldset class="rw-group">
+    <legend>Generate</legend>
+
+    {% if state.already_generated %}
+      <div class="rw-note">
+        <strong>This will REGENERATE the report.</strong>
+        A new file is written and the request goes back for report approval.
+        The earlier file is kept.
+      </div>
+    {% endif %}
+
+    <div class="rw-field rw-wide">
+      <label for="rw-comments">Comments for the report approval flow</label>
+      <textarea id="rw-comments" rows="3"
+                placeholder="Left empty, this records: EMI EMC Test Report generated from {{ state.with_data or 0 }} approved datasheet(s)."></textarea>
+      <span class="rw-help">Shown to the reviewer. Leave empty for the default.</span>
+    </div>
+
+    <div class="rw-actions">
+      {% if nav.back %}<a class="rw-btn" href="{{ nav.back }}">Back</a>{% endif %}
+      <button type="button" class="rw-btn rw-primary" id="rw-generate"
+              data-url="{{ generate_url }}"
+              {% if not state.ready %}disabled{% endif %}>
+        {% if state.already_generated %}Regenerate the report{% else %}Generate the report{% endif %}
+      </button>
+      <span class="rw-help">
+        {{ state.tests or 0 }} test section(s) will be written.
+      </span>
+    </div>
+
+    <div id="rw-result" class="rw-result" hidden></div>
+  </fieldset>
+</div>
+
+<style>
+  .rw-wrap{max-width:1080px;margin:0 auto;padding:18px}
+  .rw-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .rw-head h2{margin:0}
+  .rw-sub{margin:4px 0 0;color:#5a6472}
+  .rw-steps{display:flex;gap:6px;flex-wrap:wrap}
+  .rw-step{font-size:12px;padding:4px 10px;border-radius:999px;background:#eef1f5;color:#5a6472;text-decoration:none}
+  .rw-step.rw-on{background:#1a73e8;color:#fff}
+  .rw-note{margin:16px 0;padding:10px 14px;border-radius:6px;background:#fff8e1;border:1px solid #ffe082}
+  .rw-note.rw-ok{background:#e8f5e9;border-color:#a5d6a7}
+  .rw-note.rw-bad{background:#fdecea;border-color:#f5b5ae}
+  .rw-group{border:1px solid #e2e6ea;border-radius:8px;padding:14px 16px;margin:0 0 16px}
+  .rw-group legend{font-weight:600;padding:0 6px}
+  .rw-group.rw-bad-group{border-color:#f5b5ae;background:#fffafa}
+  .rw-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .rw-field label{font-size:13px;font-weight:600}
+  .rw-field textarea{padding:7px 9px;border:1px solid #cfd6dd;border-radius:5px;font:inherit;min-width:0;resize:vertical}
+  .rw-where{font-size:11px;color:#8a94a0}
+  .rw-help{font-size:11px;color:#5a6472}
+  .rw-ro{background:#fafbfc}
+  .rw-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
+  .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
+  .rw-btn[disabled]{opacity:.5;cursor:not-allowed}
+  .rw-scroll{overflow-x:auto}
+  .rw-table{width:100%;border-collapse:collapse;font-size:13px}
+  .rw-table th,.rw-table td{border:1px solid #e2e6ea;padding:6px 8px;text-align:left;vertical-align:top}
+  .rw-table th{background:#f5f7f9;font-size:12px}
+  .rw-list{margin:6px 0 0;padding-left:18px;font-size:13px}
+  .rw-list li{margin:3px 0}
+  .rw-result{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:13px;border:1px solid #cfd6dd;background:#fafbfc}
+  .rw-result.rw-ok{background:#e8f5e9;border-color:#a5d6a7}
+  .rw-result.rw-bad{background:#fdecea;border-color:#f5b5ae}
+</style>
+
+<script>
+(function () {
+  var btn = document.getElementById('rw-generate');
+  var out = document.getElementById('rw-result');
+  var comments = document.getElementById('rw-comments');
+  if (!btn) return;
+
+  btn.addEventListener('click', function () {
+    // Generating takes a while and the endpoint is repeatable - a second click
+    // writes a second file and points every planner entry at it.
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = 'Generating...';
+    out.hidden = false;
+    out.className = 'rw-result';
+    out.textContent = 'Building the document. This can take a minute.';
+
+    fetch(btn.dataset.url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({comments: (comments && comments.value || '').trim()})
+    })
+      .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+      .then(function (res) {
+        var d = res.d || {};
+        // The endpoint reports failure as "error", success as "message".
+        if (!res.ok || !d.success) throw new Error(d.error || d.message || 'Generation failed');
+        out.className = 'rw-result rw-ok';
+        var bits = ['<strong>Generated.</strong> ' + (d.message || '')];
+        if (d.file_path) bits.push('<div><code>' + d.file_path + '</code></div>');
+        if (d.new_status) bits.push('<div>Request status: ' + d.new_status + '</div>');
+        bits.push('<div>Reload this page to enable the PDF preview of the new file.</div>');
+        out.innerHTML = bits.join('');
+        btn.textContent = 'Generated';
+      })
+      .catch(function (e) {
+        out.className = 'rw-result rw-bad';
+        out.innerHTML = '<strong>Not generated.</strong> ' + e.message;
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  });
+})();
+</script>
+{% endblock %}

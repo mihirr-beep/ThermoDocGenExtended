@@ -252,11 +252,22 @@
     {% block extra_css %}{% endblock %}
 </head>
 
-<body class="{% if show_env_marker %}non-production-body{% else %}bg-gray-50{% endif %} min-h-screen">
-    {% if show_env_marker %}
+{# min-h-screen is dropped when embedded: it forces the body to 100vh OF THE
+   IFRAME, so the frame's own scrollHeight can never fall below whatever height the
+   host set, and the host cannot size the frame to its real content. Without it the
+   frame grows to exactly the datasheet's height and the outer page does the
+   scrolling. #}
+<body class="{% if show_env_marker and not embed_mode %}non-production-body{% else %}bg-gray-50{% endif %}{% if not embed_mode %} min-h-screen{% endif %}">
+    {# embed_mode: this page is inside an iframe on another page of this app - the
+       report wizard's per-test steps. The app's own chrome is already on the host
+       page, so rendering it again nests a navbar inside a navbar and an
+       environment banner inside an environment banner. Undefined outside those
+       routes, and undefined is falsy, so every other page is untouched. #}
+    {% if show_env_marker and not embed_mode %}
     <div class="environment-watermark" data-label="{{ env_marker_label }}"></div>
     {% endif %}
 
+    {% if not embed_mode %}
     <!-- Enhanced Navigation -->
     <nav id="mainNavbar"
         class="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-white via-gray-50 to-white shadow-xl border-b border-gray-200/50 backdrop-blur-sm">
@@ -608,8 +619,9 @@
             </div>
         </div>
     </nav>
+    {% endif %}
 
-    {% if show_env_marker %}
+    {% if show_env_marker and not embed_mode %}
     <div id="environmentMarkerBanner" class="fixed left-0 right-0 z-40 px-4 sm:px-6 lg:px-10"
         style="top: calc(var(--main-nav-height, 88px) + 8px);">
         <div class="max-w-[1500px] mx-auto">
@@ -633,7 +645,7 @@
 
     <!-- Main Content -->
     <main class="relative z-10 max-w-[1500px] w-full mx-auto py-6 px-4 sm:px-6 lg:px-10"
-        style="padding-top: calc(var(--main-nav-height, 88px) + var(--env-banner-height, 0px) + var(--layout-top-gap, 24px));">
+        style="padding-top: {% if embed_mode %}12px{% else %}calc(var(--main-nav-height, 88px) + var(--env-banner-height, 0px) + var(--layout-top-gap, 24px)){% endif %};">
         <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -932,7 +944,7 @@
         });
     </script>
 
-    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+    {% if current_user.is_authenticated and current_user.role == 'admin' and not embed_mode %}
     <!-- ============ Ask the Lab Data — floating chatbot (admin) ============ -->
     <style>
       #labai-fab{position:fixed;right:22px;bottom:22px;width:60px;height:60px;border-radius:50%;

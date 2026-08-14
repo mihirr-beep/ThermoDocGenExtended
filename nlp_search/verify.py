@@ -787,19 +787,24 @@ _SQL_STMT_RE = re.compile(
 # Deliberately NOT matching "Note:", which is how the reader's caveat arrives.
 _MACHINERY_LABEL_RE = re.compile(
     r"(?im)(?:^|(?<=[.!?])[ \t])[ \t>*-]*"
-    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route"
-    # Labels the insight primitives print above their own output. A user who
-    # asked whether a unit would pass its next test got a reply opening with
-    # 'IN WORDS (quote this, do not re-count):' - scaffolding meant for the
-    # model, quoted verbatim into a lab's answer.
-    r"|counts?[^\n:]{0,60}|in words[^\n:]{0,60}|analy[sz]ed with"
-    r"|analysis|evidence, not cause"
-    # The model narrating its own process, and the repair narrating itself.
-    # A lab-wide summary otherwise ended: "What I did - Ran analyse_history with
-    # analysis = failure_modes ... The original answer included all relevant
-    # figures and details from the evidence provided."
-    r"|what i did|how i (?:did|got) (?:this|it)|method|approach"
-    r")[ \t]*:?[ \t]*-?[^\n]*")
+    r"(?:sql[^\n:]{0,24}|source|query|statement|tool|route)[ \t]*:[^\n]*")
+
+# The scaffolding the insight primitives print above their own output, matched
+# LITERALLY. An earlier version keyed on "counts", "analysis", "method" and
+# "approach" with the colon optional, which are ordinary lab words in ordinary
+# positions: it reduced "Method: IEC 61000-4-6 was applied for the conducted
+# immunity test" to nothing at all, and would have done the same to any answer
+# opening "Analysis:". A stripper that eats real content is worse than the leak
+# it was added for.
+_INSIGHT_LABEL_RE = re.compile(
+    r"(?im)^[ \t>*-]*(?:"
+    r"in words\b[^\n]*"
+    r"|counts?\b[ \t]*[-–:][ \t]*use these[^\n]*"
+    r"|analy[sz]ed with\b[^\n]*"
+    r"|what i did\b[ \t]*:?[ \t]*$"
+    r"|evidence,? not cause\b[^\n]*"
+    r"|that is the complete list\b[^\n]*"
+    r")")
 
 # Same machinery, written as prose instead of a labelled line.
 _PROCESS_PROSE_RE = re.compile(
@@ -850,6 +855,7 @@ def strip_machinery(text):
     out = _SQL_STMT_RE.sub("", text)
     out = _TOOL_CALL_RE.sub("", out)
     out = _MACHINERY_LABEL_RE.sub("", out)
+    out = _INSIGHT_LABEL_RE.sub("", out)
     out = _PROCESS_PROSE_RE.sub("", out)
     out = _ROWCOUNT_PROSE_RE.sub("", out)
     out = _MISSING_FIELD_RE.sub("", out)

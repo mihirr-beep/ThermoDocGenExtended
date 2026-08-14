@@ -133,7 +133,17 @@ _CROSS_DOMAIN = re.compile(
 _INSIGHT_RE = re.compile(
     r"(?:"
     # --- causal
-    r"\bwhy\b"
+    #
+    # NOT a bare \bwhy\b. That was the first version and it was wrong in the way
+    # that costs most: "why is the LISN overdue for calibration" routed to the
+    # datasheets worker, which cannot see the equipment table at all and would
+    # have answered with an absence rather than saying it needed another domain.
+    # Over-matching is NOT cheap - it hands a question to a worker that is blind
+    # to the tables holding the answer. Under-matching only costs the
+    # orchestrator's extra turns, which is the safe direction.
+    r"\bwhy\b(?=[^?.]{0,60}\b(?:fail|failed|failing|fails|pass|passed|reject|"
+    r"rejected|exceed|exceeded|breach|compliant|criteri|margin|limit|emission|"
+    r"sent back|bounced|result|retest|re-test)\b)"
     r"|what (?:was|went|is) (?:actually )?wrong"
     r"|root cause|underlying (?:cause|reason|issue)"
     r"|\bcaused?\b|what (?:is|was) (?:causing|behind)"
@@ -181,9 +191,29 @@ _INSIGHT_RE = re.compile(
     r")", re.I)
 
 
+# Words that put a question in someone else's domain whatever else it says. A
+# calibration or scheduling question phrased "why..." or "what changed..." is
+# still a calibration or scheduling question, and the datasheets worker cannot
+# see those tables - it would report an absence, which reads as a fact.
+_NOT_INSIGHT_RE = re.compile(
+    r"\b(?:calibration|calibrated|recalibrat\w*|maintenance|overdue|due date|"
+    r"asset|inventory|instrument|instruments|"
+    r"scheduled|schedule|planner|assigned|assignment|workload|"
+    r"logged in|login|password|permission|role)\b", re.I)
+
+
 def is_insight(question):
-    """True when the question is about a product's history rather than its state."""
-    return bool(_INSIGHT_RE.search(question or ""))
+    """True when the question is about a product's test history over time.
+
+    The veto matters more than the match. Sent a question it cannot answer, a
+    worker reports "there are no records", and a reader cannot tell that from
+    "there is nothing to find" - so anything that plainly belongs to equipment
+    or scheduling goes back to the orchestrator, which can reach both.
+    """
+    q = question or ""
+    if _NOT_INSIGHT_RE.search(q):
+        return False
+    return bool(_INSIGHT_RE.search(q))
 
 
 def single_domain(question):

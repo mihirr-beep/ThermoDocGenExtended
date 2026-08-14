@@ -222,6 +222,18 @@ def ce_form(assignment_id):
                     if p and os.path.exists(p)}
     return render_template(
         "datasheet_gen/ce_form.html",
+        # ?view=1 renders the form locked - no action bar, every field
+        # disabled - which is how the report wizard embeds it. A datasheet moves
+        # Draft -> Peer Review -> Approved and the report is built from the
+        # approved document, so the wizard must be able to SHOW this page without
+        # offering an edit that would bypass that pipeline. Absent or any other
+        # value leaves the engineer's form exactly as it was.
+        readonly=(request.args.get("view") == "1"
+                  or request.args.get("readonly") == "1"),
+        # ?embed=1 drops base.html's navbar, environment banner and chat button.
+        # The report wizard shows this page in an iframe, where the host already
+        # has all three - rendering them again put a navbar inside a navbar.
+        embed_mode=(request.args.get("embed") == "1"),
         assignment_id=assignment.id,
         tco_id=assignment.tco_id or "",
         test_name=assignment.test_name or "CE",
