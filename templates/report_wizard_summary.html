@@ -258,7 +258,13 @@
   .rw-badge.rw-warn{background:#fff3e0;color:#b25000}
   .rw-ro{background:#fafbfc}
   .rw-actions{display:flex;gap:10px;align-items:center}
-  .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
+  /* inline-flex, not the default inline: an <a class="rw-btn">'s vertical padding
+     would otherwise overflow its line box and sit on top of the text above it. */
+  .rw-btn{display:inline-flex;align-items:center;justify-content:center;
+    padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;
+    cursor:pointer;font:inherit;font-size:13px;text-decoration:none;color:#1f2933;
+    line-height:1.2;transition:background .15s ease,border-color .15s ease}
+  .rw-btn:hover{background:#f6f8fa;border-color:#b9c2cc}
   .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
   .rw-scroll{overflow-x:auto}
   .rw-table{width:100%;border-collapse:collapse;font-size:13px}
