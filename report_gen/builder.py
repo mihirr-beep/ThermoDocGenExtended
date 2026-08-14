@@ -334,28 +334,63 @@ def _vdips_criteria(form):
     return ", ".join(seen)
 
 
+# What a result may LOOK like, per kind of test. Checked against the eleven
+# datasheet templates, whose RESULT section is the authority:
+#
+#   emission (CE, RE, HARMONIC, VOLTAGEFLICKER)
+#       a sentence - "... from the EUT as per Class {{result_class}} limit:
+#       {{overall_result}}" - so the result is PASS or FAIL. There is no criteria
+#       table on any of the four, and no A/B/C/D anywhere in them. Note
+#       result_class is the CISPR CLASS (A or B), not a performance criterion; it
+#       is the one letter on an emission sheet that must never reach this cell.
+#
+#   immunity (CRF, EFT, ESD, PFMF, RS_RI, SURGE, VOLTAGEDIPS)
+#       a Required / Met Performance Criteria table - A, B, C or D.
+_PASS_FAIL = ("pass", "fail", "incomplete")
+_CRITERION = re.compile(r"^\s*[ABCD](\s*[,/]\s*[ABCD])*\s*$", re.I)
+
+
+def _pass_fail(form, *keys):
+    """The first of ``keys`` holding an actual PASS/FAIL, uppercased."""
+    for key in keys:
+        v = M._val(form, key)
+        if v and v.strip().lower() in _PASS_FAIL:
+            return v.strip().upper()
+    return ""
+
+
 def _verdict(code, form):
-    """The 1.1 summary's Results cell: PASS/FAIL for emissions, the met
-    performance criteria for immunity tests.
+    """The 1.1 summary's Results cell: PASS/FAIL for emission, criterion for immunity.
 
-    The split is on the TEST KIND, not on whichever key happens to be filled.
-    Every immunity datasheet carries both a PASS/FAIL radio and an A/B/C/D
-    select, and both get filled, so reading ``result`` first made 1.1 print PASS
-    for ESD and EFT while their own RESULT tables a few pages later printed A and
-    B. One document, two answers to the same question - and the criterion, which
-    is the whole reason an assessor reads an immunity row, never reached the
-    summary at all.
+    THE VALUE IS ALSO CHECKED FOR SHAPE, not just read from the right key.
+    IEC-EMC-013 carries result='A' on all eleven of its datasheets, the four
+    emission ones included, so 1.1 printed "A" for Conducted Emission, Radiated
+    Emission, Harmonic and Flicker - a performance criterion against tests that
+    have no performance criteria. An emission sheet cannot produce an A, so a
+    letter in that key is not an emission result and is ignored rather than
+    printed.
 
-    Each branch still falls back to the other key: an immunity record saved
-    before the criterion was mandatory prints its PASS rather than an empty cell.
+    An unrecorded result is left EMPTY. The alternative - inferring PASS from the
+    measured margins - would be this report inventing a verdict, and the wizard
+    already lists the field as outstanding.
     """
     if code in REG.IMMUNITY_CODES:
-        v = (M._val(form, "met_performance_criteria") or _vdips_criteria(form)
-             or M._val(form, "overall_result") or M._val(form, "result"))
-    else:
-        v = (M._val(form, "overall_result") or M._val(form, "result")
-             or M._val(form, "met_performance_criteria") or _vdips_criteria(form))
-    return v.upper() if v and v.lower() in ("pass", "fail", "incomplete") else v
+        v = M._val(form, "met_performance_criteria") or _vdips_criteria(form)
+        if v:
+            return v
+        # These sheets carry a PASS/FAIL radio too. It is a weaker answer than the
+        # criterion, but a real one, so it is used when no criterion was recorded.
+        return _pass_fail(form, "overall_result", "result")
+
+    # Emission. overall_result is the field the four templates print.
+    v = _pass_fail(form, "overall_result", "result")
+    if v:
+        return v
+    stray = M._val(form, "result") or M._val(form, "met_performance_criteria")
+    if stray and _CRITERION.match(stray):
+        log.info("1.1 %s: ignoring %r - an emission test has no performance "
+                 "criterion, so the cell is left empty", code, stray)
+    return ""
 
 
 _STANDARD_RANGE = {"CE": "150 kHz - 30 MHz", "RE": "30 MHz - 1 GHz",
