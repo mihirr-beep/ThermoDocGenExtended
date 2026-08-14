@@ -41,7 +41,9 @@
       {{ state.blockers|length }} thing(s) must be fixed first.
     {% elif state.outstanding %}
       <strong>Ready to generate.</strong>
-      {{ state.outstanding|length }} field(s) below will be blank in the document.
+      {{ state.outstanding|length }} field(s) are still empty and will be blank in
+      the document &mdash; fill them on
+      <a href="{{ nav.steps[1].url }}">EUT information</a> if they apply.
     {% else %}
       <strong>Ready to generate.</strong> Everything is filled.
     {% endif %}
@@ -56,48 +58,19 @@
     </fieldset>
   {% endif %}
 
-  <!-- ---------------------------------------------- outstanding -->
-  <fieldset class="rw-group">
-    <legend>
-      Outstanding fields
-      {% if state.outstanding %}({{ state.outstanding|length }}){% else %}(none){% endif %}
-    </legend>
-    {% if state.outstanding %}
-      <p class="rw-help">Nothing here blocks the build. Fill them on
-        <a href="{{ nav.steps[1].url }}">EUT information</a> if they apply.</p>
-      <div class="rw-scroll">
-        <table class="rw-table">
-          <thead><tr><th>Field</th><th>Where it appears in the report</th></tr></thead>
-          <tbody>
-            {% for o in state.outstanding %}
-              <tr><td>{{ o.label }}</td><td class="rw-where">{{ o.location }}</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="rw-help">Every required field is filled.</p>
-    {% endif %}
-
-    {% if state.images %}
+  {# The "Outstanding fields" TABLE that used to sit here is gone. Twenty rows of
+     "EUT length -> 2.1 Size of the EUT" is a list of internal field names against
+     internal destinations, on the page where somebody has already decided to
+     generate. The count and the link to the page that fills them carry the same
+     decision in one line; the EUT page itself already names every one of them
+     beside its own input. #}
+  {% if state.images %}
+    <fieldset class="rw-group">
+      <legend>Images</legend>
       <p class="rw-help">
-        {# The stored FILENAMES were printed here - "66_img_sign_prepared_20260813
-           _115829_sig_a.png" three times over. Nobody recognises a picture by the
-           name the uploader gave it; what they want to know is which slots are
-           filled. #}
-        {{ state.images|length }} image(s) uploaded:
+        {{ state.images|length }} uploaded:
         {% for k in state.images %}{{ image_labels.get(k, k) }}{% if not loop.last %}, {% endif %}{% endfor %}.
       </p>
-    {% endif %}
-  </fieldset>
-
-  <!-- ---------------------------------------------- warnings -->
-  {% if state.warnings %}
-    <fieldset class="rw-group">
-      <legend>Worth knowing before you generate</legend>
-      <ul class="rw-list">
-        {% for w in state.warnings %}<li>{{ w }}</li>{% endfor %}
-      </ul>
     </fieldset>
   {% endif %}
 
