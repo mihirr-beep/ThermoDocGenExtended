@@ -28,6 +28,16 @@ just takes the normal path, and the orchestrator still has find_field.
 """
 import re
 
+from . import schema_catalog as _catalog
+
+# Generated, and generated LATER than this module was written, so read both
+# defensively: a schema_catalog.py produced before the term index existed must
+# degrade routing to the hand-written words, not stop the app booting. See the
+# same guard in probes.py.
+DOMAIN_TERMS = getattr(_catalog, "DOMAIN_TERMS", {})
+TERM_SOURCES = getattr(_catalog, "TERM_SOURCES", {})
+term_weight = getattr(_catalog, "term_weight", lambda _term: 0.0)
+
 SCHEMA = "schema"
 DATA = "data"
 CAPABILITY = "capability"
@@ -100,10 +110,50 @@ _DOMAIN_WORDS = {
 }
 
 # Words that mean the question spans domains whatever else it says.
+#
+# "vs" / "versus" used to be here unconditionally, and that was wrong: most
+# comparisons in this lab are between two VALUES OF ONE COLUMN, not two
+# domains. "How many cables are shielded versus unshielded" is a single GROUP
+# BY over one table, and treating it as cross-domain sent it to the
+# orchestrator, which guessed the equipment inventory and answered "0 and 0"
+# against 29 rows. A comparison only spans domains if the things being compared
+# do - so the words that genuinely signal that are kept, and bare vs/versus is
+# handled below where the two sides can be looked at.
+# `used (on|in|for)` was here too, and it cost more than it saved. It was put in
+# for "was any equipment used on a test out of calibration" - except the
+# inventory slice was deliberately given datasheet_equipment so that ONE worker
+# owns exactly that question (see DOMAINS in build_catalog). So the veto was
+# guarding a case that needs no guarding, while vetoing every ordinary sentence
+# containing the word "used": "what was the coupling method used for the CE
+# test" scores datasheets 4.0 and nothing else, and was sent to the
+# orchestrator for three extra turns.
 _CROSS_DOMAIN = re.compile(
-    r"\bused (?:on|in|for)\b|\bvs\b|\bversus\b|\bcompare\b|\bagainst\b|"
+    r"\bcompare\b|\bagainst\b|"
     r"\bwhich .{0,30}\b(?:and|with)\b.{0,30}\b(?:also|too)\b|"
     r"\bacross\b|\bboth\b|\bas well as\b", re.I)
+
+# Two asks in one sentence: "which jobs are behind, AND WHO is on them". One
+# worker rarely owns both halves, and scoring cannot see the problem because the
+# second half is usually pronouns - "who is on them" contains no schema noun at
+# all, so the first half wins outright and the second is silently dropped.
+#
+# Reusing decompose's two regexes rather than writing a third: they already
+# encode what a second ask looks like here, and they are the ones the splitter
+# would use if NLP_SPLIT were on. Recognising a compound question is worth doing
+# even when we have decided not to split it.
+from .decompose import _QUESTION_WORD as _ASK_RE  # noqa: E402
+from .decompose import _SPLIT_HINT as _JOIN_RE    # noqa: E402
+
+
+def _is_compound(question):
+    q = question or ""
+    return bool(_JOIN_RE.search(q)) and len(_ASK_RE.findall(q)) >= 2
+
+# X vs Y where X and Y are owned by DIFFERENT domains - "requested vs recorded",
+# "scheduled vs filled in". Same word, opposite meaning to the value comparison
+# above, and the difference is which domains the two sides belong to, which the
+# generated term index can answer and a regex cannot.
+_VS_RE = re.compile(r"\b(\w+)\s+(?:vs\.?|versus)\s+(\w+)\b", re.I)
 
 
 # Questions about a product ACROSS its tests. These go straight to the
@@ -164,7 +214,16 @@ _INSIGHT_RE = re.compile(
     r"|improve(?:d|ment|ments)?\b|got (?:better|worse)"
     r"|came down|went down|dropped|reduced by|brought .{0,20}down"
     r"|over (?:time|its tests|the campaigns)|trend"
-    r"|(?:which|what) .{0,30}frequenc"
+    # Was `(?:which|what) .{0,30}frequenc`, which is any question with
+    # "frequency" within thirty characters of what/which. It matched "What
+    # supply voltage and frequency should be tested for job IEC-EMC-004" - a
+    # request-side lookup - and dragged it into the datasheets worker, beating
+    # the correct signal from "job". A frequency question is only an insight
+    # question when it asks which frequency something HAPPENED at, so the
+    # measurement context is now required rather than assumed.
+    r"|(?:which|what) .{0,30}frequenc\w*\s.{0,30}"
+    r"\b(?:peak|peaked|breach|breached|exceed|exceeded|fail|failed|worst|"
+    r"margin|highest|maximum|limit|emission)\b"
     # --- pattern across products
     r"|(?:other|another|any other|different) products?"
     r"|same (?:failure|problem|issue|pattern|reason|cause|mode|thing)"
@@ -216,13 +275,145 @@ def is_insight(question):
     return bool(_INSIGHT_RE.search(q))
 
 
-def single_domain(question):
-    """The one domain that owns this question, or None if it is not clear-cut.
+# --------------------------------------------------------------------------
+# scoring a question against the schema's own vocabulary
+# --------------------------------------------------------------------------
+# _DOMAIN_WORDS above is hand-written, and that was the whole problem: it knew
+# 60-odd words while the schema uses hundreds, so questions phrased in the
+# lab's actual nouns matched NOTHING. "What accessories were declared" scored
+# zero against a schema containing a table called iec_emc_request_accessories.
+# Measured on the four questions that exposed this, three matched no domain
+# word at all and the orchestrator guessed - wrongly, every time.
+#
+# So the generated index is added to the hand list rather than replacing it.
+# That direction matters. The hand list carries phrasing no column name
+# contains - tco, requester, workload, signoff, "in progress" - and a
+# replacement measured 7/12 against the old 8/12, breaking four questions that
+# already worked. A union can only ever add coverage.
+_WORD_RE = re.compile(r"[a-z]{3,}")
 
-    Deliberately strict. Returning None costs a few model calls; returning the
-    wrong domain costs a wrong answer, because a worker cannot see outside its
-    own allowlist and will report an absence rather than a gap.
+# A question needs at least this much evidence before it skips the
+# orchestrator, and must beat the runner-up by this margin. Both are
+# deliberately above "one weak hit": returning None costs a few model calls,
+# returning the wrong domain costs a wrong answer, because a worker cannot see
+# outside its allowlist and reports an absence rather than a gap.
+ROUTE_FLOOR = 1.0
+ROUTE_MARGIN = 0.75
+MAX_ROUTED_CHARS = 220
+
+
+def _term_of(word):
+    """The indexed term this question word refers to, or None.
+
+    People write plurals; column names mostly do not. The index derives `job`
+    from job_number, so "which JOBS are behind" matched nothing at all - while
+    "cables" happened to work only because that table is named plural. One is
+    not more correct than the other, so both directions are tried rather than
+    relying on which spelling the schema author picked.
     """
+    for candidate in (word, word[:-1], word[:-2], word + "s"):
+        if len(candidate) > 2 and candidate in DOMAIN_TERMS:
+            return candidate
+    return None
+
+
+def _spans_domains(question):
+    """True for "X vs Y" where X and Y belong to different workers.
+
+    Decided from the term index, not from the word "vs": two values of one
+    column compared against each other is one query, and the whole point of
+    this function is that the same phrasing means both things.
+    """
+    for left, right in _VS_RE.findall(question or ""):
+        a = set(DOMAIN_TERMS.get(left.lower(), ()))
+        b = set(DOMAIN_TERMS.get(right.lower(), ()))
+        if a and b and not (a & b):
+            return True
+    return False
+
+
+def domain_scores(question):
+    """{domain: score} - how much of this question each worker owns.
+
+    Public because the orchestrator needs it too. When no single domain wins,
+    the ranking is still the best available evidence about where to look, and
+    the orchestrator previously had none: asked to count shielded cables it
+    picked the equipment inventory, which has no cables in it.
+    """
+    q = (question or "").lower()
+    scores = {}
+    for domain, words in _DOMAIN_WORDS.items():
+        for w in words:
+            if re.search(r"\b%s\b" % re.escape(w), q):
+                scores[domain] = scores.get(domain, 0.0) + 1.0
+    seen = set()
+    for word in set(_WORD_RE.findall(q)):
+        term = _term_of(word)
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        weight = term_weight(term)
+        if not weight:
+            continue
+        for domain in DOMAIN_TERMS[term]:
+            scores[domain] = scores.get(domain, 0.0) + weight
+    return scores
+
+
+MAX_HINT_TERMS = 8
+MAX_HINT_PLACES = 3
+
+
+def schema_hint(question):
+    """Where in the schema this question's own words appear, or "".
+
+    For the case single_domain() declines. The orchestrator then has to pick a
+    worker with nothing to go on but tool descriptions, and it picks badly:
+    asked to count shielded cables it chose the equipment inventory, which
+    contains no cables, and reported "0 shielded and 0 unshielded" against 29
+    rows. It was not guessing wildly - "cable" sounds like equipment. It simply
+    had no way to know the word occurs in iec_emc_request_cables.cable_value.
+
+    This is not an instruction about which worker to use. It is the evidence,
+    with the domain that owns each place named, so the choice can be made from
+    the schema rather than from what the words sound like.
+    """
+    q = (question or "").lower()
+    matched, seen = [], set()
+    for word in sorted(set(_WORD_RE.findall(q))):
+        term = _term_of(word)
+        if not term or term in seen or not term_weight(term):
+            continue
+        places = TERM_SOURCES.get(term) or ()
+        if not places:
+            continue
+        seen.add(term)
+        rendered = ["%s%s" % (table, "." + column if column else "")
+                    for table, column in places[:MAX_HINT_PLACES]]
+        matched.append((word, rendered, DOMAIN_TERMS.get(term, ())))
+        if len(matched) >= MAX_HINT_TERMS:
+            break
+    if not matched:
+        return ""
+
+    lines = ["\n## Where this question's words appear in the schema",
+             "Matched by name against the catalog - evidence, not an instruction.",
+             "A word can be recorded somewhere that is not where it sounds like it",
+             "should be, and this is the only way to see that before querying."]
+    for word, places, owners in matched:
+        lines.append("  %-16s %s   [%s]"
+                     % (word, ", ".join(places), "/".join(owners)))
+    ranked = sorted(domain_scores(q).items(), key=lambda kv: -kv[1])[:3]
+    if ranked:
+        lines.append("Weight by domain: %s"
+                     % ", ".join("%s %.1f" % (d, v) for d, v in ranked))
+    lines.append("Dispatch to a worker that OWNS the place the answer is in. If the "
+                 "places span two workers, send a sub-question to each.")
+    return "\n".join(lines) + "\n"
+
+
+def single_domain(question):
+    """The one domain that owns this question, or None if it is not clear-cut."""
     q = (question or "").lower()
     if not q:
         return None
@@ -231,19 +422,93 @@ def single_domain(question):
     # itself, so the datasheets worker can answer the whole thing alone.
     if is_insight(q):
         return "datasheets"
-    if _CROSS_DOMAIN.search(q):
+    if _CROSS_DOMAIN.search(q) or _spans_domains(q) or _is_compound(q):
         return None
-    hits = {}
-    for domain, words in _DOMAIN_WORDS.items():
-        n = sum(1 for w in words if re.search(r"\b%s\b" % re.escape(w), q))
-        if n:
-            hits[domain] = n
-    if len(hits) != 1:
+    if len(q) >= MAX_ROUTED_CHARS:      # long and rambling: let the orchestrator plan
         return None
-    domain, n = next(iter(hits.items()))
-    # "equipment" alone in a long rambling question is not enough signal
-    return domain if n >= 1 and len(q) < 220 else None
+    ranked = sorted(domain_scores(q).items(), key=lambda kv: -kv[1])
+    if not ranked or ranked[0][1] < ROUTE_FLOOR:
+        return None
+    if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < ROUTE_MARGIN:
+        return None
+    return ranked[0][0]
 
+
+# --------------------------------------------------------------------------
+# does the question name anything in particular?
+# --------------------------------------------------------------------------
+# Both the orchestrator prompt and the worker prompt already say "ONLY ask when
+# the user NAMED something and the name is ambiguous". Both were ignored, twice,
+# in one measured run:
+#
+#   "Which products failed the standard, and why?"        -> "do you want only the
+#        latest datasheet per product, or all historical failed datasheets?"
+#   "A datasheet was rejected because a calibration date was missing. What did
+#    the engineer change afterwards?"  -> "please specify the product name"
+#
+# Neither question names anything. The second had already been handed a written
+# redirect by the primitive it reached for. So the instruction is not missing -
+# it is losing, and the fix that works in this package for a losing instruction
+# is to state it against THIS question instead of leaving it in a standing prompt
+# thousands of tokens earlier. Same reasoning as CAUSAL_DIRECTIVE above.
+#
+# Note the second failure mode the old wording did not cover at all: asking
+# about SCOPE ("all or just the latest?") rather than about identity. That is not
+# a name question, so a rule about names never applied to it.
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]{2,}\b")
+_IDENTIFIER_RE = re.compile(r"\b[A-Z]{2,}[-_][A-Z0-9]+[-_]?\d*\b|\b\d{4,}\b")
+# Sentence openers and lab words that are capitalised without naming anything.
+_NOT_A_NAME = frozenset((
+    "which", "what", "who", "when", "where", "how", "why", "does", "did", "are",
+    "there", "the", "this", "that", "any", "all", "and", "for", "was", "were",
+    "have", "has", "give", "show", "list", "tell", "can", "could", "would",
+    "draft", "approved", "rejected", "pass", "passed", "fail", "failed",
+    "peer", "review", "test", "tests", "job", "jobs", "lab", "engineer",
+    "engineers", "datasheet", "datasheets", "equipment", "instrument",
+    "calibration", "maintenance", "standard", "product", "products", "total",
+))
+
+
+def names_something(question):
+    """True when the question names a particular person, job, product or code.
+
+    Deliberately generous about what counts as a name: a false positive here
+    only means the anti-clarification directive is withheld from a question that
+    did not need it, while a false negative injects a "do not ask" instruction
+    into a question where asking WAS the right move.
+    """
+    q = question or ""
+    if _IDENTIFIER_RE.search(q):
+        return True
+    for m in _PROPER_NOUN_RE.finditer(q):
+        if m.group(0).lower() in _NOT_A_NAME:
+            continue
+        if m.start() == 0 or q[:m.start()].rstrip().endswith((".", "?", "!")):
+            continue                       # sentence-initial capital, not a name
+        return True
+    return False
+
+
+NO_NARROWING_DIRECTIVE = """
+## THIS QUESTION NAMES NOTHING SPECIFIC - SO IT IS ABOUT EVERYTHING
+
+There is no person, job, product or code in it to disambiguate. Answer it across
+ALL matching rows and say what you covered. Two things you must not do:
+
+  * Do not ask WHICH one is meant. Nothing was named, so there is nothing to
+    pick between.
+  * Do not ask whether to narrow the SCOPE - "only the latest, or all of them?",
+    "per product or overall?". Choose the widest reading, answer it, and state
+    the reading you used in one clause: "across all nine datasheets, ...". The
+    user can then narrow it themselves, having already got an answer.
+
+If a tool you reached for needs an argument the question did not supply, that is
+not a reason to ask the user - it means you picked the wrong tool. Read what that
+tool told you to call instead, or query the tables directly.
+
+A clarifying question here costs the user a whole round trip and returns nothing
+they did not already know.
+"""
 
 UNDEFINED_DIRECTIVE = """
 ## THE QUESTION USES A TERM THIS DATABASE DOES NOT DEFINE: {terms}

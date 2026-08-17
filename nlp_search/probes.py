@@ -25,8 +25,17 @@ import re
 
 import pymysql
 
+from . import schema_catalog as _catalog
 from .schema_catalog import (ALLOWED_TABLES, COLUMNS, ENUM_VALUES,
                              GRID_COLUMNS, TABLE_PURPOSE)
+
+# schema_catalog.py is GENERATED, so this module can be newer than the catalog
+# checked out beside it. A hard `from .schema_catalog import JSON_KEYS` against
+# a catalog built before JSON profiling existed raises ImportError at import
+# time - which took down the whole Flask app, not just NL search. Read it
+# defensively: no JSON_KEYS means no JSON key hints, which is a degraded
+# feature and not a dead application. Regenerating restores them.
+JSON_KEYS = getattr(_catalog, "JSON_KEYS", {})
 
 MAX_VALUES = 60
 MAX_CANDIDATES = 15
@@ -327,22 +336,56 @@ def resolve_entity(db_params, kind, text, ledger=None, cross_kind=True):
             # a product's testing history, the assistant listed the four jobs it
             # had just found and asked which one was meant - handing back the
             # question as the answer.
+            # The enumeration that used to follow - "if the question is about
+            # the product over time (its history, why it failed, what changed,
+            # whether it improved)" - was the defect, not the fix. It listed the
+            # question types allowed to span jobs, so every question NOT on the
+            # list fell through to "ask which one": a request for the product's
+            # cables got handed back as a clarifying question, twice, in
+            # different words. Enumerating question types cannot work, because
+            # the next phrasing is always missing from the list.
+            #
+            # So the rule is now about the DATA, which is what was actually
+            # measured: these rows are the same thing, therefore there is
+            # nothing to disambiguate, whatever was asked.
             payload["note"] = (
                 "These are %d JOBS ON THE SAME PRODUCT, not %d different "
-                "products - one unit tested more than once. This is a history, "
-                "not an ambiguity: do NOT ask which one is meant. If the "
-                "question is about the product over time (its history, why it "
-                "failed, what changed, whether it improved), ALL of these are "
-                "in scope - hand the product name to the datasheets specialist "
-                "and have it run analyse_history. Only pick a single job if the "
-                "question named one." % (len(cands), len(cands)))
+                "products - one unit tested more than once. There is nothing to "
+                "disambiguate: NEVER ask which one is meant, for any question. "
+                "ALL of these rows are in scope by default - answer across them "
+                "and say which job each fact came from. Narrow to one job only "
+                "if the question itself named a job or a TCO. If the question is "
+                "about the product over time (why it failed, what changed, "
+                "whether it improved), hand the product name to the datasheets "
+                "specialist and have it run analyse_history."
+                % (len(cands), len(cands)))
         elif len(cands) > 1:
             payload["note"] = ("More than one match - use the exact value from the "
                                "candidate you mean, or ask which one.")
         if ledger is not None:
+            # The surrogate `id` is DELIBERATELY excluded from the ledger note.
+            #
+            # Ledger.values() tokenises note text, and unlike a recorded result
+            # set a note carries no column names - so id_only_numbers() cannot
+            # tell that a bare "4" was a primary key and verify accepts any
+            # number equal to it. Asked how many instruments on job
+            # TFS-EMC-2026-002 were out of calibration, the assistant answered
+            # "4 pieces of equipment" having run NO query at all. The request's
+            # id is 4; it arrived in this note; grounding passed it and the UI
+            # badged the reply as checked against the data.
+            #
+            # id_only_numbers already fixed this for recorded rows - see its
+            # docstring, same bug with planner_entries.id 10 and 3 - and the note
+            # path was left open. Nothing is lost: the model still gets the id in
+            # the JSON reply it needs for a follow-up query, and the identifiers a
+            # lab engineer actually says out loud (tco_id, job_number, username)
+            # are still here and still citable.
+            def _citable(cand):
+                return [v for k, v in cand.items() if k != "id"][:3]
+
             ledger.note("resolve", "%s '%s' [%s] -> %d match(es): %s%s" % (
                 kind, text, how, len(cands),
-                "; ".join(str(list(c.values())[:3]) for c in cands[:5]) or "none",
+                "; ".join(str(_citable(c)) for c in cands[:5]) or "none",
                 (" | also matches: %s" % [e["kind"] for e in elsewhere])
                 if elsewhere else ""))
         return json.dumps(payload, ensure_ascii=False)
@@ -401,7 +444,13 @@ _SYNONYMS = {
     "picture": ("images_json", "photo", "img"),
     "signature": ("signature", "signoff"),
     "comment": ("comment", "remarks", "notes"),
-    "reason": ("reason", "comment", "deviation"),
+    # Written when the nearest thing to a reason WAS a free-text field. Both
+    # real columns exist now (datasheet.failure_reason_code, and reason_code on
+    # datasheet_status_history), so pointing "reason" at `deviation` sends a
+    # schema question to a column that means something else - a departure from
+    # the standard's procedure, not why the unit failed. `deviation` is its own
+    # word and still matches on its own.
+    "reason": ("reason_code", "failure_reason_code", "reason", "comment"),
 }
 
 MAX_FIELD_HITS = 25
@@ -461,6 +510,34 @@ def find_field(term, test_code=None):
                 "table_purpose": TABLE_PURPOSE.get(table, ""),
                 "values": list(ENUM_VALUES.get("%s.%s" % (table, col), ())) or None,
             })
+
+    # Keys inside text columns that hold JSON. Without this the honest answer to
+    # "where is the cable length recorded" was "nowhere" - the column is called
+    # cable_value and no name search can reach `length` inside it. Scored the
+    # same way and marked with the path, so the reply is directly usable as SQL
+    # rather than a pointer the model has to guess the syntax for.
+    for ref, profile in JSON_KEYS.items():
+        table, column = ref.split(".", 1)
+        for key, info in (profile.get("keys") or {}).items():
+            hay = key.lower()
+            matched = [t for t in terms if t in hay]
+            if not matched:
+                continue
+            score = len(matched) * 10
+            parts = set(re.findall(r"[a-z]+", hay))
+            score += 5 * sum(1 for t in matched if t in parts)
+            if hay in terms:
+                score += 20
+            if code and code in table.lower():
+                score += 15
+            hits.append({
+                "_score": score, "table": table, "column": column,
+                "json_key": key,
+                "read_with": "JSON_UNQUOTE(JSON_EXTRACT(%s,'$.%s'))" % (column, key),
+                "table_purpose": TABLE_PURPOSE.get(table, ""),
+                "values": list(info.get("values") or ()) or None,
+            })
+
     hits.sort(key=lambda h: (-h["_score"], h["table"], h["column"]))
     best = hits[0]["_score"] if hits else 0
     # keep only what is genuinely competitive with the best match

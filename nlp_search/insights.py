@@ -263,6 +263,14 @@ def metric_delta(conn, tco_before, tco_after, limit=40):
     that helps - stated explicitly because the sign convention of a margin is
     the easiest thing in this whole feature to get backwards.
     """
+    # "of the same product" was in this docstring and enforced nowhere. Across
+    # two products the frequency join can still match - two units measured at
+    # 0.72 MHz - and it would report an "improvement" between unrelated things.
+    # That is worse than config_diff's version of the same bug, because it comes
+    # out as a single confident number rather than a suspicious wall of rows.
+    refusal = _same_product(conn, tco_before, tco_after)
+    if refusal:
+        return refusal
     sql = ("SELECT b.grid_key, b.freq AS frequency_mhz, b.qp AS before_qp, "
            "a.qp AS after_qp, ROUND(b.qp - a.qp, 2) AS improvement_db, "
            "b.margin AS before_margin, a.margin AS after_margin, "
@@ -298,13 +306,19 @@ def modifications_before_pass(conn, product):
     last_fail = before[-1] if before else None
 
     def mods(tco):
+        # DISTINCT because the modification record is per DATASHEET and a job has
+        # one datasheet per test: a job with three tests returned the same two
+        # modifications three times each, and the reply listed six changes where
+        # the engineer made two. The unit is modified once; every test on that
+        # job then records the same state.
         return _rows(conn, """
-            SELECT mo.mod_state, mo.description
+            SELECT DISTINCT mo.mod_state, mo.description
             FROM datasheet_modification mo
             JOIN `datasheet` d ON d.id = mo.datasheet_id
             JOIN planner_entries p ON p.id = d.planner_entry_id
             JOIN iec_emc_requests r ON r.id = p.test_request_id
-            WHERE r.tco_id = %(tco)s ORDER BY mo.row_no
+            WHERE r.tco_id = %(tco)s
+            ORDER BY mo.mod_state, mo.description
         """, tco=tco)
 
     at_pass = mods(passed["tco_id"])
@@ -505,6 +519,43 @@ def _form_of(conn, tco):
         return {}
 
 
+def _same_product(conn, tco_before, tco_after):
+    """"" when the two jobs are the same product, else why they cannot be compared.
+
+    NEITHER cross-campaign primitive checked this, and metric_delta's own
+    docstring says "between two campaigns of the same product". Handed two
+    different products, config_diff answered - at length. Among its "changed"
+    fields were eut_model DEMO-50199002 -> DEMO-50199003 and eut_serial
+    DEMOSN0000302 -> DEMOSN0000303, which is not a unit that was modified, it is
+    two different units. 130 lines followed, every one of them looking like a
+    finding and none of them being one.
+
+    A comparison of two products is not a weaker answer than a comparison of two
+    campaigns. It is a different question, and the reader cannot tell from the
+    output which one they got - so it is refused by name rather than returned.
+    """
+    rows = _rows(conn, """
+        SELECT r.tco_id, r.product_name, r.model_number
+        FROM iec_emc_requests r WHERE r.tco_id IN (%(a)s, %(b)s)
+    """, a=tco_before, b=tco_after)
+    found = {r["tco_id"]: r for r in rows}
+    missing = [t for t in (tco_before, tco_after) if t not in found]
+    if missing:
+        return ("No job with tco_id %s. Check the identifier - a comparison "
+                "needs two real jobs." % " or ".join(repr(m) for m in missing))
+    a, b = found[tco_before], found[tco_after]
+    if (a["product_name"] or "").strip().lower() != (b["product_name"] or "").strip().lower():
+        return (
+            "%s is %s and %s is %s - these are DIFFERENT PRODUCTS, so there is "
+            "nothing to compare between them. This analysis answers 'what "
+            "changed between two tests OF THE SAME UNIT'; across two products "
+            "every field differs and none of the differences mean anything. "
+            "Say that plainly. If you wanted one product's history, call "
+            "timeline with the product name and compare two of ITS tco_ids."
+            % (tco_before, a["product_name"], tco_after, b["product_name"]))
+    return ""
+
+
 def config_diff(conn, tco_before, tco_after):
     """Field-level difference between two campaigns' submitted forms.
 
@@ -512,6 +563,9 @@ def config_diff(conn, tco_before, tco_after):
     and "what changed between the failing test and the passing one" has to
     compare what was actually submitted each time.
     """
+    refusal = _same_product(conn, tco_before, tco_after)
+    if refusal:
+        return refusal
     a, b = _form_of(conn, tco_before), _form_of(conn, tco_after)
     changed, added, removed = [], [], []
     for k in sorted(set(a) | set(b)):
@@ -770,6 +824,18 @@ def run(db_params, name, ledger=None, **kwargs):
         return "The %s analysis failed: %s" % (name, exc)
     finally:
         conn.close()
+
+    # A primitive that returns a STRING is explaining why it cannot answer -
+    # config_diff and metric_delta refuse two different products, and only they
+    # can know that because only they have the connection. Pass it through
+    # untouched: _flatten iterates whatever it is given, so a bare string arrived
+    # at the model one character per line, 380 lines of "D", "E", "M", "O". The
+    # guards written before these lived in run() and never met the renderer,
+    # which is why nothing had tripped over this before.
+    if isinstance(data, str):
+        if ledger is not None:
+            ledger.note("insights", "%s declined: %s" % (name, data[:160]))
+        return data
 
     summary = _summarise(data)
     pairs = _flatten(data) + list(summary.items())

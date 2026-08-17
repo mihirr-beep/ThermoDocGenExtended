@@ -327,6 +327,14 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True):
     # rule thousands of tokens earlier loses to it.
     if intent.asks_for_cause(question):
         blocks = blocks + (intent.CAUSAL_DIRECTIVE,)
+    # A question that names nobody is asking about everything. Both prompts say
+    # so already and both were ignored - measured twice in one run, once as
+    # "which one did you mean" and once as "all of them or just the latest".
+    # Stated against THIS question it stands a chance; left in a standing prompt
+    # it lost. Injected for workers too, since routing now sends more questions
+    # straight to one.
+    if not intent.names_something(question):
+        blocks = blocks + (intent.NO_NARROWING_DIRECTIVE,)
 
     # A question that plainly belongs to one domain goes straight to that
     # worker. The orchestrator's own turns were most of the cost - it spends
@@ -338,6 +346,14 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True):
             agent = workers.build_standalone(domain, db_params, ledger,
                                              extra_blocks=blocks)
             return agent, blocks, undefined
+
+    # No single worker owns it, so the ORCHESTRATOR chooses - and it was
+    # choosing from tool descriptions alone. Asked to count shielded cables it
+    # picked inventory, which holds no cables, and answered 0 against 29 rows.
+    # Hand it the places the question's own words actually occur.
+    hint = intent.schema_hint(question)
+    if hint:
+        blocks = blocks + (hint,)
 
     agent = _build_orchestrator(
         db_params, ledger, kind=kind, undefined=undefined, extra_blocks=blocks,

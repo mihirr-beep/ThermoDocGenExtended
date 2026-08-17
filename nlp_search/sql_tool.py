@@ -75,6 +75,66 @@ def _join_base(sql):
     return m.group(1) if m else None
 
 
+def _is_zero(value):
+    """True for a numeric zero, however the driver typed it. Not for None."""
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return float(value) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _emptiness_note(rows):
+    """What to tell the model when rows came back but hold nothing.
+
+    THE ZERO-ROWS NOTE DOES NOT COVER THIS, and that gap produced the worst
+    answer measured so far. Asked "has the final report been uploaded for job
+    TFS-EMC-2026-002", the model ran a query shaped
+    ``SELECT (SELECT COUNT(*) ...), (SELECT COUNT(*) ...)`` which returned ONE row
+    holding [0, 0]. row_count was 1, so the empty-result warning never fired, the
+    model saw a successful result with data in it, and answered "Yes, the final
+    report has been uploaded." Nothing had been uploaded.
+
+    A row of zeros is not zero rows, and it is the more dangerous of the two
+    precisely because it looks like a result. NULL is a third thing again: it
+    means nobody recorded the value, which is neither zero nor "no" - and this
+    lab has columns in exactly that state (workflow_status NULL on 35 rows,
+    job_number '' on four requests).
+
+    Returned as payload keys so the warning arrives at the moment the mistake
+    would be made, not in a standing prompt thousands of tokens earlier.
+    """
+    cells = [v for row in rows for v in row]
+    if not cells:
+        return {}
+    nulls = sum(1 for v in cells if v is None)
+
+    if nulls == len(cells):
+        return {"note": (
+            "EVERY VALUE CAME BACK NULL. The column exists and is not filled in "
+            "for these rows - nobody has recorded it. NULL is not zero, not 'no' "
+            "and not 'none': report that the value is NOT RECORDED, and do not "
+            "put a number in its place. Name the field that is blank, so someone "
+            "can go and fill it in.")}
+
+    if len(rows) == 1 and all(_is_zero(v) or v is None for v in cells):
+        return {"note": (
+            "THIS RESULT IS ZERO. A zero from COUNT/SUM is not an answer to a "
+            "yes/no question and not proof that nothing happened - it is equally "
+            "consistent with the filter having matched nothing at all. Before "
+            "answering 'yes', 'no' or 'none', confirm the value you filtered on "
+            "exists. If you filtered by a job, check you used the right column: "
+            "tco_id and job_number are DIFFERENT, and a job number used in a "
+            "tco_id filter matches nothing and returns exactly this.")}
+
+    if nulls:
+        return {"nulls": (
+            "%d of %d values are NULL - not recorded, not zero. Say so for those "
+            "rows rather than reporting a blank as a value." % (nulls, len(cells)))}
+    return {}
+
+
 def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
     """Validate + execute one SELECT. Returns a JSON string for the model.
 
@@ -180,6 +240,8 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "all (COUNT(*) WHERE it IS NOT NULL): an entirely empty date column "
                 "means you cannot answer by period, which is not the same as the "
                 "events not having happened.")
+        else:
+            payload.update(_emptiness_note(rows))
         out = json.dumps(payload, ensure_ascii=False, default=str)
 
         # keep the tool result readable: halve rows until it fits, and if a

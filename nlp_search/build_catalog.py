@@ -27,6 +27,7 @@ Three things this does that a naive dump would not:
   a note names the queryable alternative where one exists.
 """
 import io
+import json
 import os
 import re
 import sys
@@ -41,10 +42,13 @@ PURPOSES = {
     "maintenance": "maintenance records for lab equipment",
     "equipment_history": "audit trail of changes to equipment records (who changed what, when)",
     # -- the request / job domain -----------------------------------------
-    "iec_emc_requests": "MASTER EMC test request, one row per TCO/job: product, requester, status, assignment, key dates",
+    "iec_emc_requests": "MASTER EMC test request, one row per TCO/job: product, requester, status, assignment, key dates. is_synthetic=1 marks SEEDED DEMO rows (product names start with DEMO): exclude them unless the question is about the demo corpus, and never quote one as a real job.",
     "iec_emc_request_tests": "one row per EMC test per request (test_code CE/RE/EFT/ESD/SURGE...); is_selected=1 = in scope; per-test workflow status + engineer",
     "iec_emc_request_service_types": "service types requested (per request)",
     "iec_emc_request_serial_numbers": "EUT serial numbers (per request)",
+    "iec_emc_request_additional_models": "extra model numbers covered by the same request (model variance)",
+    "iec_emc_request_test_ce_signal_lines": "signal lines to be tested for Conducted Emission (per requested CE test)",
+    "iec_emc_request_wireless": "wireless interfaces declared on the request; the parent's has_wireless_interface says whether any were",
     "iec_emc_request_categories": "product categories (per request)",
     "iec_emc_request_accessories": "EUT accessories (per request)",
     "iec_emc_request_cables": "EUT cables (per request)",
@@ -69,7 +73,12 @@ PURPOSES = {
     # -- scheduling --------------------------------------------------------
     "planner_entries": "the lab SCHEDULE: one row per scheduled test - engineer, dates, workflow status, peer reviewer, generated .docx path",
     # -- datasheets: what was actually measured ----------------------------
-    "datasheet": "HEADER of every filled datasheet, one row per scheduled test: test code, status, result, conditions, who tested it. START HERE for datasheet questions.",
+    # The identity sentence is here because leaving it out produced an answer
+    # that was right and unusable: asked which datasheets an engineer recorded,
+    # the reply listed three rows all labelled "DEMO-EMC-302" with results D, B
+    # and B - correct data, and no way to tell which test got which. A job has
+    # many datasheets, so tco_id alone does not name one.
+    "datasheet": "HEADER of every filled datasheet, one row per scheduled test: test code, status, result, conditions, who tested it. START HERE for datasheet questions. A ROW IS IDENTIFIED BY tco_id AND test_code TOGETHER - one job has one datasheet per test, so tco_id alone names a job, not a datasheet. Always print test_code when you list or compare datasheets, or the rows cannot be told apart.",
     "datasheet_ce": "Conducted Emission datasheet: the values RECORDED for that test",
     "datasheet_re": "Radiated Emission datasheet: the values RECORDED",
     "datasheet_esd": "ESD datasheet: the values RECORDED",
@@ -93,6 +102,16 @@ PURPOSES = {
     "datasheet_records": "the RAW saved form behind each datasheet (draft or submitted). Prefer the `datasheet` tables above - this one stores the form as JSON.",
     "datasheet_fixed_values": "admin-editable fixed values (uncertainty, SOP refs, limits) per datasheet type",
     "basic_standard_map": "admin mapping: product standard -> basic standard used by datasheets",
+    # -- reason taxonomy ---------------------------------------------------
+    # A lookup table, not lab data, but the ONLY place the vocabulary lives.
+    # Two families that must never be mixed: family='test_failure' is an
+    # engineering fact about the UNIT (joins datasheet.failure_reason_code);
+    # family='review_rejection' is a quality finding about the RECORD (joins
+    # datasheet_status_history.reason_code). A cohort query that matched an
+    # emission failure against a missing-signature finding would be noise.
+    "emc_reason_code": "the lab's REASON CODE vocabulary. family='test_failure' -> why a UNIT failed the standard (join datasheet.failure_reason_code); family='review_rejection' -> why a RECORD was sent back in peer review (join datasheet_status_history.reason_code). Never mix the two families in one grouping. This table is also what tells you a code the user named is not real.",
+    # -- report wizard -----------------------------------------------------
+    "report_draft": "part-written test reports in the report wizard, one row per request; page_reached says how far the author got. The FINISHED report is planner_entries.report_file_path, not here.",
 }
 
 # Dead or trap tables: never offered to the model, whatever they contain.
@@ -123,7 +142,18 @@ EXCLUDE_PREFIXES = ("datasheet_rev_",)
 # Kept even at zero rows. For these, "the table is there and it is empty" is a
 # real answer - EFT simply has not been run yet, no datasheet has been rejected
 # yet. Dropping them would leave the model with no way to say that.
-KEEP_EMPTY_PREFIXES = ("datasheet",)
+#
+# `iec_emc_request` is here for a second reason as well as that one. The rule
+# below drops any table that is empty AT BUILD TIME, and these child tables
+# empty and refill as jobs come and go: iec_emc_request_serial_numbers held a
+# row when the catalog was last generated and holds none now, so a plain
+# regeneration would have SILENTLY REMOVED a table the model can currently
+# query. A catalog that shrinks whenever a list happens to be empty is not a
+# description of the schema, it is a snapshot of one afternoon's data.
+KEEP_EMPTY_PREFIXES = ("datasheet", "iec_emc_request")
+
+# Same rule, by exact name, for tables with no useful shared prefix.
+KEEP_EMPTY = frozenset(("report_draft",))
 
 # The tables a domain touches on almost every question. These keep their full
 # column list in the prompt; everything else is one index line plus a
@@ -174,7 +204,13 @@ DOMAINS = {
         # substituted "engineers with an active planner entry" and presented
         # the result as though it had answered. That named a fourth engineer
         # who has no unfilled test at all.
-        "tables": ["planner_entries", "users", "iec_emc_requests", "datasheet"],
+        # report_draft sits here rather than in requests because the question it
+        # answers - "which reports are still being written" - is only meaningful
+        # next to planner_entries.report_file_path, which is where a FINISHED
+        # report lands. Split across two workers, neither can tell half-written
+        # from done.
+        "tables": ["planner_entries", "users", "iec_emc_requests", "datasheet",
+                   "report_draft"],
     },
     "datasheets": {
         "title": "filled datasheets and measured results",
@@ -185,8 +221,14 @@ DOMAINS = {
         # tco_id, job_number, product_name and eut_class, and that table is the
         # single biggest block of catalog text. A question that genuinely needs
         # request detail is a cross-domain question - the orchestrator's job.
+        # emc_reason_code is 16 rows of vocabulary and the join target for both
+        # datasheet.failure_reason_code and datasheet_status_history.reason_code.
+        # Left out of the catalog it was worse than absent: insights.py queries
+        # it on its own connection and works, so the numbers a worker was shown
+        # referenced codes whose meaning it could not look up - and any worker
+        # writing that join had it REJECTED by sql_guard for an unlisted table.
         "tables": ["datasheet", "datasheet_*", "basic_standard_map",
-                   "planner_entries", "users"],
+                   "emc_reason_code", "planner_entries", "users"],
     },
     "inventory": {
         "title": "equipment and calibration",
@@ -201,6 +243,113 @@ DOMAINS = {
                    "datasheet_equipment"],
     },
 }
+
+# --------------------------------------------------------------------------
+# Which worker OWNS a table, as opposed to merely being able to see it
+# --------------------------------------------------------------------------
+# DOMAINS above lists join partners as well as subjects: `datasheet` is in three
+# slices so requests and schedule can answer "asked for versus delivered", and
+# `users` is in all four because every table joins to it. That breadth is
+# deliberate and says nothing about which worker a QUESTION belongs to.
+#
+# Getting this wrong is not theoretical - it is the first thing I measured. A
+# router that weighted each term by how many slices contain its table concluded
+# that "datasheet", the most diagnostic word in the whole schema, was noise
+# (three slices), and stopped routing "how many CE datasheets does X have" to
+# the datasheets worker. Ownership is the signal; visibility is not.
+#
+# Longest prefix wins, so datasheet_equipment belongs to datasheets even though
+# inventory can also see it.
+TABLE_OWNER_PREFIXES = (
+    ("requests", ("iec_emc_request",)),
+    ("datasheets", ("datasheet", "basic_standard_map", "emc_reason_code")),
+    ("inventory", ("equipment", "maintenance")),
+    ("schedule", ("planner_entries", "report_draft")),
+)
+
+# Genuinely shared, with no owner. A term that appears ONLY here - username,
+# email, role - cannot route anything, and pretending it can would send every
+# question mentioning a person to whichever domain happened to sort first.
+UNOWNED_TABLES = ("users",)
+
+
+def table_owner(name):
+    """The one domain a table belongs to, or None when it is shared spine."""
+    if name in UNOWNED_TABLES:
+        return None
+    best, best_len = None, -1
+    for domain, prefixes in TABLE_OWNER_PREFIXES:
+        for prefix in prefixes:
+            if name.startswith(prefix) and len(prefix) > best_len:
+                best, best_len = domain, len(prefix)
+    return best
+
+
+# Identifier fragments that carry no routing signal wherever they appear:
+# plumbing, timestamps, and the two schema-wide prefixes. Everything else earns
+# its place by being discriminative, which is measured rather than judged.
+_TERM_STOP = frozenset((
+    "iec", "emc", "req", "row", "col", "key", "label", "sort", "order", "num",
+    "created", "updated", "modified", "legacy", "custom", "value", "values",
+    "text", "json", "data", "info", "name", "names", "code", "codes", "type",
+    "types", "count", "total", "min", "max", "new", "old", "other", "others",
+    "sections", "and", "the", "for", "with", "per", "one", "two", "all", "any",
+))
+_TERM_SPLIT = re.compile(r"[^A-Za-z]+")
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+# Below this a term is spread over too many domains to mean anything.
+TERM_MIN_WEIGHT = 0.34
+
+
+def _term_words(identifier):
+    """cableName -> {cable}; ac_voltage_range -> {voltage, range}."""
+    spaced = _CAMEL.sub(" ", str(identifier or ""))
+    return {w for w in _TERM_SPLIT.split(spaced.lower())
+            if len(w) > 2 and w not in _TERM_STOP}
+
+
+def build_domain_terms(tables):
+    """{term: (owning domain, ...)} from the schema's own vocabulary.
+
+    Table names, column names, JSON keys and enum values are the words this
+    lab's data actually uses. Hand-listing routing vocabulary meant the router
+    knew none of them: `iec_emc_request_accessories` is a table, and "what
+    accessories were declared" matched nothing at all.
+    """
+    owners, sources = {}, {}
+    for t in tables:
+        owner = table_owner(t["name"])
+        if not owner:
+            continue
+        # (word -> the column it came from) so a match can name its evidence,
+        # not just its domain. The table name itself contributes no column.
+        found = {}
+        for w in _term_words(t["name"]):
+            found.setdefault(w, None)
+        for c, _typ, _k in t["cols"]:
+            if _HIDDEN_COLUMN.search(c):
+                continue
+            for w in _term_words(c):
+                found.setdefault(w, c)
+        for column, profile in (t.get("json") or {}).items():
+            for k in profile["keys"]:
+                for w in _term_words(k):
+                    found.setdefault(w, "%s->$.%s" % (column, k))
+        for c, vals in t["enums"].items():
+            for v in vals:
+                for w in _term_words(v):
+                    found.setdefault(w, c)
+        for w, col in found.items():
+            owners.setdefault(w, set()).add(owner)
+            sources.setdefault(w, []).append((t["name"], col))
+    return ({w: tuple(sorted(d)) for w, d in sorted(owners.items())},
+            {w: tuple(s[:TERM_MAX_SOURCES]) for w, s in sorted(sources.items())})
+
+
+# How many table/column pairs to remember per term. The hint block names a few
+# concrete places to look; a term that occurs in twenty columns is not a hint.
+TERM_MAX_SOURCES = 4
+
 
 # Tables where a MISSING CHILD ROW MEANS "NOBODY RECORDED IT" - a gap - as
 # opposed to "this does not apply here".
@@ -228,9 +377,40 @@ COVERAGE_EXPECTED = {
 # Below this fraction of the parent, say so in the catalog.
 COVERAGE_THRESHOLD = 0.95
 
+# Joins made on a TEXT VALUE instead of an id, where the value is not unique on
+# either side. {child: (child column, parent, parent column)}.
+#
+# datasheet_equipment records what the engineer TYPED, so there is no id to join
+# on, and RELATIONSHIPS has always warned the name is not unique. What it could
+# not say is what that costs, and the cost is not the join failing - it is the
+# join SUCCEEDING with too many rows. Measured on this database: "BNC Cable"
+# matches 2 inventory rows AND appears twice on a datasheet, so one real usage
+# becomes 8 joined rows. Asked which instruments were used while out of
+# calibration, the assistant answered "two tests" against a true 8.
+#
+# Measured rather than described, because the numbers are the whole warning and a
+# hand-written note would go stale the moment someone fixes a duplicate name.
+#
+# Serial number is NOT the better key here and was checked before recommending
+# anything: matching on serial_no covers 12 of 26 rows at 2.67x fan-out against
+# name's 24 of 26 at 1.17x. The name is the best key available; the fix is to
+# count distinctly, not to join differently.
+TEXT_JOINS = {
+    "datasheet_equipment": ("equipment_name", "equipment", "name"),
+}
+
 _ENUMISH = re.compile(
     r"status|type|code|role|mode|class|result|state|level|category|active|"
-    r"verdict|decision|^value$|grid_key|col_key|priority", re.I)
+    r"verdict|decision|^value$|grid_key|col_key|priority|family", re.I)
+
+# How many distinct values still count as a vocabulary worth listing.
+#
+# Was 15, which silently swallowed the one column where the list matters most:
+# emc_reason_code.code has exactly SIXTEEN codes, so the taxonomy table went
+# into the prompt with no taxonomy in it. Measured against this database, 20
+# admits that column and nothing else - the next enum-ish column up has 12
+# values, so this is not a slope.
+MAX_ENUM_VALUES = 20
 
 # Credential-ish columns: omitted from the catalog entirely. sql_guard blocks
 # them at validation time too - this just keeps them out of the model's sight.
@@ -250,6 +430,20 @@ _RECORDS_NOTE = ("form_json / images_json hold the raw form and are not selectab
                  "here. The same values are normalised into `datasheet` and its "
                  "per-test tables - use those.")
 
+# A hidden *_json column is one of TWO different things and they need
+# different notes. Grid columns (obs_*_json, *_rows_json, *_measurements_json)
+# hold a measurement matrix that IS also normalised into datasheet_measurement.
+# Blob columns hold a whole saved form and are normalised nowhere. Keying the
+# note on "ends with _json" conflated them, and told the report wizard's draft
+# store to go look for its rows in datasheet_measurement. Same split as
+# probes._NOT_A_GRID, for the same reason.
+_BLOB_COLUMNS = frozenset(("form_json", "images_json", "values_json"))
+
+_BLOB_NOTE = ("form_json / images_json hold the whole saved form as one raw "
+              "blob and are not selectable here. Nothing inside them is "
+              "reachable from SQL: answer from the scalar columns on this "
+              "table, or say the value is not recorded in queryable form.")
+
 _OBS_NOTE = ("the *_json columns hold this test's grids with their own labels "
              "and block structure. You do NOT have to parse them: every cell is "
              "also a row in datasheet_measurement (numbers, with value_num for "
@@ -259,6 +453,32 @@ _OBS_NOTE = ("the *_json columns hold this test's grids with their own labels "
 
 _GLOSSARY = """How lab vocabulary maps to this schema (read this before writing SQL):
 - "job" / "TCO" / "project" / "request"  -> iec_emc_requests (tco_id, job_number)
+
+TCO_ID AND JOB_NUMBER ARE DIFFERENT COLUMNS AND USERS SAY BOTH. The application
+labels a field "Job Number" and shows TFS-EMC-2026-002, so that is what a user
+types; tco_id is the other one and looks like IEC-EMC-004. They are NOT
+interchangeable and one is not a prefix of the other:
+
+      tco_id      IEC-EMC-004        (also DEMO-EMC-3xx for seeded demo rows)
+      job_number  TFS-EMC-2026-002   (also DEMO-JOB-3xx)
+
+Decide which column the identifier belongs to by its SHAPE before you filter on
+it. A job number used in a tco_id filter matches nothing, returns zero, and looks
+exactly like a real absence - asked whether the final report was uploaded for job
+TFS-EMC-2026-002, the assistant filtered datasheet.tco_id by it, got 0 and
+answered "Yes, it has been uploaded". A job number can be resolved to its tco_id
+with resolve_entity(kind='job'), and both are worth showing in an answer.
+
+- "final report" / "the report" / "report uploaded" -> planner_entries.report_file_path
+  (with report_uploaded_at / report_uploaded_by / report_comments). This is the
+  Word document produced AFTER the datasheets are approved and is a DIFFERENT
+  thing from a datasheet: the application has an "Upload Final Report" button for
+  it. A report question is answered from planner_entries, never by counting
+  `datasheet` rows - a job with no datasheets recorded is not a job with a report.
+- "datasheet uploaded" (planner_entries.status) -> a FILE was attached, which is
+  NOT the same as the form having been filled in. Two of the eight entries in that
+  status have a file and no `datasheet` row at all, so "the datasheet is done"
+  and "the datasheet is recorded and queryable" are different claims.
 - "EUT" / "product" / "unit under test"  -> iec_emc_requests.product_name / model_number
 - "test" in the sense of WHAT WAS ASKED   -> iec_emc_request_tests (+ iec_emc_request_test_* detail)
 - "test" in the sense of WHAT WAS RUN     -> planner_entries (schedule) and `datasheet` (result)
@@ -290,7 +510,25 @@ of the eleven test types (28 rows) and nothing looks broken:
 
 RS_INTERIM exists on requests only and has no datasheet counterpart. When
 joining requests to schedule or datasheets, normalise both sides - upper-case,
-replace spaces with underscores, and map the four names above."""
+replace spaces with underscores, and map the four names above.
+
+SOME TEXT COLUMNS HOLD JSON. The type says `text` and the name gives no hint,
+but the value is one object per row - a cable is {cableName, length,
+powerSignal, shielded, purpose}. Any table whose entry below has an "X is
+JSON, not text" line works this way, and the keys are listed there.
+
+Read a key as a normal column and everything else follows - WHERE, GROUP BY,
+ORDER BY, COUNT all work on the extracted value:
+
+    SELECT JSON_UNQUOTE(JSON_EXTRACT(cable_value,'$.cableName')) AS cable_name,
+           JSON_UNQUOTE(JSON_EXTRACT(cable_value,'$.powerSignal')) AS kind
+    FROM iec_emc_request_cables WHERE request_id = 4
+
+Three rules. Never SELECT the raw column - it returns the whole object and the
+user gets punctuation instead of an answer. Never invent a key that is not
+listed; JSON_EXTRACT on a missing key returns NULL, which reads exactly like a
+recorded blank. And JSON_TABLE is not available to you - extract the keys you
+need one at a time."""
 
 _JOIN_HINTS = """Core relationships (use these joins):
 - iec_emc_requests is the MASTER request, one row per TCO / job_number. Every
@@ -344,7 +582,8 @@ def introspect(conn, database):
         rows = cur.fetchone()[0]
         if name.startswith(EXCLUDE_PREFIXES):
             continue
-        if rows == 0 and not name.startswith(KEEP_EMPTY_PREFIXES):
+        if rows == 0 and not name.startswith(KEEP_EMPTY_PREFIXES) \
+                and name not in KEEP_EMPTY:
             continue
         cur.execute(
             "SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY FROM information_schema.COLUMNS "
@@ -406,15 +645,164 @@ def introspect(conn, database):
                 continue
             if not (t.startswith("varchar") or t.startswith("enum") or t.startswith("char")):
                 continue
-            cur.execute("SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL LIMIT 16"
-                        % (c, name, c))
+            cur.execute("SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL LIMIT %d"
+                        % (c, name, c, MAX_ENUM_VALUES + 1))
             vals = [str(r[0]) for r in cur.fetchall()]
-            if 0 < len(vals) <= 15:
+            if 0 < len(vals) <= MAX_ENUM_VALUES:
                 enums[c] = sorted(vals)
+
+        # How badly does this table's text join multiply? See TEXT_JOINS.
+        fanout = None
+        spec = TEXT_JOINS.get(name)
+        if spec:
+            ccol, ptable, pcol = spec
+            try:
+                cur.execute("SELECT COUNT(*) FROM `%s`" % name)
+                src = cur.fetchone()[0]
+                cur.execute(
+                    "SELECT COUNT(*), COUNT(DISTINCT c.id) FROM `%s` c JOIN `%s` p "
+                    "ON p.`%s` = c.`%s`" % (name, ptable, pcol, ccol))
+                joined, matched = cur.fetchone()
+                cur.execute(
+                    "SELECT c.`%s`, COUNT(*) FROM `%s` c JOIN `%s` p ON p.`%s` = c.`%s` "
+                    "GROUP BY c.`%s` HAVING COUNT(*) > COUNT(DISTINCT c.id) "
+                    "ORDER BY COUNT(*) DESC LIMIT 3"
+                    % (ccol, name, ptable, pcol, ccol, ccol))
+                worst = [(r[0], r[1]) for r in cur.fetchall()]
+                if src and joined and matched and joined > matched:
+                    fanout = (matched, src, joined, ptable, pcol, worst)
+            except Exception:  # noqa: BLE001 - a note is never worth failing over
+                pass
+
+        json_cols = {}
+        for c, t, _k in cols:
+            if _HIDDEN_COLUMN.search(c) or _LARGE_COLUMN.match(c):
+                continue
+            if not (t.startswith("varchar") or t.startswith("text")
+                    or t.startswith("json") or t.startswith("char")):
+                continue
+            profile = _json_profile(cur, name, c)
+            if profile:
+                json_cols[c] = profile
+
         tables.append({"name": name, "rows": rows, "cols": cols,
                        "fks": fks, "enums": enums, "coverage": coverage,
+                       "json": json_cols, "fanout": fanout,
                        "domains": _domains_for(name)})
     return tables
+
+
+# --------------------------------------------------------------------------
+# JSON hidden inside a text column
+# --------------------------------------------------------------------------
+# The lab's request forms store repeating structures as one JSON object per
+# row - a cable is {cableName, length, powerSignal, shielded, purpose}. The
+# column is declared `text`, so NOTHING about the schema says it is JSON:
+# information_schema reports varchar/text, and the name gives no hint either
+# (`cable_value`, `custom_spec`, `value_text`). The catalog therefore described
+# 16 structured columns as flat strings.
+#
+# What that costs is not a syntax error, it is a plausible wrong answer. Asked
+# for cable information the model selects `cable_value` and gets a JSON blob it
+# must read in prose; asked how many cables are shielded it cannot filter at
+# all, because `WHERE shielded = 'Shielded'` names a column that does not
+# exist. Neither failure looks like a failure.
+#
+# So the shape is MEASURED from the rows, not guessed from the type or the
+# name, and re-measured on every build. Detection is deliberately by content:
+# sample the column, and if half of what is there parses as a JSON object or
+# array, it is a JSON column whatever the DDL claims.
+JSON_SAMPLE_ROWS = 40
+# Above this many keys the object is a whole saved form, not a record: naming
+# 129 keys would cost more prompt than the table is worth and the useful values
+# are normalised elsewhere anyway. Those keep the blob note instead.
+JSON_MAX_KEYS = 12
+# Per key, the same "is this a vocabulary" test the column enums get.
+JSON_MAX_KEY_VALUES = 6
+JSON_MAX_VALUE_LEN = 40
+
+
+def _json_profile(cur, table, column):
+    """{key: {"values": [...], "nested": bool}} for a text column holding JSON,
+    or None when the column is not JSON / is too wide to describe.
+
+    Also returns None for an EMPTY column: with no rows there is nothing to
+    measure, and inventing a key list would be exactly the kind of unverified
+    schema claim this module exists to avoid.
+    """
+    try:
+        # ORDER BY so the sample - and therefore the key value lists this emits
+        # into a COMMITTED file - is reproducible. Without it MySQL is free to
+        # return any 40 rows, so two builds of an unchanged database could
+        # produce different catalogs and a diff nobody could explain.
+        cur.execute("SELECT `%s` FROM `%s` WHERE `%s` IS NOT NULL AND `%s` <> '' "
+                    "ORDER BY `%s` LIMIT %d"
+                    % (column, table, column, column, column, JSON_SAMPLE_ROWS))
+        raw = [r[0] for r in cur.fetchall()]
+    except Exception:  # noqa: BLE001 - a note is never worth failing the build
+        return None
+    if not raw:
+        return None
+
+    objects, looked_like_json = [], 0
+    for value in raw:
+        text = value if isinstance(value, str) else str(value)
+        if text.lstrip()[:1] not in ("{", "["):
+            continue
+        looked_like_json += 1
+        try:
+            objects.append(json.loads(text))
+        except (ValueError, TypeError):
+            pass
+    # Half, not all: one hand-edited row must not hide the other thirty-nine.
+    if not objects or looked_like_json * 2 < len(raw):
+        return None
+
+    keys, is_list = {}, False
+    for obj in objects:
+        items = obj if isinstance(obj, list) else [obj]
+        is_list = is_list or isinstance(obj, list)
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for k, v in item.items():
+                bucket = keys.setdefault(k, {"values": set(), "nested": False})
+                if isinstance(v, (dict, list)):
+                    bucket["nested"] = True
+                    continue
+                text = str(v).strip()
+                if text and len(text) <= JSON_MAX_VALUE_LEN:
+                    bucket["values"].add(text)
+    if not keys or len(keys) > JSON_MAX_KEYS:
+        return None
+
+    out = {}
+    for k, bucket in keys.items():
+        values = sorted(bucket["values"])
+        out[k] = {"values": tuple(values) if len(values) <= JSON_MAX_KEY_VALUES else (),
+                  "example": values[0] if values else "",
+                  "nested": bucket["nested"]}
+    return {"is_list": is_list, "keys": out}
+
+
+def render_json_block(t):
+    """The lines describing this table's JSON columns, keys first."""
+    lines = []
+    for column, profile in sorted((t.get("json") or {}).items()):
+        lines.append("  %s is JSON, not text%s. Keys:"
+                     % (column, " (a LIST of these objects)" if profile["is_list"] else ""))
+        for key in sorted(profile["keys"]):
+            info = profile["keys"][key]
+            if info["nested"]:
+                lines.append("    %s - a nested object/array, read it whole" % key)
+            elif info["values"]:
+                lines.append("    %s - values: %s"
+                             % (key, ", ".join("'%s'" % v for v in info["values"])))
+            elif info["example"]:
+                lines.append("    %s - e.g. '%s'" % (key, info["example"]))
+            else:
+                lines.append("    %s" % key)
+    return lines
 
 
 def visible_columns(t):
@@ -440,12 +828,25 @@ def render_table_text(t):
             piece += " ->%s.%s" % t["fks"][c]
         parts.append(piece)
     lines.append("  columns: " + "; ".join(parts))
+    lines.extend(render_json_block(t))
     hidden = [c for c, _t, _k in t["cols"] if _LARGE_COLUMN.match(c)]
     if hidden:
-        if t["name"] == "datasheet_records":
-            lines.append("  note: %s" % _RECORDS_NOTE)
-        elif any(h.endswith("_json") for h in hidden):
+        grids = [h for h in hidden
+                 if h.endswith("_json") and h not in _BLOB_COLUMNS]
+        if grids:
             lines.append("  note: %s" % _OBS_NOTE)
+        elif t["name"] == "datasheet_records":
+            lines.append("  note: %s" % _RECORDS_NOTE)
+        elif any(h in _BLOB_COLUMNS for h in hidden):
+            lines.append("  note: %s" % _BLOB_NOTE)
+        else:
+            # Everything else large: block diagrams, signatures, the
+            # equipment_history old/new value dumps. These got NO note at all,
+            # so the model saw a column list with holes in it and no way to
+            # know a hole was deliberate rather than a gap in the data.
+            lines.append("  note: these columns exist but are too large to "
+                         "return and are not selectable here: %s."
+                         % ", ".join(sorted(hidden)))
     for col, (have, total, ptable, jobs) in sorted(t.get("coverage", {}).items()):
         note = ("  PARTIAL COVERAGE: only %d of %d %s rows have any row here "
                 "(%.0f%%)" % (have, total, ptable, 100.0 * have / total))
@@ -456,6 +857,18 @@ def render_table_text(t):
                  "describes THAT SUBSET only. SAY SO when you report one - "
                  "otherwise it reads as though it covered the whole lab.")
         lines.append(note)
+    if t.get("fanout"):
+        matched, src, joined, ptable, pcol, worst = t["fanout"]
+        examples = ", ".join("'%s' -> %d rows" % (v, n) for v, n in worst)
+        lines.append(
+            "  THIS JOIN MULTIPLIES ROWS: joining to `%s` ON %s matches %d of %d "
+            "rows here but returns %d, because the text is not unique on either "
+            "side (%s). COUNT(*) over that join is therefore WRONG - it counts "
+            "duplicates. Use COUNT(DISTINCT %s.id) for usages, or "
+            "COUNT(DISTINCT %s.datasheet_id) for datasheets, and never SUM over "
+            "it. Matching on serial_no instead is worse, not better: it covers "
+            "fewer rows and multiplies more."
+            % (ptable, pcol, matched, src, joined, examples, t["name"], t["name"]))
     for c, vals in sorted(t["enums"].items()):
         lines.append("  %s values: %s" % (c, ", ".join("'%s'" % v for v in vals)))
     return "\n".join(lines)
@@ -499,6 +912,50 @@ ENUM_VALUES = %(enums)r
 # selecting them blows the size budget - but the data is the substance of a
 # datasheet, so probes.read_grid() reaches them through this map instead.
 GRID_COLUMNS = %(grids)r
+
+# Structure inside text columns that hold JSON, measured from the rows rather
+# than read off the DDL (which says `text` and gives no hint). Keyed
+# "table.column" -> {"is_list": bool, "keys": {key: {values, example, nested}}}.
+# probes.find_field reads this so "where is the cable length recorded" can
+# answer with a JSON path instead of missing the column entirely.
+JSON_KEYS = %(json_keys)r
+
+
+# The schema's own vocabulary, for routing a question to the worker that can
+# actually see the tables it is about. {term: (owning domain, ...)} - a term
+# owned by one domain is a strong signal, one owned by three is noise.
+# intent.single_domain() scores against this; see TABLE_OWNER_PREFIXES in
+# build_catalog for why ownership and not slice membership.
+DOMAIN_TERMS = %(domain_terms)r
+
+# Where each term actually came from: ((table, column or JSON path), ...). Lets
+# a router explain itself - "cables matched iec_emc_request_cables.cable_value"
+# - instead of only naming a worker.
+TERM_SOURCES = %(term_sources)r
+
+# What a term is worth: full marks when one domain owns it, half when two.
+TERM_MIN_WEIGHT = %(term_min_weight)r
+
+
+def term_weight(term):
+    """0.0 when the term says nothing about which worker owns the question."""
+    owners = DOMAIN_TERMS.get(term)
+    if not owners:
+        return 0.0
+    weight = 1.0 / len(owners)
+    return weight if weight >= TERM_MIN_WEIGHT else 0.0
+
+
+def json_paths_for(table, column=None):
+    """[(column, key), ...] this table records inside JSON. For find_field."""
+    out = []
+    for ref, profile in JSON_KEYS.items():
+        tbl, col = ref.split(".", 1)
+        if tbl != table or (column and col != column):
+            continue
+        out.extend((col, k) for k in sorted(profile.get("keys") or {}))
+    return out
+
 
 # Every column the model is permitted to see, per table. Anything not listed
 # is either a credential or a blob deliberately kept out of reach.
@@ -588,6 +1045,11 @@ def columns_for(table):
                     for t in tables},
        "enums": {"%s.%s" % (t["name"], c): tuple(v)
                  for t in tables for c, v in t["enums"].items()},
+       "json_keys": {"%s.%s" % (t["name"], c): p
+                     for t in tables for c, p in (t.get("json") or {}).items()},
+       "domain_terms": build_domain_terms(tables)[0],
+       "term_sources": build_domain_terms(tables)[1],
+       "term_min_weight": TERM_MIN_WEIGHT,
        "grids": {t["name"]: tuple(c for c, _ty, _k in t["cols"]
                                   if c.endswith("_json")
                                   and c not in ("images_json", "form_json",

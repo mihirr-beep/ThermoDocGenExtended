@@ -44,6 +44,13 @@ _REPAIRS = (
     ("datasheet_gen.projection_schema", "ensure_projection_tables"),
     ("datasheet_gen.records", "ensure_datasheet_record_tables"),
     ("datasheet_gen.fixed_store", "ensure_config_tables"),
+    # emc_reason_code and the two reason_code columns. Missed when the taxonomy
+    # landed: the catalog is generated from a database that already has the
+    # table, so a fresh one would pass the build and fail at query time - the
+    # exact "looks broken rather than unconfigured" failure this module exists
+    # to prevent.
+    ("datasheet_gen.insight_schema", "ensure_insight_schema"),
+    ("report_gen.draft", "ensure_report_draft_table"),
 )
 
 
