@@ -684,6 +684,26 @@
         Peer review <strong>approved</strong>. You can now generate the final datasheet.
       </div>
       {% endif %}
+      {# Why the UNIT failed the standard, as a code the lab can count. Lives in
+         the template rather than in the ten schema JSONs because it is not a
+         per-test concept - any test can fail - and ten copies would drift.
+         The projection maps it to datasheet.failure_reason_code with no code
+         change, because the header loop writes every column it finds posted. #}
+      <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <label for="failureReasonCode" class="block text-sm font-medium text-gray-700 mb-1">
+          If this test failed, why? (optional)
+        </label>
+        <select id="failureReasonCode" name="failure_reason_code" data-reason-family="test_failure"
+                class="w-full md:w-2/3 px-3 py-2 border border-gray-300 rounded-lg">
+          <option value="">Not categorised</option>
+          {% if prefill.failure_reason_code %}<option value="{{ prefill.failure_reason_code }}" selected>{{ prefill.failure_reason_code }}</option>{% endif %}
+        </select>
+        <p class="mt-1 text-xs text-gray-500">
+          Leave blank if it passed. Your written observations stay as they are &mdash;
+          this only adds the category, so questions like &ldquo;have other products
+          failed the same way?&rdquo; can be answered.
+        </p>
+      </div>
       <div class="flex flex-wrap items-center justify-end gap-3">
         <span id="autoSaveStatus" class="self-center text-xs text-gray-500 mr-2 transition-opacity duration-300 opacity-0 font-medium">Draft saved</span>
         <a href="{{ url_for('assigned_test') }}" class="px-5 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</a>
@@ -875,6 +895,7 @@
 {% block extra_js %}
 <script src="{{ url_for('datasheet_gen.static', filename='ds_image_editor.js') }}"></script>
 <script src="{{ url_for('datasheet_gen.static', filename='ds_section_lock.js') }}"></script>
+<script src="{{ url_for('datasheet_gen.static', filename='ds_reason_codes.js') }}"></script>
 {# Loaded only when the route was asked for a read-only render (?view=1), which is
    how the report wizard embeds this form. The pass itself lives in one shared file
    and walks whatever the form rendered, so a field added here later is locked
@@ -1046,7 +1067,13 @@
         method: 'POST',
         body: buildDraftFormData(form)
       })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        // A 401 is a lost session, not a lost network. Told apart here because
+        // the two need different words: one is fixed by logging in again, the
+        // other by waiting. Both mean this draft is NOT saved.
+        if (r.status === 401) { var e = new Error('session'); e.sessionExpired = true; throw e; }
+        return r.json();
+      })
       .then(function(res) {
         if (res.success) {
           pendingImages = {};          // images now persisted server-side
@@ -1063,15 +1090,17 @@
           }
         } else {
           if (statusEl) {
-            statusEl.textContent = 'Failed to auto-save draft';
+            statusEl.textContent = 'NOT SAVED - auto-save was rejected';
             statusEl.classList.remove('text-gray-500');
             statusEl.classList.add('text-red-600');
           }
         }
       })
-      .catch(function() {
+      .catch(function(err) {
         if (statusEl) {
-          statusEl.textContent = 'Connection error (auto-save)';
+          statusEl.textContent = (err && err.sessionExpired)
+            ? 'NOT SAVED - you have been logged out. Open the login page in a new tab, sign in, then Save as Draft here.'
+            : 'NOT SAVED - could not reach the server. Keep this tab open and try Save as Draft.';
           statusEl.classList.remove('text-gray-500');
           statusEl.classList.add('text-red-600');
         }

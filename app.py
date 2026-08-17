@@ -4060,14 +4060,41 @@ Please do not reply to this email.
             return None
         return user
 
+    def _caller_wants_json():
+        """True when the caller is script, not a browser navigation.
+
+        A redirect to the HTML login page is the right answer for someone
+        clicking a link and useless to a fetch(): it follows the 302, gets a
+        200 with an HTML body, and `response.json()` throws. The datasheet
+        form's autosave reported that as "Connection error (auto-save)" - so a
+        silent logout looked like a network fault, and the engineer kept typing
+        into a form that was no longer being saved.
+
+        Keyed on Sec-Fetch-Dest, which browsers send on every request:
+        'document' for a navigation, 'empty' for fetch/XHR. That is the actual
+        distinction, unlike the path prefix this used to test - autosave posts
+        to /datasheet/..., not /api/, and was never covered.
+        """
+        if request.path.startswith('/api/'):
+            return True
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return True
+        dest = request.headers.get('Sec-Fetch-Dest')
+        if dest:
+            return dest != 'document'
+        # No Sec-Fetch-* (old client, or curl): fall back to a caller that asks
+        # for JSON and not HTML. Anything ambiguous keeps the redirect.
+        return (request.accept_mimetypes.accept_json
+                and not request.accept_mimetypes.accept_html)
+
     @login_manager.unauthorized_handler
     def unauthorized():
         """Handle unauthorized access without next parameter."""
-        # Check if this is an API request (JSON expected)
-        if request.path.startswith('/api/'):
+        if _caller_wants_json():
             return jsonify({
                 'success': False,
-                'error': 'Authentication required. Please log in.'
+                'session_expired': True,
+                'error': 'Your session has expired. Please log in again.'
             }), 401
         # For regular page requests, redirect to login
         flash('Please log in to access this page.', 'info')
@@ -4838,10 +4865,39 @@ Please do not reply to this email.
             formatted_entry
         )
 
+    def _reason_codes(family: str) -> list:
+        """[{code, label}] for one family of emc_reason_code.
+
+        Two families, never mixed: 'test_failure' is why a UNIT failed the
+        standard (goes on datasheet.failure_reason_code, chosen by the engineer)
+        and 'review_rejection' is why a RECORD was sent back (goes on
+        datasheet_status_history.reason_code, chosen by the reviewer). Grouping
+        an emission failure together with a missing signature would be noise
+        wearing the costume of an insight.
+
+        Read from the table rather than hardcoded, so the lab can add a finding
+        without a deploy and so this dropdown, the API's validation and the NLP
+        catalog cannot disagree about what a valid code is. Returns [] if the
+        table is absent, which just means no dropdown.
+        """
+        try:
+            rows = db.session.execute(text(
+                "SELECT code, label FROM emc_reason_code "
+                "WHERE family=:f AND is_active=1 ORDER BY label"),
+                {'f': family}).fetchall()
+            return [{'code': r[0], 'label': r[1]} for r in rows]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('reason codes unavailable for %s: %s', family, exc)
+            return []
+
+    def _valid_rejection_reason_code(code: str) -> bool:
+        return any(c['code'] == code for c in _reason_codes('review_rejection'))
+
     def _record_datasheet_transition(
         entry: PlannerEntry,
         to_status: str,
-        comment: str = ''
+        comment: str = '',
+        reason_code: str = ''
     ) -> None:
         """Record a review decision in the datasheet audit trail.
 
@@ -4849,6 +4905,15 @@ Please do not reply to this email.
         renders - but it is free text, so "which datasheets were rejected, by
         whom, and why" could not be answered from it. This writes the same
         decision as a row. Best-effort: the review action has already happened.
+
+        ``reason_code`` is one of emc_reason_code.code (family='review_rejection')
+        and is what makes rejections GROUPable. It was plumbed through
+        record_transition and never supplied here, so every rejection in the
+        database carried a NULL code and "have other records been sent back for
+        this reason" had nothing to group on - the taxonomy table, its two
+        families and its index all existed and were referenced by nothing.
+        Beside the comment, never instead of it: the code is what SQL can count,
+        the comment is the only thing that says what specifically was wrong.
         """
         try:
             # land the review decision first. record_transition rolls its own
@@ -4859,6 +4924,7 @@ Please do not reply to this email.
             from datasheet_gen.projection import record_transition
             record_transition(
                 entry.id, to_status, actor=current_user, comment=comment,
+                reason_code=reason_code,
                 decided=to_status in ('Approved', 'Rejected'))
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -4966,12 +5032,24 @@ Please do not reply to this email.
     def _apply_peer_review_action(
         entry: PlannerEntry,
         action: str,
-        comment: str = ''
+        comment: str = '',
+        reason_code: str = ''
     ) -> tuple[bool, str, int]:
-        """Apply a peer-review action to a planner entry."""
+        """Apply a peer-review action to a planner entry.
+
+        ``reason_code`` applies to a rejection only, and is validated against
+        emc_reason_code rather than trusted: an unrecognised code would sit in
+        the column looking exactly like a real one and quietly corrupt every
+        GROUP BY built on it. An empty code is allowed - a reviewer who has not
+        picked one yet must still be able to reject, and a NULL is honest.
+        """
         normalized_action = str(action or '').strip().lower()
         if normalized_action not in {'approve', 'reject', 'comment'}:
             return False, 'Invalid peer review action', 400
+
+        reason_code = str(reason_code or '').strip()
+        if reason_code and not _valid_rejection_reason_code(reason_code):
+            return False, 'Unknown rejection reason code', 400
 
         if entry.status != 'Peer Review':
             return False, (
@@ -5020,7 +5098,8 @@ Please do not reply to this email.
                 action_label
             )
             _update_parent_request_datasheet_status(entry)
-            _record_datasheet_transition(entry, 'Rejected', comment_text)
+            _record_datasheet_transition(entry, 'Rejected', comment_text,
+                                         reason_code=reason_code)
             return True, 'Peer review rejected and sent back to engineer', 200
 
         _append_datasheet_peer_review_comment(
@@ -5031,6 +5110,17 @@ Please do not reply to this email.
         )
         _record_datasheet_transition(entry, 'Peer Review', comment_text)
         return True, 'Peer review comment added successfully', 200
+
+    @flask_app.route('/api/reason-codes')
+    @login_required
+    def reason_codes():
+        """Both reason vocabularies in one call - the reviewer's dropdown needs
+        review_rejection, the datasheet form needs test_failure."""
+        return jsonify({
+            'success': True,
+            'review_rejection': _reason_codes('review_rejection'),
+            'test_failure': _reason_codes('test_failure'),
+        }), 200
 
     @flask_app.route('/api/planner/<int:planner_id>/peer-review-action', methods=['POST'])
     @login_required
@@ -5053,7 +5143,8 @@ Please do not reply to this email.
             success, message, status_code = _apply_peer_review_action(
                 entry,
                 action,
-                comment
+                comment,
+                payload.get('reason_code', '')
             )
             if not success:
                 db.session.rollback()

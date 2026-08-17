@@ -3810,6 +3810,18 @@
                             <textarea id="peerReviewCommentInput" rows="6"
                                 class="mt-2 w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                                 placeholder="Add approval notes, rejection remarks, or review comments here..."></textarea>
+                            <label for="peerReviewReasonCode" class="mt-3 block text-sm font-semibold text-gray-900">
+                                If rejecting, which finding is this?
+                            </label>
+                            <select id="peerReviewReasonCode"
+                                class="mt-2 w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-200">
+                                <option value="">Not categorised</option>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Your comment is what the engineer reads. This picks the category the
+                                lab can count, so &ldquo;how often are records sent back for this?&rdquo;
+                                can be answered.
+                            </p>
                         </div>
                         <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
                             <h4 class="text-sm font-semibold text-gray-900">Comment History</h4>
@@ -3824,6 +3836,26 @@
             modal.dataset.plannerId = String(entry.id || '');
             modal.classList.remove('hidden');
             syncAssignedTestModalLayer();
+
+            // Fetched rather than templated in, because the modal body above is
+            // rebuilt by innerHTML on every open - a server-rendered <option>
+            // list would be discarded. The vocabulary comes from
+            // emc_reason_code, so it cannot drift from what the API validates
+            // against or from what the NLP catalog describes.
+            const reasonSel = document.getElementById('peerReviewReasonCode');
+            if (reasonSel) {
+                fetch('/api/reason-codes', { credentials: 'same-origin' })
+                    .then((r) => r.ok ? r.json() : { review_rejection: [] })
+                    .then((res) => {
+                        (res.review_rejection || []).forEach((c) => {
+                            const o = document.createElement('option');
+                            o.value = c.code;
+                            o.textContent = c.label;
+                            reasonSel.appendChild(o);
+                        });
+                    })
+                    .catch(() => { /* no dropdown is better than a broken modal */ });
+            }
         };
 
         window.closePeerReviewDatasheetModal = function () {
@@ -3872,6 +3904,11 @@
                 return;
             }
 
+            // Only meaningful on a rejection, and never required: a reviewer who
+            // has not categorised the finding must still be able to send it back.
+            const reasonSel = document.getElementById('peerReviewReasonCode');
+            const reason_code = (action === 'reject' && reasonSel) ? reasonSel.value : '';
+
             fetch(`/api/planner/${plannerId}/peer-review-action`, {
                 method: 'POST',
                 headers: {
@@ -3880,7 +3917,8 @@
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     action,
-                    comment
+                    comment,
+                    reason_code
                 })
             })
                 .then((response) => response.json())
