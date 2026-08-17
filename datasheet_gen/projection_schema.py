@@ -587,6 +587,17 @@ _FKS = (
     ("datasheet", "created_by_user_id", "users", "fk_ds_creator"),
     ("planner_entries", "engineer_user_id", "users", "fk_pe_engineer"),
     ("planner_entries", "peer_reviewer_user_id", "users", "fk_pe_reviewer"),
+    # The only history table with no constraint, and it already had a dangling
+    # row: draft-history is append-only, so discarding a draft deleted the
+    # `datasheet` row and left the history pointing at an id that no longer
+    # exists. That row cannot be joined and cannot be told apart from a valid
+    # link. ON DELETE SET NULL (the clause below) is the right behaviour here -
+    # the edit history outlives the datasheet, it just stops claiming a parent.
+    #
+    # changed_fields is the most precise signal in the schema for "what did the
+    # engineer change after the reviewer sent it back", so this table being
+    # unjoinable is not a cosmetic problem.
+    ("datasheet_draft_history", "datasheet_id", "datasheet", "fk_dsdh_sheet"),
 )
 
 # `users` was the only table in the database on utf8mb4_unicode_ci while all 61
@@ -639,6 +650,30 @@ def _ensure_integrity(app, db):
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         app.logger.warning("schema: users collation not converted: %s", exc)
+
+    # Repair DANGLING draft-history links before the foreign keys are attempted,
+    # or the constraint below refuses to apply (correctly - it will not delete a
+    # row to make itself fit). Distinct from the NULL backfill further down: this
+    # is a datasheet_id that WAS valid and whose datasheet has since been
+    # deleted. Re-point it if that planner entry has a datasheet again, otherwise
+    # NULL it, because a NULL is honestly "no parent" while a dangling id looks
+    # like a working link and silently vanishes from every join.
+    try:
+        if _table_exists(db, "datasheet_draft_history") and _table_exists(db, "datasheet"):
+            res = db.session.execute(text(
+                "UPDATE datasheet_draft_history h "
+                "LEFT JOIN `datasheet` dead ON dead.id = h.datasheet_id "
+                "LEFT JOIN `datasheet` live ON live.planner_entry_id = h.planner_entry_id "
+                "SET h.datasheet_id = live.id "
+                "WHERE h.datasheet_id IS NOT NULL AND dead.id IS NULL"))
+            if res.rowcount:
+                db.session.commit()
+                done.append("repaired %d dangling draft-history link(s)" % res.rowcount)
+            else:
+                db.session.rollback()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: draft-history dangling repair skipped: %s", exc)
 
     for table, column, ref, name in _FKS:
         try:

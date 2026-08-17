@@ -143,10 +143,31 @@ _CE_MEAS_COLS = [("qp_freq", "Frequency (MHz)"), ("qp", "Q-peak"),
 def _ce_measurements(form, side):
     """CE's Line / Neutral measurement grids, one block per Test.
 
-    The CE form repeats its whole measurement section: ``meas_index[]`` lists
-    the live blocks and each one posts ``line<i>_qp_freq[]`` etc. Drafts saved
-    before that split posted un-indexed ``line_qp_freq[]``, and those still
-    render, so both are read here.
+    The CE form repeats its whole measurement section: ``meas_index[]`` lists the
+    live blocks. Each block posts its grid as ``meas_<side><i>__c<j>[]``, one list
+    per column, since the columns became editable. Drafts saved before that
+    change posted a fixed eight arrays named ``<side><i>_qp_freq[]`` and friends.
+
+    BOTH ARE READ, and until now only the second was.
+    ------------------------------------------------
+    The form was changed to the dynamic-column shape and service.py was updated
+    with it - _ce_meas_table prefers the new fields and falls back to the old -
+    but this function was not, so it went on reading a naming the form had
+    stopped posting. It returned [] for every CE datasheet saved since.
+
+    That is not a cosmetic gap. It meant datasheet_ce.line_measurements_json and
+    neutral_measurements_json were NULL, and NO CE row was ever written to
+    datasheet_measurement - so the frequencies, Q-peak values, limits and margins
+    of the lab's most-run test existed only inside form_json, invisible to SQL.
+    Every "which reading was closest to the limit", "did the margin improve",
+    "what was the worst breach" question was unanswerable for CE, and
+    insights.metric_delta - which reads exactly these two grid keys - could never
+    have returned a row. The Word document was correct throughout, which is why
+    nothing looked broken.
+
+    The dynamic reader is imported from service rather than copied: it is the
+    definition of what the form posts, and a second copy here is how the two
+    drift apart again.
     """
     names = [k for k, _l in _CE_MEAS_COLS]
     order = form.get("meas_index[]") or []
@@ -154,11 +175,25 @@ def _ce_measurements(form, side):
     order = [str(i).strip() for i in order if str(i).strip()]
     blocks = []
     for i in order or [""]:
-        rows = FX._ce_arrays(form, "%s%s_" % (side, i), names)
+        rows = _ce_dynamic_rows(form, "%s%s" % (side, i), len(names))
+        if not rows:
+            rows = FX._ce_arrays(form, "%s%s_" % (side, i), names)
         if rows:
             blocks.append({"label": FX.value(form, "meas_label_" + i) if i else "",
                            "rows": rows})
     return blocks
+
+
+def _ce_dynamic_rows(form, tid, ncols):
+    """[[cell, ...], ...] from the editable-column grid the CE form posts now."""
+    try:
+        from .service import _ce_meas_rows
+    except Exception:  # noqa: BLE001 - never fail a save over a reader
+        return []
+    try:
+        return [r["cells"] for r in _ce_meas_rows(form, tid, ncols) if any(r["cells"])]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _grid_payload(code, form, base, schema):
@@ -855,6 +890,8 @@ def _snapshot_revision(db, did, planner_entry_id, revision, status, actor):
         {"p": planner_entry_id}).first()
     if rec is None:
         return
+    # NOTE: rec[2] (datasheet_records.result) is deliberately NOT used for the
+    # frozen result - see the `res` parameter below.
     # failure_reason_code rides along with met_performance_criteria because it
     # answers the same question one level finer: the criteria says the unit did
     # not meet B, the code says it was a radiated emission excursion. Frozen per
@@ -865,16 +902,35 @@ def _snapshot_revision(db, did, planner_entry_id, revision, status, actor):
     fcol = "failure_reason_code" in _columns(db, "datasheet")
     head = db.session.execute(text(
         "SELECT ambient_temperature, relative_humidity, required_performance_criteria, "
-        "met_performance_criteria, tested_by, deviation%s FROM `datasheet` WHERE id=:d"
+        "met_performance_criteria, tested_by, deviation, result%s FROM `datasheet` WHERE id=:d"
         % (", failure_reason_code" if fcol else "")), {"d": did}).first()
     to_rev = fcol and "failure_reason_code" in _columns(db, "datasheet_revision")
+
+    # The frozen result comes from the PROJECTED header, not from
+    # datasheet_records.result. Two measured reasons, both of which made the
+    # revision history useless for the question it exists to answer:
+    #
+    #  1. datasheet_records.result is _first(form, "overall_result", "result"),
+    #     and only an EMISSION test posts overall_result. An immunity test
+    #     reports the performance criterion it met, so its frozen result was
+    #     NULL - eight of the eleven test types, and "did revision 1 of the ESD
+    #     test pass" was unanswerable. This is the defect insight_schema.py
+    #     recorded as "datasheet_revision.result was blank in all 45 rows".
+    #  2. Where it WAS set it disagreed with the live row on case - frozen
+    #     'Pass' against live 'PASS' - so GROUP BY result across the two gave
+    #     two buckets for one outcome.
+    #
+    # datasheet.result is derived by the projection for both kinds of test and
+    # is the value every other query already groups on.
+    res = head[6] if head else None
     params = {"d": did, "r": revision, "st": status, "fj": rec[0], "ij": rec[1],
-              "res": rec[2], "td": rec[3], "u": getattr(actor, "id", None) or rec[4],
+              "res": res, "td": rec[3], "u": getattr(actor, "id", None) or rec[4],
               "amb": head[0] if head else None, "rh": head[1] if head else None,
               "rpc": head[2] if head else None, "mpc": head[3] if head else None,
               "tb": head[4] if head else None, "dev": head[5] if head else None}
     if to_rev:
-        params["frc"] = head[6] if head else None
+        # index 7: `result` was inserted at 6 above, which shifted this along
+        params["frc"] = head[7] if head else None
     db.session.execute(text(
         "INSERT INTO datasheet_revision (datasheet_id, revision_no, status, form_json, "
         "images_json, result, test_date, ambient_temperature, relative_humidity, "
