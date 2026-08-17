@@ -138,6 +138,9 @@ EXCLUDE = {
 # They are still there for a DBA and still named predictably, and the glossary
 # points at them. What they are not is 25k characters of every prompt.
 EXCLUDE_PREFIXES = ("datasheet_rev_",)
+# .claude/hooks/catalog_guard.py reads both of the above when it compares the
+# committed catalog against a live database. Without them it would report every
+# deliberate omission here as a missing table.
 
 # Kept even at zero rows. For these, "the table is there and it is empty" is a
 # real answer - EFT simply has not been run yet, no datasheet has been rejected
@@ -920,6 +923,14 @@ GRID_COLUMNS = %(grids)r
 # answer with a JSON path instead of missing the column entirely.
 JSON_KEYS = %(json_keys)r
 
+# What each table held WHEN THIS FILE WAS GENERATED. Not a live figure - the
+# whole catalog is a photograph, and this is the part that dates fastest.
+# Every table heading in the prompt quotes it, so a stale count is a lie told
+# to the model: it once said `datasheet (24 rows)` against an empty table and
+# the model believed it. .claude/hooks/catalog_guard.py compares this against
+# the live database at session start so drift is announced, not discovered.
+ROW_COUNTS = %(row_counts)r
+
 
 # The schema's own vocabulary, for routing a question to the worker that can
 # actually see the tables it is about. {term: (owning domain, ...)} - a term
@@ -1047,6 +1058,7 @@ def columns_for(table):
                  for t in tables for c, v in t["enums"].items()},
        "json_keys": {"%s.%s" % (t["name"], c): p
                      for t in tables for c, p in (t.get("json") or {}).items()},
+       "row_counts": {t["name"]: int(t["rows"] or 0) for t in tables},
        "domain_terms": build_domain_terms(tables)[0],
        "term_sources": build_domain_terms(tables)[1],
        "term_min_weight": TERM_MIN_WEIGHT,
