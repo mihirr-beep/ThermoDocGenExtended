@@ -133,12 +133,22 @@ def timeline(conn, product=None, tco=None, limit=60):
         # row per campaign by design. So when there was more than one rejection it
         # says so and names the primitive that can, rather than leaving a list of
         # codes that looks like the whole story.
-        if (r.get("times_sent_back") or 0) > 1:
+        # ONE rejection is enough to warrant the pointer. This said `> 1`, and
+        # asked why DEMO-EMC-301 was rejected the model read a row with
+        # times_sent_back=1, got no pointer, and answered from the campaign view -
+        # concluding 301 was the only sheet ever sent back more than once. It was
+        # DEMO-EMC-304, rejected twice, which it never looked at. A campaign row
+        # cannot answer "why was it rejected" at any count, because the reason,
+        # the reviewer's words and the fields that changed are all per round.
+        if (r.get("times_sent_back") or 0) >= 1:
             r["review_note"] = (
-                "sent back %d times, for %s - this row cannot show which round "
-                "found what or what the engineer changed in response. Call "
-                "review_history for that." % (r["times_sent_back"],
-                                              r.get("record_rejected_for") or "reasons not coded"))
+                "sent back %d time(s), for %s. THIS ROW IS PER CAMPAIGN and cannot "
+                "show which round found what, what the reviewer wrote, or what the "
+                "engineer changed in response - and it is not a lab-wide count "
+                "either, so do not conclude from it that nothing else was sent "
+                "back. Call review_history for the rounds, or rejection_modes for "
+                "the lab." % (r["times_sent_back"],
+                              r.get("record_rejected_for") or "reasons not coded"))
     _attach_worst_breach(conn, rows)
     return rows
 

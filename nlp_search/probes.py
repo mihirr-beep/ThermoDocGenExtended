@@ -250,6 +250,62 @@ def _fuzzy(needle, rows, out_cols, match_cols, cutoff=0.72):
     return [r for _s, r in scored[:MAX_CANDIDATES]], (scored[0][0] if scored else 0.0)
 
 
+def _attach_datasheets(conn, kind, cands, payload):
+    """Tell the caller which datasheets each resolved JOB actually has.
+
+    A tco_id is a JOB and a job holds one datasheet per test - up to twelve. Left
+    to resolve to a bare request row, the model treats the tco_id as though it
+    identified a datasheet, and `WHERE d.tco_id = 'DEMO-EMC-301'` then quietly
+    matches a different test than the one under discussion. Both of the last two
+    measured failures were that:
+
+      * asked which of four DRAFT sheets had been rejected, it filtered on tco_id
+        alone and reported the rejections of CE and PFMF - other tests on the same
+        jobs. One of the four had been rejected; it said three.
+      * asked why DEMO-EMC-301 was rejected, it read a campaign-level row and
+        concluded 301 was the only sheet ever sent back more than once. It was
+        DEMO-EMC-304, which it never looked at.
+
+    The catalog already says a row is identified by tco_id AND test_code together.
+    That sentence did not hold, so the information is put where the model cannot
+    miss it: alongside the thing it just resolved, naming each sheet and its
+    state. Listing them rather than asking which is meant - two to three per job
+    today, and a per-test line each is a better answer than a question even at
+    twelve.
+    """
+    if kind not in ("job", "product") or not cands:
+        return
+    tcos = [c.get("tco_id") for c in cands if c.get("tco_id")]
+    if not tcos:
+        return
+    placeholders = ", ".join(["%s"] * len(tcos))
+    try:
+        with conn.cursor() as cur:
+            _read_only(cur)
+            cur.execute(
+                "SELECT tco_id, test_code, status, result FROM `datasheet` "
+                "WHERE tco_id IN (%s) ORDER BY tco_id, test_code" % placeholders,
+                tuple(tcos))
+            rows = cur.fetchall()
+    except Exception:  # noqa: BLE001 - a hint is never worth failing the resolve
+        return
+    by_tco = {}
+    for tco, code, status, result in rows:
+        by_tco.setdefault(tco, []).append(
+            "%s (%s%s)" % (code, status or "no status",
+                           ", result %s" % result if result else ""))
+    for cand in cands:
+        sheets = by_tco.get(cand.get("tco_id")) or []
+        cand["datasheets_on_this_job"] = sheets or "none recorded yet"
+    payload["datasheet_note"] = (
+        "A tco_id is a JOB, not a datasheet: each job holds one datasheet per "
+        "test, listed per candidate above. NEVER filter a datasheet query on "
+        "tco_id alone - add test_code, or you will match a different test than "
+        "the one asked about. If the question does not name a test, answer for "
+        "EVERY datasheet on the job and label each with its test_code; do not ask "
+        "which test is meant.")
+
+
 def resolve_entity(db_params, kind, text, ledger=None, cross_kind=True):
     """Find the real rows matching a name the user typed, before it is used
     as a filter.
@@ -310,6 +366,7 @@ def resolve_entity(db_params, kind, text, ledger=None, cross_kind=True):
         payload = {"kind": kind, "looked_for": text, "table": table,
                    "matched_how": how, "match_count": len(cands),
                    "candidates": cands}
+        _attach_datasheets(conn, kind, cands, payload)
         if cands and how == "approximate":
             payload["confidence"] = round(confidence, 2)
             payload["note"] = (
