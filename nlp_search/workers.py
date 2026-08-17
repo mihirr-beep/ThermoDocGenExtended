@@ -345,6 +345,14 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
                                                         mode affects
           rejection_modes            (nothing)          why RECORDS are sent back
                                                         in peer review, lab-wide
+          review_history             product= or tco=   ONE datasheet's review
+                                                        rounds: what the reviewer
+                                                        found each time, and which
+                                                        fields the engineer changed
+                                                        in response. Use this for
+                                                        "why was this sent back",
+                                                        "why did it take three
+                                                        goes", "what did they fix"
           timeline                   product= or tco=   every campaign, in order
           failure_detail             product= or tco=   the failures, with the
                                                         readings that breached

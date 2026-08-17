@@ -98,9 +98,22 @@ def timeline(conn, product=None, tco=None, limit=60):
                d.met_performance_criteria,
                (SELECT COUNT(*) FROM datasheet_revision v
                  WHERE v.datasheet_id = d.id) AS review_rounds,
-               (SELECT h.reason_code FROM datasheet_status_history h
+               -- ALL of them, and how many. This was LIMIT 1, which reported one
+               -- code for a record sent back twice for different reasons - and
+               -- that single value looked like a complete answer. Asked why a
+               -- datasheet was sent back twice, the model read
+               -- record_rejected_for=CAL_EXPIRED, stopped, and never saw
+               -- INCOMPLETE_OBS or the fields the engineer changed. A field that
+               -- silently shows the first of several is worse than one that shows
+               -- none, because nothing about it invites a second look.
+               (SELECT COUNT(*) FROM datasheet_status_history h
+                 WHERE h.datasheet_id = d.id AND h.to_status = 'Rejected')
+                 AS times_sent_back,
+               (SELECT GROUP_CONCAT(h.reason_code ORDER BY h.revision_no, h.id
+                                    SEPARATOR ', ')
+                  FROM datasheet_status_history h
                  WHERE h.datasheet_id = d.id AND h.to_status = 'Rejected'
-                   AND h.reason_code IS NOT NULL LIMIT 1) AS record_rejected_for,
+                   AND h.reason_code IS NOT NULL) AS record_rejected_for,
                r.is_synthetic
     """ + _CAMPAIGN_JOIN + " WHERE " + " AND ".join(where) + """
         ORDER BY d.test_date, r.tco_id LIMIT %(lim)s
@@ -116,6 +129,16 @@ def timeline(conn, product=None, tco=None, limit=60):
         r["outcome"] = {"pass": "COMPLIANT - met its performance criterion",
                         "fail": "NOT COMPLIANT - did not meet its criterion",
                         "unknown": "no outcome recorded"}[o]
+        # A campaign row cannot say what happened in each review round - it is one
+        # row per campaign by design. So when there was more than one rejection it
+        # says so and names the primitive that can, rather than leaving a list of
+        # codes that looks like the whole story.
+        if (r.get("times_sent_back") or 0) > 1:
+            r["review_note"] = (
+                "sent back %d times, for %s - this row cannot show which round "
+                "found what or what the engineer changed in response. Call "
+                "review_history for that." % (r["times_sent_back"],
+                                              r.get("record_rejected_for") or "reasons not coded"))
     _attach_worst_breach(conn, rows)
     return rows
 
@@ -618,9 +641,188 @@ def common_config(conn, tcos):
 # ledger, and a primitive whose figures never got recorded would have every one
 # of them stripped as ungrounded.
 
+# --------------------------------------------------------------------------
+# the REVIEW axis of one datasheet, revision by revision
+# --------------------------------------------------------------------------
+# Nine of the ten primitives above are about the PRODUCT axis - did the unit fail
+# the standard, what was fitted, did the readings improve. Exactly one,
+# rejection_modes, is about the RECORD axis, and it is a lab-wide count. So
+# "this datasheet was sent back twice, why?" - the commonest review question
+# there is - had no primitive at all, and fell to model-authored SQL over three
+# history tables with two different revision-numbering conventions.
+#
+# WHY THE WHOLE FORM IS COMPARED AND NOT A CHOSEN SUBSET
+# A reviewer rejects for whatever is wrong, which is not restricted to the fields
+# someone thought to project into columns. "The calibration date is missing" is
+# fixed in eq_cal_due[]; "the wrong limit line" in a limit field; "value in the
+# wrong unit" anywhere at all. Diffing projected scalars would answer only for
+# the fields we happened to normalise, and silently return "nothing changed" for
+# the rest - which reads as the engineer having ignored the reviewer.
+#
+# So the comparison is over the ENTIRE form_json of each frozen revision, key by
+# key. What it does NOT do is hand those blobs to the model: two revisions is 12
+# KB against a 15 KB result budget, and asking a model to diff 129 keys by eye is
+# the arithmetic-by-LLM that this whole module exists to avoid. The diff is
+# computed here, in code, and the model receives the fields that changed with
+# their before and after values.
+_REVIEW_NOISE = frozenset((
+    "tco_id", "job_number", "assignment_id", "test_date", "tested_by_date",
+    "peer_reviewer_id", "result",
+))
+MAX_CHANGED_FIELDS = 25
+MAX_DIFF_VALUE_CHARS = 90
+
+
+def _short(value):
+    if isinstance(value, list):
+        text = ", ".join(str(v) for v in value)
+    else:
+        text = "" if value is None else str(value)
+    text = " ".join(text.split())
+    return text if len(text) <= MAX_DIFF_VALUE_CHARS else text[:MAX_DIFF_VALUE_CHARS] + "..."
+
+
+# A grid cell: ind_r5_c1, pf_50_col_3, meas_line1__c2. Twenty-four of these
+# changing is ONE act by the engineer - "filled in the rest of the indirect
+# discharge grid" - and listing them individually crowded out the field that
+# actually mattered and hit the reporting cap on its own.
+_CELL_RE = re.compile(r"^(.*?)(?:_r\d+_c\d+|_col_\d+|__c\d+|_r\d+_name)$")
+
+
+def _form_diff(before, after):
+    """[{field, before, after}] over two whole forms, plus how many were dropped.
+
+    Grid cells sharing a stem are collapsed into one entry counting them, so a
+    completed observation grid reads as one change and not as twenty-four.
+    """
+    singles, grids = [], {}
+    for key in sorted(set(before) | set(after)):
+        if key in _REVIEW_NOISE:
+            continue
+        va, vb = before.get(key), after.get(key)
+        if va == vb:
+            continue
+        m = _CELL_RE.match(key)
+        if m and m.group(1):
+            grids.setdefault(m.group(1), []).append((key, va, vb))
+        else:
+            singles.append({"field": key, "before": _short(va), "after": _short(vb)})
+
+    for stem, cells in sorted(grids.items()):
+        if len(cells) == 1:
+            key, va, vb = cells[0]
+            singles.append({"field": key, "before": _short(va), "after": _short(vb)})
+            continue
+        filled = sum(1 for _k, va, vb in cells if not str(va or "").strip()
+                     and str(vb or "").strip())
+        cleared = sum(1 for _k, va, vb in cells if str(va or "").strip()
+                      and not str(vb or "").strip())
+        what = "%d cell(s) changed" % len(cells)
+        if filled:
+            what = "%d cell(s) FILLED IN (were blank)" % filled
+        elif cleared:
+            what = "%d cell(s) CLEARED" % cleared
+        singles.append({"field": stem + " grid", "before": "", "after": what,
+                        "cells": ", ".join(k for k, _a, _b in cells[:8])})
+
+    dropped = max(0, len(singles) - MAX_CHANGED_FIELDS)
+    return singles[:MAX_CHANGED_FIELDS], dropped
+
+
+def review_history(conn, product=None, tco=None, limit=40):
+    """Every review round on a datasheet: the decision, and what changed after it.
+
+    One row per revision, oldest first: what the reviewer decided, the coded
+    finding and their own words, and the fields the engineer changed between the
+    PREVIOUS revision and this one - compared across the whole submitted form.
+
+    Reads datasheet_revision.form_json, which is the version the reviewer was
+    actually looking at. The live record has moved on since.
+    """
+    where, args = [], {"lim": int(limit)}
+    if product:
+        where.append("d.product_name LIKE %(prod)s")
+        args["prod"] = "%" + str(product).strip() + "%"
+    if tco:
+        where.append("d.tco_id = %(tco)s")
+        args["tco"] = str(tco).strip()
+    if not where:
+        return ("review_history needs a product or a tco - it is the history of ONE "
+                "datasheet's review rounds. For the lab-wide picture of why records "
+                "get sent back, call rejection_modes with no arguments.")
+
+    sheets = _rows(conn,
+                   "SELECT d.id, d.tco_id, d.test_code, d.product_name, d.status "
+                   "FROM `datasheet` d WHERE " + " AND ".join(where) +
+                   " ORDER BY d.tco_id, d.test_code LIMIT %(lim)s", **args)
+    if not sheets:
+        return ("No datasheet matches that. resolve_entity will tell you whether the "
+                "product or job exists at all - a name that matches nothing looks "
+                "exactly like a datasheet that was never reviewed.")
+
+    out = []
+    for sheet in sheets:
+        revs = _rows(conn,
+                     "SELECT revision_no, form_json FROM datasheet_revision "
+                     "WHERE datasheet_id = %(d)s ORDER BY revision_no", d=sheet["id"])
+        forms = {}
+        for r in revs:
+            try:
+                forms[r["revision_no"]] = json.loads(r["form_json"] or "{}") or {}
+            except (TypeError, ValueError):
+                forms[r["revision_no"]] = {}
+
+        decisions = _rows(conn, """
+            SELECT h.revision_no, h.from_status, h.to_status, h.actor_name,
+                   h.actor_role, h.comment, h.reason_code, e.label AS reason_label,
+                   h.created_at
+            FROM datasheet_status_history h
+            LEFT JOIN emc_reason_code e ON e.code = h.reason_code
+            WHERE h.datasheet_id = %(d)s AND h.to_status IN ('Approved','Rejected')
+            ORDER BY h.revision_no, h.id
+        """, d=sheet["id"])
+
+        if not decisions:
+            out.append({"tco_id": sheet["tco_id"], "test_code": sheet["test_code"],
+                        "product_name": sheet["product_name"],
+                        "review_round": None,
+                        "note": "submitted %d time(s), never decided - currently %s"
+                                % (len(revs), sheet["status"])})
+            continue
+
+        for d in decisions:
+            rev = d["revision_no"]
+            changed, dropped = _form_diff(forms.get(rev - 1, {}), forms.get(rev, {}))
+            row = {
+                "tco_id": sheet["tco_id"], "test_code": sheet["test_code"],
+                "product_name": sheet["product_name"],
+                "review_round": rev,
+                "decision": d["to_status"],
+                "reviewer": d["actor_name"],
+                "decided_at": d["created_at"],
+                "coded_finding": d["reason_code"] or "(not categorised)",
+                "what_it_means": d["reason_label"] or "(no code recorded)",
+                "reviewer_said": d["comment"],
+                "fields_changed_since_previous_round": len(changed) + dropped,
+                "changed": changed,
+            }
+            if rev == 1:
+                # Nothing precedes the first submission, so the "diff" against an
+                # absent revision 0 is the entire form. Reporting that as 103
+                # changed fields beside a count of 0 was simply contradictory.
+                row["changed"] = []
+                row["fields_changed_since_previous_round"] = 0
+                row["note"] = "first submission - nothing to compare against"
+            elif dropped:
+                row["changed_truncated"] = "%d more field(s) changed" % dropped
+            out.append(row)
+    return out
+
+
 PRIMITIVES = {
     "failure_modes": failure_modes,
     "rejection_modes": rejection_modes,
+    "review_history": review_history,
     "timeline": timeline,
     "failure_detail": failure_detail,
     "metric_delta": metric_delta,
