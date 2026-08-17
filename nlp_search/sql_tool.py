@@ -75,6 +75,115 @@ def _join_base(sql):
     return m.group(1) if m else None
 
 
+_ALL_FROM_RE = re.compile(_B + r"(?:FROM|JOIN)\s+`?([A-Za-z_][A-Za-z0-9_]*)`?", re.I)
+_WHERE_RE = re.compile(_B + "WHERE" + _B, re.I)
+_GROUP_BY_RE = re.compile(_B + r"GROUP\s+BY" + _B, re.I)
+_AGG_RE = re.compile(_B + r"(?:COUNT|SUM)\s*\(", re.I)
+
+
+def _single_table(sql):
+    """The one table this query reads, or None when it reads more than one.
+
+    Deliberately counts FROM *and* JOIN, so a subquery against a second table
+    disqualifies the query too. A denominator is only honest when the numerator
+    and the total are drawn from the same population; the moment two tables are
+    involved, "of what?" has no single answer and a plausible-looking total is
+    worse than none.
+    """
+    names = {m.group(1).lower() for m in _ALL_FROM_RE.finditer(sql or "")}
+    return names.pop() if len(names) == 1 else None
+
+
+def _scope_note(conn, sql, rows, truncated):
+    """How much of the table the filter kept, so a bare number becomes a ratio.
+
+    THE FAILURE THIS EXISTS FOR. A filtered query that returns a number gives
+    the model something unfalsifiable: "3 datasheets were rejected" is
+    indistinguishable from "I filtered on the wrong column and 3 rows happened
+    to match". Both look like answers. Measured in this lab: a question about
+    calibration read `status` instead of `calibration_status_col`, matched real
+    rows, and produced a confident count of the wrong thing.
+
+    A ratio is falsifiable. "3 of 11" either adds up against the table or it
+    does not, and the two ends of the range are diagnoses on their own:
+
+      0 of 89   the filter is the problem, not the data
+      89 of 89  the filter excluded nothing - did it apply at all?
+
+    Only computed when the query reads exactly ONE table and actually filters -
+    see _single_table for why. Costs one COUNT on the connection already open,
+    which is what makes it affordable on every query rather than a special case
+    someone has to remember to ask for.
+
+    Returns payload keys, and the terse form for the ledger separately: the
+    numbers are evidence and must be groundable (ledger.note text is tokenised
+    into values()), while the instruction around them is commentary and must not
+    become something a claim can be grounded against.
+    """
+    if not _WHERE_RE.search(sql or ""):
+        return {}, None                 # nothing was filtered; a total says nothing
+    table = _single_table(sql)
+    if not table:
+        return {}, None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM `%s`" % table)
+            total = cur.fetchone()[0]
+    except Exception:  # noqa: BLE001 - a denominator is never worth failing over
+        return {}, None
+    if not total:
+        return {}, None                 # empty table: the zero-rows note covers it
+
+    payload = {"scope_table": table, "scope_table_rows": total}
+    grouped = bool(_GROUP_BY_RE.search(sql))
+
+    # An aggregate answers with its value, not its row count: one row holding
+    # one number IS the numerator. Anything grouped is a count of groups, so it
+    # must not be compared against a row total.
+    cells = [v for row in rows for v in row]
+    if (not grouped and len(rows) == 1 and len(cells) == 1
+            and _AGG_RE.search(sql) and not isinstance(cells[0], bool)):
+        try:
+            n = float(cells[0])
+        except (TypeError, ValueError):
+            n = None
+        if n is not None:
+            shown = int(n) if n == int(n) else n
+            payload["scope"] = "%s of %d rows in `%s`" % (shown, total, table)
+            if n == 0:
+                payload["scope_check"] = (
+                    "ZERO of the %d rows in `%s` matched. The filter excluded "
+                    "every single row, which is what a WRONG COLUMN or a wrong "
+                    "value looks like - it is not evidence that nothing happened. "
+                    "Confirm the column you filtered on is the one that holds "
+                    "this fact before answering 'none'." % (total, table))
+            elif n >= total:
+                payload["scope_check"] = (
+                    "This matched ALL %d rows in `%s` - the filter excluded "
+                    "nothing. Check it is doing what you think; an answer that "
+                    "silently covers the whole table is rarely the question that "
+                    "was asked." % (total, table))
+            else:
+                payload["scope_check"] = (
+                    "STATE THIS AS A RATIO: %s of the %d rows in `%s`. A bare "
+                    "count cannot be checked by the person reading it; a ratio "
+                    "can." % (shown, total, table))
+            return payload, "`%s`: %s matched of %d rows total" % (table, shown, total)
+
+    if not truncated:
+        kept = len(rows)
+        noun = "groups from" if grouped else "of"
+        payload["scope"] = "%d %s %d rows in `%s`" % (kept, noun, total, table)
+        if not grouped:
+            payload["scope_check"] = (
+                "STATE THE SCOPE: these %d rows are out of %d in `%s`. Saying "
+                "'%d of %d' lets the reader catch a wrong filter; saying '%d' "
+                "does not." % (kept, total, table, kept, total, kept))
+        return payload, "`%s`: %d %s %d rows total" % (table, kept, noun, total)
+
+    return payload, "`%s` holds %d rows in total" % (table, total)
+
+
 def _is_zero(value):
     """True for a numeric zero, however the driver typed it. Not for None."""
     if value is None or isinstance(value, bool):
@@ -230,6 +339,18 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                         % (base, payload["base_table_rows"], base))
             except Exception:  # noqa: BLE001 - a hint is never worth failing over
                 pass
+        else:
+            # No join, so fan-out is not the risk here - a wrong filter is. Say
+            # what fraction of the table survived it. Mutually exclusive with
+            # join_check by construction: _single_table refuses anything joined.
+            scope, ledger_line = _scope_note(conn, cleaned, rows, truncated)
+            payload.update(scope)
+            if ledger_line and ledger is not None:
+                # Through note(), not used_metric(): a measured COUNT is
+                # evidence, so the answer must be allowed to quote it. Kept
+                # terse for that exact reason - every word here becomes a value
+                # a claim can be grounded against.
+                ledger.note("scope", ledger_line)
         if not rows:
             payload["note"] = (
                 "Zero rows. Before reporting this as 'none', confirm any value you "
