@@ -145,7 +145,10 @@ def main():
     # What the model can already see, so the report can say what it cannot.
     try:
         from nlp_search import schema_catalog as sc
-        known = set(sc.ENUM_VALUES)
+        # A constant column is represented too, just as a warning rather than a
+        # value list - CONSTANT_COLUMNS says "always 'Draft', it cannot tell
+        # anything apart", which is more use than listing one value.
+        known = set(sc.ENUM_VALUES) | set(getattr(sc, "CONSTANT_COLUMNS", {}) or {})
         catalog_tables = set(sc.ALLOWED_TABLES)
         json_keys = dict(getattr(sc, "JSON_KEYS", {}) or {})
     except Exception:                                    # noqa: BLE001

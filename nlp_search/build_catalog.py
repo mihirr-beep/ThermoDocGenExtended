@@ -297,6 +297,22 @@ _TERM_STOP = frozenset((
     "text", "json", "data", "info", "name", "names", "code", "codes", "type",
     "types", "count", "total", "min", "max", "new", "old", "other", "others",
     "sections", "and", "the", "for", "with", "per", "one", "two", "all", "any",
+    # English function words. The list above covered the ones that turn up in
+    # COLUMN names; these turn up once a VALUE is a sentence. Harvesting
+    # iec_emc_requests.product_environment_other, which holds 'Tests are
+    # performed in accordance with IEC 61000-4-2.', made "are" a term owned by
+    # requests - enough to tie "which tests are scheduled for next week" at
+    # 2.0-2.0 against schedule and make the router decline a question it had
+    # answered correctly. A word this common cannot identify anything.
+    "are", "is", "was", "were", "be", "been", "being", "am", "in", "of", "to",
+    "as", "at", "on", "by", "from", "into", "onto", "upon", "that", "this",
+    "these", "those", "not", "yes", "no", "it", "its", "if", "or", "but",
+    "which", "what", "when", "where", "who", "whom", "how", "why", "there",
+    "here", "then", "than", "so", "such", "have", "has", "had", "do", "does",
+    "did", "will", "would", "shall", "should", "can", "could", "may", "might",
+    "must", "a", "an", "some", "each", "every", "both", "few", "more", "most",
+    "only", "same", "very", "also", "about", "after", "before", "during",
+    "between", "through", "under", "over", "above", "below", "again", "once",
 ))
 _TERM_SPLIT = re.compile(r"[^A-Za-z]+")
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
@@ -309,6 +325,14 @@ def _term_words(identifier):
     spaced = _CAMEL.sub(" ", str(identifier or ""))
     return {w for w in _TERM_SPLIT.split(spaced.lower())
             if len(w) > 2 and w not in _TERM_STOP}
+
+
+# Values so generic that no domain owns them. A column whose whole value set is
+# drawn from here contributes nothing to routing, whatever it is called.
+_GENERIC_VALUES = frozenset((
+    "", "yes", "no", "y", "n", "true", "false", "0", "1", "na", "n/a", "nil",
+    "none", "null", "other", "others", "custom", "default", "(default)",
+    "unknown", "not applicable", "not submitted", "pending", "normal"))
 
 
 def build_domain_terms(tables):
@@ -338,7 +362,17 @@ def build_domain_terms(tables):
             for k in profile["keys"]:
                 for w in _term_words(k):
                     found.setdefault(w, "%s->$.%s" % (column, k))
-        for c, vals in t["enums"].items():
+        for c, vals in list(t["enums"].items()) + [
+                (c2, (v2,)) for c2, (v2, _n) in (t.get("constants") or {}).items()]:
+            # A flag's VALUES are not vocabulary. 'Yes' and 'No' identify no
+            # domain - every one of them has flags - and letting them in put
+            # 'yes' under both inventory and requests the moment the equipment
+            # register's Yes/No columns were harvested. The values still reach
+            # ENUM_VALUES so the model can filter on them; they just do not get
+            # to vote on routing. Keeping the two apart is the point: what a
+            # column can hold is evidence, what a word identifies is a guess.
+            if all(str(v).strip().lower() in _GENERIC_VALUES for v in vals):
+                continue
             for v in vals:
                 for w in _term_words(v):
                     found.setdefault(w, c)
@@ -414,6 +448,94 @@ _ENUMISH = re.compile(
 # admits that column and nothing else - the next enum-ish column up has 12
 # values, so this is not a slope.
 MAX_ENUM_VALUES = 20
+
+# A classification is REUSED - many rows share one value. An identifier is not,
+# and by cardinality alone the two are indistinguishable in a small table:
+# content_hash has 16 distinct values over 16 rows and looks every bit as
+# categorical as a status column until you notice nothing repeats. Requiring
+# each class to average this many rows is what lets the harvest below stop
+# depending on the column NAME.
+#
+# Name-gating was losing real classifications: equipment.calibration_required
+# (Yes 74 / No 15), ic_required and maintenance_required are Yes/No columns on
+# the equipment register that _ENUMISH does not match, so the model was never
+# told those values exist and could not filter on them at all. _ENUMISH is kept
+# below, but only to RESCUE a genuine status column in a table too small to
+# satisfy the repetition test - never to gate one out.
+MIN_CLASS_REPEAT = 3
+
+# A column holding one value over 9 rows is a trap worth warning about; over 1
+# row it is just a table nobody has filled in yet, and the warning is noise
+# that costs prompt space. Measured: this threshold keeps the 21 real ones -
+# including iec_emc_requests.requester_status, 'At Review' on every row, which
+# is the column an eval question was answered from instead of `status` - and
+# drops 11 that say nothing.
+MIN_CONSTANT_ROWS = 8
+
+# Position, not category. `row_no` 1..6 repeats happily and means nothing.
+_ORDINAL_NAME = re.compile(
+    r"(_no|_order|_index|_seq|_num|_number|_count|_qty|_sort)$"
+    r"|^(no|seq|sort_order|revision_no)$", re.I)
+
+# Columns someone would plausibly filter on, used only to decide which
+# single-valued columns are worth a warning. A constant `status` is a trap; a
+# constant `col_label` is just an empty field.
+_FLAGGISH = re.compile(r"^(is_|has_|can_|should_)|_required$|_flag$", re.I)
+
+
+# People and identity fields are never a classification, however few distinct
+# values a small table gives them. This is not tidiness: harvesting
+# equipment.test_name ('CE', 'CE,RE', 'EFT,Surge,PFMF,VoltageDips') fed test-code
+# words into the inventory domain and cost a routing case - "which tests are
+# scheduled for next week" stopped resolving to the schedule worker, because ESD
+# and SURGE had become inventory words too. Names also have no business in a
+# prompt when the question is "what values can this column hold".
+#
+# Measurements are NOT listed here on purpose. Blocklisting 'freq' would also
+# kill equipment.calibration_frequency, whose values are 'Annual' / 'Bi-Annual'
+# and which is a real classification. They are excluded by testing whether the
+# VALUES are numeric instead - the same lesson as powerSignal in the JSON scan.
+_NOT_A_CLASS = re.compile(
+    r"name$|^name|email|phone|contact|_by$|^by_|witness|manufacturer|"
+    r"designation|department|division|^site$|site$|group$|address|"
+    r"version$|^make$|^model|serial|comment|remark|^note|descri", re.I)
+
+
+def _values_are_measurements(vals):
+    """Numbers and ranges kept in a text column: data, not categories."""
+    seen = [str(v).strip() for v in vals if str(v).strip()]
+    if not seen:
+        return False
+    if set(seen) <= {"0", "1"}:
+        # A boolean is not a measurement. datasheet_modification.mod_state is
+        # varchar holding '0'/'1' and the numeric test threw it away.
+        return False
+    numeric = sum(
+        1 for v in seen
+        if v.replace(".", "").replace("-", "").replace(" ", "").replace(",", "").isdigit())
+    return numeric > len(seen) / 2
+
+
+def _value_shape_ok(vals, ctype):
+    """False for dates kept in text and for digests - never categories."""
+    seen = [str(v).strip() for v in vals if str(v).strip()]
+    if not seen:
+        return True
+    # Both orders: 2026-08-17 and 17/08/2026. Only the first was caught, so
+    # datasheet_modification.fitted_date came through as a two-class column.
+    dateish = 0
+    for v in seen:
+        parts = re.split(r"[-/.]", v)
+        if len(parts) == 3 and all(p.isdigit() for p in parts) and len(v) >= 8:
+            dateish += 1
+    if dateish > len(seen) / 2:
+        return False
+    if "char" in (ctype or "") and len(seen[0]) >= 32:
+        hexish = sum(1 for v in seen if len(v) >= 16
+                     and all(ch in "0123456789abcdefABCDEF" for ch in v))
+        if hexish > len(seen) / 2:
+            return False
+    return True
 
 # Credential-ish columns: omitted from the catalog entirely. sql_guard blocks
 # them at validation time too - this just keeps them out of the model's sight.
@@ -642,17 +764,85 @@ def introspect(conn, database):
             except Exception:  # noqa: BLE001 - a note is never worth failing over
                 pass
 
+        # Every column holding a definite finite set, decided from the DATA.
+        # See MIN_CLASS_REPEAT for why this is no longer gated on the name.
         enums = {}
-        for c, t, _k in cols:
-            if not _ENUMISH.search(c) or _HIDDEN_COLUMN.search(c):
+        constants = {}
+        for c, t, k in cols:
+            if _HIDDEN_COLUMN.search(c) or _LARGE_COLUMN.match(c):
                 continue
-            if not (t.startswith("varchar") or t.startswith("enum") or t.startswith("char")):
+            if c in fks:
+                continue                      # a reference, not a class
+            if c == "id" or c.endswith("_id"):
                 continue
-            cur.execute("SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL LIMIT %d"
-                        % (c, name, c, MAX_ENUM_VALUES + 1))
+            if _NOT_A_CLASS.search(c):
+                continue                      # a person or an identity field
+            textish = t.startswith(("varchar", "char", "enum", "set", "tinytext"))
+            intish = t.startswith(("tinyint", "smallint", "int", "bit", "bool"))
+            if not (textish or intish):
+                continue
+            # A NUMERIC key is a surrogate id and never a class. A TEXT primary
+            # key is the opposite: in a lookup table it IS the vocabulary.
+            # emc_reason_code is keyed on `code varchar(40) PRI` and holds the
+            # sixteen-code taxonomy this whole feature turns on - excluding
+            # every PRI threw the taxonomy out of the catalog. Unique and text
+            # keys can never satisfy the repetition test (distinct always equals
+            # non_null), so they reach the harvest only through the _ENUMISH
+            # rescue below, which is the right gate for them.
+            if k in ("PRI", "UNI") and intish:
+                continue
+            if intish and _ORDINAL_NAME.search(c):
+                continue
+            try:
+                cur.execute(
+                    "SELECT COUNT(`%s`), COUNT(DISTINCT `%s`)%s FROM `%s`"
+                    % (c, c, ", MAX(CHAR_LENGTH(`%s`))" % c if textish else ", 0",
+                       name))
+                non_null, distinct, longest = cur.fetchone()
+            except Exception:  # noqa: BLE001 - one odd column is not worth failing
+                continue
+            if not non_null or not distinct or distinct > MAX_ENUM_VALUES:
+                continue
+            if textish and (longest or 0) > 80:
+                continue                      # prose, whatever its cardinality
+            if intish and distinct > 12:
+                continue
+
+            # The repetition test, or a rescue for a named status column in a
+            # table with barely any rows in it yet.
+            repeats = distinct * MIN_CLASS_REPEAT <= non_null
+            if not repeats and not _ENUMISH.search(c):
+                continue
+
+            cur.execute("SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL "
+                        "ORDER BY `%s` LIMIT %d"
+                        % (c, name, c, c, MAX_ENUM_VALUES + 1))
             vals = [str(r[0]) for r in cur.fetchall()]
-            if 0 < len(vals) <= MAX_ENUM_VALUES:
-                enums[c] = sorted(vals)
+            if not vals or len(vals) > MAX_ENUM_VALUES:
+                continue
+            if not _value_shape_ok(vals, t):
+                continue
+            if textish and _values_are_measurements(vals):
+                continue                      # freq ranges, temperatures, dips
+            if any(len(str(v).split()) >= 5 or str(v).rstrip().endswith(".")
+                   for v in vals):
+                # A class label is a label, not a sentence. A column mixing the
+                # two - environment_value holds '', 'Basic Electromagnetic',
+                # 'Other' and a full sentence about IEC 61000-4-2 - is a
+                # free-text field, so the whole column goes rather than leaving
+                # a value list that looks complete and is not.
+                continue
+            if len(vals) == 1:
+                # Classification-shaped and empty of information. Worth saying
+                # so only for a column someone would filter on - and worth
+                # saying LOUDLY, because it reads like an outcome and is not:
+                # datasheet_revision.status is 'Draft' on every row including
+                # the approved ones.
+                if ((_ENUMISH.search(c) or _FLAGGISH.search(c))
+                        and non_null >= MIN_CONSTANT_ROWS):
+                    constants[c] = (vals[0], non_null)
+                continue
+            enums[c] = sorted(vals)
 
         # How badly does this table's text join multiply? See TEXT_JOINS.
         fanout = None
@@ -689,7 +879,8 @@ def introspect(conn, database):
                 json_cols[c] = profile
 
         tables.append({"name": name, "rows": rows, "cols": cols,
-                       "fks": fks, "enums": enums, "coverage": coverage,
+                       "fks": fks, "enums": enums, "constants": constants,
+                       "coverage": coverage,
                        "json": json_cols, "fanout": fanout,
                        "domains": _domains_for(name)})
     return tables
@@ -874,6 +1065,12 @@ def render_table_text(t):
             % (ptable, pcol, matched, src, joined, examples, t["name"], t["name"]))
     for c, vals in sorted(t["enums"].items()):
         lines.append("  %s values: %s" % (c, ", ".join("'%s'" % v for v in vals)))
+    for c, (val, n) in sorted((t.get("constants") or {}).items()):
+        lines.append(
+            "  %s IS '%s' ON ALL %d ROWS - it never varies, so it cannot tell "
+            "anything apart. Filtering on it matches everything and reading it "
+            "as an outcome is wrong; find the column that does vary."
+            % (c, val, n))
     return "\n".join(lines)
 
 
@@ -909,6 +1106,15 @@ TABLE_PURPOSE = %(purposes)r
 # Low-cardinality values per table.column, so "which statuses exist" is a
 # lookup rather than a query.
 ENUM_VALUES = %(enums)r
+
+# Columns that hold ONE value on every row. Classification-shaped and empty of
+# information: filtering on them matches everything, and reading one as an
+# outcome is always wrong. datasheet_revision.status is 'Draft' on all 12 rows
+# including the approved ones - the outcome lives in
+# datasheet_status_history.to_status. Kept structured as well as in the prompt
+# so a probe can answer "can this column tell me that?" without a query.
+# "table.column" -> (the only value, rows carrying it).
+CONSTANT_COLUMNS = %(constants)r
 
 # The measurement / observation grids, per table. These columns are hidden from
 # COLUMNS on purpose - a model cannot write useful SQL against JSON and
@@ -1059,6 +1265,9 @@ def columns_for(table):
        "json_keys": {"%s.%s" % (t["name"], c): p
                      for t in tables for c, p in (t.get("json") or {}).items()},
        "row_counts": {t["name"]: int(t["rows"] or 0) for t in tables},
+       "constants": {"%s.%s" % (t["name"], c): v
+                     for t in tables
+                     for c, v in (t.get("constants") or {}).items()},
        "domain_terms": build_domain_terms(tables)[0],
        "term_sources": build_domain_terms(tables)[1],
        "term_min_weight": TERM_MIN_WEIGHT,
