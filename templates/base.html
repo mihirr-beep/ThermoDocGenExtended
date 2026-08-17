@@ -1036,6 +1036,8 @@
           <div class="labai-title">Ask the Lab Data</div>
           <div class="labai-sub">Database + document search</div>
         </div>
+        <button class="labai-x" id="labai-newchat" aria-label="Start a new chat"
+                title="Start a new chat (keeps the old one in your history)">&#8635;</button>
         <button class="labai-x" id="labai-close" aria-label="Close">&times;</button>
       </div>
       <div class="labai-body" id="labai-body">
@@ -1064,7 +1066,7 @@
             send = document.getElementById('labai-send'), closeb = document.getElementById('labai-close'),
             empty = document.getElementById('labai-empty');
         var ASK = '/admin/nlp-search/ask';
-        function openP(){ panel.classList.add('labai-open'); setTimeout(function(){ input.focus(); }, 60); }
+        function openP(){ panel.classList.add('labai-open'); loadTranscript(); setTimeout(function(){ input.focus(); }, 60); }
         function closeP(){ panel.classList.remove('labai-open'); }
         fab.addEventListener('click', function(){ panel.classList.contains('labai-open') ? closeP() : openP(); });
         closeb.addEventListener('click', closeP);
@@ -1276,20 +1278,92 @@
           wrap.appendChild(meta); scrollDown();
         }
         function setBusy(b){ send.disabled=b; input.disabled=b; }
+        // The turns so far, so a follow-up can be understood. Sent with every
+        // question because the endpoint is stateless: without it, answering the
+        // assistant's own clarifying question ("which Krishna?") arrived as a
+        // brand-new question with the original one gone, and it asked again.
+        // Trimmed here as well as on the server - no reason to ship turns the
+        // orchestrator will drop.
+        var HISTORY = [], MAX_HISTORY = 7;
+        function remember(role, text){
+          if(!text) return;
+          HISTORY.push({role:role, text:String(text)});
+          if(HISTORY.length > MAX_HISTORY) HISTORY = HISTORY.slice(-MAX_HISTORY);
+        }
+
+        // Reload the transcript from the server on first open, so a refresh does
+        // not lose the conversation. It comes from nlp_search_audit, which has
+        // recorded every question and answer against a user_id all along - so
+        // this is a read of data that already existed, not a new store.
+        //
+        // Turns from an EARLIER conversation are rendered but NOT put into
+        // HISTORY: the server marks where a long gap fell, and yesterday's
+        // question silently becoming context for today's is worse than starting
+        // clean. Only the most recent run of turns is sent as context.
+        var loaded = false;
+        function loadTranscript(){
+          if(loaded) return; loaded = true;
+          fetch('/admin/nlp-search/history', {credentials:'same-origin'})
+            .then(function(r){ return r.ok ? r.json() : {turns:[]}; })
+            .then(function(res){
+              var turns = (res && res.turns) || [];
+              if(!turns.length) return;
+              if(empty) empty.style.display = 'none';
+              var lastStart = 0;
+              turns.forEach(function(t, i){ if(t.starts_conversation) lastStart = i; });
+              turns.forEach(function(t, i){
+                if(i === lastStart && lastStart > 0){
+                  var d = document.createElement('div');
+                  d.className = 'labai-empty';
+                  d.style.margin = '14px 0 6px';
+                  d.textContent = '— this conversation —';
+                  body.appendChild(d);
+                }
+                if(t.question) addMsg('user', t.question);
+                if(t.answer){
+                  var w = addMsg('assistant', t.answer);
+                  if(t.route) renderMeta(w, t.route, null, null, null);
+                }
+                if(i >= lastStart){
+                  remember('user', t.question);
+                  remember('assistant', t.answer);
+                }
+              });
+              scrollDown();
+            })
+            .catch(function(){ /* no transcript is not an error */ });
+        }
+
         function ask(){
           var q=(input.value||'').trim(); if(!q) return;
           addMsg('user', q); input.value=''; input.style.height='auto'; setBusy(true);
           var t=typing();
-          fetch(ASK, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({question:q})})
+          // captured BEFORE this turn is remembered, so the model is not handed
+          // the question it is being asked as though it were already answered
+          var priorTurns = HISTORY.slice();
+          remember('user', q);
+          fetch(ASK, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({question:q, history:priorTurns})})
             .then(function(r){ var ct=r.headers.get('content-type')||''; if(ct.indexOf('application/json')<0) throw new Error('Session expired — reload and sign in as admin.'); return r.json(); })
             .then(function(res){
               t.remove(); setBusy(false);
-              if(res.success){ var w=addMsg('assistant', res.answer||'(no answer)'); renderMeta(w, res.route, res.steps, res.grounding, res.sql); }
+              if(res.success){ var w=addMsg('assistant', res.answer||'(no answer)'); renderMeta(w, res.route, res.steps, res.grounding, res.sql); remember('assistant', res.answer); }
               else { addMsg('assistant', res.message||'Sorry, I could not answer that.'); }
               input.focus();
             })
             .catch(function(e){ t.remove(); setBusy(false); addMsg('assistant', (e&&e.message)||'Network error.'); });
         }
+        // Starts a fresh thread WITHOUT deleting anything: the old turns stay in
+        // nlp_search_audit and come back under "earlier" on the next open. It
+        // clears the context the model is given, which is the point - a long
+        // thread eventually carries references that no longer help.
+        var newchat = document.getElementById('labai-newchat');
+        if(newchat) newchat.addEventListener('click', function(){
+          HISTORY = [];
+          body.innerHTML = '';
+          if(empty){ body.appendChild(empty); empty.style.display = ''; }
+          input.focus();
+        });
+
         send.addEventListener('click', ask);
         input.addEventListener('input', function(){ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,96)+'px'; });
         input.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });

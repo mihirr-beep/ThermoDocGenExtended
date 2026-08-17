@@ -100,11 +100,86 @@ MAX_TURNS = 16
 DEADLINE_S = int(os.environ.get("NLP_DEADLINE_S", "180"))
 MAX_QUESTION_CHARS = 2000
 
+# --------------------------------------------------------------------------
+# the conversation so far
+# --------------------------------------------------------------------------
+# This was a single-turn endpoint, and the effect was worse than either
+# alternative: the assistant would ASK A CLARIFYING QUESTION it structurally
+# could not use the answer to. Asked which product Krishna is assigned tests on,
+# it correctly found two different people called Krishna and asked which - and
+# the reply "Krishna Gonela" then arrived as a brand-new standalone question with
+# the original one gone, so it resolved the name again and asked what the user
+# would like to do with this person. Same cause as "List those equipments", where
+# "those" had no referent.
+#
+# HISTORY IS CONTEXT, NOT EVIDENCE. This is the constraint that keeps the
+# grounding guarantee intact. The ledger holds the rows THIS question's queries
+# returned, and verify.check tests the answer against those. If an earlier turn's
+# facts were allowed to ground a claim, a stale number could be re-quoted with a
+# verified badge and nobody could tell which turn it came from. So the history is
+# given for resolving references - "those", "the first one", a name just chosen -
+# and the model is told that every fact must come from a query it runs now.
+#
+# It also arrives from the browser, so it is untrusted: a client can put whatever
+# it likes in a prior "assistant" turn. Treating it as context only means the
+# worst a forged turn can do is misdirect a question, not manufacture a fact.
+MAX_HISTORY_TURNS = 7
+MAX_HISTORY_ANSWER_CHARS = 600
+
+
+def _history_block(history):
+    """The prior turns, as a prompt block. "" when there are none."""
+    turns = []
+    for turn in (history or [])[-MAX_HISTORY_TURNS:]:
+        role = str((turn or {}).get("role") or "").strip().lower()
+        text = " ".join(str((turn or {}).get("text") or "").split())
+        if not text or role not in ("user", "assistant"):
+            continue
+        if role == "assistant" and len(text) > MAX_HISTORY_ANSWER_CHARS:
+            text = text[:MAX_HISTORY_ANSWER_CHARS] + " [...]"
+        turns.append("%s: %s" % ("User" if role == "user" else "You", text))
+    if not turns:
+        return ""
+    return ("\n## The conversation so far, oldest first\n" + "\n".join(turns) + """
+
+Use this to work out WHAT IS BEING ASKED - what "those", "it", "the first one" or
+a bare name refers to, and what question a one-word reply is answering. If the
+user is answering a question you asked, treat their reply as the missing piece of
+the ORIGINAL question and answer that, in full, now. Do not ask again and do not
+acknowledge the choice without answering.
+
+EVERY FACT IN YOUR ANSWER MUST COME FROM A QUERY YOU RUN NOW. The rows behind an
+earlier answer are not in front of you: you cannot see them, they may have
+changed, and quoting one is asserting something you have not checked. Re-run the
+query. If an earlier answer turns out to have been wrong, say so plainly.
+""")
+
+
+def _routing_text(question, history):
+    """What to route on: a follow-up needs its antecedent to be routable.
+
+    "Krishna Gonela" on its own names a person and no domain, so routing has
+    nothing to work with; the question it answers - "which product is Krishna
+    assigned tests on" - is what decides the worker. Only the last USER turn is
+    borrowed, and only for the routing decision: the question the model is asked
+    is still the one the user typed.
+    """
+    q = (question or "").strip()
+    if not history or len(q) > 60:
+        return q
+    for turn in reversed(history):
+        if str((turn or {}).get("role") or "").lower() == "user":
+            prior = " ".join(str((turn or {}).get("text") or "").split())
+            return ("%s %s" % (prior, q)).strip() if prior else q
+    return q
+
 _INSTRUCTIONS = """You are the EMC Test Lab data assistant for Thermo Fisher's test-plan and
 datasheet application. Lab admins ask you questions in plain English. You
 answer ONLY from this lab's MySQL database, through the specialist workers
-below. You have no other source: no documents, no outside knowledge, no memory
-of previous conversations.
+below. You have no other source: no documents and no outside knowledge. You are
+given the last few turns of the conversation so you can tell what a follow-up
+refers to - but they are context, never evidence: every fact you state must come
+from a query run in THIS turn.
 
 Today's date is {today}. Timestamps in the database are IST.
 
@@ -302,7 +377,7 @@ what to ask next, and they stop asking.
 """
 
 
-def _prepare(question, db_params, ledger, kind, verify_answer=True):
+def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None):
     """Everything that must happen BEFORE the model is asked anything.
 
     The gates test what the question assumes; the semantic layer replaces the
@@ -335,13 +410,20 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True):
     # straight to one.
     if not intent.names_something(question):
         blocks = blocks + (intent.NO_NARROWING_DIRECTIVE,)
+    # First, so the model reads what was already said before the rest of the
+    # per-question material. Workers get it too: routing sends most questions
+    # straight to one, and a follow-up is exactly the kind of short question that
+    # routes cleanly.
+    conversation = _history_block(history)
+    if conversation:
+        blocks = (conversation,) + blocks
 
     # A question that plainly belongs to one domain goes straight to that
     # worker. The orchestrator's own turns were most of the cost - it spends
     # one deciding to dispatch and more relaying the answer back, around a
     # single worker loop that was already going to do the work.
     if kind != intent.SCHEMA:
-        domain = intent.single_domain(question)
+        domain = intent.single_domain(_routing_text(question, history))
         if domain:
             agent = workers.build_standalone(domain, db_params, ledger,
                                              extra_blocks=blocks)
@@ -641,8 +723,14 @@ def _extract_usage(result):
 # entry point
 # --------------------------------------------------------------------------
 
-def answer(question, db_params, user=None, user_id=None, verify_answer=True):
+def answer(question, db_params, user=None, user_id=None, verify_answer=True,
+           history=None):
     """Run the orchestrator on one question. Returns a dict for the API layer:
+
+    `history` is the last few turns as [{role: user|assistant, text: str}],
+    oldest first, used to resolve what a follow-up refers to. It is CONTEXT
+    and not evidence - see _history_block for why that distinction is what
+    keeps grounding meaningful.
     {"success": True, "answer": str, "route": str, "steps": [...],
      "grounding": {...}} or {"success": False, "message": str}. Never raises.
 
@@ -715,7 +803,7 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True):
             return _answer_in_parts(parts, question, db_params, ledger, kind,
                                     user, user_id, sp, traced, _tag, t0)
         agent, blocks, undefined = _prepare(question, db_params, ledger, kind,
-                                           verify_answer)
+                                           verify_answer, history=history)
         with (sp if sp is not None else contextlib.nullcontext()):
             if sp is not None:
                 _tag(sp)

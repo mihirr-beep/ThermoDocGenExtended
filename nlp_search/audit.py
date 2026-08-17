@@ -211,6 +211,65 @@ def log_query(question, answer=None, user_id=None, username=None, route=None,
         return False
 
 
+# A conversation is a run of turns with no long gap in it. There is no thread id
+# on the table and adding one would mean a migration for something this infers
+# perfectly well: nobody resumes a train of thought forty minutes later, and a
+# question from yesterday silently becoming context for today is worse than
+# starting fresh.
+CONVERSATION_GAP_MINUTES = 40
+MAX_TRANSCRIPT_TURNS = 40
+
+
+def recent_turns(user_id, limit=MAX_TRANSCRIPT_TURNS):
+    """This user's own past turns, oldest first, for reloading the chat panel.
+
+    Read from nlp_search_audit rather than a new table: it already records the
+    question, the answer and who asked, per turn, which is exactly a transcript.
+    Scoped to one user_id - a chat log is personal, and the panel is per-person
+    even though every reader here is an admin.
+
+    Each turn carries `starts_conversation`, true where a gap of more than
+    CONVERSATION_GAP_MINUTES precedes it, so the client can show older threads
+    without feeding them to the model as context.
+    """
+    from models import db
+    from sqlalchemy import text as _sql
+    if not user_id:
+        return []
+    try:
+        rows = db.session.execute(_sql(
+            "SELECT id, created_at, question, answer, route, success "
+            "FROM nlp_search_audit WHERE user_id = :u "
+            "ORDER BY id DESC LIMIT :lim"),
+            {"u": int(user_id), "lim": int(limit)}).mappings().all()
+    except Exception as exc:  # noqa: BLE001 - a missing transcript is not an error
+        try:
+            from flask import current_app
+            current_app.logger.warning("nlp_search: transcript unavailable: %s", exc)
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+
+    out, previous_at = [], None
+    for row in reversed(rows):          # oldest first, as the panel renders them
+        at = row["created_at"]
+        gap = None
+        if previous_at is not None and at is not None:
+            gap = (at - previous_at).total_seconds() / 60.0
+        out.append({
+            "id": row["id"],
+            "at": at.isoformat(sep=" ", timespec="minutes") if at else None,
+            "question": row["question"],
+            "answer": row["answer"],
+            "route": row["route"],
+            "success": bool(row["success"]),
+            "starts_conversation": previous_at is None
+            or (gap is not None and gap > CONVERSATION_GAP_MINUTES),
+        })
+        previous_at = at
+    return out
+
+
 def _frm(days):
     try:
         days = max(1, min(int(days), 365))
