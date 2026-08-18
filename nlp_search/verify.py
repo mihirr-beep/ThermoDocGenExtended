@@ -126,6 +126,26 @@ def plain_text(text):
     return out.strip()
 
 
+def _instrumentation_numbers(ledger):
+    """Numbers WE put into the SQL, which are not facts about the lab.
+
+    sql_guard appends LIMIT MAX_ROWS to every query it lets through, so a model
+    that mentions how many rows it looked at is quoting our own row cap back at
+    us. Nothing in ledger.values() covers it - that set is built from result
+    CELLS - so 200 came out as an unverified claim.
+
+    Asked "how can we make that Test accepted again", the answer was withheld
+    and replaced with a raw table dump over two numbers, and one of them was
+    this: LIMIT 200, appended by the guard, echoed by the model, flagged as
+    invented.
+    """
+    out = set()
+    for e in ledger.entries:
+        for m in re.finditer(r"\bLIMIT\s+(\d+)", e.get("sql") or "", re.I):
+            out.add(m.group(1))
+    return out
+
+
 def check(question, draft, ledger, model=None, kind="data", undefined=()):
     """Verify a draft answer against the ledger.
 
@@ -173,7 +193,8 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
     # the union so a figure that also appears as a genuine value survives.
     supported = ((ledger.values() - ledger.id_only_numbers())
                  | _question_tokens(question)
-                 | _row_counts(ledger) | _temporal_tokens())
+                 | _row_counts(ledger) | _temporal_tokens()
+                 | _instrumentation_numbers(ledger))
     flagged = [tok for tok in _claim_tokens(draft) if tok.lower() not in supported]
 
     # On a schema question the claim IS the identifier. "The value is in
@@ -195,6 +216,14 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
     if id_leak:
         notes.append("names a raw id (%s) instead of the person or job"
                      % id_leak.group(0).strip())
+        # ONE fault, reported once. The id was also sitting in `flagged`,
+        # because id_only_numbers() deliberately keeps id cells out of the
+        # supported set - right, so that an id=75 cell cannot prop up "75
+        # datasheets", and wrong here, where the model is naming the row it
+        # looked up. Counting it twice turned a cosmetic slip into an
+        # unverifiable claim and cost the user a true answer.
+        leaked = set(re.findall(r"\d+", id_leak.group(0)))
+        flagged = [t for t in flagged if t not in leaked]
 
     # A judgement word the schema does not define, used to produce a number
     # without saying what rule produced it.
@@ -287,6 +316,23 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
     if repaired:
         notes.append("rewrote the answer without %d unsupported claim(s)" % len(bad))
         return {"verdict": "repaired", "answer": repaired, "unsupported": bad,
+                "notes": notes}
+
+    # Repair failed. Before dumping rows, ask what the fault actually was: a
+    # leaked surrogate id is a PRESENTATION problem - "datasheet id 75" should
+    # have read "the harmonic test on IEC-EMC-004" - and everything else in the
+    # answer may be perfectly true. Withholding over it trades a whole correct
+    # answer for a cosmetic complaint, and that is what happened: asked how to
+    # get a test accepted again, the user got two tables of raw rows instead of
+    # the answer, because the draft named a row id.
+    #
+    # The charter for this module is that it may withhold a true answer but
+    # never manufacture a false one. That trade is worth making when TRUTH is at
+    # stake. It is not worth making over a formatting slip, so when nothing
+    # factual is in doubt the answer goes out with the note attached.
+    if not bad and id_leak and not (incomplete or phantom or undisclosed or causal):
+        notes.append("shown despite naming a raw id: nothing factual was in doubt")
+        return {"verdict": "grounded", "answer": draft, "unsupported": [],
                 "notes": notes}
 
     return {"verdict": "unsupported", "unsupported": bad, "notes": notes,
