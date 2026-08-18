@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Why Layer</title>
+<style>
+  /* ---- tokens: complete light palette on bare :root ------------------- */
+  :root {
+    --ground:      #F4F6F5;
+    --surface:     #FFFFFF;
+    --surface-alt: #EDF1F0;
+    --ink:         #10171A;
+    --ink-soft:    #3A4649;
+    --muted:       #5F6E70;
+    --rule:        #D3DBDA;
+    --rule-soft:   #E3E9E8;
+    --accent:      #0E6A72;
+    --accent-soft: #DCEBEC;
+    --limit:       #A94A16;
+    --limit-soft:  #F6E7DC;
+    --code-bg:     #E9EEED;
+
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0C1113;
+      --surface:     #131A1C;
+      --surface-alt: #182124;
+      --ink:         #E8EDEC;
+      --ink-soft:    #BAC6C5;
+      --muted:       #8B9A9B;
+      --rule:        #2A3639;
+      --rule-soft:   #1F2A2D;
+      --accent:      #5FBDC4;
+      --accent-soft: #143134;
+      --limit:       #E08A4F;
+      --limit-soft:  #33200F;
+      --code-bg:     #1B2427;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0C1113;
+    --surface:     #131A1C;
+    --surface-alt: #182124;
+    --ink:         #E8EDEC;
+    --ink-soft:    #BAC6C5;
+    --muted:       #8B9A9B;
+    --rule:        #2A3639;
+    --rule-soft:   #1F2A2D;
+    --accent:      #5FBDC4;
+    --accent-soft: #143134;
+    --limit:       #E08A4F;
+    --limit-soft:  #33200F;
+    --code-bg:     #1B2427;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 0 1.5rem 6rem;
+  }
+
+  .wrap { max-width: 60rem; margin: 0 auto; }
+
+  /* ---- masthead ------------------------------------------------------- */
+  header {
+    padding: 4.5rem 0 2rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin: 0;
+  }
+  h1 {
+    font-size: clamp(2.3rem, 6vw, 3.4rem);
+    line-height: 1.04; margin: 0; font-weight: 400;
+    letter-spacing: -0.02em; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 1.12rem; color: var(--ink-soft); margin: 0;
+    max-width: 42rem;
+  }
+
+  /* ---- the spine ------------------------------------------------------ */
+  .spine {
+    margin: 2.5rem 0 0; padding: 1.5rem 1.75rem;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    display: flex; flex-direction: column; gap: 0.85rem;
+  }
+  .spine h2 { font-size: 1.05rem; margin: 0; font-weight: 700; }
+  .spine p { margin: 0; font-size: 0.96rem; color: var(--ink-soft); }
+  .chain {
+    font-family: var(--mono); font-size: 0.85rem;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  }
+  .chain span { background: var(--code-bg); padding: 0.2rem 0.5rem; border-radius: 2px; }
+  .chain i { color: var(--muted); font-style: normal; }
+
+  /* ---- group headings ------------------------------------------------- */
+  h2.group {
+    font-family: var(--sans);
+    font-size: 0.78rem; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+    margin: 3.5rem 0 0; padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  h2.group b { color: var(--ink); font-weight: 600; }
+
+  /* ---- primitive cards ------------------------------------------------ */
+  .grid { display: grid; gap: 1.25rem; margin-top: 1.5rem; }
+  @media (min-width: 54rem) { .grid { grid-template-columns: 1fr 1fr; } }
+
+  article {
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 1.4rem 1.5rem 1.5rem;
+    display: flex; flex-direction: column; gap: 0.85rem;
+  }
+  article > h3 {
+    font-family: var(--mono); font-size: 0.95rem; font-weight: 700;
+    margin: 0; color: var(--accent); word-break: break-word;
+  }
+  .asks { margin: 0; font-size: 1.02rem; }
+  .asks em { font-style: italic; color: var(--ink-soft); }
+
+  dl { margin: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+  dt {
+    font-family: var(--sans); font-size: 0.66rem; font-weight: 600;
+    letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  dd { margin: 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .tags code, dd > code {
+    font-family: var(--mono); font-size: 0.76rem;
+    background: var(--code-bg); color: var(--ink-soft);
+    padding: 0.16rem 0.42rem; border-radius: 2px; white-space: nowrap;
+  }
+  .tags code.spine-tag { background: var(--accent-soft); color: var(--accent); }
+  .cols {
+    font-family: var(--mono); font-size: 0.76rem; color: var(--ink-soft);
+    line-height: 1.75; word-break: break-word; margin: 0;
+  }
+
+  .trap {
+    margin: 0; padding: 0.75rem 0.9rem;
+    background: var(--limit-soft); border-left: 3px solid var(--limit);
+    font-size: 0.9rem; color: var(--ink-soft);
+  }
+  .trap b {
+    font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--limit);
+    display: block; margin-bottom: 0.25rem;
+  }
+
+  /* ---- axes note ------------------------------------------------------ */
+  .axes {
+    margin-top: 3.5rem; padding: 1.75rem;
+    background: var(--surface-alt); border: 1px solid var(--rule);
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .axes h2 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+  .axes p { margin: 0; font-size: 0.98rem; color: var(--ink-soft); }
+  .two { display: grid; gap: 1rem; }
+  @media (min-width: 44rem) { .two { grid-template-columns: 1fr 1fr; } }
+  .axis {
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 1rem 1.1rem;
+  }
+  .axis h3 {
+    font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem;
+    font-weight: 600;
+  }
+  .axis p { font-size: 0.9rem; margin: 0.5rem 0 0; }
+  .axis code {
+    font-family: var(--mono); font-size: 0.78rem;
+    background: var(--code-bg); padding: 0.16rem 0.4rem; border-radius: 2px;
+    display: inline-block;
+  }
+
+  footer {
+    margin-top: 3.5rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.88rem; color: var(--muted);
+  }
+  footer p { margin: 0 0 0.5rem; }
+  footer code { font-family: var(--mono); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">nlp_search / insights.py &middot; 11 primitives</p>
+    <h1>The Why Layer</h1>
+    <p class="standfirst">The arithmetic behind &ldquo;why&rdquo;, written in SQL rather than by a
+      model. Each primitive is hand-written, read-only and deterministic; the model&rsquo;s only
+      job is choosing which one to call and filling in a name.</p>
+  </header>
+
+  <section class="spine">
+    <h2>The campaign spine</h2>
+    <p>Eight of the eleven start from the same three-table join. A datasheet belongs to a
+      planner entry, which belongs to a request &mdash; and the request is what carries the
+      TCO and the product name. Listed once here rather than repeated on every card below.</p>
+    <div class="chain">
+      <span>datasheet</span><i>&rarr; planner_entry_id</i>
+      <span>planner_entries</span><i>&rarr; test_request_id</i>
+      <span>iec_emc_requests</span>
+    </div>
+  </section>
+
+  <h2 class="group"><b>What happened</b> &mdash; the record of events</h2>
+  <div class="grid">
+
+    <article>
+      <h3>timeline(product, tco)</h3>
+      <p class="asks"><em>&ldquo;Give me the testing history of the Rework Analyser.&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_revision</code><code>datasheet_status_history</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">tco_id, product_name, model_number, test_code,
+          test_date, result, failure_reason_code, met_performance_criteria, review_rounds,
+          times_sent_back, record_rejected_for, outcome, review_note</dd></div>
+      </dl>
+      <p class="trap"><b>One row per campaign</b>Not per revision. It cannot say which review
+        round found what &mdash; when <code>times_sent_back</code> is 1 or more it says so and
+        names <code>review_history</code> instead.</p>
+    </article>
+
+    <article>
+      <h3>failure_detail(product, tco)</h3>
+      <p class="asks"><em>&ldquo;Why did DEMO-EMC-301 fail &mdash; which readings actually
+        breached?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_measurement</code><code>datasheet_status_history</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">everything timeline returns, plus
+          worst_frequency_mhz, worst_measured, worst_limit, worst_margin_db, worst_reading,
+          breaches, reviewer_said</dd></div>
+      </dl>
+      <p class="trap"><b>Reads the values as entered</b>A placeholder keystroke is a reading
+        as far as this is concerned. It reported &ldquo;worst reading at 4&nbsp;MHz: 44&rdquo;
+        because 44 is genuinely in the table.</p>
+    </article>
+
+    <article>
+      <h3>review_history(product, tco)</h3>
+      <p class="asks"><em>&ldquo;Why was 304 sent back twice, and what changed after each
+        round?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code>datasheet</code><code>datasheet_revision</code><code>datasheet_status_history</code><code>emc_reason_code</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">tco_id, test_code, product_name, review_round,
+          decision, reviewer, decided_at, coded_finding, what_it_means, reviewer_said,
+          fields_changed_since_previous_round, changed, note</dd></div>
+      </dl>
+      <p class="trap"><b>Diffs the whole form</b>It compares complete
+        <code>form_json</code> between frozen revisions, not a chosen subset &mdash; so a
+        field nobody thought to watch still shows up in <code>changed</code>.</p>
+    </article>
+  </div>
+
+  <h2 class="group"><b>What changed</b> &mdash; between one attempt and the next</h2>
+  <div class="grid">
+
+    <article>
+      <h3>metric_delta(tco_before, tco_after, rev_before, rev_after)</h3>
+      <p class="asks"><em>&ldquo;What changed in the readings between the rejected version and
+        the approved one?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_measurement</code><code>datasheet_revision</code>
+        </dd></div>
+        <div><dt>Columns it pivots</dt><dd class="cols">grid_key in line_measurements,
+          neutral_measurements &middot; col_key in qp_freq, qp, qp_limit, qp_margin</dd></div>
+        <div><dt>Returns</dt><dd class="cols">grid_key, frequency_mhz, before_qp, after_qp,
+          improvement_db, before_margin, after_margin, newly_compliant</dd></div>
+      </dl>
+      <p class="trap"><b>Matched on frequency, not row number</b>Rows move when an engineer
+        adds a reading. Positive <code>improvement_db</code> means the emission came down.
+        Same TCO on both sides compares that campaign&rsquo;s revisions; a revision against
+        itself is refused rather than returning zeros.</p>
+    </article>
+
+    <article>
+      <h3>config_diff(tco_before, tco_after)</h3>
+      <p class="asks"><em>&ldquo;What settings differed between the two campaigns?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_revision</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">before, after, changed, added, removed</dd></div>
+      </dl>
+      <p class="trap"><b>Refuses across products</b>Two unrelated units will differ in dozens
+        of fields and none of it means anything.</p>
+    </article>
+
+    <article>
+      <h3>common_config(tcos)</h3>
+      <p class="asks"><em>&ldquo;What was identical across all of these campaigns?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_revision</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">campaigns, compared, common</dd></div>
+      </dl>
+      <p class="trap"><b>Needs campaigns of one product</b>Given TCOs from different products
+        it returns nothing, which is correct and easy to misread as &ldquo;nothing in
+        common&rdquo;.</p>
+    </article>
+
+    <article>
+      <h3>modifications_before_pass(product)</h3>
+      <p class="asks"><em>&ldquo;What was on the unit when it passed that wasn&rsquo;t there
+        when it failed?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>datasheet_modification</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">passed, last_failure, introduced,
+          already_present</dd></div>
+      </dl>
+      <p class="trap"><b>Evidence, not cause</b><code>introduced</code> lists what appeared
+        between the failure and the pass. That it caused the pass is an inference for the
+        engineer, never an assertion from here.</p>
+    </article>
+  </div>
+
+  <h2 class="group"><b>Patterns across the lab</b> &mdash; needs volume to mean anything</h2>
+  <div class="grid">
+
+    <article>
+      <h3>failure_modes()</h3>
+      <p class="asks"><em>&ldquo;What are the commonest ways units fail here?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code class="spine-tag">+ spine</code><code>emc_reason_code</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">reason_code, what_it_means, failing_campaigns,
+          products_affected, products, first_seen, last_seen</dd></div>
+      </dl>
+    </article>
+
+    <article>
+      <h3>rejection_modes()</h3>
+      <p class="asks"><em>&ldquo;What&rsquo;s the commonest reason records get sent back in
+        peer review?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags">
+          <code>datasheet_status_history</code><code>emc_reason_code</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">reason_code, what_it_means, rejection_events,
+          datasheets_affected, example_comment</dd></div>
+      </dl>
+      <p class="trap"><b>The other axis</b>This is about the record, not the unit. It never
+        touches <code>failure_reason_code</code>.</p>
+    </article>
+
+    <article>
+      <h3>cohort(reason_code, exclude_product)</h3>
+      <p class="asks"><em>&ldquo;Which other products failed this same way?&rdquo;</em></p>
+      <dl>
+        <div><dt>Tables</dt><dd class="tags"><code class="spine-tag">+ spine</code></dd></div>
+        <div><dt>Returns</dt><dd class="cols">product_name, model_number, test_code,
+          failure_reason_code, failing_campaigns, first_seen, last_seen, campaigns</dd></div>
+      </dl>
+      <p class="trap"><b>Excludes the product asked about</b>&ldquo;Have others failed like
+        this&rdquo; is not answered by the product that prompted the question.</p>
+    </article>
+
+    <article>
+      <h3>resolved_how(reason_code)</h3>
+      <p class="asks"><em>&ldquo;For this failure mode, what did each product have fitted by
+        the time it passed?&rdquo;</em></p>
+      <dl>
+        <div><dt>Composed from</dt><dd class="tags">
+          <code>cohort</code><code>modifications_before_pass</code>
+        </dd></div>
+        <div><dt>Returns</dt><dd class="cols">product_name, failed_for, failing_campaigns,
+          passed, introduced</dd></div>
+      </dl>
+      <p class="trap"><b>The question people actually want</b>Not &ldquo;who else broke like
+        this&rdquo; but &ldquo;what worked&rdquo; &mdash; only answerable because the
+        modification record is kept per campaign.</p>
+    </article>
+  </div>
+
+  <section class="axes">
+    <h2>The two axes, which nothing here mixes</h2>
+    <p>&ldquo;Failed&rdquo; is ambiguous in this building, and answering the wrong sense
+      confidently is worse than saying nothing. <code>emc_reason_code.family</code> is what
+      keeps them apart.</p>
+    <div class="two">
+      <div class="axis">
+        <h3>family = test_failure</h3>
+        <code>datasheet.failure_reason_code</code>
+        <p>Why the <strong>unit</strong> failed a standard. CE_LIMIT_EXCEEDED, ESD_LOCKUP,
+          SURGE_DAMAGE. Read by failure_detail, failure_modes, cohort.</p>
+      </div>
+      <div class="axis">
+        <h3>family = review_rejection</h3>
+        <code>datasheet_status_history.reason_code</code>
+        <p>Why the <strong>record</strong> was sent back by a peer reviewer. MISSING_PHOTO,
+          CAL_EXPIRED, UNIT_ERROR. Read by review_history and rejection_modes.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Tables and returned columns above were extracted from the executing SQL and from live
+      results, not from documentation.</p>
+    <p>Arguments are sanitised before any primitive runs: a malformed TCO is dropped, a
+      placeholder product name (&ldquo;ALL&rdquo;) is dropped, and a product supplied
+      alongside a TCO is dropped because a TCO already names exactly one job. An empty result
+      from two or more combined filters says they may disagree rather than reporting an
+      absence.</p>
+  </footer>
+</div>
+
+</body>
+</html>
