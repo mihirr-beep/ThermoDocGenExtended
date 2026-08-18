@@ -32,6 +32,7 @@ import contextlib
 import datetime
 import json
 import os
+import re
 import time
 
 from . import decompose, gates, intent, probes, semantics, verify, workers
@@ -127,6 +128,51 @@ MAX_HISTORY_TURNS = 7
 MAX_HISTORY_ANSWER_CHARS = 600
 
 
+_ANTECEDENT_RE = re.compile(r"\b[A-Z]{2,5}(?:-[A-Z0-9]{2,6}){1,3}-\d{1,4}\b")
+MAX_ANTECEDENTS = 12
+
+
+def _antecedents(history):
+    """The identifiers the LAST answer was about, listed explicitly.
+
+    "These", "those", "them" have to resolve to something, and prose is a poor
+    place to look it up. Asked which tests were past their deadline, the previous
+    answer had listed sixteen items across IEC-EMC-004, 005, 006, 007 and 009.
+    The follow-up - "which tests were these based on the tco, name them" - came
+    back about IEC-EMC-004 alone, and named the one test on that job which was
+    NOT overdue, having resolved "these" to the harmonic sheet discussed two
+    turns earlier. It then said no others existed.
+
+    So the subjects of the previous answer are pulled out by shape and stated as
+    a list. Nothing here interprets them or decides they are still relevant - it
+    only means the antecedent no longer has to be recovered by re-reading a
+    paragraph, and that narrowing away from it becomes a visible choice rather
+    than an accident.
+    """
+    for turn in reversed(history or []):
+        if str((turn or {}).get("role") or "").lower() != "assistant":
+            continue
+        found, seen = [], set()
+        for m in _ANTECEDENT_RE.finditer(str((turn or {}).get("text") or "")):
+            tok = m.group(0)
+            if tok not in seen:
+                seen.add(tok)
+                found.append(tok)
+        if len(found) < 2:
+            return ""           # one subject or none: no narrowing to notice
+        shown = found[:MAX_ANTECEDENTS]
+        more = "" if len(found) <= MAX_ANTECEDENTS else \
+            " (and %d more)" % (len(found) - MAX_ANTECEDENTS)
+        return ("\n\nWHAT YOUR LAST ANSWER WAS ABOUT: %s%s. If this question says "
+                "\"these\", \"those\", \"them\" or \"the same\", it means THAT set - "
+                "not one member of it, and not a subject from an earlier turn. "
+                "Cover all of them, or say which ones you are leaving out and "
+                "why. Narrowing to a single one of these and then reporting that "
+                "nothing else exists is the specific mistake to avoid."
+                % (", ".join(shown), more))
+    return ""
+
+
 def _history_block(history):
     """The prior turns, as a prompt block. "" when there are none."""
     turns = []
@@ -140,7 +186,8 @@ def _history_block(history):
         turns.append("%s: %s" % ("User" if role == "user" else "You", text))
     if not turns:
         return ""
-    return ("\n## The conversation so far, oldest first\n" + "\n".join(turns) + """
+    return ("\n## The conversation so far, oldest first\n" + "\n".join(turns)
+            + _antecedents(history) + """
 
 Use this to work out WHAT IS BEING ASKED - what "those", "it", "the first one" or
 a bare name refers to, and what question a one-word reply is answering. If the

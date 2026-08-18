@@ -194,6 +194,49 @@ def _is_zero(value):
         return False
 
 
+def _null_column_note(names, rows):
+    """Columns that are NULL on EVERY row returned. Named, not counted.
+
+    THE FAILURE THIS EXISTS FOR. Asked which tests were past their deadline and
+    unsubmitted, the model wrote a query that selected test_code from a datasheet
+    it had just guaranteed to be absent - LEFT JOIN datasheet d ON ... AND
+    d.submitted_at IS NOT NULL, then WHERE d.id IS NULL. If a row qualifies, d is
+    NULL by construction. Sixteen rows came back, every test_code empty, and the
+    answer listed sixteen blanks where the test names should be:
+
+        IEC-EMC-006 | TFS-EMC-2026-001 | Smart2Pure Pro 16 | 2026-04-29 |
+        IEC-EMC-004 | TFS-EMC-2026-002 | Smart2pure 6UV    | 2026-05-04 |
+
+    The count was right. The answer was unusable, and nothing objected, because
+    an empty column is not a wrong number - every existing check is about values
+    that are present. The names were in planner_entries.test_name all along.
+
+    Distinct from the aggregate NULL count already reported below: "9 of 112
+    values are NULL" says nothing about WHICH field is missing, and a field that
+    is missing on every single row is a different fact from a field that is
+    patchy. One means nobody filled it in; the other usually means the query
+    cannot see it.
+    """
+    if len(rows) < 2 or not names:
+        return {}
+    dead = []
+    for i, name in enumerate(names):
+        if all(row[i] is None for row in rows if i < len(row)):
+            dead.append(name)
+    if not dead or len(dead) == len(names):
+        return {}                       # all-NULL everywhere is the other note
+    return {"dead_columns": (
+        "%s came back NULL on ALL %d rows. Do NOT present %s as a value or a "
+        "blank - the query cannot see it. A column empty on every row usually "
+        "means it was selected from a table the WHERE clause excludes (a LEFT "
+        "JOIN whose row is then required to be NULL), so the field lives "
+        "somewhere this query never reached. Find the column that holds it and "
+        "ask again before answering; if the question was ABOUT that field, you "
+        "have not answered it yet."
+        % (", ".join("`%s`" % d for d in dead), len(rows),
+           "it" if len(dead) == 1 else "them"))}
+
+
 def _emptiness_note(rows):
     """What to tell the model when rows came back but hold nothing.
 
@@ -282,7 +325,7 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "scope_check", "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "dead_columns", "scope_check", "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -414,6 +457,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
+            payload.update(_null_column_note(names, rows))
         out = json.dumps(_fold_guidance(payload), ensure_ascii=False, default=str)
 
         # Naming every value costs about 2.5x on a wide result - 200 x 11
