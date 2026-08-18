@@ -931,6 +931,41 @@ def _flatten(data):
     return out
 
 
+def _empty_note(kwargs):
+    """What to say when a primitive matched nothing.
+
+    This line used to read "(no rows - say so plainly rather than reaching for a
+    different table)", which is sound advice for an unfiltered analysis and
+    catastrophic for a filtered one: it instructs the model to report an absence
+    that the FILTER may have manufactured. It duly did. Asked why DEMO-EMC-301
+    was rejected and whether others were too, the model called
+
+        timeline(product='DEMO Lifecycle Probe Analyser', tco='DEMO-EMC-302')
+
+    - a real product and a real TCO that belong to different jobs. The arguments
+    are ANDed, so nothing matched, and the answer said "no recorded rejections
+    for DEMO-EMC-302 or DEMO-EMC-303". Both had been rejected, and the previous
+    turn in the same conversation had already said so.
+
+    With two or more filters the likeliest explanation of zero rows is that they
+    disagree, not that the lab has no such history, so the note now says which
+    filters were applied and tells the model to drop back to one before
+    concluding anything.
+    """
+    applied = [k for k, v in sorted(kwargs.items()) if v not in (None, "")]
+    if len(applied) < 2:
+        return ("  (no rows for this filter - before reporting an absence, "
+                "confirm the value you filtered on exists; a value that is not "
+                "in the data returns exactly this and looks identical to a real "
+                "absence)")
+    return ("  (NO ROWS. %d filters were applied together and they are ANDed: "
+            "%s. Zero rows most often means they DISAGREE - a product and a TCO "
+            "belonging to different jobs match nothing at all. Re-run with ONE "
+            "of them, most precisely the TCO, before concluding anything. Do NOT "
+            "report this as 'no history' or 'never rejected': you have not "
+            "established that yet.)" % (len(applied), ", ".join(applied)))
+
+
 def _render(name, data, kwargs):
     """A compact text block the model can read and quote from."""
     lines = ["## %s(%s)" % (name, ", ".join("%s=%r" % kv for kv in sorted(kwargs.items())))]
@@ -964,8 +999,7 @@ def _render(name, data, kwargs):
                 lines.append("  %s=%s" % (key, val))
     else:
         if not data:
-            lines.append("  (no rows - say so plainly rather than reaching for "
-                         "a different table)")
+            lines.append(_empty_note(kwargs))
         emit(data)
     lines.append("")
     lines.append(_CAUSATION_NOTE)
@@ -1000,6 +1034,26 @@ def run(db_params, name, ledger=None, **kwargs):
         if val and not _TCO_RE.match(val):
             kwargs.pop(key, None)
             log.info("insight %s: ignoring %s=%r, not a TCO", name, key, val)
+    # A TCO identifies exactly one job, so a product alongside it adds no
+    # precision - it can only take rows away, and it did. Asked why DEMO-EMC-301
+    # was rejected and whether any others were, the model carried the product
+    # forward from the first part of the question and called
+    #
+    #     timeline(product='DEMO Lifecycle Probe Analyser', tco='DEMO-EMC-302')
+    #
+    # Both arguments real, both well-formed, and belonging to different jobs -
+    # 302 is the Spectra Bench Photometer. ANDed, they matched nothing, and the
+    # answer became "no recorded rejections for DEMO-EMC-302 or DEMO-EMC-303"
+    # when both had been rejected and the previous turn had already said so.
+    #
+    # The _TCO_RE guard above cannot catch this: DEMO-EMC-302 is a perfectly
+    # valid TCO. The contradiction is between two valid values, and the precise
+    # one wins. Same principle as dropping a malformed TCO, in the other
+    # direction: keep the argument that identifies the subject exactly.
+    if kwargs.get("tco") and kwargs.pop("product", None) is not None:
+        log.info("insight %s: dropped product= alongside tco=%r; a TCO already "
+                 "names one job", name, kwargs["tco"])
+
     # "have OTHER products failed like this" - the product asked about is not an
     # answer to its own question. Done here rather than only in the tool wrapper
     # so every caller gets it, including a direct call from a test or a future
