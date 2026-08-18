@@ -62,3 +62,7 @@ outputs/
 
 # runtime-generated datasheet output
 new_ouput_files/
+
+# Warm-start cache for the measured half of the catalog. Regenerates itself;
+# never a source of truth, and absent on read-only deployments.
+instance/catalog_stats.json

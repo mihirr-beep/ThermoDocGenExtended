@@ -26,8 +26,13 @@ import re
 import pymysql
 
 from . import schema_catalog as _catalog
-from .schema_catalog import (ALLOWED_TABLES, COLUMNS, ENUM_VALUES,
+from .schema_catalog import (ALLOWED_TABLES, COLUMNS,
                              GRID_COLUMNS, TABLE_PURPOSE)
+
+# ENUM_VALUES and JSON_KEYS are NOT imported by name. They are measured per
+# render now (catalog_stats), and `from module import NAME` binds whatever the
+# value was at import time - which would have frozen them at boot and quietly
+# undone the whole point of measuring them. Read through the module instead.
 
 # schema_catalog.py is GENERATED, so this module can be newer than the catalog
 # checked out beside it. A hard `from .schema_catalog import JSON_KEYS` against
@@ -35,7 +40,12 @@ from .schema_catalog import (ALLOWED_TABLES, COLUMNS, ENUM_VALUES,
 # time - which took down the whole Flask app, not just NL search. Read it
 # defensively: no JSON_KEYS means no JSON key hints, which is a degraded
 # feature and not a dead application. Regenerating restores them.
-JSON_KEYS = getattr(_catalog, "JSON_KEYS", {})
+def _enum_values():
+    return getattr(_catalog, "ENUM_VALUES", {}) or {}
+
+
+def _json_keys():
+    return getattr(_catalog, "JSON_KEYS", {}) or {}
 
 MAX_VALUES = 60
 MAX_CANDIDATES = 15
@@ -565,7 +575,7 @@ def find_field(term, test_code=None):
             hits.append({
                 "_score": score, "table": table, "column": col,
                 "table_purpose": TABLE_PURPOSE.get(table, ""),
-                "values": list(ENUM_VALUES.get("%s.%s" % (table, col), ())) or None,
+                "values": list(_enum_values().get("%s.%s" % (table, col), ())) or None,
             })
 
     # Keys inside text columns that hold JSON. Without this the honest answer to
@@ -573,7 +583,7 @@ def find_field(term, test_code=None):
     # cable_value and no name search can reach `length` inside it. Scored the
     # same way and marked with the path, so the reply is directly usable as SQL
     # rather than a pointer the model has to guess the syntax for.
-    for ref, profile in JSON_KEYS.items():
+    for ref, profile in _json_keys().items():
         table, column = ref.split(".", 1)
         for key, info in (profile.get("keys") or {}).items():
             hay = key.lower()

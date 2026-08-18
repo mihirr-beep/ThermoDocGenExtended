@@ -95,8 +95,16 @@ def _edited_path(payload):
     return rel.replace("\\", "/")
 
 
-def _catalog_counts():
-    """{table: rows} as the committed catalog states them, or None if unreadable."""
+def _catalog_tables():
+    """The tables the committed catalog claims exist, or None if unreadable.
+
+    Row counts used to be checked here too. They are not in the committed
+    file any more - catalog_stats measures them per render - so they cannot
+    go stale and there is nothing left to warn about. What a generated file
+    still CAN get wrong is the schema: a table added or dropped since it was
+    built is invisible to the model and refused by sql_guard, and only
+    regenerating fixes that.
+    """
     if not os.path.isfile(CATALOG):
         return None
     try:
@@ -104,15 +112,14 @@ def _catalog_counts():
             text = fh.read()
     except (IOError, OSError):
         return None
-    m = re.search(r"^ROW_COUNTS = (\{.*?\})$", text, re.M | re.S)
+    m = re.search(r"^ALLOWED_TABLES = (\(.*?\))$", text, re.M | re.S)
     if not m:
-        return None                     # catalog predates ROW_COUNTS
+        return None
     try:
         import ast
-        return ast.literal_eval(m.group(1))
+        return set(ast.literal_eval(m.group(1)))
     except (ValueError, SyntaxError):
         return None
-
 
 def regenerate():
     """Run the generator under the venv. Returns (ok, one-line summary)."""
@@ -133,7 +140,7 @@ def on_edit():
     rel = _edited_path(_stdin_json())
     if not rel or rel not in WATCHED:
         return 0                        # silent: the common case by far
-    before = _catalog_counts()
+    before = _catalog_tables()
     ok, summary = regenerate()
     if not ok:
         return _emit(
@@ -143,7 +150,7 @@ def on_edit():
                     "stale - every prompt is quoting figures that no longer "
                     "describe the database. Fix this before trusting an answer, "
                     "then run: python -m nlp_search.build_catalog" % (rel, summary))
-    after = _catalog_counts()
+    after = _catalog_tables()
     note = ""
     if before is not None and after is not None:
         added = sorted(set(after) - set(before))
@@ -164,12 +171,12 @@ def on_edit():
 
 def check():
     """Read-only: does the committed catalog still describe this database?"""
-    stated = _catalog_counts()
+    stated = _catalog_tables()
     if stated is None:
         return _emit(context=(
-            "nlp_search/schema_catalog.py has no ROW_COUNTS block, so it predates "
-            "the staleness check and its age is unknown. Regenerate before "
-            "trusting any NL search answer: python -m nlp_search.build_catalog"))
+            "nlp_search/schema_catalog.py could not be read for its ALLOWED_TABLES, "
+            "so which tables the assistant may query at all is unknown. "
+            "Regenerate: python -m nlp_search.build_catalog"))
 
     # Count only the tables the generator would itself include. EXCLUDE and
     # EXCLUDE_PREFIXES are deliberate - the 16 datasheet_rev_* mirrors and the
@@ -215,41 +222,31 @@ def check():
         return 0
     counts, dbname = live["counts"], live["db"]
 
-    missing = sorted(set(counts) - set(stated))     # in the DB, not in the catalog
-    extra = sorted(set(stated) - set(counts))       # in the catalog, not in the DB
-    moved = []
-    for name, was in sorted(stated.items()):
-        if name not in counts:
-            continue
-        now = counts[name]
-        if was == now:
-            continue
-        crossed_zero = (was == 0) != (now == 0)
-        big = abs(now - was) > max(1.0, was * DRIFT_FRACTION)
-        if crossed_zero or big:
-            moved.append("%s %d->%d" % (name, was, now))
+    # Row-count drift is no longer checked here, and that is the point of the
+    # split: counts are measured per render by catalog_stats, so the prompt
+    # cannot quote a stale one. What a committed file can still get wrong is
+    # WHICH TABLES EXIST - and ALLOWED_TABLES is the sql_guard allowlist, so a
+    # table missing from it is not merely undocumented, it is unqueryable.
+    missing = sorted(set(counts) - stated)      # exist here, absent from the catalog
+    extra = sorted(stated - set(counts))        # described, not in this database
+    if not (missing or extra):
+        return 0                        # the table list is current; say nothing
 
-    if not (missing or extra or moved):
-        return 0                        # the catalog is current; say nothing
-
-    lines = ["nlp_search/schema_catalog.py no longer matches database `%s`."
+    lines = ["nlp_search/schema_catalog.py no longer lists the tables in `%s`."
              % dbname]
     if missing:
-        lines.append("INVISIBLE TO THE MODEL - tables exist but are absent from "
-                     "the catalog, so sql_guard refuses them and no worker can "
-                     "query them: %s" % ", ".join(missing))
+        lines.append("UNQUERYABLE - these tables exist but are absent from "
+                     "ALLOWED_TABLES, which is the sql_guard allowlist, so every "
+                     "query against them is refused: %s" % ", ".join(missing))
     if extra:
         lines.append("DESCRIBED BUT GONE - the catalog documents tables this "
                      "database does not have: %s" % ", ".join(extra))
-    if moved:
-        lines.append("ROW COUNTS the prompt states, vs actual: %s"
-                     % "; ".join(moved))
-    lines.append("Every table heading in the prompt quotes the stale figure, and "
-                 "ENUM_VALUES / JSON_KEYS were sampled from those same old rows, "
-                 "so status vocabularies may be wrong too. Regenerate before "
-                 "trusting an answer: python -m nlp_search.build_catalog")
+    lines.append("Row counts and value lists are not in that file any more - "
+                 "catalog_stats measures those per render - so this is the only "
+                 "staleness left to fix. Regenerate: "
+                 "python -m nlp_search.build_catalog")
     return _emit(
-        system_message="Schema catalog is stale for `%s` - see context" % dbname,
+        system_message="Schema catalog table list is stale for `%s`" % dbname,
         context="\n".join(lines))
 
 

@@ -1006,10 +1006,11 @@ def visible_columns(t):
 
 
 def render_table_text(t):
-    head = "### %s (%s) - %s" % (
-        t["name"],
-        "%d rows" % t["rows"] if t["rows"] else "EMPTY - no rows yet",
-        PURPOSES.get(t["name"], "supporting table"))
+    # {ROWS} is filled in at render time from catalog_stats. Baking the count
+    # here is what made the prompt announce "datasheet_harmonic (EMPTY - no rows
+    # yet)" about a table that had a row in it.
+    head = "### %s {ROWS}- %s" % (
+        t["name"], PURPOSES.get(t["name"], "supporting table"))
     lines = [head]
     parts = []
     for c, typ, key in t["cols"]:
@@ -1022,7 +1023,6 @@ def render_table_text(t):
             piece += " ->%s.%s" % t["fks"][c]
         parts.append(piece)
     lines.append("  columns: " + "; ".join(parts))
-    lines.extend(render_json_block(t))
     hidden = [c for c, _t, _k in t["cols"] if _LARGE_COLUMN.match(c)]
     if hidden:
         grids = [h for h in hidden
@@ -1063,14 +1063,9 @@ def render_table_text(t):
             "it. Matching on serial_no instead is worse, not better: it covers "
             "fewer rows and multiplies more."
             % (ptable, pcol, matched, src, joined, examples, t["name"], t["name"]))
-    for c, vals in sorted(t["enums"].items()):
-        lines.append("  %s values: %s" % (c, ", ".join("'%s'" % v for v in vals)))
-    for c, (val, n) in sorted((t.get("constants") or {}).items()):
-        lines.append(
-            "  %s IS '%s' ON ALL %d ROWS - it never varies, so it cannot tell "
-            "anything apart. Filtering on it matches everything and reading it "
-            "as an outcome is wrong; find the column that does vary."
-            % (c, val, n))
+    # Value lists, constants and JSON keys are NOT baked in. They are measured
+    # per render by catalog_stats, because they change when somebody uses the
+    # app rather than when somebody migrates the schema.
     return "\n".join(lines)
 
 
@@ -1105,7 +1100,7 @@ TABLE_PURPOSE = %(purposes)r
 
 # Low-cardinality values per table.column, so "which statuses exist" is a
 # lookup rather than a query.
-ENUM_VALUES = %(enums)r
+# ENUM_VALUES: served fresh by __getattr__ from catalog_stats()['enums'].
 
 # Columns that hold ONE value on every row. Classification-shaped and empty of
 # information: filtering on them matches everything, and reading one as an
@@ -1114,7 +1109,7 @@ ENUM_VALUES = %(enums)r
 # datasheet_status_history.to_status. Kept structured as well as in the prompt
 # so a probe can answer "can this column tell me that?" without a query.
 # "table.column" -> (the only value, rows carrying it).
-CONSTANT_COLUMNS = %(constants)r
+# CONSTANT_COLUMNS: served fresh by __getattr__ from catalog_stats()['constants'].
 
 # The measurement / observation grids, per table. These columns are hidden from
 # COLUMNS on purpose - a model cannot write useful SQL against JSON and
@@ -1127,7 +1122,7 @@ GRID_COLUMNS = %(grids)r
 # "table.column" -> {"is_list": bool, "keys": {key: {values, example, nested}}}.
 # probes.find_field reads this so "where is the cable length recorded" can
 # answer with a JSON path instead of missing the column entirely.
-JSON_KEYS = %(json_keys)r
+# JSON_KEYS: served fresh by __getattr__ from catalog_stats()['json_keys'].
 
 # What each table held WHEN THIS FILE WAS GENERATED. Not a live figure - the
 # whole catalog is a photograph, and this is the part that dates fastest.
@@ -1135,7 +1130,17 @@ JSON_KEYS = %(json_keys)r
 # to the model: it once said `datasheet (24 rows)` against an empty table and
 # the model believed it. .claude/hooks/catalog_guard.py compares this against
 # the live database at session start so drift is announced, not discovered.
-ROW_COUNTS = %(row_counts)r
+# ROW_COUNTS: served fresh by __getattr__ from catalog_stats()['row_counts'].
+
+# WHICH columns hold a classification, and which hold JSON. The judgement, not
+# the measurement: deciding that equipment.calibration_required is a class and
+# content_hash is not is schema-shaped work (see MIN_CLASS_REPEAT in
+# build_catalog) and belongs in a reviewed file. WHAT those columns currently
+# contain is measured at run time by catalog_stats, because it changes whenever
+# somebody uses the app. Keeping the two apart is what stops routing shifting
+# under the model's feet every time a new status value appears.
+CLASS_COLUMNS = %(class_columns)r
+JSON_COLUMNS = %(json_columns)r
 
 
 # The schema's own vocabulary, for routing a question to the worker that can
@@ -1166,7 +1171,7 @@ def term_weight(term):
 def json_paths_for(table, column=None):
     """[(column, key), ...] this table records inside JSON. For find_field."""
     out = []
-    for ref, profile in JSON_KEYS.items():
+    for ref, profile in (_stats().get('json_keys') or {}).items():
         tbl, col = ref.split(".", 1)
         if tbl != table or (column and col != column):
             continue
@@ -1192,12 +1197,106 @@ CORE_TABLES = %(core)r
 _TABLE_TEXT = %(texts)r
 
 
+# ---------------------------------------------------------------------------
+# The measured half, fetched per render rather than baked in above.
+# ---------------------------------------------------------------------------
+
+def _stats():
+    """Current row counts, value lists, constants and JSON keys.
+
+    Imported lazily: catalog_stats imports this module back, and a prompt has
+    to render even when the database is unreachable.
+    """
+    try:
+        from . import catalog_stats
+        return catalog_stats.current()
+    except Exception:  # noqa: BLE001
+        return {"row_counts": {}, "enums": {}, "constants": {}, "json_keys": {}}
+
+
+# The volatile names are deliberately NOT module attributes. Python calls
+# __getattr__ only for names it cannot find, so defining them would freeze them.
+# Everything that already said schema_catalog.ENUM_VALUES keeps working and
+# starts getting the current answer - except `from schema_catalog import
+# ENUM_VALUES`, which binds a snapshot at import and must be changed to
+# attribute access.
+_VOLATILE = {"ROW_COUNTS": "row_counts", "ENUM_VALUES": "enums",
+             "CONSTANT_COLUMNS": "constants", "JSON_KEYS": "json_keys"}
+
+
+def __getattr__(name):
+    if name in _VOLATILE:
+        return _stats().get(_VOLATILE[name]) or {}
+    raise AttributeError("module %%r has no attribute %%r" %% (__name__, name))
+
+
+def _rows_phrase(name, stats):
+    counts = stats.get("row_counts") or {}
+    if name not in counts:
+        return ""           # unmeasured: say nothing rather than guess a count
+    n = counts[name]
+    if not n:
+        return "(EMPTY - no rows yet) "
+    return "(%%d row%%s) " %% (n, "" if n == 1 else "s")
+
+
+def _json_block(ref, profile):
+    col = ref.split(".", 1)[1]
+    out = ["  %%s is JSON, not text.%%s Keys:"
+           %% (col, " A LIST of objects." if profile.get("is_list") else "")]
+    for key, meta in sorted((profile.get("keys") or {}).items()):
+        vals = meta.get("values") or ()
+        line = "    %%s" %% key
+        if vals:
+            line += " - values: %%s" %% ", ".join("'%%s'" %% v for v in vals)
+        elif meta.get("example") not in (None, ""):
+            line += " - e.g. '%%s'" %% meta["example"]
+        out.append(line)
+    return out
+
+
+def _volatile_lines(name, stats):
+    out = []
+    prefix = name + "."
+    for ref, profile in sorted((stats.get("json_keys") or {}).items()):
+        if ref.startswith(prefix) and ref.count(".") == prefix.count("."):
+            out.extend(_json_block(ref, profile))
+    for ref, vals in sorted((stats.get("enums") or {}).items()):
+        if ref.startswith(prefix):
+            out.append("  %%s values: %%s"
+                       %% (ref[len(prefix):], ", ".join("'%%s'" %% v for v in vals)))
+    for ref, pair in sorted((stats.get("constants") or {}).items()):
+        if not ref.startswith(prefix):
+            continue
+        val, n = pair
+        out.append(
+            "  %%s IS '%%s' ON ALL %%d ROWS - it never varies, so it cannot tell "
+            "anything apart. Filtering on it matches everything and reading it "
+            "as an outcome is wrong; find the column that does vary."
+            %% (ref[len(prefix):], val, n))
+    return out
+
+
+def _table_text(name, stats=None):
+    """One table's section: the committed skeleton plus today's measurements."""
+    skeleton = _TABLE_TEXT.get(name)
+    if skeleton is None:
+        return None
+    stats = _stats() if stats is None else stats
+    body = skeleton.replace("{ROWS}", _rows_phrase(name, stats))
+    extra = _volatile_lines(name, stats)
+    # chr(10), not a backslash escape: this line lives inside the generator's
+    # template string, where one level of escaping has already been spent.
+    return body + (chr(10) + chr(10).join(extra) if extra else '')
+
+
 def catalog_prompt_text(domain=None):
     """The catalog section for one worker, or the whole schema when domain is None."""
     names = DOMAIN_TABLES.get(domain) if domain else tuple(_TABLE_TEXT)
     if not names:
         names = tuple(_TABLE_TEXT)
-    body = "\\n\\n".join(_TABLE_TEXT[n] for n in names if n in _TABLE_TEXT)
+    st = _stats()
+    body = (chr(10) + chr(10)).join(_table_text(n, st) for n in names if n in _TABLE_TEXT)
     return _GLOSSARY + "\\n\\n" + _JOIN_HINTS + "\\n\\n" + body
 
 
@@ -1231,11 +1330,11 @@ def index_prompt_text(domain=None):
     out = _GLOSSARY
     if core:
         out += ("\\n\\n## Tables you use constantly - columns given\\n\\n"
-                + "\\n\\n".join(_TABLE_TEXT[n] for n in core if n in _TABLE_TEXT))
+                + (chr(10) + chr(10)).join(_table_text(n) for n in core if n in _TABLE_TEXT))
     if rest:
         lines = []
         for n in rest:
-            head = _TABLE_TEXT.get(n, "").split("\\n", 1)[0]
+            head = (_table_text(n) or "").split(chr(10), 1)[0]
             lines.append(head[4:] if head.startswith("### ") else n)
         out += ("\\n\\n## Also yours - call describe_table(name) for its columns\\n"
                 + "\\n".join("  " + ln for ln in lines))
@@ -1244,7 +1343,7 @@ def index_prompt_text(domain=None):
 
 def table_detail(name):
     """Full catalog entry for one table: columns, notes, enum values."""
-    return _TABLE_TEXT.get(name)
+    return _table_text(name)
 
 
 def tables_for(domain=None):
@@ -1265,6 +1364,12 @@ def columns_for(table):
        "json_keys": {"%s.%s" % (t["name"], c): p
                      for t in tables for c, p in (t.get("json") or {}).items()},
        "row_counts": {t["name"]: int(t["rows"] or 0) for t in tables},
+       "class_columns": tuple(sorted(
+           ["%s.%s" % (t["name"], c) for t in tables for c in t["enums"]]
+           + ["%s.%s" % (t["name"], c) for t in tables
+              for c in (t.get("constants") or {})])),
+       "json_columns": tuple(sorted(
+           "%s.%s" % (t["name"], c) for t in tables for c in (t.get("json") or {}))),
        "constants": {"%s.%s" % (t["name"], c): v
                      for t in tables
                      for c, v in (t.get("constants") or {}).items()},
