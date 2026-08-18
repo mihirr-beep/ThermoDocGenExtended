@@ -267,6 +267,9 @@ def failure_detail(conn, product=None, tco=None, limit=40):
 # 3. metric_delta - "which frequencies improved most?"
 # ---------------------------------------------------------------------------
 
+# Two format slots: the TCO parameter name, then the revision parameter name.
+# A NULL revision means "the latest", which is what a campaign-to-campaign
+# comparison wants; naming one pins the pivot to a single frozen revision.
 _PIVOT = """
     SELECT m.grid_key, m.row_no,
            MAX(CASE WHEN m.col_key = 'qp_freq'  THEN m.value_num END) AS freq,
@@ -279,13 +282,35 @@ _PIVOT = """
     JOIN iec_emc_requests r ON r.id = p.test_request_id
     WHERE r.tco_id = %%(%s)s
       AND m.grid_key IN ('line_measurements', 'neutral_measurements')
-      AND m.revision_no = (SELECT MAX(m2.revision_no) FROM datasheet_measurement m2
-                            WHERE m2.datasheet_id = m.datasheet_id)
+      AND m.revision_no = COALESCE(%%(%s)s,
+            (SELECT MAX(m2.revision_no) FROM datasheet_measurement m2
+              WHERE m2.datasheet_id = m.datasheet_id))
     GROUP BY m.grid_key, m.row_no
 """
 
 
-def metric_delta(conn, tco_before, tco_after, limit=40):
+def _pivot_revisions(conn, tco):
+    """Which frozen revisions of this campaign actually carry qp readings.
+
+    Read from the same rows the pivot reads, not from datasheet_revision: a
+    revision can exist as a header without the measurement grid being filled,
+    and offering to compare one that has no readings produces an empty result
+    that looks like "no change".
+    """
+    sql = ("SELECT DISTINCT m.revision_no "
+           "FROM datasheet_measurement m "
+           "JOIN `datasheet` d ON d.id = m.datasheet_id "
+           "JOIN planner_entries p ON p.id = d.planner_entry_id "
+           "JOIN iec_emc_requests r ON r.id = p.test_request_id "
+           "WHERE r.tco_id = %(tco)s "
+           "  AND m.grid_key IN ('line_measurements', 'neutral_measurements') "
+           "  AND m.col_key = 'qp' AND m.value_num IS NOT NULL "
+           "ORDER BY m.revision_no")
+    return [r["revision_no"] for r in _rows(conn, sql, tco=tco)]
+
+
+def metric_delta(conn, tco_before, tco_after, rev_before=None,
+                 rev_after=None, limit=40):
     """Per-frequency change between two campaigns of the same product.
 
     Matched on the FREQUENCY, not on row number: rows move when an engineer adds
@@ -296,24 +321,59 @@ def metric_delta(conn, tco_before, tco_after, limit=40):
     that helps - stated explicitly because the sign convention of a margin is
     the easiest thing in this whole feature to get backwards.
     """
-    # "of the same product" was in this docstring and enforced nowhere. Across
-    # two products the frequency join can still match - two units measured at
-    # 0.72 MHz - and it would report an "improvement" between unrelated things.
-    # That is worse than config_diff's version of the same bug, because it comes
-    # out as a single confident number rather than a suspicious wall of rows.
-    refusal = _same_product(conn, tco_before, tco_after)
-    if refusal:
-        return refusal
+    # SAME TCO MEANS COMPARE ITS REVISIONS, not a campaign against itself.
+    #
+    # timeline's own suggestion block emits metric_delta(tco_before='X',
+    # tco_after='X') whenever a question goes past the campaign list, and until
+    # now both sides pinned to MAX(revision_no) - so it compared revision 2 with
+    # revision 2 and returned improvement_db=0.00 on every row. Read plainly,
+    # that says nothing changed between the two attempts. It is the tool handing
+    # the model a confident wrong answer and then recommending that it ask for
+    # one.
+    #
+    # The data to answer it properly was already sitting there: DEMO-EMC-301 CE
+    # holds the full quasi-peak pivot at revision 1 AND revision 2, and 304 ESD
+    # at three. A rejected version against the fixed one is the comparison this
+    # lab actually makes - "what changed in the readings after peer review sent
+    # it back" - and it was the one shape metric_delta could not express.
+    same_campaign = (str(tco_before or "").strip().upper()
+                     == str(tco_after or "").strip().upper())
+    if same_campaign:
+        if rev_before is None and rev_after is None:
+            revs = _pivot_revisions(conn, tco_before)
+            if len(revs) < 2:
+                return ("Only %d revision of %s carries quasi-peak readings, so "
+                        "there is nothing to compare it against. A comparison "
+                        "needs two frozen revisions, or two campaigns of the "
+                        "same product."
+                        % (len(revs), tco_before))
+            rev_before, rev_after = revs[-2], revs[-1]
+        if rev_before == rev_after:
+            return ("revision %s cannot be compared with itself - that returns "
+                    "zero change on every row, which reads as 'nothing changed' "
+                    "and is not a measurement. Name two different revisions."
+                    % rev_before)
+    else:
+        # "of the same product" was in this docstring and enforced nowhere.
+        # Across two products the frequency join can still match - two units
+        # measured at 0.72 MHz - and it would report an "improvement" between
+        # unrelated things. That is worse than config_diff's version of the same
+        # bug, because it comes out as a single confident number rather than a
+        # suspicious wall of rows.
+        refusal = _same_product(conn, tco_before, tco_after)
+        if refusal:
+            return refusal
     sql = ("SELECT b.grid_key, b.freq AS frequency_mhz, b.qp AS before_qp, "
            "a.qp AS after_qp, ROUND(b.qp - a.qp, 2) AS improvement_db, "
            "b.margin AS before_margin, a.margin AS after_margin, "
            "CASE WHEN b.margin > 0 AND a.margin <= 0 THEN 1 ELSE 0 END AS newly_compliant "
-           "FROM (" + (_PIVOT % "tb") + ") b "
-           "JOIN (" + (_PIVOT % "ta") + ") a "
+           "FROM (" + (_PIVOT % ("tb", "rb")) + ") b "
+           "JOIN (" + (_PIVOT % ("ta", "ra")) + ") a "
            "  ON a.grid_key = b.grid_key AND a.freq = b.freq "
            "WHERE b.freq IS NOT NULL "
            "ORDER BY improvement_db DESC LIMIT %(lim)s")
-    return _rows(conn, sql, tb=tco_before, ta=tco_after, lim=int(limit))
+    return _rows(conn, sql, tb=tco_before, ta=tco_after,
+                 rb=rev_before, ra=rev_after, lim=int(limit))
 
 
 # ---------------------------------------------------------------------------
