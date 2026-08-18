@@ -141,8 +141,22 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                 "answer": "I could not produce an answer for that."}
 
     # A refusal or a clarifying question asserts nothing; nothing to ground.
-    if (_NON_CLAIM_RE.search(draft) or _SCOPE_DECLINE_RE.search(draft)
-            or (draft.endswith("?") and len(draft) < 300)):
+    #
+    # But "ends with a question mark" is not the same as "asserts nothing", and
+    # treating it that way opened the widest hole in this module. Models end
+    # answers with a courtesy follow-up constantly - the live pipeline produced
+    # "...5 draft datasheets out of 12 total. ... Would you like details on any
+    # of these?" unprompted - and any such answer under 300 characters skipped
+    # grounding completely. Measured against a ledger holding 5:
+    #
+    #   "There are 47 datasheets in draft."                  -> repaired to 5
+    #   "There are 47 datasheets in draft. Want details?"    -> shown as 47
+    #
+    # The only difference was politeness. So a draft carrying figures is an
+    # answer no matter how it ends, and goes through grounding like any other.
+    asks_only = (draft.endswith("?") and len(draft) < 300
+                 and not _claim_tokens(draft))
+    if _NON_CLAIM_RE.search(draft) or _SCOPE_DECLINE_RE.search(draft) or asks_only:
         return {"verdict": "clarify", "answer": draft, "unsupported": [], "notes": []}
 
     # An answer built on no evidence at all is the highest-risk case: the model
