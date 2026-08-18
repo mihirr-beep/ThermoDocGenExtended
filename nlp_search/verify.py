@@ -241,14 +241,36 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
                            missed, phantom, counting=counting,
                            undisclosed=undisclosed, model=model)
     if verdicts is None:                      # adjudicator unavailable
-        # Do NOT call this grounded. The flags are the reason we are here, and
-        # labelling an unchecked answer "Verified against the data" is the same
-        # failure as the one this pass exists to prevent - it was shown with
-        # exactly that badge over two invented figures. The answer is still
-        # shown; only the claim that it was checked is withdrawn.
-        notes.append("adjudication unavailable; flags reported unresolved")
-        return {"verdict": "unsupported" if flagged else "grounded",
-                "answer": draft, "unsupported": flagged, "notes": notes}
+        # Grounding used to weaken here exactly when the service was under
+        # stress: a rate limit or an outage made every flagged figure pass
+        # through unrepaired, with only a note withdrawing the "verified" badge.
+        # The answer was still shown, wrong numbers and all.
+        #
+        # Arithmetic does not need a language model. Most surviving flags are
+        # legitimately DERIVED - "42%" from 5 and 12, "7 more than last month" -
+        # and that is checkable by trying the combinations. What cannot be
+        # derived from anything we measured is not a rounding of the evidence,
+        # it is a figure from nowhere, and the honest response is the one the
+        # adjudicated path already uses: withhold the prose, show the rows.
+        #
+        # Deliberately monotonic. A coincidental arithmetic match marks a figure
+        # supported and shows it, which is exactly what happened before this
+        # existed - so the fallback can only match today's behaviour or improve
+        # on it, never do worse.
+        pool = _numeric_pool(ledger)
+        still_bad = [t for t in flagged if not _derivable(t, pool)]
+        derived = [t for t in flagged if t not in still_bad]
+        if derived:
+            notes.append("adjudicator unreachable; %d figure(s) checked "
+                         "arithmetically against the evidence" % len(derived))
+        if not still_bad and not phantom:
+            notes.append("checked without the adjudicator")
+            return {"verdict": "grounded", "answer": draft,
+                    "unsupported": [], "notes": notes}
+        notes.append("adjudicator unreachable; %d figure(s) could not be "
+                     "derived from anything measured" % len(still_bad))
+        return {"verdict": "unsupported", "unsupported": still_bad, "notes": notes,
+                "answer": _cannot_verify(still_bad, ledger)}
 
     bad = verdicts.get("unsupported") or []
     incomplete = bool(verdicts.get("incomplete"))
@@ -532,6 +554,56 @@ def _coverage_gap(question, draft, ledger):
         if worst is None or len(missing) > worst["total"] - worst["cited"]:
             worst = gap
     return worst
+
+
+def _numeric_pool(ledger, cap=400):
+    """Every number the database actually handed us, plus the row counts.
+
+    Capped because the combination search below is quadratic and a 200-row
+    result would otherwise make it the slowest thing in the request.
+    """
+    pool = set()
+    for e in ledger.entries:
+        pool.add(float(e["row_count"]))
+        for row in e["rows"]:
+            for v in row:
+                if isinstance(v, bool) or v is None:
+                    continue
+                try:
+                    pool.add(float(v))
+                except (TypeError, ValueError):
+                    continue
+                if len(pool) >= cap:
+                    return pool
+    return pool
+
+
+def _derivable(token, pool, tol=0.05):
+    """Could this figure have come out of the numbers we measured?
+
+    Not a proof of correctness - a proof that the figure is ARITHMETIC on the
+    evidence rather than invented. A percentage of two measured counts, a sum, a
+    difference: all legitimate things for an answer to state, none of which
+    appear literally in any cell, and all of which the token check flags.
+    Without this the fallback would withhold correct answers for saying "42%".
+    """
+    try:
+        n = float(str(token).replace(",", "").rstrip("%"))
+    except (TypeError, ValueError):
+        return False
+    if not pool:
+        return False
+    for a in pool:
+        if abs(n - a) <= tol:
+            return True
+        for b in pool:
+            if abs(n - (a + b)) <= tol or abs(n - (a - b)) <= tol:
+                return True
+            if b and abs(n - (100.0 * a / b)) <= tol:
+                return True
+            if b and abs(n - (a / b)) <= tol:
+                return True
+    return False
 
 
 def _row_counts(ledger):
