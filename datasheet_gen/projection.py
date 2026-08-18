@@ -507,6 +507,29 @@ def project_header(record, entry, request=None, with_images=True):
     return True
 
 
+def _catalog_stats_stale():
+    """The NL catalog's measured half just went out of date.
+
+    catalog_stats caches row counts and value lists for a couple of minutes, so
+    without this a rejection made in the UI could be invisible to the assistant
+    for that long - reject a datasheet, ask about it, get the previous minute's
+    picture. nlp_search registers into the same Flask app, so the writer and the
+    cache are in one process and clearing it here actually lands.
+
+    Best-effort on purpose. nlp_search is an optional blueprint; a deployment
+    without it must not fail a datasheet transition over a cache hint.
+
+    Caveat worth knowing: with several gunicorn workers this clears only the
+    worker that handled the write. The others fall back to their TTL, which is
+    the same behaviour as before this existed - never worse, sometimes better.
+    """
+    try:
+        from nlp_search import catalog_stats
+        catalog_stats.invalidate()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def project(record, entry, request=None, with_images=True):
     """Full projection: header + per-test spec + all child rows.
 
@@ -557,6 +580,7 @@ def project(record, entry, request=None, with_images=True):
     written = {"spec": _project_spec(db, did, code, form, schema, revision_no)}
     written.update(_project_children(db, did, code, form, schema))
     db.session.commit()
+    _catalog_stats_stale()
     return {"datasheet_id": did, "rows": written}
 
 
@@ -902,6 +926,7 @@ def record_transition(planner_entry_id, to_status, actor=None, comment="",
         db.session.execute(text("UPDATE `datasheet` SET %s WHERE id=:d"
                                 % ", ".join(sets)), params)
         db.session.commit()
+        _catalog_stats_stale()
         return True
     except Exception:  # noqa: BLE001
         db.session.rollback()
