@@ -244,6 +244,56 @@ def _emptiness_note(rows):
     return {}
 
 
+def _unique_columns(columns):
+    """Column names a dict can hold without losing one.
+
+    `SELECT d.id, r.id FROM datasheet d JOIN datasheet_revision r` returns two
+    columns both called `id`, which is not exotic - it is what happens the
+    moment anyone joins. dict(zip(names, row)) keeps the last and silently drops
+    the first, so half the result would vanish with nothing to show it had. The
+    second occurrence becomes id__2, which is ugly and honest.
+    """
+    seen, out = {}, []
+    for c in columns:
+        c = c if c is not None else "?"
+        n = seen.get(c, 0) + 1
+        seen[c] = n
+        out.append(c if n == 1 else "%s__%d" % (c, n))
+    return out
+
+
+def _as_objects(names, rows):
+    """One JSON object per row, keyed by column name.
+
+    Positional arrays make the model do the join between the header and each
+    row by counting, and a miscount does not look like an error - it looks like
+    an answer about the wrong column. Naming every value costs tokens and
+    removes the whole failure mode.
+
+    NULL is kept as an explicit null rather than dropped: an absent key reads as
+    "this column does not exist", when what it means is "nobody recorded it".
+    That distinction is the difference between "no reading" and "a reading of
+    zero", and this lab has columns in exactly that state.
+    """
+    return [dict(zip(names, row)) for row in rows]
+
+
+# Advisory text, in the order it should be read. Folded out of the payload body
+# into one list so the model can tell evidence from instruction at a glance -
+# everything under "rows" came from the database, everything under "guidance"
+# came from us.
+_GUIDANCE_KEYS = ("note", "scope_check", "join_check", "nulls")
+
+
+def _fold_guidance(payload):
+    notes = [payload.pop(k) for k in _GUIDANCE_KEYS if payload.get(k)]
+    for k in _GUIDANCE_KEYS:
+        payload.pop(k, None)
+    if notes:
+        payload["guidance"] = notes
+    return payload
+
+
 def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
     """Validate + execute one SELECT. Returns a JSON string for the model.
 
@@ -310,8 +360,9 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
             ledger.record(worker, cleaned, columns=columns, rows=rows,
                           truncated=truncated)
 
-        payload = {"columns": columns, "rows": rows,
-                   "row_count": len(rows), "truncated": truncated}
+        names = _unique_columns(columns)
+        payload = {"row_count": len(rows), "truncated": truncated,
+                   "columns": names, "rows": _as_objects(names, rows)}
 
         # THE FEEDBACK SIGNAL. A wrong join does not error - it returns a
         # confident wrong number, and nothing in the result says so. The same
@@ -363,7 +414,24 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
-        out = json.dumps(payload, ensure_ascii=False, default=str)
+        out = json.dumps(_fold_guidance(payload), ensure_ascii=False, default=str)
+
+        # Naming every value costs about 2.5x on a wide result - 200 x 11
+        # measured 15751 chars positional against 43751 named. Paid blindly,
+        # that halves what survives the size budget (100 rows -> 50), so the
+        # model would trade a format it reads better for half the evidence.
+        # Never worth it: fall back to positional BEFORE dropping a single row,
+        # and say plainly how to read it. Small results - almost every question
+        # anyone actually asks - keep the named form, which is where misreading
+        # a column was going to happen anyway.
+        if len(out) > MAX_RESULT_CHARS:
+            payload["rows"] = rows
+            payload["row_format"] = (
+                "Rows are POSITIONAL here, not named: each row is an array whose "
+                "values line up with `columns` in order. This result was too "
+                "large to name every value, and dropping rows would have been "
+                "worse. Index carefully - `columns[i]` describes `row[i]`.")
+            out = json.dumps(payload, ensure_ascii=False, default=str)
 
         # keep the tool result readable: halve rows until it fits, and if a
         # single wide row still blows the budget, hard-truncate the JSON string
