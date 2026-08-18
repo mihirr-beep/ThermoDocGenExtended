@@ -1073,6 +1073,24 @@ def build_context(schema, form_data, request_obj=None):
                 ctx["test_mode"] = _cmodes
         # A CRLF draft would print three blank lines before 'Power Line:'.
         crf_normalize_procedure_breaks(ctx)
+        # The procedure describes the port that was tested. The template ships only the
+        # Power Line paragraph, so a signal-line test printed the wrong setup entirely -
+        # a CDN on the power lines instead of an EM clamp on the signal lines. The Signal
+        # Line block lives in procedures.PORT_BLOCKS; it is added when that port is the one
+        # under test, and then the blocks for the untested port are dropped by the same
+        # filter SURGE and EFT use (it reads a block by its heading).
+        _cport = _s(form_data.get("test_port"))
+        if _cport and not _s(form_data.get("test_procedure_manual")):
+            from . import procedures as _procedures
+            _ctxt = _procedures.ensure_port_block("CRF", ctx.get("test_procedure"), _cport)
+            _low = _cport.lower()
+            ctx["test_procedure"] = _surge_filter_procedure(
+                _ctxt, "power" in _low or "both" in _low, "signal" in _low or "both" in _low)
+            # Coupling Method follows the port unless the engineer chose otherwise.
+            if not _s(form_data.get("coupling_method")):
+                _cm = _procedures.coupling_default("CRF", _cport)
+                if _cm:
+                    ctx["coupling_method"] = _cm
         # The Test Port decides which Test Setup picture and which TEST OBSERVATION block
         # survive; Ambient / Humidity / Test Date / Tested by split into per-day sections.
         ctx["_crf_meta"] = {"ports": _crf_ports(form_data),
@@ -1090,6 +1108,18 @@ def build_context(schema, form_data, request_obj=None):
         # engineer chose. Field bases match RE's, so its collector is reused; the finaliser
         # splits the value cell.
         ctx["_flicker_meta"] = {"row_splits": _re_row_splits(form_data)}
+    # The EUT-support wording follows EUT Configuration on every datasheet that has a rule
+    # (procedures.SUPPORT_RULES), not just the three that grew one by hand. Applied here so a
+    # branch above cannot miss it and a draft saved before the rule existed is corrected;
+    # idempotent, so the datasheets that already resolved it above are unaffected.
+    #
+    # A hand-edited procedure is left alone, exactly as the form leaves it: once the engineer
+    # has taken the text over, rewriting a phrase inside it would edit their words.
+    if not _s(form_data.get("test_procedure_manual")):
+        from . import procedures as _procedures
+        ctx["test_procedure"] = _procedures.apply_support(
+            (schema.get("code") or "").upper(), ctx.get("test_procedure"),
+            _s(form_data.get("eut_configuration")))
     # LAST, so nothing a per-datasheet branch above added can slip past: every date in the
     # document prints DD/MM/YYYY, whatever the form or the equipment master supplied.
     normalize_context_dates(schema, ctx)
@@ -1504,11 +1534,16 @@ def _normalize_mains_and_modes(values, request_obj=None):
 
 
 def flicker_normalize_values(values, request_obj=None):
-    """VOLTAGEFLICKER's form-path corrections: the mains supply and Test Mode rules.
-
-    No EUT-support wording here - unlike HARMONIC, that was not asked for on this
-    datasheet, so its procedure text is left exactly as the engineer sees it."""
-    return _normalize_mains_and_modes(values, request_obj)
+    """VOLTAGEFLICKER's form-path corrections: the mains supply and Test Mode rules, plus
+    its EUT-support wording - a wooden table of 0.8 m height for Tabletop, an insulation
+    support of 0.1 m height for Floor standing."""
+    if not isinstance(values, dict):
+        return values
+    _normalize_mains_and_modes(values, request_obj)
+    if not _s(values.get("test_procedure_manual")):
+        values["test_procedure"] = _harmonic_apply_support_mapping(
+            values.get("test_procedure"), values.get("eut_configuration"), "VOLTAGEFLICKER")
+    return values
 
 
 def harmonic_normalize_values(values, request_obj=None):
@@ -1533,23 +1568,15 @@ def surge_normalize_procedure(values):
 
 
 def _re_apply_support_mapping(text, cfg):
-    """EUT support wording follows the EUT Configuration: a non-conductive table of
-    0.8 m for Tabletop, an insulation support of 0.1 m for Floor standing. Idempotent,
-    so it also fixes text restored from an older draft."""
-    txt = _s(text)
-    if not txt:
-        return txt
-    support = ("insulation support of 0.1 m height"
-               if "floor" in _s(cfg).lower()
-               else "non-conductive table of 0.8 m height")
-    for generic in ("non-conductive table/ insulation support of 0.8/0.1m height",
-                    "non-conductive table/ insulation support of 0.8/0.1 m height",
-                    "non-conductive table of 0.8m height",
-                    "non-conductive table of 0.8 m height",
-                    "insulation support of 0.1m height",
-                    "insulation support of 0.1 m height"):
-        txt = txt.replace(generic, support)
-    return txt
+    """RE / RS_RI: a non-conductive table of 0.8 m for Tabletop, an insulation support of
+    0.1 m for Floor standing.
+
+    The wording now lives in procedures.SUPPORT_RULES with every other datasheet's, so the
+    form, the document and the admin page read one table. Kept as a name because several
+    call sites use it, and both datasheets share RE's rule.
+    """
+    from .procedures import apply_support
+    return apply_support("RE", _s(text), cfg)
 
 
 #: HARMONIC's EUT-support wording. Its procedure ships the combined
@@ -1570,21 +1597,16 @@ _HARMONIC_SUPPORT_PHRASES = (
 )
 
 
-def _harmonic_apply_support_mapping(text, cfg):
-    """HARMONIC's EUT-support wording follows EUT Configuration: a wooden table at 0.8m
-    height for Tabletop, an insulation support at 0.1m height for Floor standing.
+def _harmonic_apply_support_mapping(text, cfg, code="HARMONIC"):
+    """HARMONIC / VOLTAGEFLICKER: a wooden table of 0.8 m height for Tabletop, an
+    insulation support of 0.1 m height for Floor standing.
 
-    Idempotent and reversible - it rewrites whichever of the phrases is currently in the
-    text, so switching the dropdown either way corrects it, as does a resumed draft."""
-    txt = _s(text)
-    if not txt:
-        return txt
-    want = (_HARMONIC_SUPPORT_FLOOR if "floor" in _s(cfg).lower()
-            else _HARMONIC_SUPPORT_TABLETOP)
-    for phrase in _HARMONIC_SUPPORT_PHRASES:
-        if phrase != want:
-            txt = txt.replace(phrase, want)
-    return txt
+    `code` because FLICKER ships 'of 0.8/0.1m height' where HARMONIC ships 'at' - passing
+    HARMONIC's phrase list at a Flicker procedure matched nothing, which is why Flicker's
+    wording never followed the dropdown. Each datasheet now brings its own list.
+    """
+    from .procedures import apply_support
+    return apply_support(code, _s(text), cfg)
 
 
 def _harmonic_fill_na(rows, value="NA"):
@@ -1802,6 +1824,18 @@ def collect_prefill(schema, request_obj, assignment):
             # that block for good. Same arrangement as SURGE.
             pre["test_procedure_full"] = _full
             pre[f["key"]] = _full
+        elif _code == "CRF" and k == "test_procedure":
+            # The template ships the Power Line block only; the Signal Line one lives in
+            # procedures.PORT_BLOCKS. The form is given BOTH (as test_procedure_full) so
+            # switching Test Port rebuilds the right paragraph - the same arrangement SURGE
+            # and EFT use - and the visible text starts filtered to the port on the request.
+            from . import procedures as _procedures
+            _full = _procedures.ensure_port_block(
+                "CRF", _s(f.get("default", "")), "Signal Line")
+            pre["test_procedure_full"] = _full
+            _cp = _s(pre.get("test_port")).lower()
+            pre[f["key"]] = _surge_filter_procedure(
+                _full, ("power" in _cp) or not _cp, ("signal" in _cp) or not _cp)
         elif _code == "VOLTAGEDIPS" and k == "test_procedure":
             # '<Standard name>' in the opening sentence means the BASIC standard
             # (IEC/EN 61000-4-11), not the product standards the generic path would use.
@@ -1952,6 +1986,20 @@ def collect_prefill(schema, request_obj, assignment):
         pre["f_960_to_1000_fcc"] = fcc_qp.get("960 to 1000", "")
 
     _apply_db_fixed_scalars(pre, schema)
+    # The engineer should see on the FORM the support wording that will print, on every
+    # datasheet with a rule rather than the three that had one by hand. Runs after the
+    # per-datasheet arms above (idempotent, so it does not undo them) and after the fixed
+    # values, which can supply a procedure of their own.
+    from . import procedures as _procedures
+    _pcode = (schema.get("code") or "").upper()
+    if _procedures.support_rule(_pcode):
+        pre["test_procedure"] = _procedures.apply_support(
+            _pcode, pre.get("test_procedure"), _s(pre.get("eut_configuration")))
+    # Coupling Method follows the Test Port: a power line is driven through a CDN, a signal
+    # line through an EM clamp. A default, not a lock - the field stays editable.
+    _cm = _procedures.coupling_default(_pcode, _s(pre.get("test_port")))
+    if _cm:
+        pre["coupling_method"] = _cm
     return pre
 
 

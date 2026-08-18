@@ -2196,6 +2196,9 @@
       if (typeof renderProcedureView === 'function') renderProcedureView();
       if (typeof triggerAutoSave === 'function') triggerAutoSave();
     }
+    // Same reason as SURGE: this rebuilds from the full template, so the support wording
+    // is resolved again on top of what survived.
+    if (typeof applySupportWording === 'function') applySupportWording();
   }
   document.addEventListener('DOMContentLoaded', function () {
     var sel = document.querySelector('[name="test_port"]');
@@ -3363,8 +3366,18 @@
     if (flag) flag.value = '';
     var pEl = document.getElementById('test_procedure');
     if (pEl) pEl.value = PROC_ORIGINAL;           // the text the server sent
-    // ... then re-apply the support phrase for whatever EUT Configuration is set NOW,
-    // which may differ from what it was when the page loaded.
+    // ... then re-derive everything the text depends on, for the form as it stands NOW.
+    //
+    // PORTS FIRST. PROC_ORIGINAL is the full template, carrying a block for every port, so
+    // Reset alone put back the Signal Line paragraph on a power-line-only test - and left
+    // it out for good on a signal-line test once the earlier filtering had removed it,
+    // because nothing re-read the port fields. Reset now means "the standard text for what
+    // this form currently says", not "the text as it was posted".
+    //
+    // Support wording LAST, because those two rebuild from the full template and would
+    // otherwise put the tabletop phrase back on a floor-standing test.
+    if (typeof applySurgeProcedurePorts === 'function') applySurgeProcedurePorts();
+    if (typeof applySinglePortProcedure === 'function') applySinglePortProcedure();
     if (typeof applySupportWording === 'function') applySupportWording();
     var ta = document.getElementById('test_procedure_edit');
     var view = document.getElementById('test_procedure_view');
@@ -3391,49 +3404,70 @@
      HARMONIC words this differently - its EUT sits on a WOODEN table and its procedure
      ships the 'wooden table/insulation support at 0.8/0.1m height' placeholder - so the
      phrases are per-datasheet, mirroring _harmonic_apply_support_mapping() instead. */
-{% if code == 'HARMONIC' %}
-  var PROC_SUPPORTS = [
-    'wooden table/ insulation support at 0.8/0.1 m height',
-    'wooden table/insulation support at 0.8/0.1 m height',
-    'wooden table/ insulation support at 0.8/0.1m height',
-    'wooden table/insulation support at 0.8/0.1m height',
-    'wooden table at 0.8 m height',
-    'wooden table at 0.8m height',
-    'insulation support at 0.1 m height',
-    'insulation support at 0.1m height'
-  ];
-  var PROC_SUPPORT_FLOOR = 'insulation support at 0.1m height';
-  var PROC_SUPPORT_TABLE = 'wooden table at 0.8m height';
-{% else %}
-  var PROC_SUPPORTS = [
-    'non-conductive table/ insulation support of 0.8/0.1m height',
-    'non-conductive table/ insulation support of 0.8/0.1 m height',
-    'non-conductive table of 0.8m height',
-    'non-conductive table of 0.8 m height',
-    'insulation support of 0.1m height',
-    'insulation support of 0.1 m height'
-  ];
-  var PROC_SUPPORT_FLOOR = 'insulation support of 0.1 m height';
-  var PROC_SUPPORT_TABLE = 'non-conductive table of 0.8 m height';
-{% endif %}
+  /* The rule comes from the server - procedures.SUPPORT_RULES, the same table the document
+     is built from and the admin page edits. It used to be two hardcoded copies here, one
+     for HARMONIC and one for everything else, which is how Flicker, VDIPS, Surge, EFT, PFMF
+     and ESD ended up with no rule at all and how HARMONIC's wording drifted from the
+     document's. Empty object on a datasheet with no rule, and every function below is a
+     no-op then. */
+  var PROC_RULE = {{ proc_rule|default({})|tojson }};
+  //: Coupling Method per Test Port, e.g. CRF: {'Power Line': 'CDN', 'Signal Line': 'EM Clamp'}
+  var PROC_COUPLING = {{ proc_coupling|default({})|tojson }};
+
+  function procSupportWanted() {
+    var cfgEl = document.querySelector('[name="eut_configuration"]');
+    if (!cfgEl || !PROC_RULE.mode) return '';
+    var floor = String(cfgEl.value || '').toLowerCase().indexOf('floor') >= 0;
+    return (floor ? PROC_RULE.floor : PROC_RULE.tabletop) || '';
+  }
+
   function applySupportWording() {
     if (procIsManual()) return;
     var pEl = document.getElementById('test_procedure');
-    var cfgEl = document.querySelector('[name="eut_configuration"]');
-    if (!pEl || !cfgEl) return;
-    var want = (String(cfgEl.value || '').toLowerCase().indexOf('floor') >= 0)
-      ? PROC_SUPPORT_FLOOR
-      : PROC_SUPPORT_TABLE;
+    if (!pEl || !PROC_RULE.mode) return;
+    var want = procSupportWanted();
+    if (!want) return;
     var txt = pEl.value || '';
-    PROC_SUPPORTS.forEach(function (generic) {
-      if (generic !== want) txt = txt.split(generic).join(want);
-    });
+    if (PROC_RULE.mode === 'variant') {
+      /* Tabletop and Floor standing are different procedures here, not different
+         phrases - ESD grounds both coupling planes for a tabletop EUT and only the VCP
+         for a floor-standing one. The opening sentence is kept because it names the
+         basic standard. */
+      var i = txt.indexOf('\n\n');
+      txt = (i > 0) ? (txt.slice(0, i) + '\n\n' + want) : want;
+    } else {
+      (PROC_RULE.phrases || []).forEach(function (generic) {
+        if (generic !== want) txt = txt.split(generic).join(want);
+      });
+    }
     if (txt !== pEl.value) {
       pEl.value = txt;
       renderProcedureView();
       if (typeof triggerAutoSave === 'function') triggerAutoSave();
     }
   }
+
+  /* Coupling Method follows the Test Port: a power line is driven through a CDN, a signal
+     line through an EM clamp. A DEFAULT, not a lock - it is written when the port changes,
+     and the engineer can then pick something else and keep it. */
+  function applyCouplingDefault(force) {
+    var portEl = document.querySelector('[name="test_port"]');
+    var cmEl = document.querySelector('[name="coupling_method"]');
+    if (!portEl || !cmEl) return;
+    var want = PROC_COUPLING[String(portEl.value || '').trim()];
+    if (!want || cmEl.value === want) return;
+    // On a change of port the port's own default wins; on load an existing choice stands.
+    if (!force && String(cmEl.value || '').trim()) return;
+    cmEl.value = want;
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var portEl = document.querySelector('[name="test_port"]');
+    if (portEl && Object.keys(PROC_COUPLING).length) {
+      portEl.addEventListener('change', function () { applyCouplingDefault(true); });
+      applyCouplingDefault(false);
+    }
+  });
 
   // A draft whose procedure was hand-edited comes back with the flag set: show Reset and
   // say so, rather than looking like untouched standard text.
@@ -4052,6 +4086,10 @@
       if (typeof renderProcedureView === 'function') renderProcedureView();
       if (typeof triggerAutoSave === 'function') triggerAutoSave();
     }
+    // Rebuilt from the FULL template, which carries the shipped placeholder - so the
+    // EUT-support wording has to be resolved again or changing a port would quietly put
+    // the tabletop phrase back on a floor-standing test.
+    if (typeof applySupportWording === 'function') applySupportWording();
   }
 
   var SURGE_LEGEND_ALWAYS = ['A'];

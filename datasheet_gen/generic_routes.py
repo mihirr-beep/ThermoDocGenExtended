@@ -348,8 +348,14 @@ def g_form(code, assignment_id):
     saved_images = {k: os.path.basename(p)
                     for k, p in R.images_from_record(record).items()
                     if p and os.path.exists(p)}
+    # The EUT-support rule for this datasheet, as data. The browser rewrites the procedure
+    # from the same table the document is built from and the admin page edits, so the three
+    # cannot drift - the two hardcoded copies in the template did.
+    from . import procedures as _procedures
     return render_template(
         "datasheet_gen/generic_form.html",
+        proc_rule=(_procedures.rules_for_ui([code]).get(code) or {}),
+        proc_coupling=(_procedures.COUPLING_BY_PORT.get(code) or {}),
         # ?view=1 renders the form locked - no action bar, every field
         # disabled - which is how the report wizard embeds it. A datasheet moves
         # Draft -> Peer Review -> Approved and the report is built from the
