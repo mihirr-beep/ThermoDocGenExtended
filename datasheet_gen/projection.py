@@ -538,12 +538,47 @@ def project(record, entry, request=None, with_images=True):
     # Measurements are stored per revision, so writing them under the wrong
     # number would either overwrite a submitted version's readings or strand
     # them under a revision nobody looks at.
+    # It stranded them. datasheet.revision_no is the NEXT-to-edit pointer, one
+    # past the highest frozen revision, and it goes on pointing there after the
+    # sheet is approved. Any re-projection of an approved sheet - an admin edit,
+    # a backfill, a re-run of this module - then wrote a whole duplicate set of
+    # readings under a revision that will never be frozen. Measured before this
+    # guard: 258 rows, 17% of datasheet_measurement, and "how many readings on
+    # DEMO-EMC-301 ESD" answered 224 instead of 112. Exactly double, with
+    # nothing in the result to say so.
+    #
+    # Once a sheet is locked the revision that matters is the last one actually
+    # frozen; the pointer is a promise about an edit that is never coming. Same
+    # reasoning as _record_datasheet_transition, which takes MAX(revision_no)
+    # for the same reason.
     revision_no = db.session.execute(text(
         "SELECT revision_no FROM `datasheet` WHERE id=:d"), {"d": did}).scalar() or 1
+    revision_no = _revision_for_write(db, did, revision_no)
     written = {"spec": _project_spec(db, did, code, form, schema, revision_no)}
     written.update(_project_children(db, did, code, form, schema))
     db.session.commit()
     return {"datasheet_id": did, "rows": written}
+
+
+# A datasheet in one of these statuses is not being edited by anyone, so there
+# is no "next revision" for a projection to belong to.
+LOCKED_STATUSES = ("Approved",)
+
+
+def _revision_for_write(db, did, pointer):
+    """Which revision a projection's rows belong under.
+
+    The live pointer while the sheet is still editable; the last frozen
+    revision once it is locked. See the call site for what the difference cost.
+    """
+    row = db.session.execute(text(
+        "SELECT status FROM `datasheet` WHERE id=:d"), {"d": did}).scalar()
+    if (row or "") not in LOCKED_STATUSES:
+        return pointer
+    frozen = db.session.execute(text(
+        "SELECT MAX(revision_no) FROM datasheet_revision WHERE datasheet_id=:d"),
+        {"d": did}).scalar()
+    return int(frozen) if frozen else pointer
 
 
 def _project_spec(db, did, code, form, schema, revision_no=1):

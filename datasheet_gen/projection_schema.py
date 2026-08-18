@@ -675,6 +675,37 @@ def _ensure_integrity(app, db):
         db.session.rollback()
         app.logger.warning("schema: draft-history dangling repair skipped: %s", exc)
 
+    # STRANDED MEASUREMENTS. datasheet.revision_no is the next-to-edit pointer,
+    # so re-projecting an APPROVED datasheet used to file a duplicate set of
+    # readings under a revision that will never be frozen. projection.py no
+    # longer does that, but the duplicates it already wrote are indistinguishable
+    # from real readings to every query: on this database 258 rows, 17% of
+    # datasheet_measurement, and a COUNT over one datasheet came back exactly
+    # double with nothing in the result to say so.
+    #
+    # Safe to delete because the revision has no header in datasheet_revision,
+    # which means it was never submitted and nobody can be looking at it, and
+    # the sheet is locked so it is not somebody's working draft. A draft's
+    # in-progress readings sit at the pointer too and are deliberately spared.
+    try:
+        if (_table_exists(db, "datasheet_measurement")
+                and _table_exists(db, "datasheet_revision")):
+            res = db.session.execute(text(
+                "DELETE m FROM datasheet_measurement m "
+                "JOIN `datasheet` d ON d.id = m.datasheet_id "
+                "LEFT JOIN datasheet_revision r "
+                "  ON r.datasheet_id = m.datasheet_id "
+                " AND r.revision_no = m.revision_no "
+                "WHERE r.id IS NULL AND d.status IN ('Approved')"))
+            if res.rowcount:
+                db.session.commit()
+                done.append("removed %d stranded measurement row(s)" % res.rowcount)
+            else:
+                db.session.rollback()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.warning("schema: stranded-measurement sweep skipped: %s", exc)
+
     for table, column, ref, name in _FKS:
         try:
             if not (_table_exists(db, table) and _table_exists(db, ref)):
