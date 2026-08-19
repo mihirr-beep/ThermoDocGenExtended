@@ -198,7 +198,7 @@ def main():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import mysql_config
     import pymysql
-    from nlp_search import orchestrator
+    from nlp_search import audit, orchestrator
 
     cfg = mysql_config.config["default"]
     params = {"host": cfg.MYSQL_HOST, "port": int(cfg.MYSQL_PORT),
@@ -212,8 +212,12 @@ def main():
     cur.execute("SELECT code, label, family FROM emc_reason_code")
     codes = {c: (l, f) for c, l, f in cur.fetchall()}
 
+    model_name = os.environ.get("NLP_SEARCH_MODEL",
+                                orchestrator.DEFAULT_MODEL)
+    spent = []
+
     only = {int(a) for a in sys.argv[1:] if a.isdigit()}
-    right = incomplete = wrong = 0
+    right = incomplete = wrong = refusals = 0
 
     for case in CASES:
         if only and case["n"] not in only:
@@ -238,16 +242,45 @@ def main():
             res = {"success": False, "message": "raised %s" % exc}
         secs = time.time() - t0
         answer = (res.get("answer") or res.get("message") or "")
-        print("\n  ANSWER (%.0fs):" % secs)
+
+        # WHAT IT COST AND WHAT IT TOUCHED. A run that only prints verdicts makes
+        # you re-run it to find out why, and re-running is the expensive part.
+        # Every case shows its price and the primitives and SQL behind it, so a
+        # wrong answer can be diagnosed from the transcript instead of a second
+        # run. Measured on this database: about $0.003 a question, so a full pass
+        # of this file is roughly two and a half cents.
+        tok = res.get("tokens") or {}
+        cost = audit.estimate_cost(model_name, tok.get("input") or 0,
+                                   tok.get("output") or 0)
+        spent.append(cost or 0.0)
+        print("\n  COST  %.0fs   in %s / out %s tokens   $%.5f   route=%s"
+              % (secs, tok.get("input") or 0, tok.get("output") or 0, cost or 0.0,
+                 res.get("route") or "-"))
+        trace = res.get("sql") or []
+        insight_calls = [s for s in trace if "insights" in str(s).lower()
+                         or "(" in str(s) and "SELECT" not in str(s).upper()]
+        print("  TRACE %d query/queries%s"
+              % (len(trace),
+                 ("; primitives: " + ", ".join(str(s)[:46] for s in insight_calls[:3]))
+                 if insight_calls else "; no insight primitive was called"))
+        print("\n  ANSWER:")
         print("     " + answer.replace("\n", "\n     ")[:900])
 
         low = answer.lower()
         missing = [m for m in case["must"] if not _states(m, low, codes)]
         banned = [m for m in case["must_not"] if m.lower() in low]
         axis = _axis_warning(low, codes)
+        # A refusal is not a pass. Case 7 ran zero queries, returned the
+        # capability message, and scored RIGHT because it contained none of the
+        # banned phrases - which flatters the system exactly where it is weakest.
+        # No query behind it means no answer, whatever the prose looks like.
+        refused = (not trace) or "did not run any query" in low
         if banned:
             verdict, tag = "WRONG", "says %s" % ", ".join(repr(b) for b in banned)
             wrong += 1
+        elif refused:
+            verdict, tag = "REFUSED", "ran %d queries - no answer attempted" % len(trace)
+            refusals += 1
         elif missing:
             verdict, tag = "INCOMPLETE", "missing %s" % ", ".join(missing)
             incomplete += 1
@@ -262,13 +295,17 @@ def main():
             print("     so this is a flag for a human, not a verdict.")
         print()
 
-    total = right + incomplete + wrong
+    total = right + incomplete + wrong + refusals
     print("=" * 78)
-    print("  right %d   incomplete %d   CONFIDENTLY WRONG %d   of %d"
-          % (right, incomplete, wrong, total))
+    print("  right %d   incomplete %d   refused %d   CONFIDENTLY WRONG %d   of %d"
+          % (right, incomplete, refusals, wrong, total))
     print("=" * 78)
     print("  The last column is the one that matters. An incomplete answer costs a")
     print("  minute; a wrong one reaches a report.")
+    if spent:
+        print()
+        print("  spent $%.4f across %d question(s), $%.5f each on average"
+              % (sum(spent), len(spent), sum(spent) / len(spent)))
 
 
 if __name__ == "__main__":

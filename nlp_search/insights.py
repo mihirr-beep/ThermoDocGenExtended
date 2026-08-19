@@ -507,7 +507,21 @@ def cohort(conn, reason_code=None, exclude_product=None, limit=40):
         GROUP BY r.product_name, r.model_number, d.test_code, d.failure_reason_code
         ORDER BY failing_campaigns DESC, first_seen LIMIT %(lim)s
     """)
-    return _rows(conn, sql, **params)
+    rows = _rows(conn, sql, **params)
+    if not rows:
+        # HERE, EMPTY IS THE ANSWER. resolve_reason_codes already turned the
+        # product into the codes it actually failed for, so nothing coming back
+        # means nothing else has failed that way - a finding, not a gap. Left as
+        # an empty list it collected the generic "confirm the value you filtered
+        # on exists" note, which tells the model NOT to report the absence it was
+        # asked about. Said plainly instead.
+        return [{"answer": "NO OTHER PRODUCT has failed for %s. This is the "
+                           "answer, not a missing result: the codes were "
+                           "resolved and the search found nobody else."
+                           % ", ".join(codes),
+                 "codes_checked": ", ".join(codes),
+                 "excluded_from_the_search": exclude_product or "(nothing)"}]
+    return rows
 
 
 def failure_modes(conn, limit=40):
@@ -526,8 +540,16 @@ def failure_modes(conn, limit=40):
     Ordered by products affected, not campaign count: three failing campaigns of
     one stubborn unit is a product problem, two products failing the same way is
     a pattern, and the second is what a manager needs to see first.
+
+    Each row now says whether the mode is SHARED, because this is lab-wide and
+    reads like an answer to a question it cannot answer. Asked whether any other
+    product had failed the same way as the Lifecycle Probe Analyser, the model
+    called this, got three modes back, and listed the Spectra Bench Photometer
+    and the Orion Vacuum Pump Controller - both of which failed DIFFERENTLY, each
+    being the only product with its own mode. Three rows looked like three
+    answers. The right primitive was cohort, and now every row points at it.
     """
-    return _rows(conn, """
+    rows = _rows(conn, """
         SELECT d.failure_reason_code AS reason_code,
                COALESCE(e.label, d.failure_reason_code) AS what_it_means,
                COUNT(*) AS failing_campaigns,
@@ -544,6 +566,27 @@ def failure_modes(conn, limit=40):
         ORDER BY products_affected DESC, failing_campaigns DESC
         LIMIT %(lim)s
     """, lim=int(limit))
+    # The caveat goes SECOND, right after the code, not last. Appended at the end
+    # it was read last and ignored: the model still listed two products that had
+    # failed differently as though they were peers. _render emits keys in dict
+    # order, so position is the only lever on reading order there is.
+    out = []
+    for r in rows:
+        n = r.get("products_affected") or 0
+        if n > 1:
+            note = "SHARED - %d different products have failed this way" % n
+        else:
+            note = ("NOT SHARED - %s is the ONLY product that has ever failed "
+                    "this way. Do NOT offer this row as another product that "
+                    "failed the same way as something else; it is the only one. "
+                    "The question \"has anything else failed like X\" is answered "
+                    "by cohort(reason_code=...), which excludes X and returns the "
+                    "rest - and an empty answer from it means nobody else has."
+                    % (r.get("products") or "one product"))
+        ordered = {"reason_code": r.get("reason_code"), "is_it_shared": note}
+        ordered.update({k: v for k, v in r.items() if k != "reason_code"})
+        out.append(ordered)
+    return out
 
 
 def rejection_modes(conn, limit=40):
@@ -567,6 +610,43 @@ def rejection_modes(conn, limit=40):
         WHERE h.to_status = 'Rejected'
         GROUP BY COALESCE(h.reason_code, '(unclassified)'), e.label
         ORDER BY rejection_events DESC
+        LIMIT %(lim)s
+    """, lim=int(limit))
+
+
+def review_load(conn, limit=40):
+    """Peer review by PERSON: what each reviewer decided, and how often.
+
+    Added because nothing answered it and the model kept inventing an answer.
+    Asked who was sending back the most work in peer review, it went to
+    iec_emc_requests.rejected_at - a request being refused by an admin, a
+    different thing entirely, and NULL on every row - and replied "there are zero
+    rejections logged in peer review across all records". Six existed. Told the
+    columns were empty, it tried again and counted datasheets currently SITTING
+    in Peer Review status, which is a workload, not a decision.
+
+    Both are here, separately, because the question is ambiguous in English and
+    the two numbers are genuinely different: `sent_back` is a decision the
+    reviewer made, `awaiting_them` is work on their desk right now.
+    """
+    return _rows(conn, """
+        SELECT h.actor_name AS reviewer,
+               SUM(h.to_status = 'Rejected') AS sent_back,
+               SUM(h.to_status = 'Approved') AS approved,
+               COUNT(*) AS decisions,
+               COUNT(DISTINCT h.datasheet_id) AS datasheets_touched,
+               GROUP_CONCAT(DISTINCT h.reason_code
+                            ORDER BY h.reason_code SEPARATOR ', ') AS reasons_used,
+               MIN(h.created_at) AS first_decision,
+               MAX(h.created_at) AS last_decision,
+               (SELECT COUNT(*) FROM `datasheet` d2
+                 WHERE d2.status = 'Peer Review'
+                   AND d2.peer_reviewer_name = h.actor_name) AS awaiting_them
+        FROM datasheet_status_history h
+        WHERE h.to_status IN ('Rejected', 'Approved')
+          AND h.actor_name IS NOT NULL AND h.actor_name <> ''
+        GROUP BY h.actor_name
+        ORDER BY sent_back DESC, decisions DESC
         LIMIT %(lim)s
     """, lim=int(limit))
 
@@ -892,6 +972,7 @@ def review_history(conn, product=None, tco=None, limit=40):
 PRIMITIVES = {
     "failure_modes": failure_modes,
     "rejection_modes": rejection_modes,
+    "review_load": review_load,
     "review_history": review_history,
     "timeline": timeline,
     "failure_detail": failure_detail,

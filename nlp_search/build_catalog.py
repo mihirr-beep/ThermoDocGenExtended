@@ -569,6 +569,36 @@ _BLOB_NOTE = ("form_json / images_json hold the whole saved form as one raw "
               "reachable from SQL: answer from the scalar columns on this "
               "table, or say the value is not recorded in queryable form.")
 
+# Facts a person in this building knows and no amount of column-reading reveals.
+# Hand-written, because they are judgements about MEANING; the numbers around
+# them stay measured. Rendered on the table they belong to, which is where a
+# model writing SQL against that table will actually be looking.
+_FAILED_NOTE = (
+    "WHAT COUNTS AS FAILED: `result` holds either PASS/FAIL or an EMC "
+    "performance criterion letter - A and B are acceptable, C and D are not. So "
+    "a unit that did not pass is `result` IN ('FAIL','C','D'), and the reliable "
+    "test is `failure_reason_code IS NOT NULL`, which is set on exactly the "
+    "campaigns that failed. WHERE result='FAIL' alone is the mistake to avoid: "
+    "it silently misses every unit that failed on criterion D and answered "
+    "\"1 unit failed\" for a lab where three had. NULL result means no outcome "
+    "was recorded, which is not a pass.")
+
+_REJECTED_NOTE = (
+    "TWO DIFFERENT REJECTIONS, and this table is neither. A REQUEST can be "
+    "refused by an admin - rejected_at / rejected_by / rejection_reason on this "
+    "table - and a filled DATASHEET can be sent back by a peer reviewer, which "
+    "is recorded nowhere near here: it is datasheet_status_history WHERE "
+    "to_status='Rejected', carrying reason_code and actor_name. Asked who sends "
+    "back the most work in peer review, counting "
+    "this table's columns returned zero and produced the answer \"there are zero "
+    "rejections logged in peer review\" when there were six.")
+
+SEMANTIC_NOTES = {
+    "datasheet": (_FAILED_NOTE,),
+    "datasheet_revision": (_FAILED_NOTE,),
+    "iec_emc_requests": (_REJECTED_NOTE,),
+}
+
 _OBS_NOTE = ("the *_json columns hold this test's grids with their own labels "
              "and block structure. You do NOT have to parse them: every cell is "
              "also a row in datasheet_measurement (numbers, with value_num for "
@@ -1023,6 +1053,8 @@ def render_table_text(t):
             piece += " ->%s.%s" % t["fks"][c]
         parts.append(piece)
     lines.append("  columns: " + "; ".join(parts))
+    for note in SEMANTIC_NOTES.get(t["name"], ()):
+        lines.append("  %s" % note)
     hidden = [c for c, _t, _k in t["cols"] if _LARGE_COLUMN.match(c)]
     if hidden:
         grids = [h for h in hidden
@@ -1069,7 +1101,27 @@ def render_table_text(t):
     return "\n".join(lines)
 
 
-def build_module_text(tables):
+def read_reason_families(conn):
+    """{code: (family, label)} from emc_reason_code.
+
+    Sixteen rows, and the only thing that says which AXIS a reason belongs to.
+    verify needs it to notice a review_rejection code being presented as why a
+    unit failed a standard, and verify has no database - so it travels in the
+    committed catalog. Stable rather than measured: a taxonomy changes when
+    somebody adds a code, which is a migration, not a Tuesday.
+    """
+    out = {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT code, family, label FROM emc_reason_code")
+            for code, family, label in cur.fetchall():
+                out[str(code)] = (str(family or ""), str(label or ""))
+    except Exception:  # noqa: BLE001 - a fresh database may not have it yet
+        pass
+    return out
+
+
+def build_module_text(tables, families=None):
     allowed = tuple(t["name"] for t in tables)
     columns = {t["name"]: tuple(visible_columns(t)) for t in tables}
     texts = {t["name"]: render_table_text(t) for t in tables}
@@ -1139,6 +1191,12 @@ GRID_COLUMNS = %(grids)r
 # contain is measured at run time by catalog_stats, because it changes whenever
 # somebody uses the app. Keeping the two apart is what stops routing shifting
 # under the model's feet every time a new status value appears.
+# Which AXIS each reason code belongs to: test_failure is why the UNIT failed
+# a standard, review_rejection is why the RECORD was sent back in peer review.
+# {code: (family, label)}. verify reads this to catch an answer that presents
+# one as the other, which is the specific error the taxonomy exists to prevent.
+REASON_FAMILIES = %(families)r
+
 CLASS_COLUMNS = %(class_columns)r
 JSON_COLUMNS = %(json_columns)r
 
@@ -1374,6 +1432,7 @@ def columns_for(table):
                  for t in tables for c, v in t["enums"].items()},
        "json_keys": {"%s.%s" % (t["name"], c): p
                      for t in tables for c, p in (t.get("json") or {}).items()},
+       "families": dict(families or {}),
        "row_counts": {t["name"]: int(t["rows"] or 0) for t in tables},
        "class_columns": tuple(sorted(
            ["%s.%s" % (t["name"], c) for t in tables for c in t["enums"]]
@@ -1407,11 +1466,12 @@ def main():
                            database=cfg.MYSQL_DATABASE, charset="utf8mb4")
     try:
         tables = introspect(conn, cfg.MYSQL_DATABASE)
+        families = read_reason_families(conn)
     finally:
         conn.close()
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema_catalog.py")
     with io.open(out_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(build_module_text(tables))
+        fh.write(build_module_text(tables, families))
 
     print("Wrote %s" % out_path)
     print("  database: %s   tables: %d" % (cfg.MYSQL_DATABASE, len(tables)))

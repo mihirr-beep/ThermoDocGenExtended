@@ -126,6 +126,60 @@ def plain_text(text):
     return out.strip()
 
 
+_FAIL_CLAIM_RE = re.compile(r"\bfail(?:ed|ure|s|ing)?\b", re.I)
+AXIS_WINDOW = 110
+
+
+def _axis_crossed(draft):
+    """A review-rejection reason presented as why the UNIT failed a standard.
+
+    The two axes are the distinction this whole taxonomy exists for. A unit fails
+    a standard - CE_LIMIT_EXCEEDED, SURGE_DAMAGE - and a RECORD gets sent back by
+    a peer reviewer - CAL_EXPIRED, MISSING_PHOTO. Every primitive keeps them
+    apart. The model's prose does not:
+
+        "the issue that went wrong was a CE failure tied to expired calibration;
+         the datasheet was held up by calibration expiry"
+        "Recommended next step: recalibrate the equipment and re-run the CE test"
+
+    Both sentences are made of true facts and the linkage is invented. The CE test
+    failed because emissions exceeded the limit line; the calibration finding is
+    why the paperwork came back. An engineer following that advice recalibrates a
+    rig to fix an emissions problem.
+
+    Nothing caught it, because grounding checks NUMBERS and there was no wrong
+    number - which is why this is a window search around a review_rejection code
+    rather than a rule about figures. REASON_FAMILIES says which axis a code is
+    on, so the check is schema-derived: add a code to emc_reason_code and it is
+    covered without editing anything here.
+
+    Returns the offending code, or None.
+    """
+    try:
+        from .schema_catalog import REASON_FAMILIES
+    except Exception:  # noqa: BLE001 - an older catalog simply skips the check
+        return None
+    low = draft.lower()
+    for code, pair in (REASON_FAMILIES or {}).items():
+        family = (pair[0] if isinstance(pair, (list, tuple)) else "") or ""
+        if family != "review_rejection":
+            continue
+        label = (pair[1] if isinstance(pair, (list, tuple)) and len(pair) > 1
+                 else "") or ""
+        for needle in (code.lower(), label.lower()):
+            if not needle:
+                continue
+            start = 0
+            while True:
+                at = low.find(needle, start)
+                if at < 0:
+                    break
+                if _FAIL_CLAIM_RE.search(low[max(0, at - AXIS_WINDOW):at]):
+                    return code
+                start = at + 1
+    return None
+
+
 def _instrumentation_numbers(ledger):
     """Numbers WE put into the SQL, which are not facts about the lab.
 
@@ -261,8 +315,17 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
         counting = False
         notes.append("figures come from reviewed metric definitions")
 
+    # The two axes crossed in prose. Checked here rather than after adjudication
+    # because there is no number involved - Pass 1 would have returned "grounded"
+    # on an answer telling an engineer to recalibrate a rig to fix an emissions
+    # failure, and it did.
+    crossed = _axis_crossed(draft)
+    if crossed:
+        notes.append("presents %s, a peer-review finding, as why the unit failed "
+                     "a standard" % crossed)
+
     if (not flagged and not unprobed_absence and not missed and not phantom
-            and not counting and not undisclosed and not id_leak):
+            and not counting and not undisclosed and not id_leak and not crossed):
         return {"verdict": "grounded", "answer": draft, "unsupported": [], "notes": notes}
 
     # Pass 2: let a model adjudicate the flags against the evidence.
@@ -306,13 +369,13 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
     causal = _causal_overreach(question, draft)
     if (not bad and not verdicts.get("absence_unsupported")
             and not incomplete and not phantom and not undisclosed and not id_leak
-            and not causal):
+            and not causal and not crossed):
         return {"verdict": "grounded", "answer": draft, "unsupported": [], "notes": notes}
 
     repaired = _repair(question, draft, ledger, bad, incomplete=incomplete,
                        phantom=phantom, undisclosed=undisclosed,
                        id_leak=id_leak.group(0) if id_leak else None,
-                       causal=causal, model=model)
+                       causal=causal, crossed=crossed, model=model)
     if repaired:
         notes.append("rewrote the answer without %d unsupported claim(s)" % len(bad))
         return {"verdict": "repaired", "answer": repaired, "unsupported": bad,
@@ -839,11 +902,29 @@ def _causal_overreach(question, draft):
 
 
 def _repair(question, draft, ledger, bad, incomplete=False, phantom=None,
-            undisclosed=None, id_leak=None, causal=None, model=None):
+            undisclosed=None, id_leak=None, causal=None, crossed=None,
+            model=None):
     """A rewrite constrained to the evidence, or None."""
+    extra_axis = ""
+    if crossed:
+        try:
+            from .schema_catalog import REASON_FAMILIES
+            label = (REASON_FAMILIES.get(crossed) or ("", ""))[1]
+        except Exception:  # noqa: BLE001
+            label = ""
+        extra_axis = (
+            "\n- The original treats %s%s as a reason the UNIT failed its test. "
+            "It is not. It is a PEER REVIEW finding: why the record was sent back "
+            "to the engineer, on a completely separate axis from whether the "
+            "hardware met the standard. Rewrite so the two are separate "
+            "sentences and neither explains the other - say what the unit did "
+            "against the standard, then say separately what the reviewer asked "
+            "to be corrected. Remove any recommendation that treats the review "
+            "finding as a fix for the test result."
+            % (crossed, " (%s)" % label if label else ""))
     extra = ("\n- The original omitted items the evidence lists. Include every one "
              "of them, or state the total and say how many you are showing."
-             if incomplete else "")
+             if incomplete else "") + extra_axis
     if phantom:
         extra += ("\n- The original says nothing is marked '%s', but '%s' is not a "
                   "value this data has. Do not answer inside that category. Say "

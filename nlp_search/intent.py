@@ -245,8 +245,31 @@ _INSIGHT_RE = re.compile(
     r"|summar(?:y|ise|ize)|walk me through|bring me up to speed"
     r"|tell me about (?:the |what )?"
     # --- the paperwork axis
-    r"|sent back|bounced|rejected in (?:peer )?review|peer[- ]review reject"
+    #
+    # INFLECT THE VERB. This was "sent back" only, so "who is sending back the
+    # most work in peer review" matched nothing, went to the semantics worker -
+    # which cannot see datasheet_status_history - and came back "I cannot answer
+    # yet, that table is not in this catalog". Before that it had reached a worker
+    # that could see iec_emc_requests instead and answered "there are zero
+    # rejections logged in peer review" when six existed. One phrasing, two
+    # different wrong answers, and the only thing wrong with the question was the
+    # tense.
+    #
+    # People do not conjugate to match a regex. Cover the forms of the verb and
+    # the ways a reviewer gets named, because the rejection axis is half of what
+    # this feature is for.
+    r"|sen[dt]s? back|sending back|sent back"
+    r"|bounce[ds]?|bouncing|kicked back|pushed back|knocked back"
+    r"|returned (?:it |them |the \w+ )?to the (?:engineer|lab)"
+    r"|rejected in (?:peer )?review|peer[- ]review reject"
     r"|(?:why|reason).{0,30}reject"
+    # A reviewer named with a VERB of deciding, or with an aggregate. Not a bare
+    # "reviewer": "Who is the peer reviewer on the CE test for IEC-EMC-004" is a
+    # lookup that belongs to the schedule worker, and matching review\w* here
+    # dragged it into datasheets and cost a routing case.
+    r"|(?:who|which reviewer).{0,40}\b(?:reject\w*|approv\w*|sen[dt]s? back)\b"
+    r"|reviewer.{0,30}\b(?:most|count|how many|load|activity|busiest)\b"
+    r"|\b(?:review rounds?|review history)\b"
     r")", re.I)
 
 

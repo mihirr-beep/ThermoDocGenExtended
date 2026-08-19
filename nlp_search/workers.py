@@ -361,8 +361,22 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
           modifications_before_pass  product=           what was fitted before
                                                         the first pass that was
                                                         not there at the last failure
-          cohort                     reason_code=       other products that failed
-                                     [exclude_product=] the same way
+          cohort                     product= OR        other products that failed
+                                     reason_code=       the SAME WAY as the one
+                                                        you name. Pass the PRODUCT
+                                                        and it works out which
+                                                        codes that product failed
+                                                        for and searches on those
+                                                        - you do not need to look
+                                                        the code up first. This is
+                                                        the answer to "has anything
+                                                        else failed like X", and
+                                                        failure_modes is NOT: that
+                                                        one is lab-wide and lists
+                                                        every mode including ones
+                                                        X never had. An empty
+                                                        cohort means nobody else
+                                                        has, which is a finding
           resolved_how               reason_code=       what each of those had
                                                         fitted by the time it passed
           config_diff                tco_before=, tco_after=   fields that differ
