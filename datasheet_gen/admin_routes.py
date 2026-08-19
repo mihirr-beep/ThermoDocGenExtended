@@ -362,6 +362,14 @@ def _proc_view(code):
         "shipped": shipped,
         "overridden": sorted(stored.keys()),
         "updated_at": updated.strftime("%Y-%m-%d %H:%M") if updated else "",
+        # Which test ports this procedure carries a block for. SURGE and EFT ship both and
+        # the document keeps only the ports marked Applicable in the Test Specification, so
+        # the preview offers the same filter - a procedure read without it is not the one
+        # that prints. CRF's Signal Line block is added when that port is tested, so it
+        # counts here too even though the shipped text has only Power Line.
+        "port_sections": sorted(
+            set(P.procedure_port_sections(stored.get("procedure") or shipped))
+            | set(P.PORT_BLOCKS.get(code) or {})),
         # the browser previews both configurations with the same rule the document uses
         "rule_json": json.dumps(
             {"mode": rule.get("mode"), "tabletop": rule.get("tabletop", ""),
@@ -388,6 +396,7 @@ def procedures_page():
             "mode": rule.get("mode") or "",
             "has_rule": bool(rule),
             "ports": len(P.PORT_BLOCKS.get(code) or {}),
+            "port_filter": len(_proc_view(code)["port_sections"]),
             "updated_at": edited.get(code, ""),
         })
     return render_template("datasheet_gen/admin_procedures.html", cards=cards)

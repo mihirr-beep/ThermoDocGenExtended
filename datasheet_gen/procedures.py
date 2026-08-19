@@ -430,3 +430,37 @@ def effective_rule(code):
 def stored_procedure(code):
     """The procedure text an admin saved for this datasheet, or '' to use the schema's."""
     return (stored_overrides().get((code or "").upper()) or {}).get("procedure") or ""
+
+
+#: The port a procedure block belongs to, by the start of its first line. SURGE puts the
+#: heading on a line of its own; EFT opens the paragraph with it ("Power Line: The power
+#: supply ..."), so both are matched on the first line rather than the whole block. Kept
+#: here beside the blocks themselves so the admin page's preview, the form and
+#: _surge_filter_procedure all agree on what counts as a port heading.
+PORT_HEADINGS = (
+    ("Power Line", ("power line", "power lines")),
+    ("Signal Line", ("signal line", "signal lines")),
+)
+
+
+def block_port(block):
+    """'Power Line' / 'Signal Line' for a procedure paragraph, or '' for the preamble."""
+    head = (block or "").strip().split("\n")[0].strip().lower().rstrip(":")
+    for name, prefixes in PORT_HEADINGS:
+        if head.startswith(prefixes):
+            return name
+    return ""
+
+
+def procedure_port_sections(text):
+    """The ports this procedure text carries a block for, in the order they appear.
+
+    What the admin page offers as filters: a datasheet whose procedure has no port heading
+    (Harmonic, Flicker) gets no port filter, and one that has both (Surge, EFT) gets both.
+    """
+    out = []
+    for block in re.split(r"\n\s*\n", text or ""):
+        port = block_port(block)
+        if port and port not in out:
+            out.append(port)
+    return out

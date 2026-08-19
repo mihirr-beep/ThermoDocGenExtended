@@ -85,11 +85,27 @@
           <p class="text-xs text-gray-500 mt-1">What the datasheet prints. The preview shows the result for each
             configuration, resolved exactly as the document resolves it.</p>
         </div>
-        <div class="shrink-0 inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs font-semibold">
-          <button type="button" id="tabTable" onclick="procPreview('tabletop')"
-                  class="px-3 py-1.5 bg-indigo-600 text-white">Table Top</button>
-          <button type="button" id="tabFloor" onclick="procPreview('floor')"
-                  class="px-3 py-1.5 bg-white text-gray-700">Floor Standing</button>
+        <div class="shrink-0 flex flex-col items-end gap-2">
+          <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs font-semibold">
+            <button type="button" id="tabTable" onclick="procPreview('tabletop')"
+                    class="px-3 py-1.5 bg-indigo-600 text-white">Table Top</button>
+            <button type="button" id="tabFloor" onclick="procPreview('floor')"
+                    class="px-3 py-1.5 bg-white text-gray-700">Floor Standing</button>
+          </div>
+          {% if port_sections %}
+          {# The document keeps only the ports marked Applicable in the Test Specification,
+             so the preview offers the same filter: read without it, this is not the
+             procedure that prints. #}
+          <div class="flex items-center gap-3 text-xs text-gray-600">
+            <span class="text-gray-400">Test ports applicable:</span>
+            {% for port in port_sections %}
+            <label class="inline-flex items-center gap-1">
+              <input type="checkbox" class="js-port-filter" value="{{ port }}" checked
+                     onchange="procPreview()"> {{ port }}
+            </label>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
       </div>
 
@@ -155,9 +171,52 @@
     return el ? (el.value || '') : (PROC_RULE[side] || '');
   }
 
+  /* Which port a paragraph belongs to. Mirrors procedures.block_port(): the heading may
+     stand on its own line (SURGE) or open the paragraph (EFT, "Power Line: The power
+     supply ..."), so only the first line is read. */
+  function blockPort(block) {
+    var head = (block || '').trim().split('\n')[0].trim().toLowerCase().replace(/:$/, '');
+    if (head.indexOf('power line') === 0) return 'Power Line';
+    if (head.indexOf('signal line') === 0) return 'Signal Line';
+    return '';
+  }
+
+  function portsApplicable() {
+    var on = [];
+    document.querySelectorAll('.js-port-filter').forEach(function (cb) {
+      if (cb.checked) on.push(cb.value);
+    });
+    return on;
+  }
+
+  /* Mirrors _surge_filter_procedure(): a heading owns the paragraphs after it until the
+     next heading, the preamble is always kept, and with NO port applicable nothing is
+     stripped - far likelier to mean the field is unanswered than that no port was tested.
+     A port whose block the text does not carry yet is added first, the way CRF's Signal
+     Line block is added when that port is under test. */
+  function filterPorts(txt) {
+    var want = portsApplicable();
+    if (!want.length) return txt;
+    Object.keys(PROC_PORTS).forEach(function (port) {
+      if (want.indexOf(port) < 0) return;
+      var already = txt.split(/\n\s*\n/).some(function (b) { return blockPort(b) === port; });
+      if (!already) txt = (txt.replace(/\s+$/, '') + '\n\n' + PROC_PORTS[port]);
+    });
+    var blocks = txt.split(/\n\s*\n/), keep = [], section = null;
+    blocks.forEach(function (b) {
+      var port = blockPort(b);
+      if (port) section = port;
+      else if (section === null) { keep.push(b); return; }
+      if (want.indexOf(section) >= 0) keep.push(b);
+    });
+    return keep.filter(function (b) { return b.trim(); }).join('\n\n');
+  }
+
   function resolvePreview(side) {
     var ta = document.getElementById('f_procedure');
     var txt = ta ? (ta.value || '') : '';
+    // Ports first, then the wording - the order the form uses.
+    txt = filterPorts(txt);
     if (!PROC_RULE.mode) return txt;
     var want = currentWording(side);
     if (!want) return txt;
@@ -190,9 +249,16 @@
     }
     var note = document.getElementById('pvNote');
     if (note) {
-      note.textContent = !PROC_RULE.mode ? 'no configuration rule on this datasheet'
+      var parts = [];
+      parts.push(!PROC_RULE.mode ? 'no configuration rule on this datasheet'
         : (PROC_RULE.mode === 'variant' ? 'a separate procedure per configuration'
-                                        : 'one span swapped');
+                                       : 'one span swapped'));
+      var ports = portsApplicable();
+      if (document.querySelector('.js-port-filter')) {
+        parts.push(ports.length ? ('ports: ' + ports.join(' + '))
+                                : 'no port applicable, so nothing is stripped');
+      }
+      note.textContent = parts.join(' · ');
     }
     var pb = document.getElementById('portBlocks');
     if (pb && !pb.childNodes.length) {

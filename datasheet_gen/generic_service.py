@@ -1464,6 +1464,7 @@ def _surge_filter_procedure(text, power_applicable, signal_applicable):
     the field has not been filled in yet than that no port was tested, and silently deleting
     the whole procedure would be worse than leaving it complete.
     """
+    from .procedures import block_port as _block_port
     txt = _s(text)
     if not txt or not (power_applicable or signal_applicable):
         return txt
@@ -1473,10 +1474,12 @@ def _surge_filter_procedure(text, power_applicable, signal_applicable):
         # The heading may stand alone in its own block (SURGE) or open the paragraph it
         # belongs to (EFT: 'Power Line: The power supply to the EUT was fed ...'), so match
         # on the start of the block's FIRST LINE rather than on the whole block.
-        head = b.strip().split("\n")[0].strip().lower().rstrip(":")
-        if head.startswith(("power line", "power lines")):
+        # procedures.block_port owns what counts as a port heading, so this filter and
+        # the admin page's preview cannot disagree about where a block belongs.
+        _port = _block_port(b)
+        if _port == "Power Line":
             section = "power"
-        elif head.startswith(("signal line", "signal lines")):
+        elif _port == "Signal Line":
             section = "signal"
         elif section is None:
             keep.append(b)                     # preamble: always kept
