@@ -1274,6 +1274,17 @@ def _volatile_lines(name, stats):
             "anything apart. Filtering on it matches everything and reading it "
             "as an outcome is wrong; find the column that does vary."
             %% (ref[len(prefix):], val, n))
+    empty = sorted(c[len(prefix):] for c in (stats.get("empty_columns") or {})
+                   if c.startswith(prefix))
+    if empty:
+        out.append(
+            "  NEVER RECORDED - these columns are NULL on all %%d rows, so a "
+            "filter or a COUNT on them returns nothing and that is not an "
+            "answer about the lab: %%s. Whatever you were looking for is kept "
+            "somewhere else; find that column instead of concluding there is "
+            "none." %% (list((stats.get("row_counts") or {}).values()) and
+                        (stats.get("row_counts") or {}).get(name, 0),
+                        ", ".join(empty)))
     return out
 
 

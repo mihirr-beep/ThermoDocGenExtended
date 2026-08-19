@@ -44,7 +44,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DISK = os.path.join(_ROOT, "instance", "catalog_stats.json")
 
 EMPTY = {"database": None, "measured_at": 0.0, "live": False,
-         "row_counts": {}, "enums": {}, "constants": {}, "json_keys": {}}
+         "row_counts": {}, "enums": {}, "constants": {}, "json_keys": {},
+         "empty_columns": {}}
 
 
 def _connect():
@@ -68,7 +69,8 @@ def measure():
         cur = conn.cursor()
         db = conn.db.decode() if isinstance(conn.db, bytes) else conn.db
         out = dict(EMPTY, database=db, live=True, measured_at=time.time(),
-                   row_counts={}, enums={}, constants={}, json_keys={})
+                   row_counts={}, enums={}, constants={}, json_keys={},
+                   empty_columns={})
 
         cur.execute("SELECT table_name, column_name, data_type, column_type, column_key "
                     "FROM information_schema.columns WHERE table_schema=%s "
@@ -83,6 +85,33 @@ def measure():
                 out["row_counts"][table] = cur.fetchone()[0]
             except Exception:  # noqa: BLE001 - a table may have gone
                 continue
+
+            # COLUMNS THAT HAVE NEVER HELD A VALUE. The catalog lists every
+            # column as though it were usable, and 71 of them are NULL on every
+            # row. Asked who was sending back the most work in peer review, the
+            # model reached for iec_emc_requests.rejected_at / rejection_reason
+            # / rejected_by - real columns, about an admin REFUSING A REQUEST,
+            # which is a third rejection concept in this schema and nothing to
+            # do with peer review. All three are empty, so it got zero, and
+            # answered "there are zero rejections logged in peer review across
+            # all records". Six exist, in datasheet_status_history.
+            #
+            # One query per table rather than one per column: 59 queries instead
+            # of 1149, which is what makes this affordable per render.
+            visible = [c for c in (sc.COLUMNS.get(table) or ())
+                       if c in {x[0] for x in by_table.get(table, ())}]
+            if visible and out["row_counts"].get(table):
+                try:
+                    cur.execute("SELECT %s FROM `%s`"
+                                % (", ".join("COUNT(`%s`)" % c for c in visible),
+                                   table))
+                    counts = cur.fetchone() or ()
+                    for col, n in zip(visible, counts):
+                        if not n:
+                            out["empty_columns"]["%s.%s" % (table, col)] = \
+                                out["row_counts"][table]
+                except Exception:  # noqa: BLE001 - a hint is never worth failing
+                    pass
 
             for col, dtype, ctype, key in by_table.get(table, ()):
                 ref = "%s.%s" % (table, col)
