@@ -64,7 +64,8 @@ CASES = [
                   "FROM datasheet_status_history h WHERE h.to_status='Rejected' "
                   "AND h.reason_code IS NOT NULL GROUP BY h.reason_code "
                   "ORDER BY events DESC, h.reason_code",
-        looking_for="CAL_EXPIRED 2 and INCOMPLETE_OBS 2 lead; MISSING_PHOTO 1, UNIT_ERROR 1",
+        looking_for="CAL_EXPIRED 4 and INCOMPLETE_OBS 4 lead, then MISSING_PHOTO "
+                    "2, then SETUP_MISMATCH / UNIT_ERROR / WRONG_LIMIT at 1 each",
         must=["CAL_EXPIRED", "INCOMPLETE_OBS"],
         # the product-failure axis has no business in this answer
         must_not=["CE_LIMIT_EXCEEDED", "SURGE_DAMAGE", "RS_MALFUNCTION"],
@@ -76,11 +77,15 @@ CASES = [
                   "JOIN planner_entries p ON p.id=d.planner_entry_id "
                   "JOIN iec_emc_requests r ON r.id=p.test_request_id "
                   "WHERE d.failure_reason_code='CE_LIMIT_EXCEEDED'",
-        looking_for="no other product - CE_LIMIT_EXCEEDED appears on one product only",
-        must=[],
-        # inventing a peer is the failure here; so is silently listing the
-        # product that was asked about as though it were an answer
-        must_not=["Spectra Bench", "Orion Vacuum", "Meridian Rework"],
+        looking_for="THREE others share CE_LIMIT_EXCEEDED: Cascade "
+                    "Chromatograph, Halcyon Incubator, Vantage Water Purifier",
+        # This expectation INVERTED when tools_seed_lab_history ran. Before it,
+        # every failure mode sat on exactly one product, so the right answer was
+        # "nobody else" - and cohort could only ever say no. Now there are peers,
+        # and denying them is the failure.
+        must=["Cascade"],
+        must_not=["no other product", "nobody else", "no others",
+                  "Orion Vacuum", "Zephyr", "Kestrel"],
     ),
     dict(
         n=5,
@@ -99,10 +104,23 @@ CASES = [
         q="how many of our units actually failed their test",
         truth_sql="SELECT COUNT(*) FROM `datasheet` d "
                   "WHERE d.failure_reason_code IS NOT NULL",
-        looking_for="3 - CE on 301, RS_RI on 302, SURGE on 303",
-        must=["3"],
-        # 6 is the number of RECORD rejections; quoting it here is the axis error
-        must_not=["6 units", "six units"],
+        looking_for="13 failing CAMPAIGNS across 8 distinct products - both "
+                    "numbers are right and the question does not say which it "
+                    "wants, so the answer has to name its own denominator",
+        # BOTH READINGS ACCEPTED, and my first expectation was the wrong one.
+        # "How many of our UNITS failed" was scored against 13, the campaign
+        # count, and the answer said "Eight units failed - 8 distinct tco_id had
+        # a recorded failure". Eight products did fail; thirteen of their
+        # campaigns did. Counting a unit that failed three tests as three failed
+        # units is the worse reading, and the answer took the better one and
+        # showed its working.
+        #
+        # So the bar here is not a number, it is whether the answer says WHICH it
+        # counted. An ambiguous question answered with a bare figure is the defect;
+        # answered with "8 distinct products" it is not.
+        must=[],
+        any_of=["8", "13"],
+        must_not=["3 units", "three units", "no units failed"],
     ),
     dict(
         n=7,
@@ -123,8 +141,11 @@ CASES = [
         truth_sql="SELECT h.actor_name, COUNT(*) FROM datasheet_status_history h "
                   "WHERE h.to_status='Rejected' GROUP BY h.actor_name "
                   "ORDER BY COUNT(*) DESC",
-        looking_for="Saimounika Chandavolu, 3 of the 6 rejections",
-        must=["Saimounika"],
+        looking_for="a TIE: Saimounika Chandavolu and Sohan Haspula on 5 each, "
+                    "then Krishna Gonela 2, admin 1",
+        # Naming one of two tied reviewers as "the most" is wrong in a way no
+        # single-name check can see, so both names are required.
+        must=["Saimounika", "Sohan"],
         # it answered "zero rejections logged in peer review" by querying
         # iec_emc_requests.rejected_at - a THIRD rejection concept, about an
         # admin refusing a request, empty on every row
@@ -268,6 +289,9 @@ def main():
 
         low = answer.lower()
         missing = [m for m in case["must"] if not _states(m, low, codes)]
+        alts = case.get("any_of") or []
+        if alts and not any(_states(a, low, codes) for a in alts):
+            missing.append("one of %s" % "/".join(alts))
         banned = [m for m in case["must_not"] if m.lower() in low]
         axis = _axis_warning(low, codes)
         # A refusal is not a pass. Case 7 ran zero queries, returned the

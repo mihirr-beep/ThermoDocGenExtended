@@ -38,12 +38,19 @@ CALLS = [
      "what actually breached, per test"),
     ("modifications_before_pass", {"product": "DEMO Spectra Bench Photometer"},
      "CROSS-CAMPAIGN: what was changed before it passed"),
-    ("metric_delta", {"tco_before": "DEMO-EMC-302", "tco_after": "DEMO-EMC-303"},
+    # 302 and 303 are DIFFERENT PRODUCTS, so both of these were correctly
+    # refused and reported EMPTY on every run of this probe - which read as two
+    # broken primitives rather than two wrong arguments. 311 and 316 are two
+    # campaigns of one product, which is what a comparison needs.
+    ("metric_delta", {"tco_before": "DEMO-EMC-311", "tco_after": "DEMO-EMC-316"},
      "CROSS-CAMPAIGN: did the readings move"),
-    ("config_diff", {"tco_before": "DEMO-EMC-302", "tco_after": "DEMO-EMC-303"},
+    ("metric_delta", {"tco_before": "DEMO-EMC-311", "tco_after": "DEMO-EMC-311"},
+     "ACROSS REVISIONS: did the readings move after the rejection"),
+    ("config_diff", {"tco_before": "DEMO-EMC-311", "tco_after": "DEMO-EMC-316"},
      "CROSS-CAMPAIGN: what changed in the setup"),
-    ("common_config", {"tcos": ["DEMO-EMC-301", "DEMO-EMC-302", "DEMO-EMC-303"]},
-     "what these jobs had in common"),
+    ("common_config", {"tcos": ["DEMO-EMC-311", "DEMO-EMC-316"]},
+     "what these campaigns of one product had in common"),
+    ("review_load", {}, "peer review by person"),
 ]
 
 # A reply is "empty" when the primitive says so in its own words rather than
