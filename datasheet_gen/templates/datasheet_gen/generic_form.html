@@ -1351,8 +1351,12 @@
           if (!rows.length) throw new Error('The file is empty.');
 
           var tbody = document.getElementById('rows-' + key);
-          var tpl = document.getElementById('tpl-' + key);
-          if (!tbody || !tpl) return;
+          if (!tbody) return;
+          // The RE measurement tables have no <template> - their rows are built by
+          // makeMeasTableRow() from the columns the engineer defined, which is why the
+          // table can grow a column at all. Requiring one here returned silently before
+          // the branch below ever ran, so Import CSV / TXT did nothing on those tables and
+          // said nothing either. The paths that DO clone a template check for it themselves.
 
           // RE measurement tables: straight copy — NO max/band reduction. Map the
           // TDK "Final Measurement Table" columns (Freq, Freq(Max), Pol, EUT Ang,
@@ -1382,6 +1386,9 @@
             return;
           }
 
+          // Everything below clones the row template this table ships with.
+          var tpl = document.getElementById('tpl-' + key);
+          if (!tpl) return;
           var scanBands = getScanBandsForTable(key);
           var col = detectScanColumns(rows);
           var numeric = 0;
