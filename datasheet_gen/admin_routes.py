@@ -106,7 +106,15 @@ def config_page():
               "updated_at": r.updated_at.strftime("%Y-%m-%d %H:%M") if r.updated_at else ""}
              for r in rows]
     map_count = BasicStandardMap.query.count()
-    return render_template("datasheet_gen/admin_home.html", cards=cards, map_count=map_count)
+    # Section 3's card: how many datasheets have a procedure here, and how many an admin
+    # has changed. Best-effort - the landing page must still render if the table is absent.
+    try:
+        from .procedure_store import updated_map
+        proc_edited = len(updated_map())
+    except Exception:  # noqa: BLE001
+        proc_edited = 0
+    return render_template("datasheet_gen/admin_home.html", cards=cards, map_count=map_count,
+                           proc_count=len(_PROC_CODES), proc_edited=proc_edited)
 
 
 # --------------------------------------------------------------------------
@@ -293,3 +301,153 @@ def delete_map(mid):
         invalidate_cache()   # admin edited a cached table
         flash("Mapping row deleted.", "success")
     return redirect(url_for("datasheet_admin.standard_map_page"))
+
+
+# --------------------------------------------------------------------------
+# Section 3 — Test Procedures, centrally
+#
+# The procedure each datasheet ships, and the rule that rewrites its EUT-support
+# wording from EUT Configuration. Both are editable here and stored per datasheet
+# (procedure_store); procedures.effective_rule() lays what is stored over the
+# built-in table, which stays the default and the fallback.
+# --------------------------------------------------------------------------
+_PROC_CODES = ("CE", "RE", "RS_RI", "CRF", "HARMONIC", "VOLTAGEFLICKER",
+               "VOLTAGEDIPS", "SURGE", "EFT", "ESD", "PFMF")
+
+
+def _proc_schema_default(code):
+    """The procedure text the datasheet ships, with <Standard name> resolved the way the
+    form resolves it - so the admin reads what an engineer would see, not a placeholder."""
+    from .registry import load_schema
+    from .generic_service import _DERIVED_BASIC_STANDARDS
+    try:
+        schema = load_schema(code)
+    except Exception:  # noqa: BLE001 - a datasheet with no schema file (CE has its own)
+        return ""
+    found = [""]
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("key") == "test_procedure":
+                found[0] = node.get("default") or ""
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(schema)
+    basic = _DERIVED_BASIC_STANDARDS.get(code.upper(), "")
+    return found[0].replace("<Standard name>", basic) if basic else found[0]
+
+
+def _proc_view(code):
+    """Everything the editor page needs for one datasheet."""
+    from . import procedures as P
+    from .procedure_store import get_override
+    code = code.upper()
+    stored, updated = get_override(code)
+    builtin = P.SUPPORT_RULES.get(code) or {}
+    rule = P.effective_rule(code) or {}
+    shipped = _proc_schema_default(code)
+    return {
+        "code": code,
+        "name": (get_fixed_values(code) or {}).get("name", code),
+        "mode": rule.get("mode") or "",
+        "tabletop": rule.get("tabletop", ""),
+        "floor": rule.get("floor", ""),
+        "builtin_tabletop": builtin.get("tabletop", ""),
+        "builtin_floor": builtin.get("floor", ""),
+        "procedure": stored.get("procedure") or shipped,
+        "shipped": shipped,
+        "overridden": sorted(stored.keys()),
+        "updated_at": updated.strftime("%Y-%m-%d %H:%M") if updated else "",
+        # the browser previews both configurations with the same rule the document uses
+        "rule_json": json.dumps(
+            {"mode": rule.get("mode"), "tabletop": rule.get("tabletop", ""),
+             "floor": rule.get("floor", ""), "phrases": list(rule.get("phrases") or ())},
+            ensure_ascii=False),
+        "ports": json.dumps(P.PORT_BLOCKS.get(code) or {}, ensure_ascii=False),
+        "coupling": (P.COUPLING_BY_PORT.get(code) or {}),
+    }
+
+
+@datasheet_admin_bp.route("/datasheet/admin/procedures")
+@login_required
+def procedures_page():
+    _require_admin()
+    from .procedure_store import updated_map
+    from . import procedures as P
+    edited = updated_map()
+    cards = []
+    for code in _PROC_CODES:
+        rule = P.effective_rule(code) or {}
+        cards.append({
+            "code": code,
+            "name": (get_fixed_values(code) or {}).get("name", code),
+            "mode": rule.get("mode") or "",
+            "has_rule": bool(rule),
+            "ports": len(P.PORT_BLOCKS.get(code) or {}),
+            "updated_at": edited.get(code, ""),
+        })
+    return render_template("datasheet_gen/admin_procedures.html", cards=cards)
+
+
+@datasheet_admin_bp.route("/datasheet/admin/procedures/<code>")
+@login_required
+def procedure_datasheet(code):
+    _require_admin()
+    if code.upper() not in _PROC_CODES:
+        abort(404)
+    return render_template("datasheet_gen/admin_procedure_edit.html", **_proc_view(code))
+
+
+@datasheet_admin_bp.route("/datasheet/admin/procedures/<code>/save", methods=["POST"])
+@login_required
+def procedure_save(code):
+    _require_admin()
+    if code.upper() not in _PROC_CODES:
+        abort(404)
+    from . import procedures as P
+    from .procedure_store import save_override
+    view = _proc_view(code)
+    payload = {
+        "tabletop": request.form.get("tabletop", ""),
+        "floor": request.form.get("floor", ""),
+        "procedure": request.form.get("procedure", ""),
+    }
+    # Only what DIFFERS from the built-in is stored, so a datasheet left as it ships keeps
+    # following the code, and "same as built-in" never becomes a frozen copy that stops
+    # tracking a later change to the rule.
+    if (payload["tabletop"] or "").strip() == (view["builtin_tabletop"] or "").strip():
+        payload["tabletop"] = ""
+    if (payload["floor"] or "").strip() == (view["builtin_floor"] or "").strip():
+        payload["floor"] = ""
+    if (payload["procedure"] or "").strip() == (view["shipped"] or "").strip():
+        payload["procedure"] = ""
+    # A phrase rule needs both wordings or neither: one alone would rewrite one
+    # configuration and leave the other saying whatever the text already said.
+    if view["mode"] != "variant" and bool(payload["tabletop"]) != bool(payload["floor"]):
+        flash("Give both wordings, or neither - one alone would leave the other "
+              "configuration unchanged.", "error")
+        return redirect(url_for("datasheet_admin.procedure_datasheet", code=code.upper()))
+    saved = save_override(code, payload, getattr(current_user, "id", None))
+    P.invalidate_override_cache()
+    flash("Saved. %s" % ("Back to the built-in wording." if not saved
+                         else "Takes effect on the next form load and generation."),
+          "success")
+    return redirect(url_for("datasheet_admin.procedure_datasheet", code=code.upper()))
+
+
+@datasheet_admin_bp.route("/datasheet/admin/procedures/<code>/reset", methods=["POST"])
+@login_required
+def procedure_reset(code):
+    _require_admin()
+    if code.upper() not in _PROC_CODES:
+        abort(404)
+    from . import procedures as P
+    from .procedure_store import clear_override
+    clear_override(code)
+    P.invalidate_override_cache()
+    flash("Back to the built-in wording for %s." % code.upper(), "success")
+    return redirect(url_for("datasheet_admin.procedure_datasheet", code=code.upper()))

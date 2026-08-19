@@ -230,7 +230,8 @@ COUPLING_BY_PORT = {
 
 
 def support_rule(code):
-    return SUPPORT_RULES.get((code or "").upper())
+    """The rule in force, override included. SUPPORT_RULES is the built-in default."""
+    return effective_rule(code)
 
 
 #: Every phrase here starts "on a"/"on an"/"above", and a stored draft may carry a different
@@ -275,7 +276,12 @@ def apply_support(code, text, cfg, rules=None):
     too. Returns the text unchanged when the datasheet has no rule.
     """
     txt = text or ""
-    rule = (rules or SUPPORT_RULES).get((code or "").upper())
+    # effective_rule() lays any stored override over the built-in rule, so what an admin
+    # saved on the config page is what the form rewrites and the document prints. Passing
+    # `rules` explicitly bypasses the store, which is what the tests and the admin page's
+    # own preview want.
+    rule = (rules.get((code or "").upper()) if rules is not None
+            else effective_rule(code))
     if not txt or not rule:
         return txt
     want = rule.get(config_side(cfg)) or ""
@@ -329,8 +335,11 @@ def rules_for_ui(codes=None):
     cannot drift from what the document is built from.
     """
     out = {}
-    for code, rule in SUPPORT_RULES.items():
-        if codes and code not in codes:
+    wanted = list(codes) if codes else sorted(
+        set(SUPPORT_RULES) | set(stored_overrides()))
+    for code in wanted:
+        rule = effective_rule(code)
+        if not rule:
             continue
         out[code] = {
             "mode": rule.get("mode"),
@@ -340,3 +349,84 @@ def rules_for_ui(codes=None):
             "phrases": _expanded_phrases(rule),
         }
     return out
+
+
+# ---------------------------------------------------------------------------------------
+# The admin store: an override per datasheet, on top of the table above.
+#
+# The built-in rules stay the default and the fallback. A row here holds only what an
+# admin changed - the two wordings, the procedure text, or both - so a datasheet nobody
+# has touched keeps working from code, and a stored row that turns out wrong is undone by
+# deleting it rather than by editing this file.
+#
+# Every read is best-effort: the datasheet forms and the generator must not stop working
+# because a config table is missing or a query failed, so a failure falls back to the
+# built-in rule and says so in the log.
+# ---------------------------------------------------------------------------------------
+#: Cached, because every form load and every generation reads it. The TTL matters as much
+#: as the explicit invalidation: a save clears the cache in the worker that served it, and
+#: any other worker picks the change up within the TTL. Same arrangement, and the same 5
+#: minutes, as fixed_store.
+_OVERRIDE_CACHE = {"at": 0.0, "rules": None}
+_OVERRIDE_TTL_S = 300
+
+
+def invalidate_override_cache():
+    """Drop the cached overrides. Called after an admin saves or resets."""
+    _OVERRIDE_CACHE["rules"] = None
+    _OVERRIDE_CACHE["at"] = 0.0
+
+
+def stored_overrides():
+    """{CODE: {tabletop, floor, procedure}} from the database, or {} when unavailable."""
+    import time
+    now = time.time()
+    if (_OVERRIDE_CACHE["rules"] is not None
+            and (now - _OVERRIDE_CACHE["at"]) < _OVERRIDE_TTL_S):
+        return _OVERRIDE_CACHE["rules"]
+    out = {}
+    try:
+        from .procedure_store import all_overrides
+        out = all_overrides()
+    except Exception:  # noqa: BLE001 - a missing table must not break a datasheet
+        out = {}
+    _OVERRIDE_CACHE["rules"] = out
+    _OVERRIDE_CACHE["at"] = now
+    return out
+
+
+def effective_rule(code):
+    """The rule in force for this datasheet: the built-in one, with any stored wording on
+    top. Returns None when the datasheet has no rule at all."""
+    code = (code or "").upper()
+    base = SUPPORT_RULES.get(code)
+    over = (stored_overrides().get(code) or {})
+    if not base:
+        # A datasheet with no built-in rule can still be given one from the admin page,
+        # as long as both wordings are supplied - otherwise there is nothing to swap.
+        if over.get("tabletop") and over.get("floor"):
+            return {"mode": over.get("mode") or "phrase",
+                    "tabletop": over["tabletop"], "floor": over["floor"],
+                    "phrases": tuple(over.get("phrases") or
+                                     (over["tabletop"], over["floor"]))}
+        return None
+    if not over:
+        return base
+    rule = dict(base)
+    for key in ("tabletop", "floor", "mode"):
+        if over.get(key):
+            rule[key] = over[key]
+    # The stored wordings join the phrase list, so switching the toggle rewrites a text
+    # that already carries one of them.
+    phrases = list(base.get("phrases") or ())
+    for key in ("tabletop", "floor"):
+        val = over.get(key)
+        if val and val not in phrases:
+            phrases.append(val)
+    rule["phrases"] = tuple(phrases)
+    return rule
+
+
+def stored_procedure(code):
+    """The procedure text an admin saved for this datasheet, or '' to use the schema's."""
+    return (stored_overrides().get((code or "").upper()) or {}).get("procedure") or ""

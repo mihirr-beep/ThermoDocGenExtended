@@ -1992,6 +1992,19 @@ def collect_prefill(schema, request_obj, assignment):
     # values, which can supply a procedure of their own.
     from . import procedures as _procedures
     _pcode = (schema.get("code") or "").upper()
+    # A procedure an admin saved on the config page replaces the one the schema ships, for
+    # every datasheet. The '<Standard name>' placeholder is resolved the same way, so a
+    # stored text can keep it and still name the right standard.
+    _stored_proc = _procedures.stored_procedure(_pcode)
+    if _stored_proc:
+        _basic = _s(pre.get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get(_pcode, "")
+        pre["test_procedure"] = (_stored_proc.replace("<Standard name>", _basic)
+                                 if _basic else _stored_proc)
+        # SURGE / EFT / CRF rebuild the procedure from the unfiltered text when a port is
+        # switched, so that copy has to be the stored one too or the next change of port
+        # would silently restore the shipped wording.
+        if _s(pre.get("test_procedure_full")):
+            pre["test_procedure_full"] = pre["test_procedure"]
     if _procedures.support_rule(_pcode):
         pre["test_procedure"] = _procedures.apply_support(
             _pcode, pre.get("test_procedure"), _s(pre.get("eut_configuration")))

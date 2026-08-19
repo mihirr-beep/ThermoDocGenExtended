@@ -56,5 +56,26 @@
       <div class="text-xs text-gray-500 mt-1">View, edit, add or remove Product&nbsp;&rarr;&nbsp;Basic standard rows.</div>
     </a>
   </section>
+
+  <!-- ============ Section 3: Test Procedures ============ -->
+  <section class="mt-8">
+    <div class="flex items-center gap-2 border-b border-gray-200 pb-2 mb-4">
+      <span class="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 font-bold text-sm">3</span>
+      <div>
+        <h2 class="text-lg font-bold text-gray-900">Test Procedures</h2>
+        <p class="text-xs text-gray-500">The procedure each datasheet prints, and how EUT Configuration rewrites it &mdash;
+           Table&nbsp;Top or Floor&nbsp;Standing, per datasheet.</p>
+      </div>
+    </div>
+    <a href="{{ url_for('datasheet_admin.procedures_page') }}"
+       class="block bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition p-5 sm:max-w-md">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">PROCEDURES</span>
+        <span class="text-[10px] text-gray-400">{{ proc_count }} datasheet(s){% if proc_edited %} &middot; {{ proc_edited }} edited{% endif %}</span>
+      </div>
+      <div class="mt-3 text-base font-bold text-gray-900">Open test procedures &rarr;</div>
+      <div class="text-xs text-gray-500 mt-1">Toggle Table&nbsp;Top / Floor&nbsp;Standing to see what prints, and edit the wording centrally.</div>
+    </a>
+  </section>
 </div>
 {% endblock %}

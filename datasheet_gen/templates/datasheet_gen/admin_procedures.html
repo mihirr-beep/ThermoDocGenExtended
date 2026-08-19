@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Test Procedures &mdash; Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-6">
+  <div class="flex items-center gap-2 text-sm text-gray-500 mb-1">
+    <a href="{{ url_for('datasheet_admin.config_page') }}" class="hover:text-blue-600">Datasheet Configuration</a>
+    <span>/</span><span class="text-gray-700 font-medium">Test Procedures</span>
+  </div>
+  <h1 class="text-2xl font-bold text-gray-900">Test Procedures</h1>
+  <p class="text-sm text-gray-500 mb-6">The procedure each datasheet prints, and how <strong>EUT Configuration</strong>
+     rewrites it. Open one to read both configurations side by side and to change the wording.
+     Changes take effect on the next form load and the next generation.</p>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+      <div class="mb-4 rounded-lg px-4 py-2 text-sm {{ 'bg-green-50 text-green-800 border border-green-200' if cat == 'success' else 'bg-red-50 text-red-800 border border-red-200' }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for c in cards %}
+    <a href="{{ url_for('datasheet_admin.procedure_datasheet', code=c.code) }}"
+       class="block bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition p-5">
+      <div class="flex items-start justify-between gap-2">
+        <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{{ c.code }}</span>
+        {% if c.updated_at %}
+          <span class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"
+                title="An admin has changed this datasheet's wording">edited {{ c.updated_at }}</span>
+        {% else %}
+          <span class="text-[10px] text-gray-400">as shipped</span>
+        {% endif %}
+      </div>
+      <div class="mt-3 text-base font-bold text-gray-900">{{ c.name }}</div>
+      <div class="text-xs text-gray-500 mt-1">
+        {% if c.mode == 'variant' %}
+          Tabletop and Floor standing are <strong>separate procedures</strong>
+        {% elif c.has_rule %}
+          EUT support wording follows the configuration
+        {% else %}
+          No configuration rule &mdash; one procedure for both
+        {% endif %}
+        {% if c.ports %}<br>+ {{ c.ports }} test-port block(s){% endif %}
+      </div>
+      <div class="text-xs text-indigo-600 mt-3 font-medium">Open &rarr;</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
