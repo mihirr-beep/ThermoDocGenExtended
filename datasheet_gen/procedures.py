@@ -50,6 +50,23 @@ def config_side(cfg):
 #: "0.8 m wooden table" on SURGE and EFT, and PFMF's trailing GRP clause included
 #: because its two branches sit on different planes.
 SUPPORT_RULES = {
+    # CE builds its procedure from a format template in service.py rather than from a
+    # schema file - PROCEDURE_TEMPLATE, with {surface} and {height} filled per
+    # configuration - so it had no rule here and the portal showed an empty box. The
+    # resolved span is a plain phrase, so the same shape works; the wording is CE's own
+    # ("at 0.8m height"), left as it reads today because CE was not one of the datasheets
+    # the laboratory asked to re-word.
+    "CE": {
+        "mode": "phrase",
+        "tabletop": "on a wooden table at 0.8m height",
+        "floor": "on an insulation support at 0.1m height",
+        "phrases": (
+            "on a wooden table at 0.8m height",
+            "on a wooden table at 0.8 m height",
+            "on an insulation support at 0.1m height",
+            "on an insulation support at 0.1 m height",
+        ),
+    },
     "RE": {
         "mode": "phrase",
         "tabletop": "on a non-conductive table of 0.8 m height",

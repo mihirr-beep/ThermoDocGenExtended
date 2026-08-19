@@ -517,11 +517,26 @@ def procedure_for_config(config, basic_standard=""):
     is_floor = _s(config).lower().startswith("floor")
     height = "0.1m" if is_floor else "0.8m"
     surface = "an insulation support" if is_floor else "a wooden table"
-    return PROCEDURE_TEMPLATE.format(
+    text = PROCEDURE_TEMPLATE.format(
         basic_standard=(_s(basic_standard) or "the applicable basic standard"),
         surface=surface,
         height=height,
     )
+    # A procedure or a support wording saved on the admin config page wins over the
+    # template above - the same store the other ten datasheets read. Section 7 is
+    # read-only on the CE form, so that page is the only place this text can be changed,
+    # which is the whole reason CE is listed there. Best-effort: a store that cannot be
+    # read leaves the template's own text, which is what CE printed before this existed.
+    try:
+        from . import procedures as _P
+        stored = _P.stored_procedure("CE")
+        if stored:
+            text = stored.replace("{basic_standard}", _s(basic_standard)
+                                  or "the applicable basic standard")
+        text = _P.apply_support("CE", text, config)
+    except Exception:  # noqa: BLE001
+        pass
+    return text
 
 
 # Test-limit prefills by classification class (dBµV), per the DS504 sheet.

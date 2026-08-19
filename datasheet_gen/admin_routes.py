@@ -320,9 +320,15 @@ def _proc_schema_default(code):
     form resolves it - so the admin reads what an engineer would see, not a placeholder."""
     from .registry import load_schema
     from .generic_service import _DERIVED_BASIC_STANDARDS
+    if code.upper() == "CE":
+        # CE has no schema file: its procedure is a format template in service.py, filled
+        # per EUT Configuration. Resolved for Tabletop here, which is the state the portal
+        # opens in - the toggle then swaps the span like any other datasheet.
+        from .service import procedure_for_config
+        return procedure_for_config("Tabletop", "")
     try:
         schema = load_schema(code)
-    except Exception:  # noqa: BLE001 - a datasheet with no schema file (CE has its own)
+    except Exception:  # noqa: BLE001 - a datasheet with no schema file
         return ""
     found = [""]
 
