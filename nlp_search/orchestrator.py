@@ -129,6 +129,18 @@ MAX_HISTORY_ANSWER_CHARS = 600
 
 
 _ANTECEDENT_RE = re.compile(r"\b[A-Z]{2,5}(?:-[A-Z0-9]{2,6}){1,3}-\d{1,4}\b")
+# Named subjects: two or more Title Case words in a row. Products in this lab are
+# named that way - "Vantage Water Purifier", "Cascade Chromatograph" - and so are
+# people, which is acceptable noise.
+#
+# Identifiers alone were not enough. Asked about the Vantage Water Purifier and
+# then "why did the CE test fail", the block listed DEMO-EMC-311 and -316 and the
+# answer came back about all FOUR products that have ever failed CE. The TCOs were
+# there; the thing they were TCOs of was not, so "the CE test" had nothing to
+# anchor to.
+_NAMED_RE = re.compile(r"\b(?:[A-Z][a-z]{2,}\s){1,3}[A-Z][a-z]{2,}\b")
+_NAME_STOP = ("The ", "This ", "That ", "Peer Review", "Not Submitted",
+              "Draft ", "Query ", "Follow Up", "Scope ", "Note ")
 MAX_ANTECEDENTS = 12
 
 
@@ -152,12 +164,21 @@ def _antecedents(history):
     for turn in reversed(history or []):
         if str((turn or {}).get("role") or "").lower() != "assistant":
             continue
+        text = str((turn or {}).get("text") or "")
         found, seen = [], set()
-        for m in _ANTECEDENT_RE.finditer(str((turn or {}).get("text") or "")):
+        for m in _ANTECEDENT_RE.finditer(text):
             tok = m.group(0)
             if tok not in seen:
                 seen.add(tok)
                 found.append(tok)
+        names = []
+        for m in _NAMED_RE.finditer(text):
+            tok = m.group(0).strip()
+            if (tok not in seen and len(tok) > 8
+                    and not any(tok.startswith(s) for s in _NAME_STOP)):
+                seen.add(tok)
+                names.append(tok)
+        found.extend(names[:4])
         if len(found) < 2:
             return ""           # one subject or none: no narrowing to notice
         shown = found[:MAX_ANTECEDENTS]
@@ -271,10 +292,27 @@ And one deterministic lookup you can call yourself:
 4. FOLLOW UP. If a worker's answer is thin, contradicts another, or raises an
    obvious next question, ask again with a narrower brief. Two or three rounds
    is normal for a complex question.
-5. ANSWER. Lead with the direct answer, then a brief supporting line. Write
-   PLAIN TEXT - no markdown, no **bold**, no ### headings, no bullet syntax.
-   The interface shows your reply verbatim, so markup arrives as literal
-   asterisks. A short list is fine as one item per line.
+5. ANSWER, IN MARKDOWN. The interface renders it, so use the structure.
+
+   Lead with the direct answer as one plain sentence - no heading above it, the
+   reader wants the answer before anything else. Then, only if there is more to
+   say:
+
+   - `## A short heading` before each section, when there is more than one.
+   - A TABLE whenever you are giving more than two rows of the same shape. One
+     row per record, a header row, and the units in the header rather than
+     repeated in every cell:
+
+     | Test | Result | Worst margin (dB) |
+     |---|---|---|
+     | CE | FAIL | +8.8 at 0.72 MHz |
+
+   - A `-` bullet list for items that are not a table - findings, next steps.
+   - **Bold** the figure that answers the question, once. `Backticks` for a
+     column, code or value the reader might search for.
+
+   Keep it short. A heading over a single sentence, or a table with one row, is
+   worse than the sentence on its own. Do not put the SQL in the answer.
 
 ## Lab rules you must follow
 These are decisions the lab has made. The data cannot tell you them and you

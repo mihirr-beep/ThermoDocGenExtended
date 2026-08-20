@@ -106,24 +106,31 @@ def skipped():
     return {"verdict": "skipped", "answer": None, "unsupported": [], "notes": []}
 
 
-# The chat UI sets textContent, so markdown arrives as literal asterisks and
-# hashes. The prompt asks for plain text and mostly gets it; this makes it
-# certain, because "mostly" is visible to the user as **2** in a sentence.
-_MD_BOLD = re.compile(r"\*\*(.+?)\*\*|__(.+?)__", re.S)
-_MD_ITALIC = re.compile(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])")
-_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s*", re.M)
-_MD_CODE = re.compile(r"`([^`\n]+)`")
+# MARKDOWN IS NOW RENDERED, so it is no longer stripped.
+#
+# This used to flatten bold, headings and code spans, and the reason was sound at
+# the time: the chat bubble set textContent, so a heading arrived as a literal
+# "## " and bold as "**2**" in the middle of a sentence. Stripping was the lesser
+# evil.
+#
+# The cost was that every answer came out as one undifferentiated block of prose.
+# A lab result is a heading, a short summary and a table of rows, and asking a
+# reader to find the margin at 0.72 MHz in a paragraph is asking them not to
+# bother. renderAnswer in base.html now parses headings, lists, pipe tables and
+# inline spans - escaping first, since this is model output - so the markdown is
+# worth keeping.
+#
+# Only the fences go. A ```sql block is machinery the reader did not ask for, and
+# strip_machinery removes its contents already; leaving the fence behind renders
+# as an empty code block.
+_MD_FENCE = re.compile(r"(?m)^\s*```[\w-]*\s*$")
 
 
 def plain_text(text):
-    """Strip markdown emphasis and headings; leave lists and tables alone."""
+    """Tidy an answer for display. Markdown is kept - the UI renders it now."""
     if not text:
         return text
-    out = _MD_BOLD.sub(lambda m: m.group(1) or m.group(2) or "", text)
-    out = _MD_ITALIC.sub(r"\1", out)
-    out = _MD_HEADING.sub("", out)
-    out = _MD_CODE.sub(r"\1", out)
-    return out.strip()
+    return _MD_FENCE.sub("", text).strip()
 
 
 _FAIL_CLAIM_RE = re.compile(r"\bfail(?:ed|ure|s|ing)?\b", re.I)
@@ -1077,5 +1084,13 @@ def strip_machinery(text):
     out = re.sub(r"[ \t]*\(\s*\)", "", out)
     out = re.sub(r"[ \t]+([.,;:])", r"\1", out)
     out = re.sub(r"(?m)^[ \t]*[.;,]+[ \t]*$", "", out)
+    # A LABEL WITH NOTHING LEFT UNDER IT. Removing the SQL leaves its lead-in
+    # behind, and an answer ending "Query used:." tells the reader that
+    # something was cut without saying what - it reads like a truncation bug,
+    # which is worse than either showing the SQL or never mentioning it. Drop
+    # any heading-shaped line whose content went with the statement.
+    out = re.sub(r"(?mi)^[ \t]*(?:#{1,6}[ \t]*)?"
+                 r"(?:sql|query|queries)(?:[ \t]+\w+){0,3}[ \t]*:[ \t]*[.;,]?[ \t]*$",
+                 "", out)
     out = re.sub(r"\n{3,}", "\n\n", out)
     return out.strip()

@@ -212,7 +212,21 @@ _INSIGHT_RE = re.compile(
     r"|what did (?:they|we|he|she) (?:change|do|fit|add|fix)"
     # --- trend / measurement movement
     r"|improve(?:d|ment|ments)?\b|got (?:better|worse)"
-    r"|came down|went down|dropped|reduced by|brought .{0,20}down"
+    # INFLECT THESE TOO. It knew "came down" and not "come down", so "did the
+    # numbers actually come down after that" missed the gate, went to a plain SQL
+    # worker, and got answered by averaging every value in
+    # datasheet_measurement together - frequencies, limits and margins in one
+    # mean, which is not a quantity. metric_delta had the per-frequency answer
+    # and was never called.
+    r"|c[oa]me down|coming down|went down|go(?:ing|es)? down|dropped"
+    r"|reduced by|brought .{0,20}down"
+    # A reading against its limit is a measurement question however it is
+    # phrased. This branch used to require the word "frequency" within thirty
+    # characters, so "what were the actual readings that went over the limit"
+    # matched nothing at all.
+    r"|reading[s]?\b.{0,40}\b(?:limit|over|above|breach\w*|exceed\w*|margin)\b"
+    r"|\b(?:over|above|exceed\w*|breach\w*)\b.{0,25}\blimit\b"
+    r"|\bworst\b.{0,25}\b(?:reading|margin|frequenc\w*|breach\w*)\b"
     r"|over (?:time|its tests|the campaigns)|trend"
     # Was `(?:which|what) .{0,30}frequenc`, which is any question with
     # "frequency" within thirty characters of what/which. It matched "What

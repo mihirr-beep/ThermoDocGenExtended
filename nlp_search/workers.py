@@ -174,9 +174,12 @@ _STANDALONE_BLOCK = """
 There is no orchestrator above you on this question - what you write is what
 they read. So:
 
-- Write for a person. Lead with the direct answer, then one short supporting
-  line. PLAIN TEXT: no markdown, no **bold**, no ### headings. The interface
-  shows your reply verbatim, so markup arrives as literal asterisks.
+- Write for a person, in MARKDOWN - the interface renders it. Lead with the
+  direct answer as a plain sentence, no heading above it. Then use a TABLE for
+  more than two rows of the same shape (header row, units in the header), a `-`
+  list for findings, `## headings` only when there is more than one section, and
+  **bold** once on the figure that answers the question. Keep it short: a
+  heading over one sentence is worse than the sentence.
 - Never print a raw database id. "user_id 5" means nothing to a reader - join
   to users and give the name. Same for request_id, planner_entry_id,
   datasheet_id: give the job number, the test code, the person.
