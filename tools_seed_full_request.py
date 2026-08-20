@@ -278,8 +278,30 @@ def create_children(db, rid):
             "INSERT INTO iec_emc_request_product_environments "
             "(request_id, environment_key, environment_value, sort_order) "
             "VALUES (:r, :k, :v, :s)"), {"r": rid, "k": key, "v": val, "s": i})
+    # has_model_variance is 'yes' and model_variance names two variants, so this
+    # table cannot be empty without the request contradicting itself: "which
+    # requests have model variants, and what are they" would join to nothing and
+    # report none. It is empty on every request in the database, which means
+    # nothing has ever exercised it - and the approval screen renders it as a
+    # badge list, so it was printing blank there too.
+    ins("iec_emc_request_additional_models", "model_number",
+        ["FB-900-UVUF-EU", "FB-900-UVUF-US"])
+    # Four, not three, and in the lab's own spelling (taken from IEC-EMC-004's
+    # rows, not invented). The first three plus ICES-001 are the two real
+    # groupings the lab works to, and both must survive the Product -> Basic
+    # mapping in fixed_store.basic_standard:
+    #
+    #   IEC 61326-1 / EN 61326-1 / ICES-001  ->  CISPR 11:2015+A1:2016+A2:2019
+    #                                            EN 55011:2016+A2:2021
+    #   FCC Subpart 15B                      ->  ANSI C63.4:2024
+    #
+    # ICES-001 maps to CISPR 11, which iec61326 has already contributed, so it
+    # is deduplicated out of the joined result. It is here because it is on the
+    # real request, and because a token that never appears is a token nobody
+    # notices is broken.
     ins("iec_emc_request_product_standards", "standard_value", [
-        "IEC 61326-1 : 2020", "EN 61326-1 : 2021", "FCC Subpart 15B : 2024"])
+        "IEC 61326-1 : 2020", "EN 61326-1 : 2021", "FCC Subpart 15B : 2024",
+        "ICES-001 Issue 5 : 2020"])
     ins("iec_emc_request_serial_numbers", "serial_number", ["FB900-2026-000417"])
     ins("iec_emc_request_service_types", "service_type", ["Compliance"])
     ins("iec_emc_request_supply_vf", "value_text", [
@@ -312,20 +334,57 @@ def create_tests(db, rid, engineer):
                 "INSERT INTO iec_emc_request_test_standards (request_test_id, "
                 "standard_value, sort_order) VALUES (:t, :v, :s)"),
                 {"t": tid, "v": s, "s": i})
+    # custom_spec is the JSON half of each per-test row, and leaving it NULL was
+    # the one ambiguity this tool exists to remove: a blank field on the report
+    # could mean unmapped or could mean nothing to print. Every value below is
+    # taken from the request form's OWN option list in templates/index.html -
+    # `spec` is only ever 'As per the standard' or 'Custom specification',
+    # customSpecRange is an OBJECT of from/fromUnit/to/toUnit (units kHz|MHz|GHz),
+    # and the ESD discharge flags are checkboxes whose value is the string 'yes'.
+    # Nothing here is invented, and each JSON agrees with the flat columns beside
+    # it - a customSpecRange that contradicted freq_range would be worse than a
+    # null, because it would look filled in and be wrong.
+    _re_spec = json.dumps({
+        "spec": "Custom specification",
+        "customSpecRange": {"from": "30", "fromUnit": "MHz",
+                            "to": "1", "toUnit": "GHz"}})
+    _esd_spec = json.dumps({
+        "spec": "Custom specification",
+        "customContact": "yes", "customContactKV": "4",
+        "customAir": "yes", "customAirKV": "8",
+        "customIndirect": "yes", "customIndirectKV": "4"})
+    _ce_spec = json.dumps({
+        "spec": "Custom specification",
+        "customSpecRange": {"from": "150", "fromUnit": "kHz",
+                            "to": "30", "toUnit": "MHz"},
+        "cables": {"power": "yes", "signal": "yes"},
+        "cablesPowerCount": "1", "cablesSignalCount": "1",
+        "signalLineTypes": ["RS232"]})
+    # EFT keeps the standard test level, so testLevelCustomKv is null BY BRANCH,
+    # not for want of a value. Shape copied from a real row.
+    _eft_spec = json.dumps({
+        "cables": {"power": "yes", "signal": "yes"},
+        "cablesPowerCount": "1", "cablesSignalCount": "1",
+        "signalLineTypes": ["RS232"],
+        "testLevel": "As per the standard", "testLevelCustomKv": None})
     spec = {
         "iec_emc_request_test_ce": ("CE", {"voltage_freq": "230 V / 50 Hz",
                                            "freq_range": "150 kHz - 30 MHz",
-                                           "cables": "Mains cordset", "ce_class": "Class B"}),
+                                           "cables": "Mains cordset", "ce_class": "Class B",
+                                           "custom_spec": _ce_spec}),
         "iec_emc_request_test_re": ("RE", {"voltage_freq": "230 V / 50 Hz",
                                            "freq_range": "30 MHz - 1 GHz",
-                                           "re_class": "Class B"}),
+                                           "re_class": "Class B",
+                                           "custom_spec": _re_spec}),
         "iec_emc_request_test_eft": ("EFT", {"voltage_freq": "230 V / 50 Hz",
                                              "cables_power": "Mains cordset",
                                              "cables_signal": "Sensor harness",
-                                             "test_level1": "+/-1 kV"}),
+                                             "test_level1": "+/-1 kV",
+                                             "custom_spec": _eft_spec}),
         "iec_emc_request_test_esd": ("ESD", {"voltage_freq": "230 V / 50 Hz",
                                              "contact_level": "+/-4 kV",
-                                             "air_level": "+/-8 kV"}),
+                                             "air_level": "+/-8 kV",
+                                             "custom_spec": _esd_spec}),
     }
     for table, (code, fields) in spec.items():
         have = _cols(db, table)
