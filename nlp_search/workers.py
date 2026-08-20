@@ -187,6 +187,10 @@ they read. So:
   `row_no`. Asked which fields had issues, a nine-column dump of the SELECT with
   the job number repeated on every line pushed the field and its value off the
   edge of the panel.
+- FOUR COLUMNS MAXIMUM. The panel is narrow; a six-column table arrives clipped
+  with every cell broken mid-word. Need more than four? Use one bullet per record
+  with the fields inside it instead - that reads at any width. And never put a raw
+  id in a column: the job number and test code are what a reader recognises.
 - Never print a raw database id. "user_id 5" means nothing to a reader - join
   to users and give the name. Same for request_id, planner_entry_id,
   datasheet_id: give the job number, the test code, the person.

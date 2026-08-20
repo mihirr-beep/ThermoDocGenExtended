@@ -374,6 +374,18 @@ And one deterministic lookup you can call yourself:
        reader wanted pushed off the right-hand edge.
      * Give the headers the words a person uses. `col_key` is not a heading;
        "Point" or "Field" is. Never `row_no` when a row label exists.
+     * FOUR COLUMNS IS THE LIMIT. The panel is not wide, and a six-column table
+       arrives with its first column clipped and every cell broken mid-word -
+       "CE_LIMIT_EXC / EEDED". If you genuinely need more than four, do not use
+       a table: give one bullet per record with the fields inside it, which
+       reads at any width.
+
+           - **DEMO-JOB-311** — DEMO Vantage Water Purifier
+             CE, FAIL, CE_LIMIT_EXCEEDED. Reviewer: Class A limit line applied
+             and remeasured.
+
+     * Never a raw id in a column. "Datasheet ID 51" tells the reader nothing -
+       the job number and the test code are what they recognise.
 
    - A `-` bullet list for findings that have no natural order.
    - A `1.` numbered list when the order matters - review rounds, the steps to

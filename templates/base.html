@@ -995,6 +995,16 @@
         border-bottom:1px solid #e2e8f0;}
       .labai-table td{padding:5px 10px;border-bottom:1px solid #f1f5f9;
         vertical-align:top;}
+      /* The bubble sets overflow-wrap:anywhere so a long identifier cannot
+         overflow it, and table cells inherited that - which is why every cell
+         broke mid-word: "CE_LIMIT_EXC / EEDED", "Calibr / ation / date". Cells
+         break at word boundaries, and only inside a word when the word alone
+         cannot fit. The min-width stops a narrow column collapsing to one
+         character per line, which is what happened to Notes. */
+      .labai-table th,.labai-table td{overflow-wrap:break-word;word-break:normal;
+        hyphens:none;}
+      .labai-table td{min-width:72px;}
+      .labai-table th{min-width:72px;}
       .labai-table tbody tr:last-child td{border-bottom:none;}
       .labai-table tbody tr:nth-child(even){background:#f8fafc;}
       .labai-table td.num{text-align:right;font-variant-numeric:tabular-nums;
@@ -1017,6 +1027,19 @@
         color:#0f172a;}
       .labai-hr{border:none;border-top:1px solid #e5e7eb;margin:10px 0;}
       ol.labai-list{padding-left:20px;}
+      /* Record blocks: what a table becomes when it has too many columns to fit.
+         Reads at any width, because nothing depends on a column staying aligned
+         with the one above it. */
+      .labai-recs{display:flex;flex-direction:column;gap:8px;margin:6px 0;}
+      .labai-rec{border:1px solid #e5e7eb;border-left:3px solid #c7d2fe;
+        border-radius:8px;background:#fbfcfe;padding:8px 11px;}
+      .labai-rec-h{font-weight:700;color:#0f172a;font-size:13px;margin-bottom:5px;
+        overflow-wrap:break-word;word-break:normal;}
+      .labai-kv{display:flex;gap:8px;font-size:12.5px;line-height:1.5;
+        padding:1px 0;}
+      .labai-k{flex:0 0 40%;max-width:150px;color:#64748b;}
+      .labai-v{flex:1 1 auto;color:#0f172a;min-width:0;
+        overflow-wrap:break-word;word-break:normal;}
       .labai-quote{border-left:3px solid #c7d2fe;background:#f5f7ff;padding:6px 10px;
         margin:6px 0;color:#334155;font-size:13px;white-space:pre-wrap;}
       /* A wider panel means a table can breathe: let the columns size to their
@@ -1175,11 +1198,52 @@
           var m=PIPE_RE.exec(line);
           return m ? m[1].split('|').map(function(c){ return c.trim(); }) : null;
         }
+        // Beyond this many columns a table cannot fit the panel, and the model
+        // is asked for a list instead - but asking is not guaranteeing, and a
+        // six-column table arrived clipped on the left with every cell broken
+        // mid-word. So it is converted here rather than hoped about: one block
+        // per row, label and value on a line, which reads at any width.
+        var MAX_TABLE_COLS = 5;
+        function buildRecords(head, rows){
+          var box=document.createElement('div'); box.className='labai-recs';
+          rows.forEach(function(line){
+            var cells=pipeCells(line); if(!cells) return;
+            var rec=document.createElement('div'); rec.className='labai-rec';
+            // the first non-empty cell titles the block - it is nearly always
+            // the identifier the reader is scanning for
+            var title=null;
+            for(var n=0;n<cells.length;n++){
+              if(cells[n]){ title=cells[n]; break; }
+            }
+            if(title){
+              var h=document.createElement('div'); h.className='labai-rec-h';
+              h.innerHTML=inline(title); rec.appendChild(h);
+            }
+            head.forEach(function(label, idx){
+              var v=cells[idx];
+              // skip the cell used as the title, and anything empty: a blank
+              // "Notes —" line is noise in a block layout
+              if(!v || v===title) return;
+              var kv=document.createElement('div'); kv.className='labai-kv';
+              var k=document.createElement('span'); k.className='labai-k';
+              k.innerHTML=inline(label);
+              var val=document.createElement('span'); val.className='labai-v';
+              val.innerHTML=inline(v);
+              kv.appendChild(k); kv.appendChild(val); rec.appendChild(kv);
+            });
+            box.appendChild(rec);
+          });
+          return box.children.length ? box : null;
+        }
         // A markdown pipe table, which is what the model is now asked to emit
         // when it has rows. Reuses the same table styling as the fixed-width
         // path so a listing looks the same however it arrived.
         function buildPipeTable(header, rows){
           var head=pipeCells(header); if(!head) return null;
+          if(head.length > MAX_TABLE_COLS){
+            var recs=buildRecords(head, rows);
+            if(recs) return recs;
+          }
           var t=document.createElement('table'); t.className='labai-table';
           var thead=document.createElement('thead'), tr=document.createElement('tr');
           head.forEach(function(h){
