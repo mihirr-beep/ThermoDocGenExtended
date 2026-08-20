@@ -221,12 +221,15 @@ def _null_column_note(names, rows):
         return {}
     dead = []
     for i, name in enumerate(names):
-        if all(row[i] is None for row in rows if i < len(row)):
+        # '' counts as empty, not just NULL. col_label came back as the empty
+        # string on all sixteen rows of an answer and sailed past this check,
+        # so the reader got a column of nothing with a header over it.
+        if all(row[i] is None or row[i] == "" for row in rows if i < len(row)):
             dead.append(name)
     if not dead or len(dead) == len(names):
         return {}                       # all-NULL everywhere is the other note
     return {"dead_columns": (
-        "%s came back NULL on ALL %d rows. Do NOT present %s as a value or a "
+        "%s came back EMPTY on ALL %d rows. Do NOT present %s as a value or a "
         "blank - the query cannot see it. A column empty on every row usually "
         "means it was selected from a table the WHERE clause excludes (a LEFT "
         "JOIN whose row is then required to be NULL), so the field lives "
@@ -235,6 +238,44 @@ def _null_column_note(names, rows):
         "have not answered it yet."
         % (", ".join("`%s`" % d for d in dead), len(rows),
            "it" if len(dead) == 1 else "them"))}
+
+
+def _repeated_column_note(names, rows):
+    """Columns holding the SAME value on every row. Context, not data.
+
+    Asked which fields had issues, the answer reproduced the query: nine columns
+    by sixteen rows, with tco_id, job_number and product_name identical all the
+    way down because the whole result was one product. Three columns of the nine
+    carried no information at all, one was empty, and the two the reader actually
+    wanted - the field and its value - were the last two on a line wide enough to
+    need a scrollbar.
+
+    A value that is the same on every row belongs in the sentence above the table,
+    once. Saying it sixteen times is not thoroughness, it is the query's shape
+    leaking into the answer.
+
+    Only fires from three rows up, and only when something varies - a single-row
+    result is all "constants" and a table where nothing varies is a different
+    problem (see _scope_note).
+    """
+    if len(rows) < 3 or len(names) < 3:
+        return {}
+    fixed = []
+    for i, name in enumerate(names):
+        seen = {row[i] for row in rows if i < len(row)}
+        if len(seen) == 1:
+            only = next(iter(seen))
+            if only not in (None, ""):
+                fixed.append((name, str(only)[:40]))
+    if not fixed or len(fixed) >= len(names):
+        return {}
+    return {"repeated_columns": (
+        "%s the same on ALL %d rows: %s. State those once in the sentence above "
+        "the table and DROP the columns - repeating a value down every row is the "
+        "query's shape, not the answer's, and it pushes the columns the reader "
+        "asked for off the edge of the panel."
+        % ("This column is" if len(fixed) == 1 else "These columns are",
+           len(rows), "; ".join("%s = %s" % (n, v) for n, v in fixed)))}
 
 
 def _emptiness_note(rows):
@@ -325,7 +366,8 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "dead_columns", "scope_check", "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "dead_columns", "repeated_columns", "scope_check",
+                  "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -458,6 +500,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
         else:
             payload.update(_emptiness_note(rows))
             payload.update(_null_column_note(names, rows))
+            payload.update(_repeated_column_note(names, rows))
         out = json.dumps(_fold_guidance(payload), ensure_ascii=False, default=str)
 
         # Naming every value costs about 2.5x on a wide result - 200 x 11

@@ -361,6 +361,20 @@ And one deterministic lookup you can call yourself:
      |---|---|---|
      | CE | FAIL | +8.8 at 0.72 MHz |
 
+     THE TABLE IS NOT THE QUERY RESULT. Build it from what was ASKED, not from
+     what the SELECT happened to return:
+
+     * Drop any column holding the same value on every row - name it once in the
+       sentence above instead. A result that is all one product does not need
+       the product on all sixteen lines.
+     * Drop any column that is empty on every row. It is not a finding.
+     * Drop the columns nobody asked about. "Which fields had issues" wants the
+       field and its value - two columns - and it was answered with nine,
+       tco_id and job_number repeated down every one of them, and the two the
+       reader wanted pushed off the right-hand edge.
+     * Give the headers the words a person uses. `col_key` is not a heading;
+       "Point" or "Field" is. Never `row_no` when a row label exists.
+
    - A `-` bullet list for findings that have no natural order.
    - A `1.` numbered list when the order matters - review rounds, the steps to
      get a record accepted, a sequence of events.

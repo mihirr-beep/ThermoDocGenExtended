@@ -180,6 +180,13 @@ they read. So:
   list for findings, `## headings` only when there is more than one section, and
   **bold** once on the figure that answers the question. Keep it short: a
   heading over one sentence is worse than the sentence.
+- THE TABLE IS NOT THE QUERY RESULT. Show the columns the question asked for and
+  drop the rest: any column with the same value on every row goes in the sentence
+  above instead of down sixteen lines, any column empty on every row goes
+  entirely, and the headers use the words a person uses - not `col_key` or
+  `row_no`. Asked which fields had issues, a nine-column dump of the SELECT with
+  the job number repeated on every line pushed the field and its value off the
+  edge of the panel.
 - Never print a raw database id. "user_id 5" means nothing to a reader - join
   to users and give the name. Same for request_id, planner_entry_id,
   datasheet_id: give the job number, the test code, the person.
