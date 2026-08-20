@@ -92,6 +92,20 @@
             <button type="button" id="tabFloor" onclick="procPreview('floor')"
                     class="px-3 py-1.5 bg-white text-gray-700">Floor Standing</button>
           </div>
+          {% if range_sections %}
+          {# RE prints a setup and a pre-scan paragraph per frequency range and keeps
+             only the range(s) tested, so reading the text without this filter shows
+             paragraphs that will not be in the document. #}
+          <div class="flex items-center gap-3 text-xs text-gray-600">
+            <span class="text-gray-400">Frequency range:</span>
+            {% for rng in range_sections %}
+            <label class="inline-flex items-center gap-1">
+              <input type="checkbox" class="js-range-filter" value="{{ rng }}" checked
+                     onchange="procPreview()"> {{ rng }}
+            </label>
+            {% endfor %}
+          </div>
+          {% endif %}
           {% if port_sections %}
           {# The document keeps only the ports marked Applicable in the Test Specification,
              so the preview offers the same filter: read without it, this is not the
@@ -212,17 +226,51 @@
     return keep.filter(function (b) { return b.trim(); }).join('\n\n');
   }
 
+  /* Which frequency range a paragraph belongs to. Mirrors procedures.block_range(); the
+     "(Peak & ..." pre-scan is checked first because the plain one is a prefix of it. */
+  function blockRange(block) {
+    var head = (block || '').trim().toLowerCase();
+    if (head.indexOf('for 30mhz') === 0) return '30MHz - 1GHz';
+    if (head.indexOf('for 1ghz') === 0) return '1GHz - 6GHz';
+    if (head.indexOf('pre-scan (peak &') === 0) return '1GHz - 6GHz';
+    if (head.indexOf('pre-scan') === 0) return '30MHz - 1GHz';
+    return '';
+  }
+
+  function rangesApplicable() {
+    var on = [];
+    document.querySelectorAll('.js-range-filter').forEach(function (cb) {
+      if (cb.checked) on.push(cb.value);
+    });
+    return on;
+  }
+
+  /* Mirrors _re_filter_procedure(): a paragraph belonging to a range that was not tested
+     is dropped, and one belonging to neither - the opening sentence - always stays. With
+     no range ticked nothing is stripped, for the same reason the port filter leaves an
+     unanswered field alone. */
+  function filterRanges(txt) {
+    var want = rangesApplicable();
+    if (!want.length || !document.querySelector('.js-range-filter')) return txt;
+    return txt.split(/\n\s*\n/).filter(function (b) {
+      var r = blockRange(b);
+      return (!r || want.indexOf(r) >= 0) && b.trim();
+    }).map(function (b) { return b.trim(); }).join('\n\n');
+  }
+
   function resolvePreview(side) {
     var ta = document.getElementById('f_procedure');
     var txt = ta ? (ta.value || '') : '';
     // Ports first, then the wording - the order the form uses.
     txt = filterPorts(txt);
-    if (!PROC_RULE.mode) return txt;
+    // The range filter runs LAST, the order build_context uses for RE (support
+    // wording, then _re_filter_procedure). No datasheet has both filters.
+    if (!PROC_RULE.mode) return filterRanges(txt);
     var want = currentWording(side);
     if (!want) return txt;
     if (PROC_RULE.mode === 'variant') {
       var i = txt.indexOf('\n\n');
-      return (i > 0) ? (txt.slice(0, i) + '\n\n' + want) : want;
+      return filterRanges((i > 0) ? (txt.slice(0, i) + '\n\n' + want) : want);
     }
     var phrases = (PROC_RULE.phrases || []).slice();
     // The wording being typed into the other box counts as a phrase too, so the preview
@@ -233,7 +281,7 @@
     });
     phrases.sort(function (a, b) { return b.length - a.length; });
     phrases.forEach(function (p) { if (p !== want) txt = txt.split(p).join(want); });
-    return txt;
+    return filterRanges(txt);
   }
 
   function procPreview(side) {
@@ -253,6 +301,11 @@
       parts.push(!PROC_RULE.mode ? 'no configuration rule on this datasheet'
         : (PROC_RULE.mode === 'variant' ? 'a separate procedure per configuration'
                                        : 'one span swapped'));
+      if (document.querySelector('.js-range-filter')) {
+        var rr = rangesApplicable();
+        parts.push(rr.length ? ('range: ' + rr.join(' + '))
+                             : 'no range ticked, so nothing is stripped');
+      }
       var ports = portsApplicable();
       if (document.querySelector('.js-port-filter')) {
         parts.push(ports.length ? ('ports: ' + ports.join(' + '))

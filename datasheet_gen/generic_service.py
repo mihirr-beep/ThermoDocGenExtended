@@ -2557,15 +2557,13 @@ def _re_filter_procedure(text, s30, s16):
     paras = [p for p in re.split(r"\n\s*\n", txt)]
 
     def kind(p):
+        # procedures.RANGE_PARAGRAPHS owns which paragraph belongs to which range, so the
+        # admin page's preview and this filter cannot disagree about what gets dropped.
+        from .procedures import RANGE_PARAGRAPHS
         s = p.strip().lower()
-        if s.startswith("for 30mhz"):
-            return "setup30"
-        if s.startswith("for 1ghz"):
-            return "setup16"
-        if s.startswith("pre-scan (peak &"):
-            return "scan16"
-        if s.startswith("pre-scan"):
-            return "scan30"
+        for name, prefixes, role in RANGE_PARAGRAPHS:
+            if s.startswith(prefixes):
+                return role + ("16" if name.startswith("1GHz") else "30")
         return "other"
 
     tagged = [(kind(p), p) for p in paras]

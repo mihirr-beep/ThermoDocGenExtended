@@ -373,6 +373,9 @@ def _proc_view(code):
         # the preview offers the same filter - a procedure read without it is not the one
         # that prints. CRF's Signal Line block is added when that port is tested, so it
         # counts here too even though the shipped text has only Power Line.
+        # RE carries a setup and a pre-scan paragraph per frequency range, and the document
+        # keeps only the range(s) the test covered - so the preview offers that filter too.
+        "range_sections": P.procedure_range_sections(stored.get("procedure") or shipped),
         "port_sections": sorted(
             set(P.procedure_port_sections(stored.get("procedure") or shipped))
             | set(P.PORT_BLOCKS.get(code) or {})),

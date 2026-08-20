@@ -481,3 +481,35 @@ def procedure_port_sections(text):
         if port and port not in out:
             out.append(port)
     return out
+
+
+#: RE's procedure carries a setup paragraph and a pre-scan paragraph per frequency range,
+#: and the document keeps only the range(s) the test covered. The classification lives here
+#: so the admin page's preview and _re_filter_procedure agree on which paragraph is which.
+#: 'scan16' is checked before 'scan30' because "Pre-scan (Peak & ..." also starts "pre-scan".
+RANGE_PARAGRAPHS = (
+    ("30MHz - 1GHz", ("for 30mhz",), "setup"),
+    ("1GHz - 6GHz", ("for 1ghz",), "setup"),
+    ("1GHz - 6GHz", ("pre-scan (peak &",), "scan"),
+    ("30MHz - 1GHz", ("pre-scan",), "scan"),
+)
+
+
+def block_range(block):
+    """'30MHz - 1GHz' / '1GHz - 6GHz' for a procedure paragraph, or '' when it belongs to
+    neither - the opening sentence and anything else are common to both ranges."""
+    head = (block or "").strip().lower()
+    for name, prefixes, _role in RANGE_PARAGRAPHS:
+        if head.startswith(prefixes):
+            return name
+    return ""
+
+
+def procedure_range_sections(text):
+    """The frequency ranges this procedure carries paragraphs for, in document order."""
+    out = []
+    for block in re.split(r"\n\s*\n", text or ""):
+        rng = block_range(block)
+        if rng and rng not in out:
+            out.append(rng)
+    return out
