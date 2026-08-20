@@ -950,7 +950,13 @@
         z-index:99998;transition:transform .18s ease, box-shadow .18s ease;}
       #labai-fab:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 12px 32px rgba(79,70,229,.55);}
       #labai-fab svg{width:28px;height:28px;}
-      #labai-panel{position:fixed;right:22px;bottom:94px;width:392px;max-width:calc(100vw - 32px);
+      /* 392px left about 345px of usable bubble once the padding and the 88%
+         cap were taken off, and a four-column table does not fit in that - so
+         every listing arrived with a horizontal scrollbar inside a panel the
+         reader was already scrolling vertically. 560 fits the common
+         "Test | Result | Margin | Frequency" shape without one. The
+         max-width guard is what keeps it honest on a narrow screen. */
+      #labai-panel{position:fixed;right:22px;bottom:94px;width:560px;max-width:calc(100vw - 32px);
         height:600px;max-height:calc(100vh - 130px);background:#fff;border:1px solid #e5e7eb;
         border-radius:18px;box-shadow:0 22px 60px rgba(15,23,42,.30);display:none;flex-direction:column;
         overflow:hidden;z-index:99999;}
@@ -966,8 +972,11 @@
       .labai-msg.u{align-items:flex-end;}
       .labai-bub{max-width:88%;padding:10px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;}
       .labai-msg.u .labai-bub{background:#4f46e5;color:#fff;border-bottom-right-radius:4px;}
-      .labai-msg.a .labai-bub{background:#fff;color:#0f172a;border:1px solid #e5e7eb;border-bottom-left-radius:4px;}
-      .labai-meta{margin-top:7px;max-width:88%;}
+      /* The ANSWER bubble gets nearly the whole panel; the question keeps its 88%.
+         A user's line reads better short, but a table in the reply needs every
+         pixel, and the asymmetry is also what makes the two sides scannable. */
+      .labai-msg.a .labai-bub{max-width:97%;background:#fff;color:#0f172a;border:1px solid #e5e7eb;border-bottom-left-radius:4px;}
+      .labai-meta{margin-top:7px;max-width:97%;}
       .labai-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;}
       .labai-badge.db{background:#dbeafe;color:#1e40af;}
       .labai-badge.doc{background:#ffedd5;color:#9a3412;}
@@ -1007,6 +1016,12 @@
       .labai-para strong,.labai-list strong,.labai-table strong{font-weight:700;
         color:#0f172a;}
       .labai-hr{border:none;border-top:1px solid #e5e7eb;margin:10px 0;}
+      ol.labai-list{padding-left:20px;}
+      .labai-quote{border-left:3px solid #c7d2fe;background:#f5f7ff;padding:6px 10px;
+        margin:6px 0;color:#334155;font-size:13px;white-space:pre-wrap;}
+      /* A wider panel means a table can breathe: let the columns size to their
+         content and only scroll when they genuinely cannot fit. */
+      .labai-table{width:auto;min-width:100%;}
       .labai-sql{margin-top:6px;}
       .labai-sql summary{cursor:pointer;font-size:11.5px;color:#4f46e5;font-weight:600;list-style:none;}
       .labai-sql summary::before{content:'▸ ';}
@@ -1205,19 +1220,43 @@
             h.innerHTML=inline(m[2]); bub.appendChild(h);
             return true;
           }
-          function bullets(){
+          // Bulleted AND numbered. A model writing "next steps" reaches for
+          // "1." as often as "-", and an ordered list rendered as paragraphs
+          // loses the one thing it was carrying: the order.
+          function listBlock(){
+            var ordered=/^\s*\d+[.)]\s+\S/.test(lines[i]);
+            var re = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
+            var test = ordered ? /^\s*\d+[.)]\s+\S/ : /^\s*[-*+]\s+\S/;
             var items=[];
-            while(i<lines.length && /^\s*[-*+]\s+\S/.test(lines[i])){
-              items.push(lines[i].replace(/^\s*[-*+]\s+/, '')); i++;
+            while(i<lines.length && test.test(lines[i])){
+              var it=lines[i].replace(re, '');
+              // a wrapped continuation line belongs to the item above it
+              while(i+1<lines.length && /^\s{2,}\S/.test(lines[i+1])
+                    && !test.test(lines[i+1])){
+                i++; it += ' ' + lines[i].trim();
+              }
+              items.push(it); i++;
             }
             if(!items.length) return false;
             flush();
-            var ul=document.createElement('ul'); ul.className='labai-list';
+            var el=document.createElement(ordered ? 'ol' : 'ul');
+            el.className='labai-list';
             items.forEach(function(it){
               var li=document.createElement('li'); li.innerHTML=inline(it);
-              ul.appendChild(li);
+              el.appendChild(li);
             });
-            bub.appendChild(ul); return true;
+            bub.appendChild(el); return true;
+          }
+          function quote(){
+            var got=[];
+            while(i<lines.length && /^\s*>\s?/.test(lines[i])){
+              got.push(lines[i].replace(/^\s*>\s?/, '')); i++;
+            }
+            if(!got.length) return false;
+            flush();
+            var q=document.createElement('div'); q.className='labai-quote';
+            q.innerHTML=inline(got.join('\n')); bub.appendChild(q);
+            return true;
           }
           while(i<lines.length){
             if(heading(lines[i])){ i++; continue; }
@@ -1226,7 +1265,8 @@
               var hr=document.createElement('hr'); hr.className='labai-hr';
               bub.appendChild(hr); i++; continue;
             }
-            if(bullets()){ continue; }
+            if(listBlock()){ continue; }
+            if(quote()){ continue; }
             // a markdown pipe table: | a | b | then |---|---| then rows
             if(i+1<lines.length && PIPE_RE.test(lines[i])
                && PIPE_SEP_RE.test(lines[i+1])){

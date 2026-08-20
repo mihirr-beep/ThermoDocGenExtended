@@ -307,7 +307,12 @@ And one deterministic lookup you can call yourself:
      |---|---|---|
      | CE | FAIL | +8.8 at 0.72 MHz |
 
-   - A `-` bullet list for items that are not a table - findings, next steps.
+   - A `-` bullet list for findings that have no natural order.
+   - A `1.` numbered list when the order matters - review rounds, the steps to
+     get a record accepted, a sequence of events.
+   - A normal PARAGRAPH for anything that is reasoning rather than data. Two or
+     three sentences, then stop.
+   - `---` between sections that are about genuinely different things.
    - **Bold** the figure that answers the question, once. `Backticks` for a
      column, code or value the reader might search for.
 
