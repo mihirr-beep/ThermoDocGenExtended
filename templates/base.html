@@ -9,6 +9,7 @@
     <!-- Tailwind CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="{{ url_for('static', filename='js/pagination.js') }}"></script>
 
     <!-- Chart.js Library -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -19,6 +20,22 @@
             --main-nav-height: 88px;
             --env-banner-height: 0px;
             --layout-top-gap: 24px;
+        }
+
+        .app-pagination-active,
+        .app-pagination-active:hover {
+            border-color: #dc2626;
+            background-color: #dc2626;
+            color: #ffffff;
+        }
+
+        .stat-logic-toggle {
+            position: absolute;
+            right: 0.75rem;
+            bottom: 0.75rem;
+            top: auto;
+            left: auto;
+            color: #000000;
         }
 
         .loading {
@@ -1296,6 +1313,61 @@
         send.addEventListener('click', ask);
         input.addEventListener('input', function(){ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,96)+'px'; });
         input.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+      })();
+    </script>
+    {% endif %}
+
+    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+    <script>
+      (function () {
+        if (window.__statLogicControlsReady) return;
+        window.__statLogicControlsReady = true;
+
+        function escapeHtml(value) {
+          var div = document.createElement('div');
+          div.textContent = value == null ? '' : String(value);
+          return div.innerHTML;
+        }
+
+        function renderLogic(logic) {
+          var items = Array.isArray(logic.logic) ? logic.logic : [];
+          if (!items.length) {
+            return '<p class="text-sm text-slate-700">Calculation logic is not available.</p>';
+          }
+          return items.map(function (item) {
+            return '<p class="text-sm leading-6 text-slate-800">' + escapeHtml(item) + '</p>';
+          }).join('');
+        }
+
+        document.addEventListener('click', function (event) {
+          var button = event.target.closest('.stat-logic-toggle');
+          if (!button) return;
+          var key = button.dataset.statLogicKey;
+          var panel = document.querySelector('[data-stat-logic-panel="' + CSS.escape(key) + '"]');
+          if (!panel) return;
+          var expanded = button.getAttribute('aria-expanded') === 'true';
+          button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+          panel.classList.toggle('hidden', expanded);
+          if (expanded || panel.dataset.loaded === 'true') return;
+
+          var content = panel.querySelector('.stat-logic-content');
+          fetch('/api/admin/stat-card-logic/' + encodeURIComponent(key), {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          })
+            .then(function (response) {
+              if (!response.ok) throw new Error('Unable to load calculation logic.');
+              return response.json();
+            })
+            .then(function (payload) {
+              if (!payload.success) throw new Error(payload.error || 'Unable to load calculation logic.');
+              content.innerHTML = renderLogic(payload.logic || {});
+              panel.dataset.loaded = 'true';
+            })
+            .catch(function (error) {
+              content.innerHTML = '<p class="text-sm text-red-600">' + escapeHtml(error.message) + '</p>';
+            });
+        });
       })();
     </script>
     {% endif %}

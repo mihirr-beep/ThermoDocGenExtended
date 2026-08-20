@@ -714,6 +714,8 @@ class PlannerEntry(db.Model):
     report_comments = db.Column(db.Text, nullable=True)
     report_uploaded_at = db.Column(db.DateTime, nullable=True)
     report_uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    report_access_granted = db.Column(db.Boolean, default=False, nullable=False)
+    report_access_granted_at = db.Column(db.DateTime, nullable=True)
 
     def __repr__(self):
         return f'<PlannerEntry {self.test_person_name} {self.test_name} {self.start_date} - {self.end_date}>'

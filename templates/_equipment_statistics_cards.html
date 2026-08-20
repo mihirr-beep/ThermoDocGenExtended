@@ -1,0 +1,101 @@
+{% import '_stat_logic_controls.html' as stat_logic with context %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 xl:gap-5 {{ equipment_stats_margin_class|default('mb-6') }}">
+    <div class="relative rounded-[30px] border border-slate-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
+        {{ stat_logic.stat_logic_button('equipment.total', 'slate') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-[0_12px_24px_rgba(37,99,235,0.30)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Assets</p>
+                <p id="cardTotal" class="pt-1 text-[2.35rem] font-bold leading-none text-blue-600">{{ statistics.total or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.total') }}
+    </div>
+    <div class="relative rounded-[30px] border border-orange-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(249,115,22,0.12)]">
+        {{ stat_logic.stat_logic_button('equipment.total_instruments', 'orange') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-600 shadow-[0_12px_24px_rgba(234,88,12,0.28)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18m6-15v12M7 6h4m2 3h4M7 18h4m2-3h4"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Instrument</p>
+                <p id="cardTotalInstrument" class="pt-1 text-[2.35rem] font-bold leading-none text-orange-600">{{ statistics.total_instruments or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.total_instruments') }}
+    </div>
+    <div class="relative rounded-[30px] border border-emerald-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(16,185,129,0.12)]">
+        {{ stat_logic.stat_logic_button('equipment.total_equipment', 'emerald') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-600 shadow-[0_12px_24px_rgba(5,150,105,0.28)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11h6M9 15h4"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Equipment</p>
+                <p id="cardTotalEquipment" class="pt-1 text-[2.35rem] font-bold leading-none text-emerald-600">{{ statistics.total_equipment or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.total_equipment') }}
+    </div>
+    <div class="relative rounded-[30px] border border-teal-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(20,184,166,0.12)]">
+        {{ stat_logic.stat_logic_button('equipment.in_calibration', 'teal') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 shadow-[0_12px_24px_rgba(13,148,136,0.28)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">In</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
+                <p id="cardInCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-teal-600">{{ statistics.in_calibration or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.in_calibration') }}
+    </div>
+    <div class="relative rounded-[30px] border border-rose-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(239,68,68,0.12)]">
+        {{ stat_logic.stat_logic_button('equipment.out_of_calibration', 'rose') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 shadow-[0_12px_24px_rgba(220,38,38,0.28)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Out Of</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
+                <p id="cardOutOfCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-red-600">{{ statistics.out_of_calibration or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.out_of_calibration') }}
+    </div>
+    <div class="relative rounded-[30px] border border-violet-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(147,51,234,0.12)]">
+        {{ stat_logic.stat_logic_button('equipment.maintenance', 'violet') }}
+        <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 shadow-[0_12px_24px_rgba(126,34,206,0.28)]">
+                <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+            </div>
+            <div class="min-w-0 flex flex-col justify-center">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Under</p>
+                <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Maintenance</p>
+                <p id="cardMaintenance" class="pt-1 text-[2.35rem] font-bold leading-none text-violet-600">{{ statistics.maintenance or 0 }}</p>
+            </div>
+        </div>
+        {{ stat_logic.stat_logic_panel('equipment.maintenance') }}
+    </div>
+</div>

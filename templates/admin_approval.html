@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import '_stat_logic_controls.html' as stat_logic with context %}
 
 {% block title %}Admin Approval - Test Request Generator{% endblock %}
 
@@ -57,6 +58,7 @@
         <!-- Enhanced Statistics Cards -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div class="group relative overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.total', 'blue') }}
                 <div class="border-t-4 border-blue-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -71,9 +73,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.total or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.total') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-emerald-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.completed', 'emerald') }}
                 <div class="border-t-4 border-emerald-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -88,9 +92,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.completed or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.completed') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-cyan-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.testing_in_progress', 'cyan') }}
                 <div class="border-t-4 border-cyan-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -105,9 +111,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.testing_in_progress or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.testing_in_progress') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.draft_report', 'slate') }}
                 <div class="border-t-4 border-slate-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -122,9 +130,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.draft_report or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.draft_report') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.datasheet_uploaded', 'amber') }}
                 <div class="border-t-4 border-amber-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -139,9 +149,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.datasheet_uploaded or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.datasheet_uploaded') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-indigo-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.at_review', 'indigo') }}
                 <div class="border-t-4 border-indigo-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -156,9 +168,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.at_review or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.at_review') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.partially_scheduled', 'violet') }}
                 <div class="border-t-4 border-violet-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -173,9 +187,11 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.partially_scheduled or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.partially_scheduled') }}
                 </div>
             </div>
             <div class="group relative overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('request_summary.rejected_cancelled', 'rose') }}
                 <div class="border-t-4 border-rose-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -190,6 +206,7 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.rejected_cancelled or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('request_summary.rejected_cancelled') }}
                 </div>
             </div>
         </div>
@@ -216,16 +233,17 @@
                         <div class="relative">
                             <input type="text" id="searchInput"
                                 placeholder="Search by test request name or assigned engineer..."
-                                class="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-purple-100 focus:border-purple-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
-                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z">
-                                    </path>
-                                </svg>
-                            </div>
-                            <div class="absolute inset-y-0 right-0 pr-4 flex items-center">
+                                class="w-full pl-10 pr-20 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-purple-100 focus:border-purple-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center gap-2">
+                                <button type="button" id="adminSearchButton"
+                                    class="text-gray-400 hover:text-purple-600 transition-colors"
+                                    title="Search">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z">
+                                        </path>
+                                    </svg>
+                                </button>
                                 <button id="clearSearch"
                                     class="text-gray-400 hover:text-gray-600 hidden transition-all duration-200 hover:scale-110">
                                     <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -280,18 +298,9 @@
                         <select id="statusFilter"
                             class="w-full border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white py-3 px-4">
                             <option value="">All Status</option>
-                            <option value="pending_approval">Pending Approval</option>
-                            <option value="approved">Approved</option>
-                            <option value="assigned">Assigned</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="datasheet_uploaded">Datasheet Uploaded</option>
-                            <option value="draft_report">Draft Report</option>
-                            <option value="report_uploaded">Report Uploaded</option>
-                            <option value="admin_sign_off">Admin Sign Off</option>
-                            <option value="need_more_info">Need More Information</option>
-                            <option value="completed">Completed</option>
-                            <option value="cancelled">Cancelled</option>
-                            <option value="rejected">Rejected</option>
+                            {% for status_option in status_options %}
+                            <option value="{{ status_option.value }}">{{ status_option.label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
 
@@ -307,48 +316,24 @@
                                         </path>
                                     </svg>
                                 </div>
-                                View Options
+                                Request Scope
                             </div>
                         </label>
-                        <div
-                            class="flex items-center justify-between bg-gray-50 rounded-xl p-3 border-2 border-gray-200">
-                            <span class="text-sm font-medium text-gray-700">Show All Submitted Tests</span>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="showAllToggle" class="sr-only peer">
-                                <div
-                                    class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600">
-                                </div>
-                            </label>
-                        </div>
+                        <label
+                            class="flex items-center justify-between gap-3 rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all duration-300 hover:border-gray-300">
+                            <span>Show all non-draft requests</span>
+                            <input type="checkbox" id="showAllToggle"
+                                class="h-5 w-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                        </label>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Enhanced Test Requests Table -->
-        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                    <div class="flex items-center mb-4 sm:mb-0">
-                        <div class="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center mr-4">
-                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
-                                </path>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-900">Test Requests for Approval</h2>
-                            <p class="text-sm text-gray-600">Review and assign test requests to lab engineers</p>
-                        </div>
-                    </div>
-                </div>
-
-
-            </div>
-
+        <!-- Admin Approval Requests Table -->
+        <div class="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-lg">
             <div class="overflow-x-auto">
-                <table class="min-w-full table-auto divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
                             <th
@@ -665,7 +650,7 @@
                     <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
-                    Test plan approved
+                    Approve Test Plan
                 </button>
                 <button onclick="closeViewAssignedModal()"
                     class="px-6 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all duration-200 font-semibold shadow-md">
@@ -972,7 +957,7 @@
                         </svg>
                     </div>
                     <div>
-                        <h2 class="text-xl font-bold text-white">Report Review & Sign Off</h2>
+                        <h2 class="text-xl font-bold text-white">Admin Sign Off</h2>
                         <p class="text-sm text-purple-100" id="reportModalSubtitle">Loading...</p>
                     </div>
                 </div>
@@ -1018,7 +1003,10 @@
                     </label>
                     <textarea id="adminSignOffComment" rows="3"
                         class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                        placeholder="Add any comments before signing off..."></textarea>
+                        placeholder="Add any comments before completing this TCO..."></textarea>
+                    <p class="mt-2 text-xs text-gray-600">
+                        Signing off from Admin Approval will mark the TCO as Completed and make the final report available for download.
+                    </p>
                 </div>
             </div>
 
@@ -1033,7 +1021,7 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
-                    Approve & Sign Off
+                    Admin Sign Off & Complete
                 </button>
             </div>
         </div>
@@ -1472,7 +1460,7 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
-            Approve & Sign Off
+            Admin Sign Off & Complete
         `;
             }
         }
@@ -1557,7 +1545,7 @@
     let ALL_TEST_PLANS = [];
     let CURRENT_PAGE = 1;
     let ROWS_PER_PAGE = 10;
-    let ADMIN_SORT_BY = '';
+    let ADMIN_SORT_BY = 'tco_id';
     let ADMIN_SORT_DIR = 'asc';
 
     function getRowsPerPage() {
@@ -1697,63 +1685,16 @@
 
         if (!controlsEl) return;
 
-        // If only 1 page, still show a disabled pager (optional)
-        const canPrev = page > 1;
-        const canNext = page < totalPages;
-
-        // Build page number buttons (compact)
-        const pagesToShow = [];
-        const addPage = (p) => pagesToShow.push(p);
-
-        if (totalPages <= 7) {
-            for (let p = 1; p <= totalPages; p++) addPage(p);
-        } else {
-            addPage(1);
-            if (page > 3) pagesToShow.push('...');
-            for (let p = Math.max(2, page - 1); p <= Math.min(totalPages - 1, page + 1); p++) addPage(p);
-            if (page < totalPages - 2) pagesToShow.push('...');
-            addPage(totalPages);
-        }
-
-        controlsEl.innerHTML = `
-        <button type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
-            ${canPrev ? '' : 'disabled'}
-            data-page="${page - 1}">
-            Prev
-        </button>
-
-        ${pagesToShow.map(p => {
-            if (p === '...') {
-                return `<span class="px-2 text-gray-500">...</span>`;
-            }
-            const isActive = p === page;
-            return `
-                <button type="button"
-                    class="px-3 py-2 text-sm rounded-lg border ${isActive ? 'border-purple-500 bg-purple-50 text-purple-700 font-semibold' : 'border-gray-200 bg-white hover:bg-gray-50'}"
-                    data-page="${p}">
-                    ${p}
-                </button>
-            `;
-        }).join('')}
-
-        <button type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
-            ${canNext ? '' : 'disabled'}
-            data-page="${page + 1}">
-            Next
-        </button>
-    `;
-
-        // Click handler for pagination buttons
-        controlsEl.querySelectorAll('button[data-page]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const nextPage = parseInt(btn.getAttribute('data-page'), 10);
-                if (!Number.isFinite(nextPage)) return;
-                CURRENT_PAGE = nextPage;
-                renderCurrentPage();
+        if (window.AppPagination) {
+            AppPagination.renderPagination(controlsEl, {
+                currentPage: page,
+                totalPages,
+                onPageChange: (nextPage) => {
+                    CURRENT_PAGE = nextPage;
+                    renderCurrentPage();
+                }
             });
-        });
+        }
     }
 
     function renderCurrentPage() {
@@ -1833,7 +1774,7 @@
     const requestPlanUpdateBtnEl = document.getElementById('requestPlanUpdateBtn');
     const testPlanApprovedBtnEl = document.getElementById('testPlanApprovedBtn');
     const REQUEST_PLAN_BTN_DEFAULT_HTML = requestPlanUpdateBtnEl ? requestPlanUpdateBtnEl.innerHTML : 'Change test plan';
-    const TEST_PLAN_APPROVED_BTN_DEFAULT_HTML = testPlanApprovedBtnEl ? testPlanApprovedBtnEl.innerHTML : 'Test plan approved';
+    const TEST_PLAN_APPROVED_BTN_DEFAULT_HTML = testPlanApprovedBtnEl ? testPlanApprovedBtnEl.innerHTML : 'Approve Test Plan';
 
     function applyLabManagerSignatureStyle() {
         const signatureInput = document.getElementById('approvalLabManagerSignature');
@@ -1877,6 +1818,14 @@
         return String(testPlanOrStatus || '').trim();
     }
 
+    function getAdminDisplayStatusLabel(testPlanOrStatus) {
+        const statusLabel = getAdminStatusLabel(testPlanOrStatus);
+        if (['Test Plan Needs Approval', 'Test Plan To Approve'].includes(statusLabel)) {
+            return 'Test Plan Needs Approval';
+        }
+        return statusLabel;
+    }
+
     function getAdminStatusKey(testPlanOrStatus) {
         if (testPlanOrStatus && typeof testPlanOrStatus === 'object') {
             const explicitKey = String(testPlanOrStatus.status_key || '').trim();
@@ -1886,13 +1835,13 @@
         }
 
         const statusLabel = getAdminStatusLabel(testPlanOrStatus);
+        if (['Test Plan Needs Approval', 'Test Plan To Approve'].includes(statusLabel)) return 'test_plan_needs_approval';
         if (statusLabel === 'At Review') return 'pending_approval';
         if (['Approved', 'Test Plan Approved'].includes(statusLabel)) return 'approved';
         if (['Assigned', 'Assigned Lab Engineer'].includes(statusLabel)) return 'assigned';
         if ([
             'In Progress',
             'Test Schedule In Progress',
-            'Test Plan To Approve',
             'Admin Sign Off',
             'Draft Report',
             'Proceed Report',
@@ -1910,7 +1859,7 @@
 
     function usesAssignedPlanView(testPlan) {
         const statusLabel = getAdminStatusLabel(testPlan);
-        return ['Test Schedule In Progress', 'Test Plan To Approve'].includes(statusLabel);
+        return ['Test Schedule In Progress', 'Test Plan Needs Approval', 'Test Plan To Approve'].includes(statusLabel);
     }
 
     function canApproveOrRejectTestPlan(testPlan) {
@@ -1919,11 +1868,11 @@
 
     function canRequestAssignedPlanUpdate(status) {
         const statusLabel = getAdminStatusLabel(status);
-        return ['Test Schedule In Progress', 'Test Plan To Approve'].includes(statusLabel);
+        return ['Test Schedule In Progress', 'Test Plan Needs Approval', 'Test Plan To Approve'].includes(statusLabel);
     }
 
     function canFinalApproveAssignedPlan(status) {
-        return getAdminStatusLabel(status) === 'Test Plan To Approve';
+        return getAdminStatusKey(status) === 'test_plan_needs_approval';
     }
 
     function canShowQuickReassignButton(testPlan) {
@@ -1995,7 +1944,7 @@
         const statusKey = getAdminStatusKey(testPlan);
         const statusLabel = getAdminStatusLabel(testPlan);
 
-        if (statusLabel === 'Admin Sign Off') {
+        if (['Proceed Report', 'Admin Sign Off'].includes(statusLabel)) {
             return `
                 <div class="flex flex-wrap items-center gap-1">
                     <button onclick="viewTestPlan('${testPlan.id}')"
@@ -2587,6 +2536,7 @@
             'Approved': 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'Test Plan Approved': 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'Update plan': 'bg-amber-100 text-amber-800 border-amber-300',
+            'Test Plan Needs Approval': 'bg-purple-100 text-purple-800 border-purple-300',
             'Test Plan To Approve': 'bg-purple-100 text-purple-800 border-purple-300'
         };
         const badgeClass = statusClasses[status] || 'bg-gray-100 text-gray-800 border-gray-300';
@@ -3882,7 +3832,7 @@
         });
 
         if (statusText) {
-            statusText.textContent = data.status || 'Pending';
+            statusText.textContent = getAdminDisplayStatusLabel(data.status) || 'Pending';
         }
         if (requestPlanUpdateBtnEl) {
             requestPlanUpdateBtnEl.classList.toggle('hidden', !canShowPlanUpdate);
@@ -5699,10 +5649,17 @@
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json' }
         })
-            .then(response => {
+            .then(async response => {
                 console.log('Response status:', response.status);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const payload = contentType.includes('application/json')
+                    ? await response.json()
+                    : { success: false, error: await response.text() };
+                if (!response.ok) {
+                    const message = payload?.error || payload?.message || `HTTP error! status: ${response.status}`;
+                    throw new Error(message);
+                }
+                return payload;
             })
             .then(data => {
                 console.log('API Response:', data);
@@ -5756,7 +5713,13 @@
                 ALL_TEST_PLANS = [];
                 CURRENT_PAGE = 1;
                 updateAdminSortButtons();
-                renderCurrentPage();
+                renderPaginationControls({
+                    total: 0,
+                    totalPages: 1,
+                    page: 1,
+                    startIndex: 0,
+                    endIndex: 0
+                });
             });
     }
 
@@ -5993,17 +5956,21 @@
             });
         }
 
-        // Search input event (with debounce)
-        let searchTimeout;
         const searchInput = document.getElementById('searchInput');
+        const adminSearchButton = document.getElementById('adminSearchButton');
+        const executeAdminSearch = () => {
+            CURRENT_PAGE = 1;
+            loadAdminTestRequests();
+        };
         if (searchInput) {
-            searchInput.addEventListener('input', function () {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    loadAdminTestRequests();
-                }, 500);
+            searchInput.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    executeAdminSearch();
+                }
             });
         }
+        adminSearchButton?.addEventListener('click', executeAdminSearch);
 
         const clearBtn = document.getElementById('clearSearch');
         if (clearBtn && searchInput) {
@@ -6014,7 +5981,7 @@
             clearBtn.addEventListener('click', () => {
                 searchInput.value = '';
                 clearBtn.classList.add('hidden');
-                loadAdminTestRequests();
+                executeAdminSearch();
             });
         }
 

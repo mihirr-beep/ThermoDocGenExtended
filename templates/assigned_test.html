@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import '_stat_logic_controls.html' as stat_logic with context %}
 
 {% block title %}Assigned Test Requests - Test Request Generator{% endblock %}
 
@@ -90,6 +91,7 @@
         <!-- Statistics Cards -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div class="group relative overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.under_review', 'blue') }}
                 <div class="border-t-4 border-blue-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -105,10 +107,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.under_review or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.under_review') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-emerald-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.approved', 'emerald') }}
                 <div class="border-t-4 border-emerald-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -123,10 +127,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.approved or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.approved') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.rejected', 'rose') }}
                 <div class="border-t-4 border-rose-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -141,10 +147,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.rejected or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.rejected') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-indigo-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.assigned', 'indigo') }}
                 <div class="border-t-4 border-indigo-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -159,10 +167,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.assigned or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.assigned') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.total_tests', 'slate') }}
                 <div class="border-t-4 border-slate-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -177,10 +187,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.total_tests or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.total_tests') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-purple-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.peer_review', 'purple') }}
                 <div class="border-t-4 border-purple-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -195,10 +207,12 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.peer_review or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.peer_review') }}
                 </div>
             </div>
 
             <div class="group relative overflow-hidden rounded-3xl border border-teal-200 bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                {{ stat_logic.stat_logic_button('assigned.datasheet_uploaded', 'teal') }}
                 <div class="border-t-4 border-teal-500"></div>
                 <div class="p-6">
                     <div class="flex items-start gap-4">
@@ -213,6 +227,7 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900">{{ statistics.datasheet_uploaded or 0 }}</p>
                         </div>
                     </div>
+                    {{ stat_logic.stat_logic_panel('assigned.datasheet_uploaded') }}
                 </div>
             </div>
         </div>
@@ -237,15 +252,16 @@
                         </label>
                         <div class="relative">
                             <input type="text" id="searchInput"
-                                placeholder="Search by test name, TCO ID, or engineer..."
-                                class="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 bg-gray-50 focus:bg-white">
-                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
+                                placeholder="Search by product, TCO, job, requester, test, or engineer..."
+                                class="w-full pl-10 pr-16 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 bg-gray-50 focus:bg-white">
+                            <button type="button" id="assignedSearchButton"
+                                class="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-blue-600 transition-colors"
+                                title="Search">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                                 </svg>
-                            </div>
+                            </button>
                         </div>
                     </div>
                     <div class="lg:w-56 lg:flex-shrink-0">
@@ -397,7 +413,7 @@
                         {% for assignment in plan.test_assignments %}
                         {% set status = assignment.status or 'in_progress' %}
                         {% set normalized_status = status|string|trim|lower|replace(' ', '_') %}
-                        {% if normalized_status in ['cancelled', 'datasheet_uploaded', 'peer_review', 'admin_sign_off',
+                        {% if normalized_status in ['cancelled', 'datasheet_uploaded', 'da_skipped', 'peer_review', 'admin_sign_off',
                         'proceed_report', 'report_uploaded', 'draft_report'] %}
                         {% set _ = inactive_assignments.append((plan, assignment)) %}
                         {% else %}
@@ -413,7 +429,12 @@
                         <tr class="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200"
                             data-status="{{ normalized_status }}"
                             data-test-name="{{ assignment.test_name|lower }}" data-tco-id="{{ plan.tco_id|lower }}"
-                            data-job-id="{{ (plan.job_number or '')|lower }}" data-engineer="{{ assignment.engineer_name|lower }}"
+                            data-job-id="{{ (plan.job_number or plan.job_id or '')|lower }}" data-engineer="{{ assignment.engineer_name|lower }}"
+                            data-product-name="{{ (plan.product_name or plan.name or '')|lower }}"
+                            data-manufacturer="{{ (plan.manufacturer or '')|lower }}"
+                            data-model-number="{{ (plan.model_number or '')|lower }}"
+                            data-requester="{{ (plan.requester_name or '')|lower }}"
+                            data-requester-email="{{ (plan.requester_email or '')|lower }}"
                             data-service-types="{{ (plan.service_types|join('||'))|lower }}">
 
                             <!-- Test Request Column -->
@@ -484,6 +505,11 @@
                                 {% set card_border = 'border-yellow-200' %}
                                 {% set text_color = 'text-yellow-700' %}
                                 {% set text_decoration = '' %}
+                                {% elif normalized_status == 'da_skipped' %}
+                                {% set card_bg = 'bg-gray-50' %}
+                                {% set card_border = 'border-gray-300' %}
+                                {% set text_color = 'text-gray-800' %}
+                                {% set text_decoration = '' %}
                                 {% elif normalized_status == 'peer_review' %}
                                 {% set card_bg = 'bg-purple-50' %}
                                 {% set card_border = 'border-purple-200' %}
@@ -533,6 +559,11 @@
                                         <span
                                             class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
                                             DATASHEET UPLOADED
+                                        </span>
+                                        {% elif normalized_status == 'da_skipped' %}
+                                        <span
+                                            class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                                            SKIPPED - DEVELOPMENTAL ASSISTANCE
                                         </span>
                                         {% elif normalized_status == 'peer_review' %}
                                         <span
@@ -588,6 +619,14 @@
                                             View Datasheet
                                         </a>
                                         {% endif %}
+                                    </div>
+                                    {% elif normalized_status == 'da_skipped' %}
+                                    <div class="flex flex-col items-center gap-2">
+                                        <span
+                                            class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                                            SKIPPED - DEVELOPMENTAL ASSISTANCE
+                                        </span>
+                                        <span class="text-[10px] text-gray-400">Awaiting Report Upload</span>
                                     </div>
                                     {% elif normalized_status == 'peer_review' %}
                                     <div class="flex flex-col items-center gap-2">
@@ -646,12 +685,18 @@
                                             data-tco-id="{{ plan.tco_id|e }}"
                                             data-plan-id="{{ plan.id if plan.id is not none else '' }}"
                                             data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
-                                            onclick="openCETestDataSheetFromData(this); return false;"
+                                            data-service-types="{{ (plan.service_types|join('||'))|lower|e }}"
+                                            data-normal-action="ce"
+                                            onclick="handleGenerateDatasheetClick(this, event); return false;"
                                             class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Generate Datasheet
                                         </button>
                                         {% elif _tn in ['CRF','EFT','ESD','HARMONIC','PFMF','RE','RS_RI','SURGE','VOLTAGEDIPS','VOLTAGEFLICKER'] %}
                                         <a href="/datasheet/g/{{ _tn }}/{{ assignment.id }}/form"
+                                            data-assignment-id="{{ assignment.id if assignment.id is not none else '' }}"
+                                            data-service-types="{{ (plan.service_types|join('||'))|lower|e }}"
+                                            data-normal-action="href"
+                                            onclick="handleGenerateDatasheetClick(this, event);"
                                             class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Generate Datasheet
                                         </a>
@@ -664,7 +709,9 @@
                                             data-engineer-name="{{ (assignment.test_person_name or plan.assigned_engineer_name or '')|e }}"
                                             data-job-number="{{ (plan.job_number or '')|e }}"
                                             data-product-name="{{ (plan.product_name or plan.name or '')|e }}"
-                                            onclick="openTestDataSheetFromData(this); return false;"
+                                            data-service-types="{{ (plan.service_types|join('||'))|lower|e }}"
+                                            data-normal-action="modal"
+                                            onclick="handleGenerateDatasheetClick(this, event); return false;"
                                             class="inline-flex items-center justify-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg">
                                             Generate Datasheet
                                         </button>
@@ -704,7 +751,12 @@
                         <tr class="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200"
                             data-status="{{ normalized_status }}"
                             data-test-name="{{ assignment.test_name|lower }}" data-tco-id="{{ plan.tco_id|lower }}"
-                            data-job-id="{{ (plan.job_number or '')|lower }}" data-engineer="{{ assignment.engineer_name|lower }}"
+                            data-job-id="{{ (plan.job_number or plan.job_id or '')|lower }}" data-engineer="{{ assignment.engineer_name|lower }}"
+                            data-product-name="{{ (plan.product_name or plan.name or '')|lower }}"
+                            data-manufacturer="{{ (plan.manufacturer or '')|lower }}"
+                            data-model-number="{{ (plan.model_number or '')|lower }}"
+                            data-requester="{{ (plan.requester_name or '')|lower }}"
+                            data-requester-email="{{ (plan.requester_email or '')|lower }}"
                             data-service-types="{{ (plan.service_types|join('||'))|lower }}">
 
                             <!-- Test Request Column -->
@@ -775,6 +827,11 @@
                                 {% set card_border = 'border-yellow-200' %}
                                 {% set text_color = 'text-yellow-700' %}
                                 {% set text_decoration = '' %}
+                                {% elif normalized_status == 'da_skipped' %}
+                                {% set card_bg = 'bg-gray-50' %}
+                                {% set card_border = 'border-gray-300' %}
+                                {% set text_color = 'text-gray-800' %}
+                                {% set text_decoration = '' %}
                                 {% elif normalized_status == 'peer_review' %}
                                 {% set card_bg = 'bg-purple-50' %}
                                 {% set card_border = 'border-purple-200' %}
@@ -824,6 +881,11 @@
                                         <span
                                             class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
                                             DATASHEET UPLOADED
+                                        </span>
+                                        {% elif normalized_status == 'da_skipped' %}
+                                        <span
+                                            class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                                            SKIPPED - DEVELOPMENTAL ASSISTANCE
                                         </span>
                                         {% elif normalized_status == 'peer_review' %}
                                         <span
@@ -878,6 +940,14 @@
                                             View Datasheet
                                         </a>
                                         {% endif %}
+                                    </div>
+                                    {% elif normalized_status == 'da_skipped' %}
+                                    <div class="flex flex-col items-center gap-2">
+                                        <span
+                                            class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                                            SKIPPED - DEVELOPMENTAL ASSISTANCE
+                                        </span>
+                                        <span class="text-[10px] text-gray-400">Awaiting Report Upload</span>
                                     </div>
                                     {% elif normalized_status == 'peer_review' %}
                                     <div class="flex flex-col items-center gap-2">
@@ -3090,6 +3160,27 @@
 </div>
 
 
+<!-- Developmental Assistance Datasheet Skip Modal -->
+<div id="daDatasheetSkipModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h3 class="text-xl font-bold text-gray-900">Developmental Assistance</h3>
+            <p class="text-sm text-gray-600 mt-1">This request has a Developmental Assistance (DA) service type. Do you want to skip datasheet generation?</p>
+        </div>
+        <div class="px-6 py-5 flex flex-col sm:flex-row gap-3 sm:justify-end">
+            <button type="button" id="daDatasheetSkipNo"
+                class="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold">
+                No
+            </button>
+            <button type="button" id="daDatasheetSkipYes"
+                class="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black transition-colors font-semibold">
+                Yes, Skip Datasheet
+            </button>
+        </div>
+    </div>
+</div>
+
+
 <!-- Cancel Test Modal -->
 <div id="cancelTestModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full">
@@ -3149,7 +3240,7 @@
         const assignedSortTcoBtn = document.getElementById('assignedSortTcoBtn');
         const assignedSortJobBtn = document.getElementById('assignedSortJobBtn');
         const assignedSortState = {
-            sortBy: '',
+            sortBy: 'tco_id',
             sortDir: 'asc'
         };
         const resultsCount = document.getElementById('resultsCount');
@@ -3251,7 +3342,7 @@
         const PEER_REVIEW_TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected'];
         const peerReviewSortTcoBtn = document.getElementById('peerReviewSortTcoBtn');
         const peerReviewSortJobBtn = document.getElementById('peerReviewSortJobBtn');
-        const peerReviewSortState = { sortBy: '', sortDir: 'asc' };
+        const peerReviewSortState = { sortBy: 'tco_id', sortDir: 'asc' };
 
         function isPeerReviewTerminal(entry) {
             return PEER_REVIEW_TERMINAL_STATUSES.includes(
@@ -3422,45 +3513,16 @@
             const endItem = Math.min(totalItems, assignedPaginationState.currentPage * assignedPaginationState.perPage);
             paginationSummary.textContent = `Page ${assignedPaginationState.currentPage} of ${totalPages} · Showing ${startItem}-${endItem} of ${totalItems} assignments`;
 
-            const buttons = [];
-            const createButton = (label, page, disabled = false, active = false) => {
-                const baseClass = active
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100';
-                const disabledClass = disabled
-                    ? ' opacity-50 cursor-not-allowed hover:bg-white'
-                    : '';
-                return `
-                    <button type="button"
-                        class="inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${baseClass}${disabledClass}"
-                        data-page="${page}"
-                        ${disabled ? 'disabled' : ''}>
-                        ${label}
-                    </button>
-                `;
-            };
-
-            buttons.push(createButton('Prev', assignedPaginationState.currentPage - 1, assignedPaginationState.currentPage === 1));
-
-            for (let page = 1; page <= totalPages; page += 1) {
-                buttons.push(
-                    createButton(String(page), page, false, page === assignedPaginationState.currentPage)
-                );
-            }
-
-            buttons.push(createButton('Next', assignedPaginationState.currentPage + 1, assignedPaginationState.currentPage >= totalPages));
-            paginationControls.innerHTML = buttons.join('');
-
-            paginationControls.querySelectorAll('button[data-page]').forEach((button) => {
-                button.addEventListener('click', function () {
-                    const nextPage = Number(this.dataset.page || 1);
-                    if (!Number.isFinite(nextPage) || nextPage < 1 || nextPage > totalPages || nextPage === assignedPaginationState.currentPage) {
-                        return;
+            if (window.AppPagination) {
+                AppPagination.renderPagination(paginationControls, {
+                    currentPage: assignedPaginationState.currentPage,
+                    totalPages,
+                    onPageChange: (nextPage) => {
+                        assignedPaginationState.currentPage = nextPage;
+                        filterEntries();
                     }
-                    assignedPaginationState.currentPage = nextPage;
-                    filterEntries();
                 });
-            });
+            }
         }
 
         function showNoResultsMessage(visibleCount) {
@@ -3505,6 +3567,11 @@
                 const tcoId = (row.dataset.tcoId || '').toLowerCase();
                 const jobId = (row.dataset.jobId || '').toLowerCase();
                 const engineer = (row.dataset.engineer || '').toLowerCase();
+                const productName = (row.dataset.productName || '').toLowerCase();
+                const manufacturer = (row.dataset.manufacturer || '').toLowerCase();
+                const modelNumber = (row.dataset.modelNumber || '').toLowerCase();
+                const requester = (row.dataset.requester || '').toLowerCase();
+                const requesterEmail = (row.dataset.requesterEmail || '').toLowerCase();
                 const serviceTypes = (row.dataset.serviceTypes || '').toLowerCase();
 
                 // Check search match
@@ -3512,7 +3579,14 @@
                     testName.includes(searchTerm) ||
                     tcoId.includes(searchTerm) ||
                     jobId.includes(searchTerm) ||
-                    engineer.includes(searchTerm);
+                    engineer.includes(searchTerm) ||
+                    productName.includes(searchTerm) ||
+                    manufacturer.includes(searchTerm) ||
+                    modelNumber.includes(searchTerm) ||
+                    requester.includes(searchTerm) ||
+                    requesterEmail.includes(searchTerm) ||
+                    rowStatus.includes(searchTerm) ||
+                    serviceTypes.includes(searchTerm);
 
                 // Check status match
                 const matchesStatus = !selectedStatus || rowStatus === selectedStatus;
@@ -4029,12 +4103,9 @@
                         : 'Datasheet rejected and sent back to engineer.';
 
                     if (typeof showUploadNotification === 'function') {
-                        showUploadNotification(successMessage, 'success', () => {
-                            window.location.reload();
-                        });
-                    } else {
-                        window.location.reload();
+                        showUploadNotification(successMessage, 'success');
                     }
+                    window.loadPeerReviewData();
                 })
                 .catch((error) => {
                     if (typeof showUploadNotification === 'function') {
@@ -4057,7 +4128,15 @@
             }
         }
 
-        searchInput.addEventListener('input', () => filterEntries(true));
+        const assignedSearchButton = document.getElementById('assignedSearchButton');
+        const executeAssignedSearch = () => filterEntries(true);
+        searchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                executeAssignedSearch();
+            }
+        });
+        assignedSearchButton?.addEventListener('click', executeAssignedSearch);
         statusFilter.addEventListener('change', () => filterEntries(true));
         serviceTypeFilter.addEventListener('change', () => filterEntries(true));
 
@@ -4381,6 +4460,107 @@
     }
     window.openCETestDataSheetFromData = openCETestDataSheetFromData;
     window.openTestDataSheetFromData = openTestDataSheetFromData;
+
+    let pendingDaDatasheetButton = null;
+
+    function assignmentHasDaServiceType(button) {
+        const services = String(button?.dataset?.serviceTypes || '').toLowerCase();
+        return services.includes('development') && services.includes('assist');
+    }
+
+    function showDaDatasheetSkipModal(button) {
+        pendingDaDatasheetButton = button;
+        const modal = document.getElementById('daDatasheetSkipModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    function closeDaDatasheetSkipModal() {
+        const modal = document.getElementById('daDatasheetSkipModal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+
+    function continueNormalDatasheetGeneration(button) {
+        if (!button) return;
+        const action = button.dataset.normalAction || '';
+        if (action === 'ce') {
+            openCETestDataSheetFromData(button);
+            return;
+        }
+        if (action === 'modal') {
+            openTestDataSheetFromData(button);
+            return;
+        }
+        const href = button.getAttribute('href');
+        if (href) {
+            window.location.href = href;
+        }
+    }
+
+    function handleGenerateDatasheetClick(button, event) {
+        if (event) {
+            event.preventDefault();
+        }
+        if (!assignmentHasDaServiceType(button)) {
+            continueNormalDatasheetGeneration(button);
+            return false;
+        }
+        showDaDatasheetSkipModal(button);
+        return false;
+    }
+
+    async function skipDevelopmentalAssistanceDatasheet() {
+        const button = pendingDaDatasheetButton;
+        const assignmentId = button?.dataset?.assignmentId || '';
+        if (!assignmentId) {
+            alert('Missing assignment id.');
+            return;
+        }
+        const yesButton = document.getElementById('daDatasheetSkipYes');
+        const originalText = yesButton ? yesButton.textContent : '';
+        if (yesButton) {
+            yesButton.disabled = true;
+            yesButton.textContent = 'Skipping...';
+        }
+        try {
+            const response = await fetch(`/api/planner/${encodeURIComponent(assignmentId)}/skip-da-datasheet`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || result.message || 'Unable to skip datasheet generation.');
+            }
+            closeDaDatasheetSkipModal();
+            pendingDaDatasheetButton = null;
+            location.reload();
+        } catch (error) {
+            alert(error.message || 'Unable to skip datasheet generation.');
+        } finally {
+            if (yesButton) {
+                yesButton.disabled = false;
+                yesButton.textContent = originalText || 'Yes, Skip Datasheet';
+            }
+        }
+    }
+
+    document.getElementById('daDatasheetSkipNo')?.addEventListener('click', function () {
+        const button = pendingDaDatasheetButton;
+        closeDaDatasheetSkipModal();
+        pendingDaDatasheetButton = null;
+        continueNormalDatasheetGeneration(button);
+    });
+    document.getElementById('daDatasheetSkipYes')?.addEventListener('click', skipDevelopmentalAssistanceDatasheet);
+    document.getElementById('daDatasheetSkipModal')?.addEventListener('click', function (event) {
+        if (event.target === this) {
+            closeDaDatasheetSkipModal();
+        }
+    });
+    window.handleGenerateDatasheetClick = handleGenerateDatasheetClick;
 
     function openTestDataSheet(testName, tcoId, planId, testNameLower, assignmentId = null, assignedEngineerName = null, jobNumber = null, productName = null) {
         currentTestPlanId = planId;

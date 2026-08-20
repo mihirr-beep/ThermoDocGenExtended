@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="min-h-screen bg-gray-50">
-    <div class="max-w-[1850px] w-full mx-auto px-4 sm:px-6 xl:px-8 2xl:px-10 py-4">
+    <div class="max-w-[1920px] w-full mx-auto px-4 sm:px-6 xl:px-8 2xl:px-10 py-4">
         <!-- Enhanced Header -->
         <div class="mb-4">
             <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
@@ -47,103 +47,7 @@
         </div>
 
                 <!-- Enhanced Statistics Cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 xl:gap-5 mb-6">
-            <div class="rounded-[30px] border border-slate-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-[0_12px_24px_rgba(37,99,235,0.30)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
-                            </path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Assets</p>
-                        <p id="cardTotal" class="pt-1 text-[2.35rem] font-bold leading-none text-blue-600">{{ statistics.total or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-[30px] border border-orange-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(249,115,22,0.12)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-600 shadow-[0_12px_24px_rgba(234,88,12,0.28)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18m6-15v12M7 6h4m2 3h4M7 18h4m2-3h4"></path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Instrument</p>
-                        <p id="cardTotalInstrument" class="pt-1 text-[2.35rem] font-bold leading-none text-orange-600">{{ statistics.total_instruments or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-[30px] border border-emerald-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(16,185,129,0.12)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-600 shadow-[0_12px_24px_rgba(5,150,105,0.28)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11h6M9 15h4"></path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Total</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Equipment</p>
-                        <p id="cardTotalEquipment" class="pt-1 text-[2.35rem] font-bold leading-none text-emerald-600">{{ statistics.total_equipment or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-[30px] border border-teal-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(20,184,166,0.12)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 shadow-[0_12px_24px_rgba(13,148,136,0.28)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">In</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
-                        <p id="cardInCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-teal-600">{{ statistics.in_calibration or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-[30px] border border-rose-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(239,68,68,0.12)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 shadow-[0_12px_24px_rgba(220,38,38,0.28)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Out Of</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Calibration</p>
-                        <p id="cardOutOfCalibration" class="pt-1 text-[2.35rem] font-bold leading-none text-red-600">{{ statistics.out_of_calibration or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="rounded-[30px] border border-violet-200 bg-white px-5 py-6 xl:px-6 xl:py-7 shadow-[0_18px_40px_rgba(147,51,234,0.12)]">
-                <div class="grid grid-cols-[56px,minmax(0,1fr)] items-center gap-4">
-                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 shadow-[0_12px_24px_rgba(126,34,206,0.28)]">
-                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                            </path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        </svg>
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] leading-4 text-slate-500 whitespace-nowrap">Under</p>
-                        <p class="min-h-[2.5rem] text-[14px] font-semibold leading-5 text-slate-700">Maintenance</p>
-                        <p id="cardMaintenance" class="pt-1 text-[2.35rem] font-bold leading-none text-violet-600">{{ statistics.maintenance or 0 }}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        {% include '_equipment_statistics_cards.html' %}
 
         <!-- Enhanced Search and Filters -->
         <div class="bg-white rounded-2xl shadow-lg border border-gray-100 mb-4">
@@ -167,15 +71,16 @@
                             <input type="text" id="searchInput"
                                 placeholder="Search by asset ID, name, make, model, serial number, test type, or status..."
                                 value="{{ search_term or '' }}"
-                                class="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
-                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                </svg>
-                            </div>
-                            <div class="absolute inset-y-0 right-0 pr-4 flex items-center">
+                                class="w-full pl-10 pr-20 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center gap-2">
+                                <button type="button" id="equipmentSearchButton"
+                                    class="text-gray-400 hover:text-blue-600 transition-colors"
+                                    title="Search">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                </button>
                                 <button id="clearSearch"
                                     class="text-gray-400 hover:text-gray-600 hidden transition-all duration-200 hover:scale-110">
                                     <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,12 +248,12 @@
             </div>
 
             <div class="equipment-table-wrap">
-                <table class="equipment-table w-full divide-y divide-gray-200">
+                <table class="equipment-table w-full min-w-[1700px] divide-y divide-gray-200">
                     <thead class="bg-gray-50 sticky top-0">
                         <tr>
                             <th
-                                class="hidden px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
-                                Asset ID</th>
+                                class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
+                                SL No</th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Name</th>
@@ -373,7 +278,7 @@
                             <th
                                 class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max">
                                 Status</th>
-                            <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max" style="min-width: 210px; width: 210px;">
+                            <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-max" style="min-width: 310px; width: 310px;">
                                 Action</th>
                         </tr>
                     </thead>
@@ -382,10 +287,8 @@
                         <tr class="hover:bg-blue-50 transition-all duration-200" data-status="{{ equipment.status }}"
                             data-type="{{ equipment.type or '' }}" data-calibration-status="{{ equipment.calibration_status_col or '' }}"
                             data-has-upcoming-due="{{ 'true' if equipment.has_upcoming_due else 'false' }}">
-                            <td class="hidden px-4 py-3">
-                                <div class="text-xs font-mono text-gray-700 break-words">{{ equipment.asset_id or 'N/A'
-                                    }}
-                                </div>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <div class="text-xs font-mono font-semibold text-gray-700">{{ equipment.sl_no or 'N/A' }}</div>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 <div class="flex items-start">
@@ -572,8 +475,21 @@
                                     {% else %}{{ equipment.status.title() }}{% endif %}
                                 </span>
                             </td>
-                            <td class="px-4 py-3 text-right text-xs font-medium" style="min-width: 210px; width: 210px;">
+                            <td class="px-4 py-3 text-right text-xs font-medium" style="min-width: 310px; width: 310px;">
                                 <div class="flex items-center justify-end gap-1 flex-nowrap whitespace-nowrap">
+                                    <button type="button"
+                                        class="view-equipment-btn inline-flex items-center flex-shrink-0 px-3 py-1.5 border border-transparent text-xs font-semibold rounded-lg text-white bg-blue-700 hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
+                                        data-equipment-id="{{ equipment.id }}" title="View Equipment">
+                                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z">
+                                            </path>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                                            </path>
+                                        </svg>
+                                        View
+                                    </button>
                                     <button type="button"
                                         class="history-equipment-btn inline-flex items-center flex-shrink-0 px-2 py-1 border border-transparent text-xs font-medium rounded-lg text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
                                         data-equipment-id="{{ equipment.id }}"
@@ -721,9 +637,9 @@
 
 <!-- Enhanced Add/Edit Equipment Modal -->
 <div id="equipmentModal"
-    class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full hidden z-50 backdrop-blur-sm">
-    <div class="relative top-4 mx-auto p-4 border w-full max-w-2xl shadow-2xl rounded-2xl bg-white">
-        <div class="mb-4">
+    class="fixed inset-0 bg-black bg-opacity-50 h-full w-full hidden z-50 backdrop-blur-sm">
+    <div class="relative mx-auto my-4 border w-[calc(100%-2rem)] max-w-4xl max-h-[calc(100vh-2rem)] shadow-2xl rounded-2xl bg-white flex flex-col overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200 flex-shrink-0">
             <div class="flex items-center justify-between">
                 <div class="flex items-center">
                     <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
@@ -743,8 +659,9 @@
             </div>
         </div>
 
-        <form id="equipmentForm" class="space-y-6">
+        <form id="equipmentForm" class="flex min-h-0 flex-1 flex-col">
             <input type="hidden" id="equipmentId">
+            <div id="equipmentModalBody" class="flex-1 space-y-6 overflow-y-auto px-5 py-4">
 
             <!-- Basic Information Section -->
             <div class="border-b border-gray-200 pb-4">
@@ -1183,17 +1100,18 @@
                     </div>
                 </div>
             </div>
+            </div>
 
-            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-                <button type="button" onclick="closeModal()"
+            <div class="flex justify-end space-x-3 px-5 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+                <button type="button" id="equipmentModalCancelBtn" onclick="closeModal()"
                     class="inline-flex items-center px-4 py-2 border-2 border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 transform hover:scale-105">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                         </path>
                     </svg>
-                    Cancel
+                    <span id="equipmentModalCancelText">Cancel</span>
                 </button>
-                <button type="submit"
+                <button type="submit" id="equipmentModalSubmitBtn"
                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:scale-105 shadow-lg">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
@@ -1402,6 +1320,15 @@
     #equipmentTableBody tr:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .equipment-table-wrap {
+        overflow-x: auto;
+        overflow-y: visible;
+    }
+
+    .equipment-table {
+        table-layout: auto;
     }
 
     /* Text wrapping for table cells */
@@ -1705,9 +1632,9 @@
 {% block extra_js %}
 <script>
     // Enhanced search functionality
-    let searchTimeout;
     const searchInput = document.getElementById('searchInput');
     const clearSearchBtn = document.getElementById('clearSearch');
+    const equipmentSearchButton = document.getElementById('equipmentSearchButton');
     const searchResultsSummary = document.getElementById('searchResultsSummary');
     const visibleCountSpan = document.getElementById('visibleCount');
     const totalCountSpan = document.getElementById('totalCount');
@@ -1719,13 +1646,19 @@
         clearSearchBtn.classList.remove('hidden');
     }
 
-    // Search with debouncing for better performance
+    // Execute main search only on Enter or the search icon.
     searchInput.addEventListener('input', function () {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            submitSearchForm();
-        }, 500);
+        clearSearchBtn.classList.toggle('hidden', !searchInput.value.trim());
     });
+
+    searchInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            submitSearchForm();
+        }
+    });
+
+    equipmentSearchButton?.addEventListener('click', submitSearchForm);
 
     // Clear search button
     clearSearchBtn.addEventListener('click', function () {
@@ -1928,6 +1861,34 @@
     });
 
     // Modal functions
+    function setEquipmentModalReadOnly(isReadOnly) {
+        const form = document.getElementById('equipmentForm');
+        const submitBtn = document.getElementById('equipmentModalSubmitBtn');
+        const cancelText = document.getElementById('equipmentModalCancelText');
+
+        if (form) {
+            form.querySelectorAll('input, select, textarea').forEach(field => {
+                field.disabled = Boolean(isReadOnly);
+                field.classList.toggle('bg-gray-100', Boolean(isReadOnly));
+                field.classList.toggle('cursor-not-allowed', Boolean(isReadOnly));
+            });
+            form.querySelectorAll('button').forEach(button => {
+                if (button.id === 'equipmentModalCancelBtn') {
+                    return;
+                }
+                button.disabled = Boolean(isReadOnly);
+                button.classList.toggle('hidden', Boolean(isReadOnly));
+            });
+        }
+
+        if (submitBtn) {
+            submitBtn.classList.toggle('hidden', Boolean(isReadOnly));
+        }
+        if (cancelText) {
+            cancelText.textContent = isReadOnly ? 'Close' : 'Cancel';
+        }
+    }
+
     function openModal(title = 'Add Equipment') {
         document.getElementById('modalTitle').textContent = title;
         document.getElementById('equipmentModal').classList.remove('hidden');
@@ -1948,6 +1909,7 @@
     }
 
     function closeModal() {
+        setEquipmentModalReadOnly(false);
         document.getElementById('equipmentModal').classList.add('hidden');
         document.getElementById('equipmentForm').reset();
         document.getElementById('equipmentId').value = '';
@@ -1984,6 +1946,7 @@
 
     // Add equipment button
     document.getElementById('addEquipmentBtn').addEventListener('click', () => {
+        setEquipmentModalReadOnly(false);
         openModal('Add Equipment');
     });
 
@@ -3265,9 +3228,10 @@
                 return div.innerHTML;
             };
 
-            // Asset ID (cell 0) - hidden, but update it anyway for data consistency
-            if (cells[0] && !cells[0].classList.contains('hidden')) {
-                cells[0].innerHTML = `<div class="text-xs font-mono text-gray-700 break-words">${escapeHtml(equipmentData.asset_id)}</div>`;
+            // SL No (cell 0)
+            if (cells[0]) {
+                cells[0].className = 'px-4 py-3 whitespace-nowrap';
+                cells[0].innerHTML = `<div class="text-xs font-mono font-semibold text-gray-700">${escapeHtml(equipmentData.sl_no || 'N/A')}</div>`;
             }
 
             // Name (cell 1)
@@ -3377,6 +3341,16 @@
             }
 
             // Action buttons (cell 9) - update the data-equipment-name attribute
+            const viewBtn = row.querySelector('.view-equipment-btn');
+            if (viewBtn) {
+                viewBtn.setAttribute('data-equipment-id', equipmentId);
+            }
+
+            const editBtn = row.querySelector('.edit-equipment-btn');
+            if (editBtn) {
+                editBtn.setAttribute('data-equipment-id', equipmentId);
+            }
+
             const deleteBtn = row.querySelector('.delete-equipment-btn');
             if (deleteBtn) {
                 deleteBtn.setAttribute('data-equipment-name', escapeHtml(equipmentData.name || ''));
@@ -3483,7 +3457,12 @@
         el.textContent = String(Math.max(0, next));
     }
 
-    function editEquipment(id) {
+    function viewEquipment(id) {
+        editEquipment(id, true);
+    }
+
+    function editEquipment(id, readOnly = false) {
+        setEquipmentModalReadOnly(false);
         // Fetch equipment data and populate form
         fetch(`/api/equipment/${id}`)
             .then(response => response.json())
@@ -3658,9 +3637,10 @@
 
                         // Toggle calibration fields based on calibration_required value
                         toggleCalibrationFields();
+                        setEquipmentModalReadOnly(readOnly);
                     }, 100); // Small delay to ensure DOM is ready, especially for select elements
 
-                    openModal('Edit Equipment');
+                    openModal(readOnly ? 'View Equipment' : 'Edit Equipment');
                 } else {
                     showMessage('Failed to load equipment data', 'error');
                 }
@@ -4057,6 +4037,15 @@
 
     // Event delegation for Edit buttons, Delete buttons, History buttons, and Pagination buttons
     document.addEventListener('click', function (e) {
+        const viewBtn = e.target.closest('.view-equipment-btn');
+        if (viewBtn) {
+            e.preventDefault();
+            const equipmentId = viewBtn.getAttribute('data-equipment-id');
+            if (equipmentId) {
+                viewEquipment(parseInt(equipmentId));
+            }
+        }
+
         const historyBtn = e.target.closest('.history-equipment-btn');
         if (historyBtn) {
             e.preventDefault();

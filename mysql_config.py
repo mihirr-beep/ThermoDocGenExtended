@@ -48,6 +48,9 @@ class MySQLConfig:
     MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
     MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'Thermo@123')
     MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'test_plan_generator')
+    # NB: kept as 'test_plan_generator'. Her tree defaults to _test because that is
+    # the database she develops against; ours holds the live data and .env does not
+    # pin MYSQL_DATABASE, so this default is what the app connects to.
 
     # SQLAlchemy MySQL URI will be constructed dynamically
     SQLALCHEMY_DATABASE_URI = None
@@ -123,32 +126,21 @@ class MySQLConfig:
         )
 
 
-class MySQLDevelopmentConfig(MySQLConfig):
-    """Development configuration for MySQL."""
-    DEBUG = True
-    LOG_LEVEL = 'DEBUG'
-
-
-class MySQLProductionConfig(MySQLConfig):
-    """Production configuration for MySQL."""
-    DEBUG = False
-    LOG_LEVEL = 'WARNING'
-
-
-class MySQLTestingConfig(MySQLConfig):
-    """Testing configuration for MySQL."""
-    TESTING = True
-    MYSQL_DATABASE = 'test_plan_generator_test'
-    SQLALCHEMY_DATABASE_URI = (
-        f"mysql+mysqldb://{MySQLConfig.MYSQL_USER}:{MySQLConfig.MYSQL_PASSWORD}"
-        f"@{MySQLConfig.MYSQL_HOST}:{MySQLConfig.MYSQL_PORT}/test_plan_generator_test"
-    )
-
-
-# Configuration dictionary
+# One configuration, as she reorganised it: the three environment classes only ever
+# differed by DEBUG/LOG_LEVEL and the app used a single one. Exposed as a MAPPING rather
+# than the bare class because four callers in this tree read config["default"] -
+# nlp_search/build_catalog.py, nlp_search/semantics.py, migrate_iec_emc_to_relational.py
+# and import_equipment_csv.py - and app.py resolves config[name]. Every key is the same
+# class, so there is nothing left to diverge.
 config = {
-    'development': MySQLDevelopmentConfig,
-    'production': MySQLProductionConfig,
-    'testing': MySQLTestingConfig,
-    'default': MySQLDevelopmentConfig
+    'default': MySQLConfig,
+    'development': MySQLConfig,
+    'testing': MySQLConfig,
+    'production': MySQLConfig,
 }
+
+# Kept as names for the callers that import a class directly (debug_tco.py, the
+# peer-review scripts). They are the same object now, not three behaviours.
+MySQLDevelopmentConfig = MySQLConfig
+MySQLProductionConfig = MySQLConfig
+MySQLTestingConfig = MySQLConfig

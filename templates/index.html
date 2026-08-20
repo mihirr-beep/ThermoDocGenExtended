@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import '_stat_logic_controls.html' as stat_logic with context %}
 
 {% block title %}Test Requests - Test Request Generator{% endblock %}
 
@@ -116,6 +117,38 @@
 
         <!-- Enhanced Statistics Cards -->
         <div id="statisticsCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"></div>
+        <div id="indexStatLogicTemplates" class="hidden" aria-hidden="true">
+            <template data-stat-logic-template="button:request_summary.total">{{ stat_logic.stat_logic_button('request_summary.total', 'blue') }}</template>
+            <template data-stat-logic-template="button:request_summary.completed">{{ stat_logic.stat_logic_button('request_summary.completed', 'emerald') }}</template>
+            <template data-stat-logic-template="button:request_summary.testing_in_progress">{{ stat_logic.stat_logic_button('request_summary.testing_in_progress', 'cyan') }}</template>
+            <template data-stat-logic-template="button:request_summary.draft_report">{{ stat_logic.stat_logic_button('request_summary.draft_report', 'slate') }}</template>
+            <template data-stat-logic-template="button:request_summary.datasheet_uploaded">{{ stat_logic.stat_logic_button('request_summary.datasheet_uploaded', 'amber') }}</template>
+            <template data-stat-logic-template="button:request_summary.at_review">{{ stat_logic.stat_logic_button('request_summary.at_review', 'blue') }}</template>
+            <template data-stat-logic-template="button:request_summary.partially_scheduled">{{ stat_logic.stat_logic_button('request_summary.partially_scheduled', 'violet') }}</template>
+            <template data-stat-logic-template="button:request_summary.rejected_cancelled">{{ stat_logic.stat_logic_button('request_summary.rejected_cancelled', 'rose') }}</template>
+            <template data-stat-logic-template="panel:request_summary.total">{{ stat_logic.stat_logic_panel('request_summary.total') }}</template>
+            <template data-stat-logic-template="panel:request_summary.completed">{{ stat_logic.stat_logic_panel('request_summary.completed') }}</template>
+            <template data-stat-logic-template="panel:request_summary.testing_in_progress">{{ stat_logic.stat_logic_panel('request_summary.testing_in_progress') }}</template>
+            <template data-stat-logic-template="panel:request_summary.draft_report">{{ stat_logic.stat_logic_panel('request_summary.draft_report') }}</template>
+            <template data-stat-logic-template="panel:request_summary.datasheet_uploaded">{{ stat_logic.stat_logic_panel('request_summary.datasheet_uploaded') }}</template>
+            <template data-stat-logic-template="panel:request_summary.at_review">{{ stat_logic.stat_logic_panel('request_summary.at_review') }}</template>
+            <template data-stat-logic-template="panel:request_summary.partially_scheduled">{{ stat_logic.stat_logic_panel('request_summary.partially_scheduled') }}</template>
+            <template data-stat-logic-template="panel:request_summary.rejected_cancelled">{{ stat_logic.stat_logic_panel('request_summary.rejected_cancelled') }}</template>
+        </div>
+
+        <div id="completedFeedbackBlocker"
+            class="hidden mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-sm">
+            <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p class="font-semibold">Feedback required before creating a new TCO</p>
+                    <p id="completedFeedbackBlockerText" class="mt-1 text-xs text-amber-800"></p>
+                </div>
+                <button id="completedFeedbackBlockerAction" type="button"
+                    class="hidden inline-flex items-center justify-center rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-700">
+                    Submit Feedback
+                </button>
+            </div>
+        </div>
 
         <!-- Enhanced Search and Filters -->
         <div class="bg-white rounded-2xl shadow-lg border border-gray-100 mb-4">
@@ -139,13 +172,14 @@
                         <div class="relative">
                             <input type="text" id="searchInput" placeholder="Search by name, project, or status..."
                                 class="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 text-sm transition-all duration-300 hover:border-gray-300 bg-gray-50 focus:bg-white">
-                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
+                            <button type="button" id="indexSearchButton"
+                                class="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-blue-600 transition-colors"
+                                aria-label="Search test requests" title="Search test requests">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                                 </svg>
-                            </div>
+                            </button>
                         </div>
                         <p class="mt-1 text-xs text-gray-500">Search across all test plan details including name,
                             project, and status</p>
@@ -315,29 +349,7 @@
                             <option value="50">50</option>
                         </select>
                     </div>
-                    <div class="flex items-center justify-end space-x-3">
-                        <button id="paginationPrev" type="button"
-                            class="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
-                            aria-label="Previous page">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 19l-7-7 7-7"></path>
-                            </svg>
-                        </button>
-                        <div class="text-sm font-medium text-gray-700">
-                            <span id="currentPage">0</span>
-                            <span class="text-gray-400">/</span>
-                            <span id="totalPages">1</span>
-                        </div>
-                        <button id="paginationNext" type="button"
-                            class="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
-                            aria-label="Next page">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7">
-                                </path>
-                            </svg>
-                        </button>
-                    </div>
+                    <div id="paginationControls" class="flex flex-wrap items-center justify-end gap-2"></div>
                 </div>
             </div>
 
@@ -4064,7 +4076,7 @@
         totalItems: 0,
         startItem: 0,
         endItem: 0,
-        sortBy: 'job_number',
+        sortBy: 'tco_id',
         sortDir: 'asc'
     };
     let activeTestRequestsController = null;
@@ -6856,6 +6868,10 @@
             createTestPlanBtn.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
+
+                if (showCompletedFeedbackBlocker()) {
+                    return;
+                }
 
                 // Toggle form visibility
                 formContainer.classList.toggle('hidden');
@@ -14432,6 +14448,86 @@
     });
 
     // Test Requests List Management
+    let pendingCompletedFeedbackRequests = [];
+
+    function getPendingCompletedFeedbackTcos() {
+        return pendingCompletedFeedbackRequests
+            .map(request => String(request?.tco_id || '').trim())
+            .filter(Boolean);
+    }
+
+    function getPendingCompletedFeedbackMessage(pendingTcos = getPendingCompletedFeedbackTcos()) {
+        const tcos = Array.isArray(pendingTcos)
+            ? pendingTcos.map(tco => String(tco || '').trim()).filter(Boolean)
+            : [];
+        if (!tcos.length) {
+            return '';
+        }
+        const label = tcos.length === 1 ? 'completed TCO' : 'completed TCOs';
+        return `Please submit feedback for ${label} ${tcos.join(', ')} before raising a new TCO.`;
+    }
+
+    function openFirstPendingCompletedFeedback() {
+        const pendingRequest = pendingCompletedFeedbackRequests.find(request => request && request.id);
+        if (!pendingRequest) {
+            showStatusMessage('No completed TCO feedback item is currently available.', 'error');
+            return;
+        }
+        openReportFeedbackModal(String(pendingRequest.id), {
+            tcoId: pendingRequest.tco_id,
+            mandatory: true,
+            reason: `Feedback for completed ${pendingRequest.tco_id} is required before you can create a new request.`
+        });
+    }
+
+    function showCompletedFeedbackBlocker() {
+        const blocker = document.getElementById('completedFeedbackBlocker');
+        const blockerText = document.getElementById('completedFeedbackBlockerText');
+        const blockerAction = document.getElementById('completedFeedbackBlockerAction');
+        const message = getPendingCompletedFeedbackMessage();
+        if (!message) {
+            return false;
+        }
+        if (blocker) {
+            blocker.classList.remove('hidden');
+            blocker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (blockerText) {
+            blockerText.textContent = message;
+        }
+        if (blockerAction) {
+            blockerAction.classList.remove('hidden');
+            blockerAction.onclick = openFirstPendingCompletedFeedback;
+        }
+        showStatusMessage(message, 'error');
+        return true;
+    }
+
+    function updateCompletedFeedbackBlocker(completedFeedback = {}) {
+        const blocker = document.getElementById('completedFeedbackBlocker');
+        const blockerText = document.getElementById('completedFeedbackBlockerText');
+        const blockerAction = document.getElementById('completedFeedbackBlockerAction');
+        const pendingRequests = Array.isArray(completedFeedback.pending_requests)
+            ? completedFeedback.pending_requests
+            : [];
+        const pendingTcos = Array.isArray(completedFeedback.pending_tcos)
+            ? completedFeedback.pending_tcos
+            : [];
+        pendingCompletedFeedbackRequests = pendingRequests.length
+            ? pendingRequests
+            : pendingTcos.map(tco => ({ id: null, tco_id: tco }));
+        if (blocker) {
+            blocker.classList.add('hidden');
+        }
+        if (blockerText) {
+            blockerText.textContent = '';
+        }
+        if (blockerAction) {
+            blockerAction.classList.add('hidden');
+            blockerAction.onclick = null;
+        }
+    }
+
     function loadTestRequests() {
         const tableBody = document.getElementById('testPlansTableBody');
         const loadingRow = document.getElementById('loadingRow');
@@ -14632,6 +14728,8 @@
                     applyPaginationData(null);
                 }
 
+                updateCompletedFeedbackBlocker(data.completed_feedback || {});
+
                 // Handle data - check for success flag or just data array
                 let requestsData = [];
 
@@ -14830,10 +14928,7 @@
     function updatePaginationUI() {
         const summaryEl = document.getElementById('paginationSummary');
         const statusEl = document.getElementById('paginationStatus');
-        const currentPageEl = document.getElementById('currentPage');
-        const totalPagesEl = document.getElementById('totalPages');
-        const prevBtn = document.getElementById('paginationPrev');
-        const nextBtn = document.getElementById('paginationNext');
+        const paginationControls = document.getElementById('paginationControls');
         const perPageSelect = document.getElementById('perPageSelect');
 
         if (summaryEl) {
@@ -14850,20 +14945,15 @@
             statusEl.textContent = `Page ${currentPageDisplay} of ${totalPagesDisplay}`;
         }
 
-        if (currentPageEl) {
-            currentPageEl.textContent = testRequestsState.totalItems === 0 ? 0 : testRequestsState.page;
-        }
-
-        if (totalPagesEl) {
-            totalPagesEl.textContent = testRequestsState.totalItems === 0 ? 1 : testRequestsState.totalPages;
-        }
-
-        if (prevBtn) {
-            prevBtn.disabled = testRequestsState.totalItems === 0 || testRequestsState.page <= 1;
-        }
-
-        if (nextBtn) {
-            nextBtn.disabled = testRequestsState.totalItems === 0 || testRequestsState.page >= testRequestsState.totalPages;
+        if (paginationControls && window.AppPagination) {
+            AppPagination.renderPagination(paginationControls, {
+                currentPage: testRequestsState.totalItems === 0 ? 1 : testRequestsState.page,
+                totalPages: testRequestsState.totalItems === 0 ? 1 : testRequestsState.totalPages,
+                onPageChange: (page) => {
+                    testRequestsState.page = page;
+                    loadTestRequests();
+                }
+            });
         }
 
         if (perPageSelect && parseInt(perPageSelect.value, 10) !== Number(testRequestsState.perPage)) {
@@ -14924,27 +15014,7 @@
     }
 
     function setupPaginationControls() {
-        const prevBtn = document.getElementById('paginationPrev');
-        const nextBtn = document.getElementById('paginationNext');
         const perPageSelect = document.getElementById('perPageSelect');
-
-        if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
-                if (testRequestsState.page > 1) {
-                    testRequestsState.page -= 1;
-                    loadTestRequests();
-                }
-            });
-        }
-
-        if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
-                if (testRequestsState.page < testRequestsState.totalPages) {
-                    testRequestsState.page += 1;
-                    loadTestRequests();
-                }
-            });
-        }
 
         if (perPageSelect) {
             perPageSelect.addEventListener('change', (event) => {
@@ -15000,8 +15070,6 @@
         const rawStatus = (request.status || 'Draft').trim();
         const rawLower = rawStatus.toLowerCase();
         const statusCategory = normalizeWorkflowStatus(rawStatus);
-
-        console.log('createTestRequestRow DEBUG:', { rawStatus, statusCategory });
 
         // Map each RAW status to unique colors with inline styles
         const statusColorMap = {
@@ -15083,8 +15151,6 @@
         
         const statusIcon = colorInfo.icon;
         
-        console.log('createTestRequestRow STATUS COLORS:', { rawStatus, colorInfo });
-
         const hasReviewMessages = request.has_review_messages === true;
 
         const commentsBubble = hasReviewMessages ? `
@@ -15303,12 +15369,17 @@
     }
 
 
-    async function openReportModal(btn) {
-        const requestId = btn.getAttribute('data-request-id');
+    async function openReportModal(btnOrRequestId) {
+        const requestId = typeof btnOrRequestId === 'object'
+            ? btnOrRequestId.getAttribute('data-request-id')
+            : String(btnOrRequestId || '');
         if (!requestId) return;
 
-        const originalDisabled = btn.disabled;
-        btn.disabled = true;
+        const sourceBtn = typeof btnOrRequestId === 'object' ? btnOrRequestId : null;
+        const originalDisabled = sourceBtn ? sourceBtn.disabled : false;
+        if (sourceBtn) {
+            sourceBtn.disabled = true;
+        }
 
         let payload;
         try {
@@ -15322,7 +15393,9 @@
         } catch (error) {
             console.error('Error loading report modal data:', error);
             showStatusMessage(error.message || 'Failed to load report details', 'error');
-            btn.disabled = originalDisabled;
+            if (sourceBtn) {
+                sourceBtn.disabled = originalDisabled;
+            }
             return;
         }
 
@@ -15332,8 +15405,9 @@
         const requestStatus = (payload.status || '').trim();
         const requestStatusLower = requestStatus.toLowerCase();
         const skipReviewFlow = payload.skip_review_flow === true;
-        const reportAccessRequired = payload.require_feedback_before_report_access === true;
-        const reportAccessGranted = payload.report_access_granted === true || !reportAccessRequired;
+        const completedFeedbackRequired = payload.completed_feedback_required === true;
+        const completedFeedbackSubmitted = payload.completed_feedback_submitted === true;
+        const reportAccessGranted = true;
         const canApproveReport = payload.can_approve_report === true;
         let disabledApproveLabel = 'Approve Disabled';
         if (requestStatusLower === 'proceed report') {
@@ -15343,6 +15417,7 @@
         }
         const comments = (plannerEntry && plannerEntry.report_comments) || '';
         const product = payload.product_name || 'Report';
+        const tcoLabel = payload.tco_id || `REQ-${requestId}`;
         const reportModalTitle = skipReviewFlow ? 'Report' : 'Draft Report';
         const reportModalSubtitle = skipReviewFlow
             ? 'Developmental Assistance does not require report draft review.'
@@ -15378,8 +15453,7 @@
                                 <h3 class="text-base font-bold text-gray-900">${escapeHtml(reportModalTitle)}</h3>
                                 <!-- Eye icon -->
                                 <button id="viewReportActionBtn_${requestId}" onclick="viewReportPdf(${requestId})" title="View Report"
-                                    ${reportAccessGranted ? '' : 'disabled'}
-                                    class="w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 ${reportAccessGranted ? 'bg-purple-100 hover:bg-purple-200 text-purple-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}">
+                                    class="w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 bg-purple-100 hover:bg-purple-200 text-purple-600">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                               d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -15389,8 +15463,7 @@
                                 </button>
                                 <!-- Download icon -->
                                 <button id="downloadReportActionBtn_${requestId}" onclick="downloadReportPdf(${requestId})" title="Download Report"
-                                    ${reportAccessGranted ? '' : 'disabled'}
-                                    class="w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 ${reportAccessGranted ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}">
+                                    class="w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 bg-emerald-100 hover:bg-emerald-200 text-emerald-600">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
@@ -15431,130 +15504,6 @@
                             </div>
                         `}
                     </div>
-
-                    ${reportAccessRequired ? `
-                    <div class="space-y-3">
-                        <div id="reportAccessGrantedState_${requestId}" class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 ${reportAccessGranted ? '' : 'hidden'}">
-                            <p class="text-sm font-medium text-emerald-800">Thank you for the feedback. View and download are enabled for this report.</p>
-                        </div>
-
-                        <div id="reportAccessRequiredState_${requestId}" class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-4 ${reportAccessGranted ? 'hidden' : ''}">
-                            <div>
-                                <h4 class="text-sm font-semibold text-amber-900">Feedback Required Before Report Access</h4>
-                                <p class="mt-1 text-xs text-amber-800">Rate the draft report below and confirm that you want to unlock View and Download. Until then, the report actions stay disabled.</p>
-                            </div>
-
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <label for="reportAccessOverallSatisfaction_${requestId}" class="text-xs font-semibold text-gray-700">Overall Satisfaction</label>
-                                        <span id="reportAccessOverallSatisfactionValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
-                                    </div>
-                                    <input
-                                        id="reportAccessOverallSatisfaction_${requestId}"
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        value="8"
-                                        data-value-id="reportAccessOverallSatisfactionValue_${requestId}"
-                                        oninput="updateReportAccessSliderValue(this)"
-                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                    >
-                                </div>
-
-                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <label for="reportAccessQualityOfTesting_${requestId}" class="text-xs font-semibold text-gray-700">Quality Of Testing</label>
-                                        <span id="reportAccessQualityOfTestingValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
-                                    </div>
-                                    <input
-                                        id="reportAccessQualityOfTesting_${requestId}"
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        value="8"
-                                        data-value-id="reportAccessQualityOfTestingValue_${requestId}"
-                                        oninput="updateReportAccessSliderValue(this)"
-                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                    >
-                                </div>
-
-                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <label for="reportAccessCommunication_${requestId}" class="text-xs font-semibold text-gray-700">Communication</label>
-                                        <span id="reportAccessCommunicationValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
-                                    </div>
-                                    <input
-                                        id="reportAccessCommunication_${requestId}"
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        value="8"
-                                        data-value-id="reportAccessCommunicationValue_${requestId}"
-                                        oninput="updateReportAccessSliderValue(this)"
-                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                    >
-                                </div>
-
-                                <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <label for="reportAccessScheduleAdherence_${requestId}" class="text-xs font-semibold text-gray-700">Schedule Adherence</label>
-                                        <span id="reportAccessScheduleAdherenceValue_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
-                                    </div>
-                                    <input
-                                        id="reportAccessScheduleAdherence_${requestId}"
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        value="8"
-                                        data-value-id="reportAccessScheduleAdherenceValue_${requestId}"
-                                        oninput="updateReportAccessSliderValue(this)"
-                                        class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                    >
-                                </div>
-                            </div>
-
-                            <div>
-                                <label for="reportAccessComments_${requestId}" class="block text-xs font-semibold text-gray-700 mb-1">Feedback Comments</label>
-                                <textarea
-                                    id="reportAccessComments_${requestId}"
-                                    rows="3"
-                                    placeholder="Optional comments about the draft report..."
-                                    class="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent resize-none transition-all duration-200"
-                                ></textarea>
-                                <p id="reportAccessFeedbackError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
-                                    All feedback ratings are required before you can access the report.
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="flex items-start gap-3 rounded-xl border border-amber-200 bg-white px-3 py-3 cursor-pointer">
-                                    <input
-                                        id="reportAccessAcknowledge_${requestId}"
-                                        type="checkbox"
-                                        class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                                    >
-                                    <span class="text-sm text-gray-700">I have reviewed the draft report and want to unlock View and Download.</span>
-                                </label>
-                                <p id="reportAccessAcknowledgeError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
-                                    Please acknowledge before continuing.
-                                </p>
-                            </div>
-
-                            <div class="flex justify-end">
-                                <button onclick="submitReportAccessFeedback(${requestId})"
-                                    id="submitReportAccessBtn_${requestId}"
-                                    class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 transition-all duration-200">
-                                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                              d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                    Submit Feedback
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    ` : ``}
 
                     ${skipReviewFlow ? `
                     <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
@@ -15627,9 +15576,8 @@
                         </button>
                         ${canApproveReport ? `
                         <button id="approveReportActionBtn_${requestId}" onclick="proceedWithReport(${requestId})"
-                            ${reportAccessGranted ? '' : 'disabled'}
-                            title="${reportAccessGranted ? 'Approve Report' : 'Submit feedback and acknowledge the report before approving'}"
-                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${reportAccessGranted ? 'text-white bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-400 shadow-md' : 'text-gray-500 bg-gray-200 cursor-not-allowed'}">
+                            title="Approve Report"
+                            class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-200 text-white bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-400 shadow-md">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M5 13l4 4L19 7"></path>
@@ -15662,7 +15610,9 @@
         if (!skipReviewFlow) {
             loadReviewComments(requestId);
         }
-        btn.disabled = originalDisabled;
+        if (sourceBtn) {
+            sourceBtn.disabled = originalDisabled;
+        }
     }
 
     function setReportActionButtonsEnabled(requestId, enabled) {
@@ -15700,7 +15650,7 @@
             if (id.startsWith('approveReportActionBtn_')) {
                 button.title = enabled
                     ? 'Approve Report'
-                    : 'Submit feedback and acknowledge the report before approving';
+                    : 'Approval is available only when the draft report is ready';
             }
         });
     }
@@ -15746,6 +15696,146 @@
         return ratings;
     }
 
+    function triggerReportDownload(requestId) {
+        const url = `/api/test-requests/${requestId}/download-report`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    function renderReportFeedbackFields(requestId, tcoLabel, reasonText) {
+        return `
+            <div class="space-y-4">
+                <div>
+                    <h4 class="text-sm font-semibold text-amber-900">Feedback - ${escapeHtml(tcoLabel)}</h4>
+                    <p class="mt-1 text-xs text-amber-800">${escapeHtml(reasonText)}</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${[
+                        ['Overall Satisfaction', 'reportAccessOverallSatisfaction'],
+                        ['Quality Of Testing', 'reportAccessQualityOfTesting'],
+                        ['Communication', 'reportAccessCommunication'],
+                        ['Schedule Adherence', 'reportAccessScheduleAdherence']
+                    ].map(([label, idPrefix]) => `
+                        <div class="rounded-xl border border-amber-200 bg-white px-4 py-3 space-y-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <label for="${idPrefix}_${requestId}" class="text-xs font-semibold text-gray-700">${label}</label>
+                                <span id="${idPrefix}Value_${requestId}" class="text-xs font-semibold text-amber-700">8/10</span>
+                            </div>
+                            <input id="${idPrefix}_${requestId}" type="range" min="1" max="10" value="8"
+                                data-value-id="${idPrefix}Value_${requestId}"
+                                oninput="updateReportAccessSliderValue(this)"
+                                class="w-full h-2 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                        </div>
+                    `).join('')}
+                </div>
+                <div>
+                    <label for="reportAccessComments_${requestId}" class="block text-xs font-semibold text-gray-700 mb-1">Feedback Comments</label>
+                    <textarea id="reportAccessComments_${requestId}" rows="3"
+                        placeholder="Optional comments about the completed report..."
+                        class="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent resize-none transition-all duration-200"></textarea>
+                    <p id="reportAccessFeedbackError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
+                        All feedback ratings are required.
+                    </p>
+                </div>
+                <div>
+                    <label class="flex items-start gap-3 rounded-xl border border-amber-200 bg-white px-3 py-3 cursor-pointer">
+                        <input id="reportAccessAcknowledge_${requestId}" type="checkbox"
+                            class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
+                        <span class="text-sm text-gray-700">I have reviewed the completed report and want to submit feedback.</span>
+                    </label>
+                    <p id="reportAccessAcknowledgeError_${requestId}" class="text-xs text-red-500 mt-1 hidden">
+                        Please acknowledge before continuing.
+                    </p>
+                </div>
+            </div>
+        `;
+    }
+
+    async function openReportFeedbackModal(requestId, options = {}) {
+        const existing = document.getElementById('downloadFeedbackModal');
+        if (existing) existing.remove();
+
+        let payload = options.payload || null;
+        if (!payload) {
+            try {
+                const response = await fetch(`/api/test-requests/${requestId}/view-report-data`, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                payload = await response.json();
+                if (!response.ok || payload.success !== true) {
+                    throw new Error(payload.error || 'Unable to load feedback details.');
+                }
+            } catch (error) {
+                showStatusMessage(error.message || 'Unable to load feedback details.', 'error');
+                return;
+            }
+        }
+
+        const tcoLabel = options.tcoId || payload.tco_id || `REQ-${requestId}`;
+        const mandatory = options.mandatory === true;
+        const reasonText = options.reason || (
+            mandatory
+                ? `Feedback for completed ${tcoLabel} is required before you can create a new request.`
+                : `Please submit feedback for completed ${tcoLabel} before downloading. You may skip for now, but feedback will still be required before creating a new request.`
+        );
+
+        const modal = document.createElement('div');
+        modal.id = 'downloadFeedbackModal';
+        modal.className = 'fixed inset-0 z-[10000] overflow-y-auto';
+        modal.innerHTML = `
+            <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 overflow-hidden">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-amber-100 bg-amber-50">
+                        <div>
+                            <h3 class="text-base font-bold text-gray-900">Feedback - ${escapeHtml(tcoLabel)}</h3>
+                            <p class="text-xs text-amber-800 mt-1">${mandatory ? 'Required before creating a new request' : 'Requested before download'}</p>
+                        </div>
+                        ${mandatory ? '' : `
+                            <button type="button" onclick="closeDownloadFeedbackModal()"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-white transition-all duration-200">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        `}
+                    </div>
+                    <div class="px-6 py-5">
+                        ${renderReportFeedbackFields(requestId, tcoLabel, reasonText)}
+                    </div>
+                    <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row sm:justify-end gap-2">
+                        ${mandatory ? '' : `
+                            <button type="button" onclick="skipDownloadFeedback(${requestId})"
+                                class="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-100">
+                                Skip for Now
+                            </button>
+                        `}
+                        <button type="button" onclick="submitReportAccessFeedback(${requestId}, { downloadAfterSubmit: ${options.downloadAfterSubmit === true}, closeDownloadFeedback: true })"
+                            id="submitReportAccessBtn_${requestId}"
+                            class="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-amber-600 text-sm font-semibold text-white hover:bg-amber-700">
+                            Submit Feedback
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    function closeDownloadFeedbackModal() {
+        const modal = document.getElementById('downloadFeedbackModal');
+        if (modal) modal.remove();
+    }
+
+    function skipDownloadFeedback(requestId) {
+        closeDownloadFeedbackModal();
+        triggerReportDownload(requestId);
+    }
+
     function viewReportPdf(requestId) {
         const url = `/api/test-requests/${requestId}/view-report`;
         const newTab = window.open(url, '_blank');
@@ -15757,18 +15847,30 @@
 
 
 
-    function downloadReportPdf(requestId) {
-        const url = `/api/test-requests/${requestId}/download-report`;
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+    async function downloadReportPdf(requestId) {
+        try {
+            const response = await fetch(`/api/test-requests/${requestId}/view-report-data`, {
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) {
+                throw new Error(payload.error || 'Unable to prepare report download.');
+            }
+            if (payload.completed_feedback_required === true) {
+                await openReportFeedbackModal(requestId, {
+                    payload,
+                    downloadAfterSubmit: true
+                });
+                return;
+            }
+            triggerReportDownload(requestId);
+        } catch (error) {
+            showStatusMessage(error.message || 'Unable to download report.', 'error');
+        }
     }
 
 
-    async function submitReportAccessFeedback(requestId) {
+    async function submitReportAccessFeedback(requestId, options = {}) {
         const commentsTextarea = document.getElementById(`reportAccessComments_${requestId}`);
         const feedbackErrorEl = document.getElementById(`reportAccessFeedbackError_${requestId}`);
         const acknowledgeCheckbox = document.getElementById(`reportAccessAcknowledge_${requestId}`);
@@ -15828,7 +15930,16 @@
 
             markReportAccessGranted(requestId);
             await loadReviewComments(requestId);
-            showToast(data.message || 'Thank you for the feedback. Report access enabled.', 'success');
+            if (typeof loadTestRequests === 'function') {
+                loadTestRequests();
+            }
+            if (options.closeDownloadFeedback) {
+                closeDownloadFeedbackModal();
+            }
+            if (options.downloadAfterSubmit) {
+                triggerReportDownload(requestId);
+            }
+            showToast(data.message || 'Thank you for the feedback. You can now raise a new TCO.', 'success');
         } catch (error) {
             console.error('Error submitting report access feedback:', error);
             showToast('Failed to submit feedback: ' + error.message, 'error');
@@ -16438,14 +16549,43 @@
         return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>';
     }
 
+    const INDEX_STAT_LOGIC_KEY_BY_CARD = {
+        'total requests': 'request_summary.total',
+        'completed': 'request_summary.completed',
+        'testing in progress': 'request_summary.testing_in_progress',
+        'draft report': 'request_summary.draft_report',
+        'datasheet uploaded': 'request_summary.datasheet_uploaded',
+        'at review': 'request_summary.at_review',
+        'partially scheduled': 'request_summary.partially_scheduled',
+        'rejected / cancelled': 'request_summary.rejected_cancelled'
+    };
+
+    function getIndexStatLogicKey(card) {
+        if (card && card.isTotal === true) {
+            return 'request_summary.total';
+        }
+        return INDEX_STAT_LOGIC_KEY_BY_CARD[normalizeIndexStatusKey(card && card.title)] || '';
+    }
+
+    function getIndexStatLogicTemplate(kind, logicKey) {
+        const template = document.querySelector(
+            `[data-stat-logic-template="${kind}:${logicKey}"]`
+        );
+        return template ? template.innerHTML.trim() : '';
+    }
+
     function buildStatisticsCard(card) {
         const config = getIndexStatusCardConfig(card.title, card.isTotal === true);
         const iconPath = getIndexStatusCardIcon(card.title, card.isTotal === true);
         const statKey = normalizeIndexStatusKey(card.title).replace(/\s+/g, '_') || 'total';
         const countValue = Number(card.count || 0);
+        const logicKey = getIndexStatLogicKey(card);
+        const logicButton = logicKey ? getIndexStatLogicTemplate('button', logicKey) : '';
+        const logicPanel = logicKey ? getIndexStatLogicTemplate('panel', logicKey) : '';
 
         return `
             <div class="group relative overflow-hidden rounded-3xl border ${config.border} bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+                ${logicButton}
                 <div class="${config.borderTop}"></div>
                 <div class="relative p-6">
                     <div class="flex items-start gap-4">
@@ -16462,6 +16602,7 @@
                             <p class="mt-4 text-5xl font-extrabold text-gray-900" data-stat="${escapeHtml(statKey)}">${countValue}</p>
                         </div>
                     </div>
+                    ${logicPanel}
                 </div>
             </div>
         `;
@@ -16525,20 +16666,22 @@
 
     function setupTestRequestsFilters() {
         const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('indexSearchButton');
         const statusFilter = document.getElementById('statusFilter');
         const serviceTypeFilter = document.getElementById('serviceTypeFilter');
 
-        // Debounce search
-        let searchTimeout;
-        if (searchInput) {
-            searchInput.addEventListener('input', function () {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    testRequestsState.page = 1;
-                    loadTestRequests();
-                }, 500);
-            });
-        }
+        const executeSearch = () => {
+            testRequestsState.page = 1;
+            loadTestRequests();
+        };
+
+        searchButton?.addEventListener('click', executeSearch);
+        searchInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                executeSearch();
+            }
+        });
 
         if (statusFilter) {
             statusFilter.addEventListener('change', function () {
@@ -16744,12 +16887,6 @@
         const rawStatus = String(status).trim();
         const normalizedStatus = normalizeWorkflowStatus(rawStatus);
         
-        console.log('renderStatusBadge DEBUG:', {
-            rawStatus: rawStatus,
-            normalizedStatus: normalizedStatus,
-            statusLength: rawStatus.length
-        });
-        
         // Map each test request status to its own unique color with inline styles
         // Using BOTH raw and normalized status values for lookup
         const statusColorMap = {
@@ -16788,22 +16925,9 @@
             console.warn('renderStatusBadge: No color found, using default gray', { rawStatus, normalizedStatus });
         }
         
-        console.log('renderStatusBadge COLOR SELECTED:', {
-            normalizedStatus: normalizedStatus,
-            rawStatus: rawStatus,
-            colors: colors,
-            foundByNormalized: !!statusColorMap[normalizedStatus],
-            foundByRaw: !!statusColorMap[rawStatus]
-        });
-        
         const style = `background-color: ${colors.bg}; color: ${colors.text}; border: 2px solid ${colors.border}; border-left: 4px solid ${colors.border};`;
-        
-        console.log('renderStatusBadge STYLE:', style);
-        
         const htmlOutput = `<span class="px-4 py-2 rounded-lg text-xs font-bold shadow-sm inline-block" style="${style}">${escapeHtml(rawStatus)}</span>`;
-        
-        console.log('renderStatusBadge HTML OUTPUT:', htmlOutput);
-        
+
         return htmlOutput;
     }
 
@@ -21237,4 +21361,3 @@
     }, 1000);
 </script>
 {% endblock %}
-

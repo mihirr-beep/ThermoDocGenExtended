@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
+from sqlalchemy import func
 
 from models import db, User
 from forms import LoginForm, RegistrationForm, ForgotPasswordForm, ResetPasswordForm, ChangePasswordForm
@@ -47,14 +48,22 @@ def login():
     if form.validate_on_submit():
         login_identifier = (form.username.data or '').strip()
         if '@' in login_identifier:
-            user = User.query.filter_by(email=login_identifier.lower()).first()
+            normalized_email = login_identifier.casefold()
+            user = User.query.filter(
+                func.lower(func.trim(User.email)) == normalized_email
+            ).first()
         else:
-            user = User.query.filter_by(username=login_identifier).first()
+            user = User.query.filter(
+                func.lower(func.trim(User.username)) == login_identifier.casefold()
+            ).first()
 
-        if user and user.check_password(form.password.data):
-            if not user.is_active:
-                flash('Account is deactivated. Please contact administrator.', 'error')
-                return render_template('auth/login.html', form=form)
+        if user is None:
+            flash('No account found with that username or email.', 'error')
+        elif not user.check_password(form.password.data):
+            flash('Incorrect password.', 'error')
+        elif not user.is_active:
+            flash('Account is deactivated. Please contact administrator.', 'error')
+        else:
 
             # Rotate the session at login to avoid reusing stale cookie state.
             session.clear()
@@ -66,8 +75,6 @@ def login():
             # Always redirect to index page, no next parameter
             flash(f'Welcome back, {user.username}!', 'success')
             return redirect(url_for('index'))
-        else:
-            flash('Invalid username/email or password.', 'error')
 
     return render_template('auth/login.html', form=form)
 

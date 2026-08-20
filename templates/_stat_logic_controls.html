@@ -1,0 +1,27 @@
+{% macro stat_logic_button(logic_key, tone='slate') -%}
+{% if current_user.is_authenticated and current_user.role == 'admin' %}
+<button type="button"
+    class="stat-logic-toggle absolute bottom-3 right-3 z-30 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-black shadow-sm ring-1 ring-black/10 transition hover:bg-white hover:text-black"
+    data-stat-logic-key="{{ logic_key }}"
+    title="Show calculation logic"
+    aria-label="Show calculation logic"
+    aria-expanded="false">
+    <svg class="h-3.5 w-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+    </svg>
+</button>
+{% endif %}
+{%- endmacro %}
+
+{% macro stat_logic_panel(logic_key) -%}
+{% if current_user.is_authenticated and current_user.role == 'admin' %}
+<div class="stat-logic-panel hidden mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700"
+    data-stat-logic-panel="{{ logic_key }}">
+    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Calculation Logic</p>
+    <div class="stat-logic-content mt-2 text-sm leading-6">Loading...</div>
+</div>
+{% endif %}
+{%- endmacro %}

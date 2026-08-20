@@ -34,6 +34,9 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import joinedload
 
 from mysql_config import config
+import mimetypes
+# her IEC-FRM-503 test-plan exporter: the template's filename and the builder
+from utils.test_plan_exporter import TEMPLATE_FILENAME, build_test_plan_docx
 from models import db, User, TestRequest, TestPlan, TestDatasheet, Equipment, Maintenance, EquipmentHistory, EMCRequest, PlannerEntry
 # Forms imported but not used directly in this file (used in auth_routes)
 # from forms import LoginForm, RegistrationForm, ForgotPasswordForm, ResetPasswordForm, ChangePasswordForm
@@ -65,6 +68,16 @@ DEFAULT_APP_ENV = 'testing'
 def get_ist_now():
     """Get current datetime in IST (Indian Standard Time)."""
     return datetime.now(IST)
+
+def _report_file_mimetype(file_path):
+    """Return the MIME type matching a stored report file."""
+    extension = os.path.splitext(file_path)[1].lower()
+    known_types = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }
+    return known_types.get(extension) or mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
 
 def _normalize_planner_total_hours(value):
     """Normalize planner hour values to two decimals."""
@@ -182,6 +195,66 @@ def _apply_request_identifier_sort(items, sort_by, sort_dir='asc'):
         reverse=(normalized_sort_dir == 'desc')
     )
     return non_blank_items + blank_items
+
+def _is_terminal_request_status(status) -> bool:
+    """Return True when a request/test status should leave the active queue."""
+    return _normalize_status_lookup(status) in {'completed', 'cancelled', 'rejected'}
+
+def _partition_request_status_queue(items):
+    """Keep active requests first and terminal requests at the bottom."""
+    def status_key(item):
+        if isinstance(item, dict):
+            return (
+                item.get('status_display')
+                or item.get('status_label')
+                or item.get('status')
+                or item.get('status_key')
+            )
+        return (
+            getattr(item, 'status_display', None)
+            or getattr(item, 'status_label', None)
+            or getattr(item, 'status', None)
+        )
+
+    active_items = [
+        item for item in items
+        if not _is_terminal_request_status(status_key(item))
+    ]
+    terminal_items = [
+        item for item in items
+        if _is_terminal_request_status(status_key(item))
+    ]
+    return active_items + terminal_items
+
+def _test_plan_generation_eligible(test_request):
+    """Return whether assignment and Admin Approval are complete for a test plan."""
+    if str(getattr(test_request, 'status', '') or '').strip().casefold() != 'test plan approved':
+        return False
+
+    assignments = PlannerEntry.query.filter_by(
+        test_request_id=test_request.id
+    ).all()
+    if not assignments:
+        return False
+
+    selected_keys = {
+        _normalize_assignment_test_key(test_name)
+        for test_name in _get_active_selected_test_labels(test_request)
+    }
+    assigned_keys = {
+        _normalize_assignment_test_key(getattr(assignment, 'test_name', None))
+        for assignment in assignments
+        if _normalize_assignment_test_key(getattr(assignment, 'test_name', None))
+        and str(getattr(assignment, 'status', '') or '').strip().casefold()
+        not in {'cancelled', 'deleted'}
+        and (
+            getattr(assignment, 'test_person_id', None)
+            or getattr(assignment, 'test_person_name', None)
+            or getattr(assignment, 'engineer_id', None)
+            or getattr(assignment, 'engineer_name', None)
+        )
+    }
+    return bool(selected_keys) and not selected_keys - assigned_keys
 
 def _validate_planner_time_window(start_time_obj, end_time_obj):
     """Validate planner times are provided and ordered logically."""
@@ -322,35 +395,161 @@ def _normalize_assignment_test_key(value) -> str | None:
     normalized = re.sub(r'[^A-Za-z0-9_]+', '', str(value or '').upper())
     return normalized or None
 
+# Single source of truth for request/assignment status spellings. Keys are the
+# normalized form (lowercase, underscores replaced by spaces); insertion order is
+# the workflow order used to sort status-filter dropdowns.
+REQUEST_STATUS_LABELS = {
+    'draft': 'Draft',
+    'at review': 'At Review',
+    'approved': 'Approved',
+    'assigned': 'Assigned',
+    'assigned lab engineer': 'Assigned Lab Engineer',
+    'test plan to approve': 'Test Plan To Approve',
+    'test plan approved': 'Test Plan Approved',
+    'test schedule in progress': 'Test Schedule In Progress',
+    'scheduled': 'Scheduled',
+    'in progress': 'In Progress',
+    'need more information': 'Need More Information',
+    'da skipped': 'Skipped - Developmental Assistance',
+    'update plan': 'Update plan',
+    'datasheet uploaded': 'Datasheet Uploaded',
+    'peer review': 'Peer Review',
+    'draft report': 'Draft Report',
+    'proceed report': 'Proceed Report',
+    'report uploaded': 'Report Uploaded',
+    'admin sign off': 'Admin Sign Off',
+    'completed': 'Completed',
+    'cancelled': 'Cancelled',
+    'rejected': 'Rejected',
+}
+
+ADMIN_APPROVAL_STATUS_VALUES = (
+    'At Review',
+    'Approved',
+    'Test Plan Approved',
+    'Assigned',
+    'Assigned Lab Engineer',
+    'In Progress',
+    'Test Schedule In Progress',
+    'Test Plan To Approve',
+    'Admin Sign Off',
+    'Draft Report',
+    'Proceed Report',
+    'Datasheet Uploaded',
+    'Update plan',
+    'Report Uploaded',
+    'report_uploaded',
+    'Need More Information',
+    'Completed',
+)
+
+ENGINEER_ROLES = ('lab_engineer', 'test_engineer')
+ASSIGNABLE_ENGINEER_ROLES = ('lab_engineer', 'test_engineer', 'admin')
+TEST_PLAN_APPROVAL_STATUS = 'Test Plan To Approve'
+TEST_PLAN_APPROVAL_STATUS_KEY = 'test_plan_needs_approval'
+TEST_PLAN_APPROVAL_DISPLAY_LABEL = 'Test Plan Needs Approval'
+
+def _normalize_status_lookup(raw_status) -> str:
+    """Normalize any status spelling into the REQUEST_STATUS_LABELS key form."""
+    return str(raw_status or '').strip().lower().replace('_', ' ')
+
 def _format_request_status_label(raw_status: str) -> str:
     """Normalize a stored request status into a display label."""
     normalized_status = str(raw_status or 'draft').strip()
     if not normalized_status:
         return 'Draft'
-    normalized_lookup = normalized_status.lower().replace('_', ' ')
-    status_label_map = {
-        'draft': 'Draft',
-        'at review': 'At Review',
-        'approved': 'Approved',
-        'assigned': 'Assigned',
-        'assigned lab engineer': 'Assigned Lab Engineer',
-        'test plan approved': 'Test Plan Approved',
-        'test plan to approve': 'Test Plan To Approve',
-        'test schedule in progress': 'Test Schedule In Progress',
-        'in progress': 'In Progress',
-        'need more information': 'Need More Information',
-        'peer review': 'Peer Review',
-        'draft report': 'Draft Report',
-        'datasheet uploaded': 'Datasheet Uploaded',
-        'proceed report': 'Proceed Report',
-        'admin sign off': 'Admin Sign Off',
-        'report uploaded': 'Report Uploaded',
-        'completed': 'Completed',
-        'cancelled': 'Cancelled',
-        'rejected': 'Rejected',
-        'update plan': 'Update plan',
+    normalized_lookup = _normalize_status_lookup(normalized_status)
+    return REQUEST_STATUS_LABELS.get(normalized_lookup, normalized_lookup.title())
+
+def _is_test_plan_approval_status(raw_status) -> bool:
+    normalized_status = _normalize_status_lookup(raw_status)
+    return normalized_status in {
+        _normalize_status_lookup(TEST_PLAN_APPROVAL_STATUS),
+        _normalize_status_lookup(TEST_PLAN_APPROVAL_DISPLAY_LABEL),
     }
-    return status_label_map.get(normalized_lookup, normalized_lookup.title())
+
+def _format_admin_approval_status_label(raw_status: str) -> str:
+    if _is_test_plan_approval_status(raw_status):
+        return TEST_PLAN_APPROVAL_DISPLAY_LABEL
+    return _format_request_status_label(raw_status)
+
+def _get_admin_approval_status_key(raw_status: str) -> str:
+    status_label = _format_request_status_label(raw_status)
+    if _is_test_plan_approval_status(raw_status):
+        return TEST_PLAN_APPROVAL_STATUS_KEY
+    if status_label == 'At Review':
+        return 'pending_approval'
+    if status_label in ('Approved', 'Test Plan Approved'):
+        return 'approved'
+    if status_label in ('Assigned', 'Assigned Lab Engineer'):
+        return 'assigned'
+    if status_label in (
+        'In Progress',
+        'Test Schedule In Progress',
+        'Admin Sign Off',
+        'Draft Report',
+        'Proceed Report',
+        'Datasheet Uploaded',
+        'Report Uploaded',
+        'Update plan',
+    ):
+        return 'in_progress'
+    if status_label == 'Need More Information':
+        return 'need_more_info'
+    if status_label == 'Completed':
+        return 'completed'
+    if status_label == 'Cancelled':
+        return 'cancelled'
+    if status_label == 'Rejected':
+        return 'rejected'
+    return 'other'
+
+def _build_status_filter_options(raw_statuses, value_style: str = 'label') -> list:
+    """Build status-filter options from the statuses a page actually renders.
+
+    Returns unique `{'value', 'label'}` dicts in workflow order, so a page never
+    offers a status that cannot produce results there. `value_style='label'`
+    emits the display label (server-side filtering); `value_style='underscore'`
+    emits the normalized `data-status` form used by client-side row filtering.
+    """
+    options_by_label = {}
+    for raw_status in raw_statuses or []:
+        normalized = _normalize_status_lookup(raw_status)
+        if not normalized:
+            continue
+        label = _format_request_status_label(normalized)
+        value = label if value_style == 'label' else normalized.replace(' ', '_')
+        options_by_label.setdefault(label, {'value': value, 'label': label})
+    workflow_order = list(REQUEST_STATUS_LABELS.values())
+
+    def _order_key(label):
+        try:
+            return (0, workflow_order.index(label))
+        except ValueError:
+            return (1, label.lower())
+    return [options_by_label[label] for label in sorted(options_by_label, key=_order_key)]
+
+def _build_admin_approval_status_filter_options(raw_statuses) -> list:
+    """Build Admin Approval status options using workflow-specific labels/values."""
+    options_by_label = {}
+    for raw_status in raw_statuses or []:
+        normalized = _normalize_status_lookup(raw_status)
+        if not normalized:
+            continue
+        label = _format_admin_approval_status_label(raw_status)
+        value = TEST_PLAN_APPROVAL_STATUS_KEY if _is_test_plan_approval_status(raw_status) else label
+        options_by_label.setdefault(label, {'value': value, 'label': label})
+    workflow_order = [
+        TEST_PLAN_APPROVAL_DISPLAY_LABEL if status == TEST_PLAN_APPROVAL_STATUS else status
+        for status in REQUEST_STATUS_LABELS.values()
+    ]
+
+    def _order_key(label):
+        try:
+            return (0, workflow_order.index(label))
+        except ValueError:
+            return (1, label.lower())
+    return [options_by_label[label] for label in sorted(options_by_label, key=_order_key)]
 
 def _build_request_status_summary(base_query) -> dict:
     """Build the 8-card workflow summary used by index and admin pages."""
@@ -597,27 +796,30 @@ def _calculate_planner_schedule_hours(
     start_time_value,
     end_time_value
 ):
-    """Calculate schedule hours across weekdays within 09:00-18:00 only."""
+    """Calculate planner hours across weekdays within 09:00-18:00."""
+    start_date_obj = _coerce_planner_conflict_date(start_date_value)
+    end_date_obj = _coerce_planner_conflict_date(end_date_value)
     start_time_obj = _coerce_planner_conflict_time(start_time_value)
     end_time_obj = _coerce_planner_conflict_time(end_time_value)
-    if not start_time_obj or not end_time_obj or end_time_obj <= start_time_obj:
+    if not start_date_obj or not end_date_obj or not start_time_obj or not end_time_obj:
+        return 0
+    start_dt = datetime.combine(start_date_obj, start_time_obj)
+    end_dt = datetime.combine(end_date_obj, end_time_obj)
+    if end_dt <= start_dt:
         return 0
     business_start = time(9, 0, 0)
     business_end = time(18, 0, 0)
-    effective_start = max(start_time_obj, business_start)
-    effective_end = min(end_time_obj, business_end)
-    if effective_end <= effective_start:
-        return 0
-    start_dt = datetime.combine(date.today(), effective_start)
-    end_dt = datetime.combine(date.today(), effective_end)
-    daily_hours = (end_dt - start_dt).total_seconds() / 3600
-    if daily_hours <= 0:
-        return 0
-    workday_count = sum(1 for _ in _iter_planner_workdays(
-        start_date_value, end_date_value))
-    if workday_count <= 0:
-        return 0
-    return round(daily_hours * workday_count, 2)
+    total_hours = 0
+    for workday in _iter_planner_workdays(start_date_obj, end_date_obj):
+        day_start = datetime.combine(workday, business_start)
+        day_end = datetime.combine(workday, business_end)
+        effective_start = max(day_start, start_dt)
+        effective_end = min(day_end, end_dt)
+        if effective_end > effective_start:
+            total_hours += (
+                effective_end - effective_start
+            ).total_seconds() / 3600
+    return round(total_hours, 2)
 
 def _build_planner_conflict_snapshot(record):
     """Normalize DB rows and in-memory planner records for conflict checks."""
@@ -874,6 +1076,25 @@ def _request_skips_report_review(request_obj) -> bool:
         for service_type in _extract_service_types(request_obj)
     )
 
+DATASHEET_DA_SKIPPED_STATUS = 'da_skipped'
+
+def _is_datasheet_da_skipped_status(status) -> bool:
+    normalized = _normalize_status_lookup(status)
+    return normalized in {
+        'da skipped',
+        'developmental assistance skipped',
+        'skipped developmental assistance',
+        'skipped - developmental assistance',
+    }
+
+def _is_datasheet_requirement_satisfied(entry, parent_request=None) -> bool:
+    normalized_status = _normalize_status_lookup(getattr(entry, 'status', None))
+    if normalized_status == 'datasheet uploaded':
+        return bool(getattr(entry, 'datasheet_file_path', None))
+    if _is_datasheet_da_skipped_status(normalized_status):
+        return bool(parent_request and _request_skips_report_review(parent_request))
+    return False
+
 def _calculate_calibration_status(calibration_due_date, calibration_required):
     """Calculate calibration status based on calibration due date.
 
@@ -893,6 +1114,364 @@ def _calculate_calibration_status(calibration_due_date, calibration_required):
         return 'Out of Calibration'
     else:
         return 'In Calibration'
+
+def _equipment_status_values(status_key):
+    status_aliases = {
+        'available': {'available'},
+        'in_use': {'in_use', 'in use', 'active'},
+        'maintenance': {'maintenance', 'under maintenance'},
+        'out_of_service': {'out_of_service', 'out of service'},
+        'calibration': {'calibration', 'needs calibration'},
+    }
+    return tuple(status_aliases.get(status_key, {status_key}))
+
+def _equipment_status_filter(status_key):
+    normalized_status_column = db.func.lower(db.func.trim(Equipment.status))
+    return normalized_status_column.in_(_equipment_status_values(status_key))
+
+def _build_equipment_statistics():
+    normalized_type_column = db.func.lower(db.func.trim(Equipment.type))
+    today = get_ist_now().date()
+    return {
+        'total': Equipment.query.count(),
+        'total_equipment': Equipment.query.filter(
+            normalized_type_column.in_(['equipment', 'accessory'])
+        ).count(),
+        'total_instruments': Equipment.query.filter(
+            normalized_type_column == 'instrument'
+        ).count(),
+        'maintenance': Equipment.query.filter(
+            _equipment_status_filter('maintenance')
+        ).count(),
+        'needs_calibration': Equipment.query.filter(
+            Equipment.calibration_due_date < today
+        ).count(),
+        'in_calibration': Equipment.query.filter(
+            Equipment.calibration_status_col == 'In Calibration'
+        ).count(),
+        'out_of_calibration': Equipment.query.filter(
+            Equipment.calibration_status_col == 'Out of Calibration'
+        ).count(),
+    }
+
+def _stat_logic_definition(title, value_source, logic, model_sources, *,
+                           role_dependency='Admin-only Dashboard/page access; the calculation itself is not user-scoped unless noted.',
+                           date_constraints='None',
+                           exclusions='None',
+                           aggregation='COUNT'):
+    return {
+        'title': title,
+        'value_source': value_source,
+        'logic': logic,
+        'model_sources': model_sources,
+        'role_dependency': role_dependency,
+        'date_constraints': date_constraints,
+        'exclusions': exclusions,
+        'aggregation': aggregation,
+    }
+
+def _get_stat_card_logic_definitions():
+    active_statuses = (
+        'At Review, Approved, Assigned, Assigned Lab Engineer, Test Plan Approved, '
+        'Test Schedule In Progress, Test Plan To Approve, In Progress, Update plan, '
+        'Need More Information, Draft Report, Proceed Report, Datasheet Uploaded, '
+        'Report Uploaded/report_uploaded, Peer Review, Admin Sign Off'
+    )
+    ready_statuses = (
+        'Draft Report, Proceed Report, Datasheet Uploaded, Report Uploaded/report_uploaded, Admin Sign Off'
+    )
+    testing_in_progress_statuses = (
+        'Approved, Assigned, Assigned Lab Engineer, Test Plan Approved, Test Plan To Approve, '
+        'Test Schedule In Progress, In Progress, Need More Information, Peer Review, '
+        'Proceed Report, Admin Sign Off, Report Uploaded, Update plan'
+    )
+    return {
+        'equipment.total': _stat_logic_definition(
+            'Total Assets',
+            '_build_equipment_statistics()["total"]',
+            ['Count every row in the Equipment model/table.'],
+            ['Equipment'],
+        ),
+        'equipment.total_instruments': _stat_logic_definition(
+            'Total Instrument',
+            '_build_equipment_statistics()["total_instruments"]',
+            ['Normalize Equipment.type with lower(trim(type)).', 'Count rows where normalized type equals "instrument".'],
+            ['Equipment'],
+        ),
+        'equipment.total_equipment': _stat_logic_definition(
+            'Total Equipment',
+            '_build_equipment_statistics()["total_equipment"]',
+            ['Normalize Equipment.type with lower(trim(type)).', 'Count rows where normalized type is either "equipment" or "accessory".'],
+            ['Equipment'],
+        ),
+        'equipment.in_calibration': _stat_logic_definition(
+            'In Calibration',
+            '_build_equipment_statistics()["in_calibration"]',
+            ['Count Equipment rows where calibration_status_col equals "In Calibration".'],
+            ['Equipment'],
+        ),
+        'equipment.out_of_calibration': _stat_logic_definition(
+            'Out Of Calibration',
+            '_build_equipment_statistics()["out_of_calibration"]',
+            ['Count Equipment rows where calibration_status_col equals "Out of Calibration".'],
+            ['Equipment'],
+        ),
+        'equipment.maintenance': _stat_logic_definition(
+            'Under Maintenance',
+            '_build_equipment_statistics()["maintenance"]',
+            ['Normalize Equipment.status with lower(trim(status)).', 'Count rows whose normalized status is "maintenance" or "under maintenance".'],
+            ['Equipment'],
+        ),
+        'equipment.needs_calibration': _stat_logic_definition(
+            'Need Calibration',
+            '_build_equipment_statistics()["needs_calibration"]',
+            ['Use the current IST date from get_ist_now().date().', 'Count Equipment rows where calibration_due_date is before today.'],
+            ['Equipment'],
+            date_constraints='Compared against today in IST.',
+        ),
+        'dashboard.total_requests': _stat_logic_definition(
+            'Total Test Requests',
+            'dashboard.summary.total_requests',
+            ['Load all EMCRequest rows for the admin dashboard.', 'Count the loaded request rows with len(requests).'],
+            ['EMCRequest'],
+        ),
+        'dashboard.requests_delta': _stat_logic_definition(
+            'Requests Delta Text',
+            'dashboard.summary.requests_delta_text',
+            ['Count requests submitted/created in the last 30 days.', 'Count requests submitted/created in the previous 30-day window.', 'Display current minus previous using _format_period_delta().'],
+            ['EMCRequest'],
+            date_constraints='Uses current IST time, last 30 days, and the prior 30 days.',
+            aggregation='COUNT plus difference',
+        ),
+        'dashboard.active_tests': _stat_logic_definition(
+            'Active Tests',
+            'dashboard.summary.active_tests',
+            ['Load all PlannerEntry rows.', 'Count planner entries whose normalized status is not "completed" or "cancelled".'],
+            ['PlannerEntry'],
+            exclusions='Planner entries with status Completed or Cancelled.',
+        ),
+        'dashboard.active_requests': _stat_logic_definition(
+            'Active Requests',
+            'dashboard.summary.active_requests / active_test_requests',
+            [f'Load all EMCRequest rows.', f'Count requests whose normalized status is one of: {active_statuses}.'],
+            ['EMCRequest'],
+        ),
+        'dashboard.completed_requests': _stat_logic_definition(
+            'Completed',
+            'dashboard.summary.completed_requests',
+            ['Load all EMCRequest rows.', 'Count requests whose normalized status is "completed".', 'Completion rate is completed count divided by total request count times 100, rounded to 1 decimal.'],
+            ['EMCRequest'],
+            aggregation='COUNT and percentage',
+        ),
+        'dashboard.equipment_total': _stat_logic_definition(
+            'Equipment',
+            'dashboard.summary.equipment_total',
+            ['Reuse _build_equipment_statistics()["total"].', 'The secondary value reuses _build_equipment_statistics()["needs_calibration"].'],
+            ['Equipment'],
+            aggregation='COUNT',
+        ),
+        'dashboard.testing_hours_ytd': _stat_logic_definition(
+            'Testing Hours Completed',
+            'dashboard.summary.testing_hours_ytd',
+            ['Load all PlannerEntry rows.', 'Include entries with total_hours and completion_date.', 'Exclude cancelled planner entries.', 'Keep entries whose completion_date is on or after January 1 of the current IST year.', 'Sum total_hours and round to 1 decimal.'],
+            ['PlannerEntry'],
+            date_constraints='Year-to-date from January 1 of the current IST year.',
+            exclusions='Planner entries with status Cancelled, missing total_hours, or missing completion_date.',
+            aggregation='SUM',
+        ),
+        'dashboard.cost_avoidance': _stat_logic_definition(
+            'Estimated Cost Avoidance',
+            'dashboard.summary.cost_avoidance_text',
+            ['Reuse Testing Hours Completed YTD.', 'Multiply summed YTD hours by USD 250 per hour.', 'Convert to an integer dollar estimate, then display as rounded thousands.'],
+            ['PlannerEntry'],
+            date_constraints='Same YTD window as Testing Hours Completed.',
+            exclusions='Same exclusions as Testing Hours Completed.',
+            aggregation='SUM multiplied by fixed rate',
+        ),
+        'dashboard.compliance_projects_completed': _stat_logic_definition(
+            'Compliance Projects Completed',
+            'dashboard.summary.compliance_projects_completed',
+            ['Load completed EMCRequest rows updated/created during the current IST year.', 'Require at least one related selected test whose test_code contains "compliance" case-insensitively.', 'Count matching requests.'],
+            ['EMCRequest', 'EMCRequest.tests'],
+            date_constraints='Year-to-date from January 1 of the current IST year.',
+            aggregation='COUNT',
+        ),
+        'dashboard.active_lab_engineers': _stat_logic_definition(
+            'Active Lab Engineers',
+            'dashboard.summary.active_lab_engineers',
+            ['Count User rows where role equals "lab_engineer" and is_active is true.'],
+            ['User'],
+        ),
+        'dashboard.pending_approval_requests': _stat_logic_definition(
+            'Pending Review',
+            'dashboard.summary.pending_approval_requests',
+            ['Load all EMCRequest rows.', 'Count requests whose normalized status equals "at review".'],
+            ['EMCRequest'],
+        ),
+        'dashboard.ready_for_report_requests': _stat_logic_definition(
+            'Ready for Report',
+            'dashboard.summary.ready_for_report_requests',
+            [f'Load all EMCRequest rows.', f'Count requests whose normalized status is one of: {ready_statuses}.'],
+            ['EMCRequest'],
+        ),
+        'dashboard.rejected_requests': _stat_logic_definition(
+            'Rejected / Cancelled',
+            'dashboard.summary.rejected_requests',
+            ['Load all EMCRequest rows.', 'Count requests whose normalized status is "rejected" or "cancelled".'],
+            ['EMCRequest'],
+        ),
+        'dashboard.avg_hours_per_test': _stat_logic_definition(
+            'Avg Hours/Test',
+            'dashboard.summary.avg_hours_per_test',
+            ['Group non-cancelled PlannerEntry rows by test_name.', 'Sum total_hours across those groups.', 'Divide by the number of counted planner-entry test records, using at least 1 as the denominator.', 'Round to 2 decimals.'],
+            ['PlannerEntry'],
+            exclusions='Planner entries with status Cancelled.',
+            aggregation='SUM divided by COUNT',
+        ),
+        'dashboard.requests_last_30': _stat_logic_definition(
+            'Requests in 30d',
+            'dashboard.performance_metrics[0].value',
+            ['Count EMCRequest rows whose submitted_at or created_at timestamp falls in the last 30 days.'],
+            ['EMCRequest'],
+            date_constraints='Current IST time minus 30 days through now.',
+        ),
+        'dashboard.completed_last_30': _stat_logic_definition(
+            'Completed in 30d',
+            'dashboard.performance_metrics[1].value',
+            ['Count EMCRequest rows with normalized status "completed" whose updated_at or created_at timestamp falls in the last 30 days.'],
+            ['EMCRequest'],
+            date_constraints='Current IST time minus 30 days through now.',
+        ),
+        'dashboard.avg_hours_per_schedule': _stat_logic_definition(
+            'Avg hours / schedule',
+            'dashboard.performance_metrics[2].value',
+            ['Collect total_hours from PlannerEntry rows whose status is not cancelled.', 'Average those hour values and round to 1 decimal.'],
+            ['PlannerEntry'],
+            exclusions='Planner entries with status Cancelled and entries without total_hours.',
+            aggregation='AVG',
+        ),
+        'dashboard.engineers_scheduled_last_30': _stat_logic_definition(
+            'Engineers active in 30d',
+            'dashboard.performance_metrics[3].value',
+            ['Collect distinct engineer_user_id values from non-cancelled PlannerEntry rows updated/created in the last 30 days.', 'Count the distinct engineer IDs.'],
+            ['PlannerEntry'],
+            date_constraints='Current IST time minus 30 days through now.',
+            exclusions='Planner entries with status Cancelled or missing engineer_user_id.',
+            aggregation='COUNT DISTINCT',
+        ),
+        'request_summary.total': _stat_logic_definition(
+            'Total Requests',
+            '_build_request_status_summary(base_query)["total"]',
+            ['Start from the page-specific authorized EMCRequest base query.', 'Group rows by normalized request status.', 'Sum the grouped counts for total.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query. Index is role-scoped; Admin Approval uses admin-accessible request data.',
+        ),
+        'request_summary.completed': _stat_logic_definition(
+            'Completed',
+            '_build_request_status_summary(base_query)["completed"]',
+            ['Start from the page-specific authorized EMCRequest base query.', 'Normalize statuses with _format_request_status_label().', 'Count rows labeled Completed.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'request_summary.testing_in_progress': _stat_logic_definition(
+            'Testing In Progress',
+            '_build_request_status_summary(base_query)["testing_in_progress"]',
+            ['Start from the page-specific authorized EMCRequest base query.', f'Count normalized statuses in: {testing_in_progress_statuses}.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'request_summary.draft_report': _stat_logic_definition(
+            'Draft Report',
+            '_build_request_status_summary(base_query)["draft_report"]',
+            ['Start from the page-specific authorized EMCRequest base query.', 'Count rows whose normalized status is Draft Report.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'request_summary.datasheet_uploaded': _stat_logic_definition(
+            'Datasheet Uploaded',
+            '_build_request_status_summary(base_query)["datasheet_uploaded"]',
+            ['Start from the page-specific authorized EMCRequest base query.', 'Count rows whose normalized status is Datasheet Uploaded.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'request_summary.at_review': _stat_logic_definition(
+            'At Review',
+            '_build_request_status_summary(base_query)["at_review"]',
+            ['Under Review card on Review page = count of TCOs currently at status "At Review".'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'request_summary.partially_scheduled': _stat_logic_definition(
+            'Partially Scheduled',
+            '_build_request_status_summary(base_query)["partially_scheduled"]',
+            ['Start from the page-specific authorized EMCRequest base query and load related selected tests.', 'Load PlannerEntry rows for those request IDs.', 'Ignore completed/cancelled/rejected requests.', 'Require at least one selected test and at least one non-cancelled planner assignment.', 'Count requests where at least one selected test remains unassigned.'],
+            ['EMCRequest', 'EMCRequest.tests', 'PlannerEntry'],
+            exclusions='Completed, Cancelled, Rejected requests and cancelled planner entries.',
+        ),
+        'request_summary.rejected_cancelled': _stat_logic_definition(
+            'Rejected / Cancelled',
+            '_build_request_status_summary(base_query)["rejected_cancelled"]',
+            ['Start from the page-specific authorized EMCRequest base query.', 'Count rows whose normalized status is Rejected plus rows whose normalized status is Cancelled.'],
+            ['EMCRequest'],
+            role_dependency='Depends on the page base query.',
+        ),
+        'assigned.under_review': _stat_logic_definition(
+            'Under Review',
+            '_get_assigned_tests_context()["statistics"]["under_review"]',
+            ['Under Review card on Review page = count of TCOs currently at status "At Review".'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the same visible test_plans list rendered by Assigned Tests/Review.',
+        ),
+        'assigned.approved': _stat_logic_definition(
+            'Approved',
+            '_get_assigned_tests_context()["statistics"]["approved"]',
+            ['Build the Assigned Tests visible test_plans list with the page role/assignment filters applied.', 'Count visible plans whose derived status is Approved or Test Plan Approved.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the same visible test_plans list rendered by Assigned Tests/Review.',
+        ),
+        'assigned.rejected': _stat_logic_definition(
+            'Rejected',
+            '_get_assigned_tests_context()["statistics"]["rejected"]',
+            ['Build the Assigned Tests visible test_plans list with the page role/assignment filters applied.', 'Count visible plans whose derived status is Rejected or Cancelled.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the same visible test_plans list rendered by Assigned Tests/Review.',
+        ),
+        'assigned.assigned': _stat_logic_definition(
+            'Active Assignments',
+            '_get_assigned_tests_context()["statistics"]["assigned"]',
+            ['Build the Assigned Tests visible test_plans list with the page role/assignment filters applied.', 'Count visible plans whose derived status is not terminal.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the same visible test_plans list rendered by Assigned Tests/Review.',
+        ),
+        'assigned.total_tests': _stat_logic_definition(
+            'Total Test Plans',
+            '_get_assigned_tests_context()["statistics"]["total_tests"]',
+            ['Build test_plans from assigned-status EMCRequest rows.', 'Apply lab-engineer assignment visibility rules when applicable.', 'Count the resulting test_plans list.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Lab Engineer sees/counts only matching assigned work.',
+        ),
+        'assigned.peer_review': _stat_logic_definition(
+            'Peer Review',
+            '_get_assigned_tests_context()["statistics"]["peer_review"]',
+            ['Build visible test_plans.', 'Count plans whose status/status_display is Peer Review.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the visible test_plans list.',
+        ),
+        'assigned.draft_report': _stat_logic_definition(
+            'Draft Report',
+            '_get_assigned_tests_context()["statistics"]["draft_report"]',
+            ['Build visible test_plans.', 'Count plans whose status/status_display is Draft Report.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the visible test_plans list.',
+        ),
+        'assigned.datasheet_uploaded': _stat_logic_definition(
+            'Datasheet Uploaded',
+            '_get_assigned_tests_context()["statistics"]["datasheet_uploaded"]',
+            ['Build visible test_plans.', 'Count plans whose status/status_display is Datasheet Uploaded.'],
+            ['EMCRequest', 'PlannerEntry'],
+            role_dependency='Uses the visible test_plans list.',
+        ),
+    }
 
 def parse_date_field(date_str):
     """Helper function to parse date string to date object."""
@@ -941,6 +1520,21 @@ def _is_request_owner(test_request: EMCRequest) -> bool:
         and test_request.user_id == current_user.id
     )
 
+def _request_has_engineer_assignment(test_request: EMCRequest, user_id: int) -> bool:
+    """Return True when the user is assigned to the request or one of its tests."""
+    if not test_request or not user_id:
+        return False
+    if getattr(test_request, 'assigned_engineer_id', None) == user_id:
+        return True
+    planner_filters = [PlannerEntry.test_request_id == test_request.id]
+    if getattr(test_request, 'tco_id', None):
+        planner_filters.append(PlannerEntry.tco_id == test_request.tco_id)
+    return db.session.query(PlannerEntry.id).filter(
+        db.or_(*planner_filters),
+        PlannerEntry.engineer_user_id == user_id,
+        db.func.lower(db.func.coalesce(PlannerEntry.status, '')) != 'cancelled'
+    ).first() is not None
+
 def _can_access_iec_request(
     test_request: EMCRequest,
     *,
@@ -959,16 +1553,100 @@ def _can_access_iec_request(
         return False
     if current_user.role == 'admin':
         return True
-    if current_user.role == 'lab_engineer':
+    if current_user.role in ENGINEER_ROLES:
         if not allow_lab_engineer:
             return False
         if not require_assigned_lab_engineer:
             return True
-        return bool(
-            getattr(test_request, 'assigned_engineer_id',
-                    None) == current_user.id
-        )
+        return _request_has_engineer_assignment(test_request, current_user.id)
     return False
+
+def _non_draft_request_filter():
+    return db.or_(
+        EMCRequest.status.is_(None),
+        db.func.lower(db.func.trim(EMCRequest.status)) != 'draft'
+    )
+
+def _index_visible_requests_query():
+    """Return the request dataset visible on the Index page for current_user."""
+    if current_user.role == 'admin':
+        return EMCRequest.query.filter(_non_draft_request_filter())
+    if current_user.role == 'lab_engineer':
+        return EMCRequest.query
+    return EMCRequest.query.filter(EMCRequest.user_id == current_user.id)
+
+REQUEST_SEARCH_FIELD_ATTRS = (
+    'product_name',
+    'tco_id',
+    'job_id',
+    'job_number',
+    'manufacturer',
+    'model_number',
+    'serial_number',
+    'requester_name',
+    'requester_email',
+    'requester_department',
+    'requester_group',
+    'requester_division',
+    'requester_site',
+    'requester_contact',
+    'requester_designation',
+    'assigned_engineer_name',
+    'status',
+)
+
+REQUEST_SEARCH_EXTRA_RECORD_FIELDS = (
+    'name',
+    'project',
+    'status_display',
+    'status_label',
+    'parent_status',
+    'assigned_engineer_display',
+    'service_types',
+    'selected_tests',
+    'remaining_tests',
+)
+
+def _request_search_term(search_query):
+    return str(search_query or '').strip()
+
+def _apply_request_search_filter(query, search_query, model=EMCRequest):
+    """Apply the common case-insensitive request search to a SQLAlchemy query."""
+    search_term = _request_search_term(search_query)
+    if not search_term:
+        return query
+    pattern = f'%{search_term}%'
+    clauses = [
+        getattr(model, attr).ilike(pattern)
+        for attr in REQUEST_SEARCH_FIELD_ATTRS
+        if hasattr(model, attr)
+    ]
+    if not clauses:
+        return query
+    return query.filter(db.or_(*clauses))
+
+def _request_record_matches_search(record, search_query, extra_fields=None):
+    """Return True when a dict/object request-shaped record matches search."""
+    search_term = _request_search_term(search_query).casefold()
+    if not search_term:
+        return True
+    field_names = REQUEST_SEARCH_FIELD_ATTRS + tuple(
+        extra_fields or REQUEST_SEARCH_EXTRA_RECORD_FIELDS
+    )
+    values = []
+    for field_name in field_names:
+        if isinstance(record, dict):
+            values.append(record.get(field_name))
+        else:
+            values.append(getattr(record, field_name, None))
+    searchable_text = ' '.join(
+        ' '.join(str(item) for item in value)
+        if isinstance(value, (list, tuple, set))
+        else str(value)
+        for value in values
+        if value not in (None, '')
+    ).casefold()
+    return search_term in searchable_text
 
 def _can_access_review_thread(test_request: EMCRequest) -> bool:
     """Return True when the current user can view or post request comments."""
@@ -1245,9 +1923,16 @@ def _matches_service_type_filter(plan_service_types, selected_filter):
 
 def _report_access_requires_feedback(test_request):
     """Determine if report access requires feedback submission."""
+    return False
+
+def _completed_tco_requires_feedback(test_request):
+    """Return whether a completed TCO still needs requester feedback."""
     if not test_request:
         return False
-    return not _request_skips_report_review(test_request)
+    return (
+        str(getattr(test_request, 'status', '') or '').strip().casefold()
+        == 'completed'
+    )
 
 def _report_is_approvable_status(status) -> bool:
     """Return whether a report status represents a draft awaiting approval."""
@@ -1264,17 +1949,10 @@ def _has_report_access_grant(request_id, planner_entry):
     access_granted = getattr(planner_entry, 'report_access_granted', False)
     return bool(access_granted)
 
-def _grant_report_access(request_id, planner_entry):
-    """Grant report access for a planner entry after feedback is submitted."""
-    if planner_entry:
-        planner_entry.report_access_granted = True
-        planner_entry.report_access_granted_at = get_ist_now()
-        planner_entry.updated_at = get_ist_now()
-
-def _get_latest_report_planner_entry(test_request):
-    """Return the latest planner entry that has an uploaded report."""
+def _get_report_planner_entries(test_request):
+    """Return report-bearing planner entries for a request/TCO."""
     if not test_request or not getattr(test_request, 'id', None):
-        return None
+        return []
     planner_filters = [PlannerEntry.test_request_id == test_request.id]
     if getattr(test_request, 'tco_id', None):
         planner_filters.append(PlannerEntry.tco_id == test_request.tco_id)
@@ -1289,7 +1967,85 @@ def _get_latest_report_planner_entry(test_request):
         PlannerEntry.report_uploaded_at.desc(),
         PlannerEntry.updated_at.desc(),
         PlannerEntry.id.desc()
-    ).first()
+    ).all()
+
+def _has_completed_tco_feedback(test_request):
+    """Return whether completed-TCO feedback has already been submitted."""
+    if not test_request:
+        return False
+    report_entries = _get_report_planner_entries(test_request)
+    if any(bool(getattr(entry, 'report_access_granted', False))
+           for entry in report_entries):
+        return True
+    comments = _get_combined_review_comment_thread(test_request)
+    return any(
+        isinstance(comment, dict)
+        and (
+            '[Report Access Feedback]' in str(comment.get('comment') or '')
+            or '[Completed TCO Feedback]' in str(comment.get('comment') or '')
+        )
+        for comment in comments
+    )
+
+def _grant_report_access(request_id, planner_entry):
+    """Record that requester feedback has been submitted for a report."""
+    if planner_entry:
+        now = get_ist_now()
+        request_obj = db.session.get(EMCRequest, request_id)
+        report_entries = _get_report_planner_entries(request_obj)
+        if not report_entries:
+            report_entries = [planner_entry]
+        for entry in report_entries:
+            entry.report_access_granted = True
+            entry.report_access_granted_at = now
+            entry.updated_at = now
+
+def _completed_tcos_missing_required_feedback(user_id):
+    """Return completed requests for a user whose uploaded reports lack feedback."""
+    if not user_id:
+        return []
+    completed_requests = EMCRequest.query.filter(
+        EMCRequest.user_id == user_id,
+        db.func.lower(db.func.trim(EMCRequest.status)) == 'completed'
+    ).order_by(
+        EMCRequest.updated_at.desc(),
+        EMCRequest.created_at.desc()
+    ).all()
+    missing_feedback = []
+    for test_request in completed_requests:
+        if not _completed_tco_requires_feedback(test_request):
+            continue
+        if _get_latest_report_planner_entry(
+            test_request
+        ) and not _has_completed_tco_feedback(test_request):
+            missing_feedback.append(test_request)
+    return missing_feedback
+
+def _new_tco_feedback_block_response():
+    """Build an API response when completed TCO feedback blocks new TCO creation."""
+    pending_requests = _completed_tcos_missing_required_feedback(
+        current_user.id
+    )
+    if not pending_requests:
+        return None
+    pending_tcos = [
+        request_obj.tco_id or f'REQ-{request_obj.id}'
+        for request_obj in pending_requests
+    ]
+    return jsonify({
+        'success': False,
+        'error': (
+            'Feedback is required for completed TCO '
+            f'{", ".join(pending_tcos)} before creating a new TCO.'
+        ),
+        'code': 'completed_tco_feedback_required',
+        'pending_feedback_tcos': pending_tcos,
+    }), 403
+
+def _get_latest_report_planner_entry(test_request):
+    """Return the latest planner entry that has an uploaded report."""
+    report_entries = _get_report_planner_entries(test_request)
+    return report_entries[0] if report_entries else None
 
 def _parse_report_access_feedback_payload(data):
     """Validate report access feedback payload and normalize it."""
@@ -1316,47 +2072,47 @@ def _parse_report_access_feedback_payload(data):
     legacy_feedback = str(data.get('feedback') or '').strip()
     if legacy_feedback:
         return None, legacy_feedback, None
-    return None, None, 'Feedback is required before report access'
+    return None, None, 'Feedback is required before creating a new TCO'
 
 def _format_report_access_feedback_comment(ratings, comments):
     """Format report access feedback for the shared review comment thread."""
     if not ratings:
-        return f'Report feedback before download: {comments}'
+        return f'[Completed TCO Feedback]\nComments: {comments}'
     label_map = (
         ('overall_satisfaction', 'Overall Satisfaction'),
         ('quality_of_testing', 'Quality Of Testing'),
         ('communication', 'Communication'),
         ('schedule_adherence', 'Schedule Adherence'),
     )
-    summary = ' | '.join(
+    feedback_lines = [
         f'{label}: {ratings[key]}/10'
         for key, label in label_map
-    )
+    ]
+    summary = '\n'.join(feedback_lines)
     if comments:
-        return f'[Report Access Feedback] {summary} | Comments: {comments}'
-    return f'[Report Access Feedback] {summary}'
+        return f'[Report Access Feedback]\n{summary}\nComments: {comments}'
+    return f'[Report Access Feedback]\n{summary}'
 
 def _get_assignment_status_filter_options(test_plans):
-    """Unique assignment statuses from the test plans, as {value, label} dicts for the
-    status-filter dropdown. `value` is the raw status (the client-side filter matches it
-    case-insensitively against each row's data-status); `label` is display-friendly.
+    """Status-filter options for Assigned Tests, built from the assignment rows the
+    page actually renders. `value` is the normalized underscore form so it matches
+    each row's `data-status` attribute; `label` is display-friendly.
 
     NOTE: the template renders `status_option.value` / `status_option.label`, so this
-    MUST return dicts � returning bare strings makes every <option> render blank.
+    MUST return dicts - returning bare strings makes every <option> render blank.
     """
     if not test_plans:
         return []
-    unique_statuses = set()
+    assignment_statuses = []
     for plan in test_plans:
-        if plan and isinstance(plan, dict):
-            status = str(plan.get('status', '') or '').strip()
-            if status:
-                unique_statuses.add(status)
-    def _label(s):
-        # 'in_progress' -> 'In Progress'; 'Peer Review' -> 'Peer Review'
-        return s.replace('_', ' ').strip().title() if s else s
-    return [{'value': s, 'label': _label(s)}
-            for s in sorted(unique_statuses, key=str.lower)]
+        if not isinstance(plan, dict):
+            continue
+        for assignment in plan.get('test_assignments') or []:
+            if isinstance(assignment, dict):
+                assignment_statuses.append(
+                    assignment.get('status') or 'in_progress')
+    return _build_status_filter_options(
+        assignment_statuses, value_style='underscore')
 
 def _parse_comment_timestamp(value) -> datetime:
     """Best-effort parser for serialized comment timestamps."""
@@ -1554,6 +2310,8 @@ def ensure_planner_table():
                     report_comments TEXT NULL,
                     report_uploaded_at DATETIME NULL,
                     report_uploaded_by INT NULL,
+                    report_access_granted TINYINT(1) NOT NULL DEFAULT 0,
+                    report_access_granted_at DATETIME NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX idx_planner_test_person (test_person_name),
@@ -1602,6 +2360,8 @@ def ensure_planner_table():
         'report_comments': 'ADD COLUMN report_comments TEXT NULL AFTER report_file_path',
         'report_uploaded_at': 'ADD COLUMN report_uploaded_at DATETIME NULL AFTER report_comments',
         'report_uploaded_by': 'ADD COLUMN report_uploaded_by INT NULL AFTER report_uploaded_at',
+        'report_access_granted': 'ADD COLUMN report_access_granted TINYINT(1) NOT NULL DEFAULT 0 AFTER report_uploaded_by',
+        'report_access_granted_at': 'ADD COLUMN report_access_granted_at DATETIME NULL AFTER report_access_granted',
         'created_at': 'ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
         'updated_at': 'ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
     }
@@ -1661,19 +2421,10 @@ def ensure_planner_table():
         else:
             logger.warning('Unable to ensure planner request index: %s', exc)
 
-def create_app(config_name='default'):
+def create_app(config_name=None):
     """Application factory function."""
     flask_app = Flask(__name__)
-    resolved_config_name = (
-        os.environ.get('APP_ENV')
-        or os.environ.get('FLASK_ENV')
-        or config_name
-        or DEFAULT_APP_ENV
-    )
-    resolved_config_name = str(
-        resolved_config_name).strip().lower() or 'default'
-    if resolved_config_name not in config:
-        resolved_config_name = 'default'
+    resolved_config_name = 'mysql'
     # SMTP configuration (Thermo Fisher relay)
     flask_app.config.setdefault('SMTP_SERVER', 'SMTPRELAY1.THERMOFISHER.COM')
     flask_app.config.setdefault('SMTP_PORT', 25)
@@ -4011,10 +4762,18 @@ Please do not reply to this email.
     flask_app.send_test_assignment_emails = send_test_assignment_emails
     # type: ignore[attr-defined]
     flask_app.send_equipment_reminder_emails = send_equipment_reminder_emails
-    flask_app.config.from_object(config[resolved_config_name])
-    config[resolved_config_name].init_app(flask_app)
+    # `config` is a mapping (mysql_config keeps one real class behind every key, so the
+    # callers that read config["default"] still work). Resolve to a key that exists rather
+    # than passing the mapping itself: from_object() on a dict would silently load NOTHING,
+    # because it only copies UPPERCASE attributes.
+    _cfg_key = resolved_config_name if resolved_config_name in config else 'default'
+    flask_app.config.from_object(config[_cfg_key])
+    config[_cfg_key].init_app(flask_app)
     flask_app.config['APP_ENVIRONMENT'] = resolved_config_name
-    flask_app.config['SHOW_ENV_MARKER'] = resolved_config_name != 'production'
+    # Her change: the NON-PRODUCTION banner is off. Ours showed it for every config
+    # other than production (SHOW_ENV_MARKER = resolved_config_name != 'production').
+    # Kept as she wrote it; flip this line to restore the banner.
+    flask_app.config['SHOW_ENV_MARKER'] = False
     flask_app.config['ENV_MARKER_LABEL'] = (
         'TESTING' if resolved_config_name == 'testing' else 'NON-PRODUCTION'
     )
@@ -4025,7 +4784,24 @@ Please do not reply to this email.
             'app_environment': flask_app.config.get('APP_ENVIRONMENT', 'default'),
             'show_env_marker': flask_app.config.get('SHOW_ENV_MARKER', True),
             'env_marker_label': flask_app.config.get('ENV_MARKER_LABEL', 'NON-PRODUCTION'),
+            'stat_logic_definitions': _get_stat_card_logic_definitions(),
         }
+
+    @flask_app.route('/api/admin/stat-card-logic/<path:logic_key>', methods=['GET'])
+    @login_required
+    def get_admin_stat_card_logic(logic_key):
+        if current_user.role != 'admin':
+            return jsonify({
+                'success': False,
+                'error': 'You do not have permission to access statistic logic details.'
+            }), 403
+        logic = _get_stat_card_logic_definitions().get(logic_key)
+        if not logic:
+            return jsonify({
+                'success': False,
+                'error': 'Statistic logic definition not found.'
+            }), 404
+        return jsonify({'success': True, 'key': logic_key, 'logic': logic})
     # Initialize extensions
     db.init_app(flask_app)
     with flask_app.app_context():
@@ -4106,18 +4882,22 @@ Please do not reply to this email.
     @login_required
     def index():
         """Main page with test plan creation form."""
-        # Status filters shown on requester index page
-        status_options = [
-            'Draft',
-            'Draft Report',
-            'Proceed Report',
-            'In Progress',
-            'Need More Information',
-            'Completed',
-            'Rejected',
+        # Status filter options are derived from the requests this page can show,
+        # using the same role scoping as /api/test-requests.
+        status_scope_query = _index_visible_requests_query()
+        visible_statuses = [
+            row[0] for row in status_scope_query.with_entities(
+                EMCRequest.status
+            ).distinct().all()
         ]
-        # Collect all service types from all requests for filter dropdown
-        all_requests = EMCRequest.query.all()
+        status_options = [
+            option['label']
+            for option in _build_status_filter_options(visible_statuses)
+        ]
+        # Collect service types from the requests this page can show.
+        all_requests = _index_visible_requests_query().options(
+            joinedload(EMCRequest.service_types)
+        ).all()
         all_service_types = [
             req.service_types for req in all_requests
             if hasattr(req, 'service_types') and req.service_types
@@ -4379,20 +5159,18 @@ Please do not reply to this email.
             # ------------------------------------------------------------------ #
             try:
                 if current_user.role == 'admin':
-                    non_draft_filter = db.or_(
-                        EMCRequest.status.is_(None),
-                        db.func.lower(db.func.trim(
-                            EMCRequest.status)) != 'draft'
-                    )
-                    base_query = EMCRequest.query.filter(non_draft_filter)
+                    base_query = _index_visible_requests_query()
                     logger.info(
-                        f'Admin user {current_user.id} — showing all submitted requests and own drafts')
+                        f'Admin user {current_user.id} - showing all submitted requests')
+                elif current_user.role == 'lab_engineer':
+                    base_query = _index_visible_requests_query()
+                    logger.info(
+                        f'Lab engineer {current_user.id} - showing all requests')
                 else:
-                    base_query = EMCRequest.query.filter_by(
-                        user_id=current_user.id)
+                    base_query = _index_visible_requests_query()
                     logger.info(
                         f'User {current_user.id} (role: {current_user.role}) '
-                        f'— showing only own test requests'
+                        f'- showing only own test requests'
                     )
             except Exception as e:
                 logger.error(f'Error creating base query: {e}')
@@ -4478,33 +5256,28 @@ Please do not reply to this email.
                 )
                 logger.info(f'Applied peer review filter')
             elif status_filter != 'all':
-                filter_lower = status_filter.lower().replace(' ', '_')
-                if filter_lower in STATUS_MAPPING:
+                normalized_filter = _normalize_status_lookup(status_filter)
+                bucket_key = status_filter.lower().replace(' ', '_')
+                normalized_status_column = db.func.lower(
+                    db.func.replace(db.func.trim(EMCRequest.status), '_', ' ')
+                )
+                if normalized_filter not in REQUEST_STATUS_LABELS and bucket_key in STATUS_MAPPING:
                     query = query.filter(
-                        db.func.lower(EMCRequest.status).in_(
-                            [s.lower() for s in STATUS_MAPPING[filter_lower]]
+                        normalized_status_column.in_(
+                            [_normalize_status_lookup(s)
+                             for s in STATUS_MAPPING[bucket_key]]
                         )
                     )
                 else:
+                    # An exact status label matches only that status, so every
+                    # dropdown option returns its own records.
                     query = query.filter(
-                        db.func.lower(
-                            EMCRequest.status) == status_filter.lower()
+                        normalized_status_column == normalized_filter
                     )
                 logger.info(f'Applied status filter: {status_filter}')
             # Search filter — case-insensitive across key text fields
             if search_query:
-                pattern = f'%{search_query}%'
-                query = query.filter(
-                    db.or_(
-                        EMCRequest.product_name.ilike(pattern),
-                        EMCRequest.tco_id.ilike(pattern),
-                        EMCRequest.model_number.ilike(pattern),
-                        EMCRequest.manufacturer.ilike(pattern),
-                        EMCRequest.requester_name.ilike(pattern),
-                        EMCRequest.assigned_engineer_name.ilike(pattern),
-                        EMCRequest.status.ilike(pattern),
-                    )
-                )
+                query = _apply_request_search_filter(query, search_query)
                 logger.info(f'Applied search filter: {search_query}')
             # ------------------------------------------------------------------ #
             #  Ordering & pagination                                               #
@@ -4543,12 +5316,7 @@ Please do not reply to this email.
             else:
                 sorted_requests = sorted(
                     filtered_request_rows, key=_job_number_sort_key)
-            # Move completed and cancelled requests to the end
-            active_requests = [r for r in sorted_requests if (
-                r.status or '').lower().strip() not in ('completed', 'cancelled', 'rejected')]
-            completed_requests = [r for r in sorted_requests if (
-                r.status or '').lower().strip() in ('completed', 'cancelled', 'rejected')]
-            sorted_requests = active_requests + completed_requests
+            sorted_requests = _partition_request_status_queue(sorted_requests)
             total_sorted_requests = len(sorted_requests)
             start_index = (page - 1) * per_page
             end_index = start_index + per_page
@@ -4584,6 +5352,7 @@ Please do not reply to this email.
                     report_entries = PlannerEntry.query.with_entities(
                         PlannerEntry.test_request_id.label('test_request_id'),
                         PlannerEntry.report_comments.label('report_comments'),
+                        PlannerEntry.report_access_granted.label('report_access_granted'),
                     ).filter(
                         PlannerEntry.test_request_id.in_(page_request_ids),
                         PlannerEntry.report_file_path.isnot(None)
@@ -4606,6 +5375,14 @@ Please do not reply to this email.
                 try:
                     report_entry = report_entries_by_request_id.get(tr.id)
                     has_report = report_entry is not None
+                    completed_feedback_submitted = (
+                        has_report and _has_completed_tco_feedback(tr)
+                    )
+                    completed_feedback_required = (
+                        _normalize_status_lookup(tr.status) == 'completed'
+                        and has_report
+                        and not completed_feedback_submitted
+                    )
                     fallback_draft_label = f'DRAFT-{tr.id}'
                     raw_status = (tr.status or 'Draft').strip() or 'Draft'
                     result.append({
@@ -4627,6 +5404,8 @@ Please do not reply to this email.
                         ),
                         'service_types':   request_service_types_by_request_id.get(tr.id, []),
                         'has_report':      has_report,
+                        'completed_feedback_required': completed_feedback_required,
+                        'completed_feedback_submitted': completed_feedback_submitted,
                         'has_review_messages': bool(getattr(tr, 'has_review_messages', False)),
                     })
                 except Exception as e:
@@ -4650,6 +5429,21 @@ Please do not reply to this email.
             rejected_cancelled_count = int(status_summary.get('rejected_cancelled', 0))
             status_cards = list(status_summary.get('status_cards', []))
             exact_status_counts = dict(status_summary.get('exact_status_counts', {}))
+            pending_feedback_requests = (
+                _completed_tcos_missing_required_feedback(current_user.id)
+                if getattr(current_user, 'is_authenticated', False) else []
+            )
+            pending_feedback_tcos = [
+                request_obj.tco_id or f'REQ-{request_obj.id}'
+                for request_obj in pending_feedback_requests
+            ]
+            pending_feedback_request_data = [
+                {
+                    'id': request_obj.id,
+                    'tco_id': request_obj.tco_id or f'REQ-{request_obj.id}',
+                }
+                for request_obj in pending_feedback_requests
+            ]
             logger.info(
                 'Statistics: total=%s, completed=%s, testing_in_progress=%s, draft_report=%s, datasheet_uploaded=%s, at_review=%s, partially_scheduled=%s, rejected_cancelled=%s',
                 total_count,
@@ -4696,6 +5490,11 @@ Please do not reply to this email.
                     'start_item':    start_item,
                     'end_item':      end_item,
                     'items_on_page': len(test_requests),
+                },
+                'completed_feedback': {
+                    'required': bool(pending_feedback_tcos),
+                    'pending_tcos': pending_feedback_tcos,
+                    'pending_requests': pending_feedback_request_data,
                 },
             }
             logger.info(f'Returning {len(result)} items, total: {total_count}')
@@ -4948,7 +5747,7 @@ Please do not reply to this email.
         logger.info(
             f'Applying peer review action for planner entry {planner_id}')
         try:
-            if current_user.role not in ['admin', 'lab_engineer']:
+            if current_user.role not in ['admin', *ENGINEER_ROLES]:
                 return jsonify({'success': False, 'error': 'Not authorized'}), 403
             entry = db.session.get(PlannerEntry, planner_id)
             if not entry:
@@ -6046,6 +6845,18 @@ Please do not reply to this email.
                 col_idx,
                 exc
             )
+    def _set_table_value_next_to_label(doc, label, value, fallback):
+        """Write a value beside a matching label, using coordinates as fallback."""
+        normalized_label = str(label).casefold()
+        for table_index, table in enumerate(doc.tables):
+            for row_index, row in enumerate(table.rows):
+                for cell_index, cell in enumerate(row.cells[:-1]):
+                    if normalized_label in cell.text.casefold():
+                        _set_table_cell_text(
+                            doc, table_index, row_index, cell_index + 1, value)
+                        return
+        _set_table_cell_text(doc, *fallback, value)
+
     def _set_table_cell_labeled_lines(doc, table_idx: int, row_idx: int, col_idx: int, items) -> None:
         """Write one label/value pair per line with bold labels in a docx table cell."""
         try:
@@ -7848,10 +8659,21 @@ Please do not reply to this email.
                     if _coerce_export_text(mode)
                 ],
             )
-            _set_table_cell_text(
-                doc, 13, 2, 1, request_data.get('monitoring_parameters'))
-            _set_table_cell_text(
-                doc, 13, 3, 1, request_data.get('additional_info'))
+            # Written beside the LABEL, with the old coordinates as the fallback: the
+            # form's row order has moved before, and a fixed (13, 2, 1) then wrote the
+            # monitoring parameters into whatever row happened to be there.
+            _set_table_value_next_to_label(
+                doc,
+                'Parameters to be monitored during immunity tests',
+                request_data.get('monitoring_parameters'),
+                (13, 2, 1),
+            )
+            _set_table_value_next_to_label(
+                doc,
+                'Any other additional information about Power Adaptors',
+                request_data.get('additional_info'),
+                (13, 3, 1),
+            )
             _set_table_cell_text(
                 doc, 14, 0, 1, request_data.get('requester_name'))
             _set_table_cell_text(doc, 14, 0, 3, _join([request_data.get(
@@ -7966,6 +8788,63 @@ Please do not reply to this email.
             return jsonify({
                 'success': False,
                 'error': 'Unable to export the test request form'
+            }), 500
+
+    @flask_app.route('/api/test-requests/<int:request_id>/download-test-plan-docx', methods=['GET'])
+    @login_required
+    def download_test_plan_docx(request_id):
+        """Generate and download the populated IEC-FRM-503 test plan."""
+        template_path = os.path.join(
+            flask_app.root_path, 'word_templates', TEMPLATE_FILENAME)
+        try:
+            test_request = _get_request_or_404(request_id)
+            if not _can_access_iec_request(
+                test_request,
+                allow_lab_engineer=True,
+                require_assigned_lab_engineer=True
+            ):
+                return jsonify({
+                    'success': False,
+                    'error': 'Test request not found or you do not have permission to view it'
+                }), 404
+            if not _test_plan_generation_eligible(test_request):
+                return jsonify({
+                    'success': False,
+                    'error': 'Test Plan generation is available after tests are assigned and Admin Approval is complete'
+                }), 409
+            request_data = _build_request_payload(
+                test_request, include_review_thread=False)
+            document_stream = build_test_plan_docx(request_data, template_path)
+            filename_seed = (
+                request_data.get('job_number')
+                or request_data.get('tco_id')
+                or f'REQ-{request_id}'
+            )
+            safe_filename_seed = re.sub(
+                r'[^A-Za-z0-9._-]+', '_', str(filename_seed)).strip('_')
+            if not safe_filename_seed:
+                safe_filename_seed = f'request_{request_id}'
+            return send_file(
+                document_stream,
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                as_attachment=True,
+                download_name=f'{safe_filename_seed}_test_plan.docx'
+            )
+        except FileNotFoundError:
+            logger.error('IEC-FRM-503 template is missing: %s', template_path)
+            return jsonify({
+                'success': False,
+                'error': 'Test plan Word template is not available'
+            }), 500
+        except Exception as exc:
+            logger.exception(
+                'Failed to generate IEC-FRM-503 test plan for request %s: %s',
+                request_id,
+                exc
+            )
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate test plan Word document'
             }), 500
     @flask_app.route('/api/test-requests/tco/<tco_id>', methods=['GET'])
     @login_required
@@ -8230,6 +9109,7 @@ Please do not reply to this email.
             engineer_cache: dict[object, User | None] = {}
             existing_serialized_assignments = []
             existing_assignment_keys = set()
+            existing_assignment_by_key = {}
             existing_schedule_records = []
             fallback_existing_schedule_snapshots = []
             serialized_assignments = []
@@ -8247,7 +9127,7 @@ Please do not reply to this email.
                 if normalized_engineer_id is not None and normalized_engineer_id not in engineer_cache:
                     engineer_cache[normalized_engineer_id] = User.query.filter(
                         User.id == normalized_engineer_id,
-                        User.role.in_(['lab_engineer', 'admin']),
+                        User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                         User.is_active.is_(True)
                     ).first()
                 engineer_user = (
@@ -8260,7 +9140,7 @@ Please do not reply to this email.
                     if engineer_name_cache_key not in engineer_cache:
                         engineer_cache[engineer_name_cache_key] = User.query.filter(
                             User.username == normalized_engineer_name,
-                            User.role.in_(['lab_engineer', 'admin']),
+                            User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                             User.is_active.is_(True)
                         ).first()
                     engineer_user = engineer_cache.get(engineer_name_cache_key)
@@ -8325,6 +9205,7 @@ Please do not reply to this email.
                 assignment_key = _normalize_assignment_test_key(test_name)
                 if assignment_key:
                     existing_assignment_keys.add(assignment_key)
+                    existing_assignment_by_key[assignment_key] = normalized_payload
                 try:
                     start_date_obj = datetime.strptime(
                         start_date, '%Y-%m-%d').date()
@@ -8369,6 +9250,21 @@ Please do not reply to this email.
                                 existing_assignment)
                         )
             for assignment in test_assignments:
+                assignment_key = _normalize_assignment_test_key(
+                    assignment.get('test_name') if isinstance(assignment, dict) else None
+                )
+                if reschedule_existing_assignments and assignment_key:
+                    existing_assignment = existing_assignment_by_key.get(
+                        assignment_key, {}
+                    )
+                    assignment = {
+                        **existing_assignment,
+                        **{
+                            key: value
+                            for key, value in assignment.items()
+                            if value not in (None, '')
+                        }
+                    }
                 missing_keys = [
                     key for key in ['test_name', 'engineer_id',
                                     'engineer_name', 'start_date', 'end_date', 'start_time', 'end_time']
@@ -8988,6 +9884,10 @@ Please do not reply to this email.
             logger.info(f"Draft ID: {draft_id}")
             logger.info(f"TCO ID from request: {tco_id_from_request}")
             logger.info(f"Is Update: {is_update}")
+            if not (is_update and tco_id_from_request):
+                feedback_block_response = _new_tco_feedback_block_response()
+                if feedback_block_response:
+                    return feedback_block_response
             # Validate required form fields
             required_fields = ['productName', 'manufacturer',
                                'modelNumber', 'testSamples', 'operatingFrequency',
@@ -9689,21 +10589,6 @@ Please do not reply to this email.
             # Validate per_page to prevent abuse
             if per_page not in [5, 10, 20, 50, 100]:
                 per_page = 10
-            normalized_status_column = db.func.lower(
-                db.func.trim(Equipment.status))
-            def _equipment_status_values(status_key):
-                status_aliases = {
-                    'available': {'available'},
-                    'in_use': {'in_use', 'in use', 'active'},
-                    'maintenance': {'maintenance', 'under maintenance'},
-                    'out_of_service': {'out_of_service', 'out of service'},
-                    'calibration': {'calibration', 'needs calibration'},
-                }
-                return tuple(status_aliases.get(status_key, {status_key}))
-            def _equipment_status_filter(status_key):
-                return normalized_status_column.in_(
-                    _equipment_status_values(status_key)
-                )
             # Build query with status filter, test type filter, and search term
             query = Equipment.query
             if status_filter and status_filter.strip():
@@ -9757,7 +10642,11 @@ Please do not reply to this email.
                 key=str.lower
             )
             # Get equipment with pagination
-            pagination = query.order_by(Equipment.name).paginate(
+            pagination = query.order_by(
+                Equipment.sl_no.is_(None),
+                Equipment.sl_no.asc(),
+                Equipment.name.asc()
+            ).paginate(
                 page=page, per_page=per_page, error_out=False
             )
             def _build_due_badge(due_date_value, eou_status=None):
@@ -9808,40 +10697,7 @@ Please do not reply to this email.
                     badge and badge.get('text', '').startswith('Due')
                     for badge in [calibration_due_badge, ic_due_badge, maintenance_due_badge]
                 ))
-            # Calculate statistics
-            normalized_type_column = db.func.lower(
-                db.func.trim(Equipment.type)
-            )
-            total = Equipment.query.count()
-            total_equipment = Equipment.query.filter(
-                normalized_type_column.in_(['equipment', 'accessory'])
-            ).count()
-            total_instruments = Equipment.query.filter(
-                normalized_type_column == 'instrument'
-            ).count()
-            maintenance = Equipment.query.filter(
-                _equipment_status_filter('maintenance')
-            ).count()
-            # Calculate calibration status statistics based on calibration_status_col
-            in_calibration = Equipment.query.filter(
-                Equipment.calibration_status_col == 'In Calibration'
-            ).count()
-            out_of_calibration = Equipment.query.filter(
-                Equipment.calibration_status_col == 'Out of Calibration'
-            ).count()
-            # Keep needs_calibration for backward compatibility (based on due date)
-            needs_calibration = Equipment.query.filter(
-                Equipment.calibration_due_date < get_ist_now().date()
-            ).count()
-            statistics = {
-                'total': total,
-                'total_equipment': total_equipment,
-                'total_instruments': total_instruments,
-                'maintenance': maintenance,
-                'needs_calibration': needs_calibration,
-                'in_calibration': in_calibration,
-                'out_of_calibration': out_of_calibration
-            }
+            statistics = _build_equipment_statistics()
             return render_template('equipment.html', pagination=pagination,
                                    statistics=statistics, status_filter=status_filter,
                                    search_term=search_term, test_type_filter=test_type_filter,
@@ -9891,21 +10747,6 @@ Please do not reply to this email.
             test_type_filter = request.args.get('test_type_filter', '')
             test_name_filter = request.args.get('test_name_filter', '')
             status_filter = request.args.get('status_filter', '')
-            normalized_status_column = db.func.lower(
-                db.func.trim(Equipment.status))
-            def _equipment_status_values(status_key):
-                status_aliases = {
-                    'available': {'available'},
-                    'in_use': {'in_use', 'in use', 'active'},
-                    'maintenance': {'maintenance', 'under maintenance'},
-                    'out_of_service': {'out_of_service', 'out of service'},
-                    'calibration': {'calibration', 'needs calibration'},
-                }
-                return tuple(status_aliases.get(status_key, {status_key}))
-            def _equipment_status_filter(status_key):
-                return normalized_status_column.in_(
-                    _equipment_status_values(status_key)
-                )
             query = Equipment.query
             if status_filter and status_filter.strip():
                 normalized_status_filter = status_filter.strip()
@@ -10765,10 +11606,10 @@ Please do not reply to this email.
         try:
             data = request.get_json()
             new_role = data.get('role')
-            if not new_role or new_role not in ['user', 'lab_engineer', 'admin']:
+            if not new_role or new_role not in ['user', *ENGINEER_ROLES, 'admin']:
                 return jsonify({
                     'success': False,
-                    'error': 'Invalid role. Must be "user", "lab_engineer", or "admin".'
+                    'error': 'Invalid role. Must be "user", "lab_engineer", "test_engineer", or "admin".'
                 }), 400
             # Prevent admin from changing their own role
             if user_id == current_user.id:
@@ -10923,10 +11764,10 @@ Please do not reply to this email.
                         'success': False,
                         'error': 'Email is required.'
                     }), 400
-                if role not in ['user', 'lab_engineer', 'admin']:
+                if role not in ['user', *ENGINEER_ROLES, 'admin']:
                     return jsonify({
                         'success': False,
-                        'error': 'Invalid role. Must be "user", "lab_engineer", or "admin".'
+                        'error': 'Invalid role. Must be "user", "lab_engineer", "test_engineer", or "admin".'
                     }), 400
                 if is_active is None:
                     return jsonify({
@@ -11082,10 +11923,10 @@ Please do not reply to this email.
             return value
     def _get_assigned_tests_context():
         """Build test plan list and statistics for assigned test views."""
-        if current_user.role not in ['admin', 'lab_engineer']:
+        if current_user.role not in ('admin', *ENGINEER_ROLES):
             raise PermissionError('Not authorized to view assigned tests')
         assigned_statuses = ['Assigned Lab Engineer', 'Update plan',
-                             'Need More Information', 'Test Plan Approved', 'Test Plan To Approve', 'Draft Report', 'Datasheet Uploaded', 'Proceed Report', 'Admin Sign Off', 'Completed', 'Assigned', 'Test Schedule In Progress', 'In Progress', 'Report Uploaded', 'report_uploaded', 'Peer Review']
+                             'Need More Information', 'Test Plan Approved', 'Test Plan To Approve', 'Draft Report', 'Datasheet Uploaded', 'Proceed Report', 'Admin Sign Off', 'Completed', 'Assigned', 'Test Schedule In Progress', 'In Progress', 'Report Uploaded', 'report_uploaded', 'Peer Review', DATASHEET_DA_SKIPPED_STATUS]
         approved_statuses = ['Approved', 'Test Plan Approved', 'Completed']
         assigned_requests = EMCRequest.query.options(
             joinedload(EMCRequest.service_types),
@@ -11194,7 +12035,7 @@ Please do not reply to this email.
                     ])
                     return bool(test_name and has_assignment_details)
                 def assignment_matches_current_engineer(assignment_payload):
-                    if current_user.role != 'lab_engineer':
+                    if current_user.role not in ENGINEER_ROLES:
                         return True
                     engineer_id = assignment_payload.get('engineer_id')
                     if engineer_id not in (None, ''):
@@ -11222,12 +12063,13 @@ Please do not reply to this email.
                         'update plan': 'Update plan',
                         'test plan approved': 'Test Plan Approved',
                         'test plan to approve': 'Test Plan To Approve',
-                        'in progress': 'In Progress',
-                        'in_progress': 'In Progress',
-                        'test schedule in progress': 'In Progress',
+                        'in progress': 'Testing In Progress',
+                        'in_progress': 'Testing In Progress',
+                        'test schedule in progress': 'Testing In Progress',
                         'draft report': 'Draft Report',
                         'proceed report': 'Proceed Report',
                         'peer review': 'Peer Review',
+                        'da skipped': 'Skipped - Developmental Assistance',
                         'datasheet uploaded': 'Datasheet Uploaded',
                         'datasheet_uploaded': 'Datasheet Uploaded',
                         'report uploaded': 'Draft Report',
@@ -11271,13 +12113,14 @@ Please do not reply to this email.
                         'Update plan': 1,
                         'Test Plan Approved': 2,
                         'Test Plan To Approve': 3,
-                        'In Progress': 4,
+                        'Testing In Progress': 4,
                         'Draft Report': 5,
                         'Proceed Report': 6,
                         'Peer Review': 7,
-                        'Datasheet Uploaded': 8,
-                        'Admin Sign Off': 9,
-                        'Completed': 10,
+                        'Skipped - Developmental Assistance': 8,
+                        'Datasheet Uploaded': 9,
+                        'Admin Sign Off': 10,
+                        'Completed': 11,
                     }
                     candidate_statuses = []
                     if remaining_test_names:
@@ -11508,7 +12351,7 @@ Please do not reply to this email.
                 visible_remaining_tests = (
                     remaining_tests if has_partially_assigned_tests else []
                 )
-                if current_user.role == 'lab_engineer':
+                if current_user.role in ENGINEER_ROLES:
                     visible_assignments = [
                         assignment for assignment in parsed_assignments
                         if assignment_matches_current_engineer(assignment)
@@ -11554,20 +12397,20 @@ Please do not reply to this email.
                 show_prepare_report = False
                 if parsed_assignments:
                     all_terminal = all(
-                        a['status'] in ('cancelled', 'datasheet_uploaded')
+                        a['status'] in ('cancelled', 'datasheet_uploaded', DATASHEET_DA_SKIPPED_STATUS)
                         for a in parsed_assignments
                     )
-                    # At least one datasheet_uploaded assignment that also has a datasheet file
-                    has_datasheet_uploaded_with_file = any(
-                        a['status'] == 'datasheet_uploaded' and bool(
-                            a.get('datasheet_file_path'))
+                    datasheet_requirements_satisfied = all(
+                        a['status'] == 'cancelled'
+                        or (
+                            a['status'] == 'datasheet_uploaded'
+                            and bool(a.get('datasheet_file_path'))
+                        )
+                        or (
+                            a['status'] == DATASHEET_DA_SKIPPED_STATUS
+                            and _request_skips_report_review(request)
+                        )
                         for a in parsed_assignments
-                    )
-                    # Every datasheet_uploaded assignment must have a datasheet file
-                    all_datasheet_uploaded_have_file = all(
-                        bool(a.get('datasheet_file_path'))
-                        for a in parsed_assignments
-                        if a['status'] == 'datasheet_uploaded'
                     )
                     # âœ… FIX: Only show upload button if report not already uploaded
                     # Also require that EVERY test selected on the request has an
@@ -11576,8 +12419,7 @@ Please do not reply to this email.
                     # early (remaining_tests holds exactly those).
                     show_upload_report = (
                         all_terminal
-                        and has_datasheet_uploaded_with_file
-                        and all_datasheet_uploaded_have_file
+                        and datasheet_requirements_satisfied
                         and not remaining_tests
                         and not report_already_uploaded
                     )
@@ -11653,6 +12495,7 @@ Please do not reply to this email.
                     # ✅ FIX: show_upload_report now correctly hides when report is uploaded
                     'show_upload_report': show_upload_report,
                     'show_prepare_report': show_prepare_report,
+                    'can_generate_test_plan': _test_plan_generation_eligible(request),
                     # ✅ FIX: report fields now correctly read from PlannerEntry
                     'report_file_path': report_file_path,
                     'report_comments': report_comments,
@@ -11686,26 +12529,31 @@ Please do not reply to this email.
             1 for plan in test_plans
             if str(plan.get('status_display') or plan.get('status') or '').strip() == 'Peer Review'
         )
-        if current_user.role == 'lab_engineer':
-            under_review_count = EMCRequest.query.filter_by(
-                status='At Review').count()
-            approved_count = EMCRequest.query.filter(
-                EMCRequest.status.in_(approved_statuses)
-            ).count()
-            rejected_count = EMCRequest.query.filter_by(
-                status='Rejected').count()
-            assigned_count = len(test_plans)
-        else:
-            under_review_count = EMCRequest.query.filter_by(
-                status='At Review').count()
-            approved_count = EMCRequest.query.filter(
-                EMCRequest.status.in_(approved_statuses)
-            ).count()
-            rejected_count = EMCRequest.query.filter_by(
-                status='Rejected').count()
-            assigned_count = EMCRequest.query.filter(
-                EMCRequest.status.in_(assigned_statuses)
-            ).count()
+        visible_status_counts = Counter(
+            str(plan.get('status_display') or plan.get('status') or '').strip()
+            for plan in test_plans
+        )
+        under_review_count = sum(
+            visible_status_counts.get(status_label, 0)
+            for status_label in (
+                'Assigned Lab Engineer',
+                'Update plan',
+                'Test Plan To Approve',
+                'Need More Information',
+            )
+        )
+        approved_count = sum(
+            visible_status_counts.get(status_label, 0)
+            for status_label in ('Approved', 'Test Plan Approved')
+        )
+        rejected_count = sum(
+            visible_status_counts.get(status_label, 0)
+            for status_label in ('Rejected', 'Cancelled')
+        )
+        assigned_count = sum(
+            1 for plan in test_plans
+            if not _is_terminal_request_status(plan.get('status_display') or plan.get('status'))
+        )
         statistics = {
             'under_review': under_review_count,
             'approved': approved_count,
@@ -11717,8 +12565,7 @@ Please do not reply to this email.
             'datasheet_uploaded': datasheet_uploaded_count
         }
         test_plans.sort(key=lambda plan: (
-            1 if plan['status'] in (
-                'Completed', 'Cancelled', 'Rejected') else 0,
+            1 if _is_terminal_request_status(plan.get('status')) else 0,
             *_job_number_sort_key(plan),
         ))
         return test_plans, statistics
@@ -11746,8 +12593,8 @@ Please do not reply to this email.
                             logger.warning(
                                 f'Invalid engineer_id filter: {engineer_filter}, error: {e}')
                             # Invalid filter, show all
-                elif current_user.role == 'lab_engineer':
-                    # Lab engineers see only their own events
+                elif current_user.role in ENGINEER_ROLES:
+                    # Engineers see only their own events
                     query = query.filter_by(engineer_user_id=current_user.id)
                 else:
                     # Regular users see only events for their TCOs
@@ -11949,8 +12796,8 @@ Please do not reply to this email.
             if current_user.role == 'admin':
                 # Admin can see all TCO IDs
                 pass
-            elif current_user.role == 'lab_engineer':
-                # Lab engineers see only their own TCO IDs
+            elif current_user.role in ENGINEER_ROLES:
+                # Engineers see only their own TCO IDs
                 query = query.filter_by(engineer_user_id=current_user.id)
             else:
                 # Regular users see only TCO IDs from their test requests
@@ -12493,7 +13340,10 @@ Please do not reply to this email.
             data = request.get_json() or {}
             target_entry = planner_entry
             # Update test_person_name
-            test_person_name = (data.get('test_person_name') or '').strip()
+            if 'test_person_name' in data:
+                test_person_name = (data.get('test_person_name') or '').strip()
+            else:
+                test_person_name = None
             if test_person_name:
                 target_entry.test_person_name = test_person_name
             engineer_user_id = data.get('engineer_user_id')
@@ -12506,7 +13356,10 @@ Please do not reply to this email.
                         'error': 'engineer_user_id must be a valid integer'
                     }), 400
             # Update test_name
-            test_name = (data.get('test_name') or '').strip()
+            if 'test_name' in data:
+                test_name = (data.get('test_name') or '').strip()
+            else:
+                test_name = None
             if test_name:
                 target_entry.test_name = test_name
             # Get event_type to check if TCO ID is required
@@ -12542,13 +13395,19 @@ Please do not reply to this email.
                     'error': 'end_date cannot be earlier than start_date'
                 }), 400
             # Handle all-day events and time validation
-            all_day = bool(data.get('all_day'))
+            all_day = bool(data.get('all_day')) if 'all_day' in data else bool(
+                target_entry.is_all_day
+            )
             target_entry.is_all_day = all_day
             if not all_day:
-                start_time_str = data.get('start_time')
-                end_time_str = data.get('end_time')
-                start_time_obj = _parse_iso_time(start_time_str)
-                end_time_obj = _parse_iso_time(end_time_str)
+                start_time_obj = (
+                    _parse_iso_time(data.get('start_time'))
+                    if 'start_time' in data else target_entry.start_time
+                )
+                end_time_obj = (
+                    _parse_iso_time(data.get('end_time'))
+                    if 'end_time' in data else target_entry.end_time
+                )
                 time_window_error = _validate_planner_time_window(
                     start_time_obj, end_time_obj)
                 if time_window_error:
@@ -12568,9 +13427,10 @@ Please do not reply to this email.
                 target_entry.start_time = None
                 target_entry.end_time = None
             # Update total_hours
-            total_hours_value = data.get('total_hours')
-            target_entry.total_hours = _normalize_planner_total_hours(
-                total_hours_value)
+            if 'total_hours' in data:
+                total_hours_value = data.get('total_hours')
+                target_entry.total_hours = _normalize_planner_total_hours(
+                    total_hours_value)
             # Update event description
             event_description = data.get('description')
             if event_description is not None:
@@ -12703,7 +13563,7 @@ Please do not reply to this email.
             # Verify the selected assignee exists and has an allowed role.
             assignee = User.query.filter(
                 User.id == assigned_engineer_id,
-                User.role.in_(['lab_engineer', 'admin']),
+                User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                 User.is_active.is_(True)
             ).first()
             if not assignee:
@@ -12943,7 +13803,7 @@ Please do not reply to this email.
                 if engineer_id not in engineer_cache:
                     engineer_cache[engineer_id] = User.query.filter(
                         User.id == engineer_id,
-                        User.role.in_(['lab_engineer', 'admin']),
+                        User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                         User.is_active.is_(True)
                     ).first()
                 engineer = engineer_cache[engineer_id]
@@ -13144,7 +14004,7 @@ Please do not reply to this email.
             if assigned_engineer_id:
                 engineer = User.query.filter(
                     User.id == assigned_engineer_id,
-                    User.role.in_(['lab_engineer', 'admin']),
+                    User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                     User.is_active.is_(True)
                 ).first()
                 if not engineer:
@@ -13206,7 +14066,7 @@ Please do not reply to this email.
                 }), 400
             assignee = User.query.filter(
                 User.id == assigned_engineer_id,
-                User.role.in_(['lab_engineer', 'admin']),
+                User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                 User.is_active.is_(True)
             ).first()
             if not assignee:
@@ -13454,13 +14314,7 @@ Please do not reply to this email.
             completion_rate = round(
                 (completed_requests / total_requests) * 100, 1
             ) if total_requests else 0.0
-            equipment_total = Equipment.query.count()
-            equipment_needs_calibration = Equipment.query.filter(
-                Equipment.calibration_due_date < today
-            ).count()
-            equipment_in_calibration = Equipment.query.filter(
-                Equipment.calibration_status_col == 'In Calibration'
-            ).count()
+            equipment_statistics = _build_equipment_statistics()
             active_lab_engineers = User.query.filter(
                 User.role == 'lab_engineer',
                 User.is_active.is_(True)
@@ -13897,9 +14751,9 @@ Please do not reply to this email.
                     'completion_rate': completion_rate,
                     'rejected_requests': rejected_requests,
                     'ready_for_report_requests': ready_for_report_requests,
-                    'equipment_total': equipment_total,
-                    'equipment_needs_calibration': equipment_needs_calibration,
-                    'equipment_in_calibration': equipment_in_calibration,
+                    'equipment_total': equipment_statistics['total'],
+                    'equipment_needs_calibration': equipment_statistics['needs_calibration'],
+                    'equipment_in_calibration': equipment_statistics['in_calibration'],
                     'active_lab_engineers': active_lab_engineers,
                     'testing_hours_ytd': round(total_testing_hours, 1),
                     'cost_avoidance': estimated_cost_avoidance,
@@ -13939,6 +14793,7 @@ Please do not reply to this email.
                 'ytd_monthly_volume': ytd_monthly_volume,
                 'division_chart_data': division_chart_data,
                 'dept_chart_data': dept_chart_data,
+                'equipment_statistics': equipment_statistics,
             }
             return render_template('dashboard.html', dashboard=dashboard_data)
         except Exception as e:
@@ -13950,11 +14805,17 @@ Please do not reply to this email.
     def review():
         """Display test plan review page for lab engineers and admins."""
         # Check if user has permission to access review page
-        if current_user.role not in ['admin', 'lab_engineer']:
+        if current_user.role not in ('admin', *ENGINEER_ROLES):
             flash('You do not have permission to access the review page.', 'error')
             return redirect(url_for('index'))
         try:
             test_plans, statistics = _get_assigned_tests_context()
+            # Options come from the unfiltered page dataset so the dropdown keeps
+            # every reachable status once a filter is applied.
+            status_options = _build_status_filter_options(
+                [plan.get('status_display') or plan.get('status')
+                 for plan in test_plans]
+            )
             status_filter = (request.args.get('status') or '').strip().lower()
             search_query = (request.args.get('search') or '').strip().lower()
             service_type_filter = (request.args.get(
@@ -13963,28 +14824,24 @@ Please do not reply to this email.
                 request.args.get('sort_by'),
                 request.args.get('sort_dir')
             )
+            if not sort_by:
+                sort_by, sort_dir = 'tco_id', 'asc'
+            try:
+                page = max(int(request.args.get('page', 1)), 1)
+            except (TypeError, ValueError):
+                page = 1
+            try:
+                per_page = min(max(int(request.args.get('per_page', 10)), 1), 100)
+            except (TypeError, ValueError):
+                per_page = 10
             def _matches_status(plan_status, selected_status):
-                raw = (plan_status or '').strip().lower()
+                """Exact match: the dropdown only offers statuses this page renders."""
                 if not selected_status:
                     return True
-                # Treat workflow statuses as in-progress bucket when selected.
-                in_progress_group = {
-                    'assigned lab engineer',
-                    'update plan',
-                    'test plan approved',
-                    'datasheet uploaded',
-                    'proceed report',
-                    'admin sign off',
-                    'test schedule in progress',
-                    'test plan to approve',
-                    'in progress',
-                }
-                cancelled_group = {'rejected', 'cancelled'}
-                if selected_status == 'in progress':
-                    return raw in in_progress_group
-                if selected_status == 'cancelled':
-                    return raw in cancelled_group
-                return raw == selected_status
+                return (
+                    _normalize_status_lookup(plan_status)
+                    == _normalize_status_lookup(selected_status)
+                )
             if status_filter:
                 test_plans = [
                     plan for plan in test_plans
@@ -14000,36 +14857,36 @@ Please do not reply to this email.
                     )
                 ]
             if search_query:
-                def _to_text(value):
-                    return (str(value) if value is not None else '').strip().lower()
-                def _matches_search(plan):
-                    searchable_fields = [
-                        plan.get('tco_id'),
-                        plan.get('name'),
-                        plan.get('product_name'),
-                        plan.get('project'),
-                        plan.get('manufacturer'),
-                        plan.get('model_number'),
-                        plan.get('requester_name'),
-                        plan.get('status'),
-                        plan.get('status_display'),
-                    ]
-                    return any(search_query in _to_text(field) for field in searchable_fields)
                 test_plans = [
-                    plan for plan in test_plans if _matches_search(plan)]
-            if sort_by:
-                test_plans = _apply_request_identifier_sort(
-                    test_plans,
-                    sort_by,
-                    sort_dir
-                )
+                    plan for plan in test_plans
+                    if _request_record_matches_search(plan, search_query)
+                ]
+            test_plans = _apply_request_identifier_sort(
+                test_plans,
+                sort_by,
+                sort_dir
+            )
+            test_plans = _partition_request_status_queue(test_plans)
+            total_items = len(test_plans)
+            total_pages = max(1, (total_items + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            start_index = (page - 1) * per_page
+            end_index = min(start_index + per_page, total_items)
+            page_test_plans = test_plans[start_index:end_index]
             return render_template(
                 'review.html',
-                test_plans=test_plans,
+                test_plans=page_test_plans,
                 statistics=statistics,
+                status_options=status_options,
                 service_type_filter=service_type_filter,
                 sort_by=sort_by,
                 sort_dir=sort_dir,
+                page=page,
+                per_page=per_page,
+                total_items=total_items,
+                total_pages=total_pages,
+                start_index=start_index,
+                end_index=end_index,
                 service_type_options=_get_service_type_filter_options(
                     [plan.get('service_types', []) for plan in test_plans]
                 ),
@@ -14165,7 +15022,11 @@ Please do not reply to this email.
             entry for entry in active_entries
             if datasheet_records.get_record_for_assignment(entry.id)
         ]
-        if not with_data:
+        all_requirements_satisfied = bool(active_entries) and all(
+            _is_datasheet_requirement_satisfied(entry, test_request)
+            for entry in active_entries
+        )
+        if not with_data and not all_requirements_satisfied:
             return jsonify({
                 'success': False,
                 'error': ('No submitted datasheet data found for this request. '
@@ -14175,7 +15036,10 @@ Please do not reply to this email.
         payload = request.get_json(silent=True) or {}
         comments = str(payload.get('comments') or request.form.get('comments') or '').strip()
         if not comments:
-            comments = f'EMI EMC Test Report generated from {len(with_data)} approved datasheet(s).'
+            if with_data:
+                comments = f'EMI EMC Test Report generated from {len(with_data)} approved datasheet(s).'
+            else:
+                comments = 'EMI EMC Test Report generated after Developmental Assistance datasheet skip.'
 
         now = get_ist_now()
         upload_dir = os.path.join(
@@ -14265,17 +15129,17 @@ Please do not reply to this email.
     @flask_app.route('/api/test-requests/<int:request_id>/admin-sign-off', methods=['POST'])
     @login_required
     def admin_sign_off(request_id):
-        if current_user.role not in ['admin', 'lab_engineer']:
-            return jsonify({'success': False, 'error': 'Only admin or lab engineer can send to Admin Sign Off'}), 403
+        if current_user.role != 'admin':
+            return jsonify({'success': False, 'error': 'Only admin can sign off and complete the report'}), 403
         test_request = _get_request_or_404(request_id)
         data = request.get_json() or {}
         note = (data.get('note') or '').strip()
         try:
             if test_request.status == 'Completed':
-                return jsonify({'success': False, 'error': 'Completed reports cannot be sent to Admin Sign Off'}), 400
-            # Workflow: Proceed Report -> Admin Sign Off -> Completed
+                return jsonify({'success': True, 'message': 'Report is already completed', 'new_status': 'Completed'})
+            # Workflow: requester proceeds report -> admin sign-off -> Completed
             if test_request.status == 'Admin Sign Off':
-                return jsonify({'success': True, 'message': 'Report is already in Admin Sign Off'})
+                test_request.status = 'Proceed Report'
             # FALLBACK: If parent status doesn't match "Proceed Report", check planner entries
             # using dual filter. If planner entries show "Proceed Report" or similar approved status,
             # allow the transition anyway.
@@ -14302,7 +15166,7 @@ Please do not reply to this email.
                     "but planner entries allowed transition. Forcing status update.",
                     request_id, test_request.status
                 )
-            test_request.status = 'Admin Sign Off'
+            test_request.status = 'Completed'
             test_request.reviewed_by = current_user.username
             test_request.reviewed_at = get_ist_now()
             # Also update all planner entries for this request using dual filter.
@@ -14314,18 +15178,25 @@ Please do not reply to this email.
                 db.or_(*planner_filters)).all()
             for entry in planner_entries:
                 if entry.status != 'cancelled':
-                    entry.status = 'Admin Sign Off'
+                    entry.status = 'completed'
                 entry.updated_at = get_ist_now()
-            # Append sign-off note to review comment thread if provided.
-            if note:
-                _append_review_comment_entry(
-                    test_request=test_request,
-                    comment=f'[Admin Sign Off] {note}',
-                    username=current_user.username,
-                    role=current_user.role
-                )
+            sign_off_comment = note or 'Final report signed off by admin.'
+            _append_review_comment_entry(
+                test_request=test_request,
+                comment=f'[Admin Sign Off] {sign_off_comment}',
+                username=current_user.username,
+                role=current_user.role
+            )
             db.session.commit()
-            return jsonify({'success': True, 'message': 'Report signed off successfully'})
+            send_completion_notification(
+                test_request=test_request,
+                completed_by=current_user.username
+            )
+            return jsonify({
+                'success': True,
+                'message': 'Report signed off successfully. Status updated to Completed.',
+                'new_status': 'Completed'
+            })
         except Exception as e:
             db.session.rollback()
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -14362,28 +15233,19 @@ Please do not reply to this email.
             if not active_entries:
                 active_entries = all_entries
             all_terminal = all(
-                entry.status in ('cancelled', 'datasheet_uploaded')
+                entry.status in ('cancelled', 'datasheet_uploaded', DATASHEET_DA_SKIPPED_STATUS)
                 for entry in active_entries
             )
             has_peer_review_entries = any(
                 entry.status == 'Peer Review'
                 for entry in active_entries
             )
-            has_datasheet_uploaded_with_file = any(
-                entry.status == 'datasheet_uploaded' and bool(
-                    entry.datasheet_file_path)
+            datasheet_requirements_satisfied = all(
+                entry.status == 'cancelled'
+                or _is_datasheet_requirement_satisfied(entry, test_request)
                 for entry in active_entries
             )
-            all_datasheet_uploaded_have_file = all(
-                bool(entry.datasheet_file_path)
-                for entry in active_entries
-                if entry.status == 'datasheet_uploaded'
-            )
-            if (
-                all_terminal
-                and has_datasheet_uploaded_with_file
-                and all_datasheet_uploaded_have_file
-            ):
+            if all_terminal and datasheet_requirements_satisfied:
                 test_request.status = 'Datasheet Uploaded'
             elif has_peer_review_entries:
                 test_request.status = 'Peer Review'
@@ -14416,13 +15278,18 @@ Please do not reply to this email.
     @flask_app.route('/api/test-requests/<int:request_id>/report-access-feedback', methods=['POST'])
     @login_required
     def submit_report_access_feedback(request_id):
-        """Require feedback + acknowledgement before enabling requester report access."""
+        """Record requester feedback required after a TCO is completed."""
         test_request = _get_request_or_404(request_id)
         if not _can_access_review_thread(test_request):
             return jsonify({
                 'success': False,
                 'error': 'You do not have permission to access this report'
             }), 403
+        if not _completed_tco_requires_feedback(test_request):
+            return jsonify({
+                'success': False,
+                'error': 'Feedback is requested after the TCO is Completed.'
+            }), 400
         planner_entry = _get_latest_report_planner_entry(test_request)
         if not planner_entry or not planner_entry.report_file_path:
             return jsonify({'success': False, 'error': 'No report found'}), 404
@@ -14454,7 +15321,7 @@ Please do not reply to this email.
             db.session.commit()
             return jsonify({
                 'success': True,
-                'message': 'Thank you for the feedback. View and download are now enabled.',
+                'message': 'Thank you for the feedback. You can now raise a new TCO.',
                 'report_access_granted': True
             })
         except Exception as e:
@@ -14475,18 +15342,14 @@ Please do not reply to this email.
                 'success': False,
                 'error': 'You do not have permission to access this report'
             }), 403
+        if str(test_request.status or '').strip().casefold() != 'completed':
+            return jsonify({
+                'success': False,
+                'error': 'Final report download is available only after Admin Sign Off is completed.'
+            }), 400
         planner_entry = _get_latest_report_planner_entry(test_request)
         if not planner_entry or not planner_entry.report_file_path:
             return jsonify({'success': False, 'error': 'No report found'}), 404
-        if (
-            _report_access_requires_feedback(test_request)
-            and not _has_report_access_grant(request_id, planner_entry)
-        ):
-            return (
-                'Submit feedback and acknowledge the report before downloading it.',
-                403,
-                {'Content-Type': 'text/plain; charset=utf-8'}
-            )
         from flask import send_file
         file_path = os.path.normpath(planner_entry.report_file_path)
         if not os.path.isabs(file_path):
@@ -14497,7 +15360,7 @@ Please do not reply to this email.
             return jsonify({'success': False, 'error': 'File not found on disk'}), 404
         return send_file(
             file_path,
-            mimetype='application/pdf',
+            mimetype=_report_file_mimetype(file_path),
             as_attachment=True,   # ��? triggers download
             download_name=os.path.basename(file_path)
         )
@@ -14583,17 +15446,6 @@ Please do not reply to this email.
                     "but planner entries had draft report. Forcing status update.",
                     request_id, test_request.status
                 )
-            # Check the latest report entry before allowing approval
-            planner_entry = _get_latest_report_planner_entry(test_request)
-            if (
-                planner_entry
-                and _report_access_requires_feedback(test_request)
-                and not _has_report_access_grant(request_id, planner_entry)
-            ):
-                return jsonify({
-                    'success': False,
-                    'error': 'Submit feedback and acknowledge the report before approving it.'
-                }), 403
             test_request.status = 'Proceed Report'
             # Also update all planner entries for this request using dual filter.
             planner_filters = [PlannerEntry.test_request_id == test_request.id]
@@ -14626,15 +15478,6 @@ Please do not reply to this email.
         planner_entry = _get_latest_report_planner_entry(test_request)
         if not planner_entry or not planner_entry.report_file_path:
             return jsonify({'success': False, 'error': 'No report found'}), 404
-        if (
-            _report_access_requires_feedback(test_request)
-            and not _has_report_access_grant(request_id, planner_entry)
-        ):
-            return (
-                'Submit feedback and acknowledge the report before viewing it.',
-                403,
-                {'Content-Type': 'text/plain; charset=utf-8'}
-            )
         file_path = os.path.normpath(planner_entry.report_file_path)
         if not os.path.isabs(file_path):
             file_path = os.path.join(flask_app.root_path, file_path)
@@ -14644,7 +15487,7 @@ Please do not reply to this email.
             return jsonify({'success': False, 'error': 'Report file not found on disk'}), 404
         return send_file(
             file_path,
-            mimetype='application/pdf',
+            mimetype=_report_file_mimetype(file_path),
             as_attachment=False,
             download_name=os.path.basename(file_path)
         )
@@ -14665,13 +15508,16 @@ Please do not reply to this email.
                 file_path = os.path.join(flask_app.root_path, file_path)
             has_report = os.path.exists(file_path)
         comments = _get_combined_review_comment_thread(test_request)
-        report_access_required = _report_access_requires_feedback(test_request)
-        report_access_granted = (
-            not report_access_required
-            or (
-                planner_entry is not None
-                and _has_report_access_grant(request_id, planner_entry)
-            )
+        completed_feedback_required = _completed_tco_requires_feedback(
+            test_request
+        )
+        completed_feedback_submitted = (
+            has_report and _has_completed_tco_feedback(test_request)
+        )
+        pending_completed_feedback = (
+            completed_feedback_required
+            and not completed_feedback_submitted
+            and has_report
         )
         current_status = (test_request.status or '').strip().lower()
         can_approve_report = _report_is_approvable_status(current_status)
@@ -14691,8 +15537,10 @@ Please do not reply to this email.
             'status': test_request.status,
             'service_types': _extract_service_types(test_request),
             'skip_review_flow': _request_skips_report_review(test_request),
-            'require_feedback_before_report_access': report_access_required,
-            'report_access_granted': report_access_granted,
+            'require_feedback_before_report_access': False,
+            'report_access_granted': True,
+            'completed_feedback_required': pending_completed_feedback,
+            'completed_feedback_submitted': completed_feedback_submitted,
             'can_approve_report': can_approve_report,
             'planner_entries': [entry_data] if entry_data else [],
             'review_comments': comments,
@@ -14701,7 +15549,7 @@ Please do not reply to this email.
     @login_required
     def assigned_test():
         """Dedicated page showing assigned test requests."""
-        if current_user.role not in ['admin', 'lab_engineer']:
+        if current_user.role not in ('admin', *ENGINEER_ROLES):
             flash(
                 'You do not have permission to access the assigned tests page.', 'error')
             return redirect(url_for('index'))
@@ -14905,31 +15753,22 @@ Please do not reply to this email.
             # All entries are cancelled, consider it terminal
             active_entries = all_entries
         all_terminal = all(
-            entry.status in ('cancelled', 'datasheet_uploaded')
+            entry.status in ('cancelled', 'datasheet_uploaded', DATASHEET_DA_SKIPPED_STATUS)
             for entry in active_entries
         )
         has_peer_review_entries = any(
             entry.status == 'Peer Review'
             for entry in active_entries
         )
-        has_datasheet_uploaded_with_file = any(
-            entry.status == 'datasheet_uploaded' and bool(
-                entry.datasheet_file_path)
-            for entry in active_entries
-        )
-        all_datasheet_uploaded_have_file = all(
-            bool(entry.datasheet_file_path)
-            for entry in active_entries
-            if entry.status == 'datasheet_uploaded'
-        )
         parent_request = _resolve_request(assignment.test_request_id)
         if not parent_request:
             return
-        if (
-            all_terminal
-            and has_datasheet_uploaded_with_file
-            and all_datasheet_uploaded_have_file
-        ):
+        datasheet_requirements_satisfied = all(
+            entry.status == 'cancelled'
+            or _is_datasheet_requirement_satisfied(entry, parent_request)
+            for entry in active_entries
+        )
+        if all_terminal and datasheet_requirements_satisfied:
             parent_request.status = 'Datasheet Uploaded'
             current_app.logger.info(
                 "All active entries terminal for request %s. Parent status updated to 'Datasheet Uploaded'.",
@@ -14954,6 +15793,65 @@ Please do not reply to this email.
                 "Request %s still has pending entries. Parent status set to 'Test Plan Approved'.",
                 assignment.test_request_id
             )
+
+    @flask_app.route('/api/planner/<int:assignment_id>/skip-da-datasheet', methods=['POST'])
+    @login_required
+    def skip_developmental_assistance_datasheet(assignment_id):
+        """Mark a DA assignment's datasheet step as satisfied without generating a file."""
+        if current_user.role not in ('admin', *ENGINEER_ROLES):
+            return jsonify({'success': False, 'error': 'Not authorized'}), 403
+        assignment = db.session.get(PlannerEntry, assignment_id)
+        if assignment is None:
+            return jsonify({'success': False, 'error': 'Assignment not found'}), 404
+        if (
+            current_user.role in ENGINEER_ROLES
+            and assignment.engineer_user_id
+            and assignment.engineer_user_id != current_user.id
+        ):
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+        parent_request = _resolve_request(assignment.test_request_id)
+        if parent_request is None and assignment.tco_id:
+            parent_request = EMCRequest.query.filter_by(tco_id=assignment.tco_id).first()
+        if parent_request is None:
+            return jsonify({'success': False, 'error': 'Parent request not found'}), 404
+        if not _request_skips_report_review(parent_request):
+            return jsonify({
+                'success': False,
+                'error': 'Datasheet generation can only be skipped for Developmental Assistance requests.'
+            }), 400
+        if str(assignment.status or '').strip().lower() == 'cancelled':
+            return jsonify({'success': False, 'error': 'Cancelled assignments cannot skip datasheet generation.'}), 400
+        now = get_ist_now()
+        assignment.status = DATASHEET_DA_SKIPPED_STATUS
+        assignment.datasheet_file_path = None
+        assignment.datasheet_uploaded_at = None
+        assignment.datasheet_uploaded_by = current_user.id
+        assignment.updated_at = now
+        note = (
+            f"[{now.strftime('%d %b %Y, %I:%M %p')} | {current_user.username} | DA SKIPPED]\n"
+            "Skipped - Developmental Assistance"
+        )
+        existing_comments = str(assignment.datasheet_comments or '').strip()
+        assignment.datasheet_comments = (
+            existing_comments + "\n\n" + note
+            if existing_comments else note
+        )
+        _update_parent_request_datasheet_status(assignment)
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            current_app.logger.error(
+                'Failed to skip DA datasheet for assignment %s: %s',
+                assignment_id, exc
+            )
+            return jsonify({'success': False, 'error': 'Database error while skipping datasheet'}), 500
+        return jsonify({
+            'success': True,
+            'message': 'Skipped - Developmental Assistance',
+            'status': DATASHEET_DA_SKIPPED_STATUS,
+            'status_label': 'Skipped - Developmental Assistance'
+        })
     def _format_checkbox_option_line(value, options):
         """Render selected values against a fixed option list using checkbox glyphs."""
         raw_text = _datasheet_text(value, '')
@@ -15241,7 +16139,7 @@ Please do not reply to this email.
             ):
                 return jsonify({'success': False, 'message': 'Access denied'}), 403
             if (
-                current_user.role == 'lab_engineer'
+                current_user.role in ENGINEER_ROLES
                 and assignment.engineer_user_id
                 and assignment.engineer_user_id != current_user.id
             ):
@@ -15353,41 +16251,18 @@ Please do not reply to this email.
                 (EMCRequest.submitted_at.is_(None), 1),
                 else_=0
             )
-            approval_statuses = [
-                'At Review',
-                'Approved',
-                'Test Plan Approved',
-                'Assigned',
-                'Assigned Lab Engineer',
-                'In Progress',
-                'Test Schedule In Progress',
-                'Test Plan To Approve',
-                'Admin Sign Off',
-                'Draft Report',
-                'Proceed Report',
-                'Datasheet Uploaded',
-                'Update plan',
-                'Report Uploaded',
-                'report_uploaded',
-                'Need More Information',
-                'Completed'
-            ]
             at_review_requests = EMCRequest.query.options(
                 joinedload(EMCRequest.service_types),
                 joinedload(EMCRequest.assigned_engineer)
             ).filter(
-                EMCRequest.status.in_(approval_statuses)
+                EMCRequest.status.in_(ADMIN_APPROVAL_STATUS_VALUES)
             ).order_by(
                 submitted_nulls_last,
                 EMCRequest.submitted_at.desc(),
                 EMCRequest.created_at.desc()
             ).all()
-            # Move completed and cancelled requests to the end
-            active_approval_requests = [r for r in at_review_requests if (
-                r.status or '').lower().strip() not in ('completed', 'cancelled', 'rejected')]
-            completed_approval_requests = [r for r in at_review_requests if (
-                r.status or '').lower().strip() in ('completed', 'cancelled', 'rejected')]
-            at_review_requests = active_approval_requests + completed_approval_requests
+            at_review_requests = _partition_request_status_queue(
+                at_review_requests)
             test_plans = []
             for request in at_review_requests:
                 assigned_display = request.assigned_engineer_name
@@ -15396,34 +16271,8 @@ Please do not reply to this email.
                 shared_review_thread = _get_combined_review_comment_thread(
                     request)
                 latest_shared_comment = shared_review_thread[-1] if shared_review_thread else None
-                # Map DB status to UI keys/labels
-                if request.status == 'At Review':
-                    status_key = 'pending_approval'
-                    status_label = request.status
-                elif request.status in ('Test Schedule In Progress', 'Test Plan To Approve', 'In Progress', 'Admin Sign Off', 'Draft Report', 'Proceed Report', 'Datasheet Uploaded', 'Report Uploaded', 'report_uploaded', 'Update plan'):
-                    status_key = 'in_progress'
-                    status_label = request.status
-                elif request.status in ('Approved', 'Test Plan Approved'):
-                    status_key = 'approved'
-                    status_label = request.status
-                elif request.status in ('Assigned', 'Assigned Lab Engineer'):
-                    status_key = 'assigned'
-                    status_label = request.status
-                elif request.status == 'Need More Information':
-                    status_key = 'need_more_info'
-                    status_label = request.status
-                elif request.status == 'Completed':
-                    status_key = 'completed'
-                    status_label = request.status
-                elif request.status == 'Cancelled':
-                    status_key = 'cancelled'
-                    status_label = request.status
-                elif request.status == 'Rejected':
-                    status_key = 'rejected'
-                    status_label = request.status
-                else:
-                    status_key = 'other'
-                    status_label = request.status or 'Unknown'
+                status_key = _get_admin_approval_status_key(request.status)
+                status_label = _format_admin_approval_status_label(request.status)
                 test_plans.append({
                     'id': request.id,
                     'tco_id': request.tco_id or f'REQ-{request.id}',
@@ -15448,7 +16297,7 @@ Please do not reply to this email.
                     )
                 })
             assignable_users = User.query.filter(
-                User.role.in_(['lab_engineer', 'admin']),
+                User.role.in_(ASSIGNABLE_ENGINEER_ROLES),
                 User.is_active.is_(True)
             ).order_by(User.role.asc(), User.username.asc()).all()
             lab_engineers_data = [
@@ -15468,6 +16317,10 @@ Please do not reply to this email.
                                    test_plans=test_plans,
                                    lab_engineers_data=lab_engineers_data,
                                    statistics=statistics,
+                                   status_options=_build_admin_approval_status_filter_options(
+                                       [request.status
+                                        for request in at_review_requests]
+                                   ),
                                    service_type_options=_get_service_type_filter_options(
                                        [plan.get('service_types', [])
                                         for plan in test_plans]
@@ -15551,50 +16404,22 @@ Please do not reply to this email.
                 )
             else:
                 # Show only approval statuses (default behavior)
-                approval_statuses = [
-                    'At Review',
-                    'Approved',
-                    'Test Plan Approved',
-                    'Assigned',
-                    'Assigned Lab Engineer',
-                    'In Progress',
-                    'Test Schedule In Progress',
-                    'Test Plan To Approve',
-                    'Admin Sign Off',
-                    'Draft Report',
-                    'Proceed Report',
-                    'Datasheet Uploaded',
-                    'Update plan',
-                    'Report Uploaded',
-                    'report_uploaded',
-                    'Need More Information',
-                    'Completed'
-                ]
                 query = EMCRequest.query.filter(
-                    EMCRequest.status.in_(approval_statuses)
+                    EMCRequest.status.in_(ADMIN_APPROVAL_STATUS_VALUES)
                 )
             # Apply search filter
             if search_query:
-                search_pattern = f'%{search_query}%'
-                query = query.filter(
-                    db.or_(
-                        EMCRequest.product_name.like(search_pattern),
-                        EMCRequest.tco_id.like(search_pattern),
-                        EMCRequest.manufacturer.like(search_pattern),
-                        EMCRequest.model_number.like(search_pattern),
-                        EMCRequest.requester_name.like(search_pattern)
-                    )
-                )
+                query = _apply_request_search_filter(query, search_query)
             # Apply status filter
             if status_filter:
                 status_filter_map = {
                     'pending_approval': ['At Review'],
+                    TEST_PLAN_APPROVAL_STATUS_KEY: [TEST_PLAN_APPROVAL_STATUS],
                     'approved': ['Approved', 'Test Plan Approved'],
                     'assigned': ['Assigned', 'Assigned Lab Engineer'],
                     'in_progress': [
                         'In Progress',
                         'Test Schedule In Progress',
-                        'Test Plan To Approve',
                         'Admin Sign Off',
                         'Draft Report',
                         'Proceed Report',
@@ -15610,14 +16435,22 @@ Please do not reply to this email.
                     'cancelled': ['Cancelled'],
                     'rejected': ['Rejected'],
                 }
-                filter_key = status_filter.lower()
+                normalized_status_column = db.func.lower(
+                    db.func.replace(db.func.trim(EMCRequest.status), '_', ' ')
+                )
+                normalized_filter = _normalize_status_lookup(status_filter)
+                filter_key = normalized_filter.replace(' ', '_')
                 mapped_statuses = status_filter_map.get(filter_key)
                 if mapped_statuses:
                     query = query.filter(
-                        EMCRequest.status.in_(mapped_statuses))
+                        normalized_status_column.in_(
+                            [_normalize_status_lookup(status)
+                             for status in mapped_statuses]
+                        )
+                    )
                 else:
                     query = query.filter(
-                        db.func.lower(EMCRequest.status) == filter_key
+                        normalized_status_column == normalized_filter
                     )
             # Order by submitted date
             query = query.order_by(
@@ -15655,43 +16488,8 @@ Please do not reply to this email.
                 shared_review_thread = _get_combined_review_comment_thread(
                     test_request)
                 latest_shared_comment = shared_review_thread[-1] if shared_review_thread else None
-                # Map DB status to UI keys/labels
-                if test_request.status == 'At Review':
-                    status_key = 'pending_approval'
-                    status_label = test_request.status
-                elif test_request.status in ('Test Schedule In Progress', 'Test Plan To Approve'):
-                    status_key = 'in_progress'
-                    status_label = test_request.status if test_request.status != 'Test Schedule In Progress' else 'Test Schedule In Progress'
-                elif test_request.status == 'Admin Sign Off':
-                    status_key = 'in_progress'
-                    status_label = 'Admin Sign Off'
-                elif test_request.status in ('Approved', 'Test Plan Approved'):
-                    status_key = 'approved'
-                    status_label = test_request.status
-                elif test_request.status in ('Assigned', 'Assigned Lab Engineer'):
-                    status_key = 'assigned'
-                    status_label = test_request.status
-                elif test_request.status == 'In Progress':
-                    status_key = 'in_progress'
-                    status_label = test_request.status
-                elif test_request.status in ('Draft Report', 'Proceed Report', 'Datasheet Uploaded', 'Report Uploaded', 'report_uploaded', 'Update plan'):
-                    status_key = 'in_progress'
-                    status_label = test_request.status
-                elif test_request.status == 'Need More Information':
-                    status_key = 'need_more_info'
-                    status_label = test_request.status
-                elif test_request.status == 'Completed':
-                    status_key = 'completed'
-                    status_label = test_request.status
-                elif test_request.status == 'Cancelled':
-                    status_key = 'cancelled'
-                    status_label = test_request.status
-                elif test_request.status == 'Rejected':
-                    status_key = 'rejected'
-                    status_label = test_request.status
-                else:
-                    status_key = 'other'
-                    status_label = test_request.status or 'Unknown'
+                status_key = _get_admin_approval_status_key(test_request.status)
+                status_label = _format_admin_approval_status_label(test_request.status)
                 # Safely parse service_types JSON
                 service_types = _extract_service_types(test_request)
                 # Safely format dates
@@ -15735,6 +16533,7 @@ Please do not reply to this email.
                     sort_by,
                     sort_dir
                 )
+            test_plans = _partition_request_status_queue(test_plans)
             return jsonify({
                 'success': True,
                 'data': test_plans
@@ -15802,4 +16601,4 @@ if __name__ == '__main__':
         # Initialize equipment database
         equipment_manager = EquipmentManager(app.config['EQUIPMENT_DATA_FILE'])
         equipment_manager.initialize_equipment_database()
-    app.run(debug=True, host='0.0.0.0', port=3000)
+    app.run(debug=True, host='0.0.0.0', port=5000)

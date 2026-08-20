@@ -2846,14 +2846,14 @@
 
             const engineerSelect = document.getElementById('eventEngineer');
             if (engineerSelect) {
-                const desiredEngineerId = String(event.engineerId || this.defaultUserId || '');
+                const desiredEngineerId = String(event.engineerId || '');
                 const hasOption = Array.from(engineerSelect.options).some(option => option.value === desiredEngineerId);
 
-                if (!hasOption && desiredEngineerId && (event.engineerName || this.defaultEngineer)) {
+                if (!hasOption && desiredEngineerId && event.engineerName) {
                     const option = document.createElement('option');
                     option.value = desiredEngineerId;
-                    option.textContent = event.engineerName || this.defaultEngineer;
-                    option.dataset.name = event.engineerName || this.defaultEngineer;
+                    option.textContent = event.engineerName;
+                    option.dataset.name = event.engineerName;
                     engineerSelect.appendChild(option);
                 }
 
