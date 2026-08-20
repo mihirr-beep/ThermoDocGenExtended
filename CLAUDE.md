@@ -59,11 +59,22 @@ any table not listed, so a table missing from the catalog cannot be queried at a
 ```bash
 python tools_routing_eval.py     # FREE, deterministic, ~1s. Must stay 32/32.
 python tools_insight_probe.py    # FREE. Calls all 10 insight primitives.
+node   tools_render_eval.js      # FREE. Does the answer SURVIVE rendering.
 python tools_join_eval.py        # spends tokens; answers vs SQL truth
 python tools_user_eval.py        # spends tokens; questions in the APP's words
 ```
 
-Run the two free ones after any change to `nlp_search`.
+Run the three free ones after any change to `nlp_search` — and run the render one
+after any change to `templates/base.html` too, which is where the answer stops
+being text and becomes something a person reads.
+
+That third one exists because correctness is not the only way to lose. A
+nine-row product listing came back right and reached the screen as a wall of
+literal `|` characters: the model had skipped the `|---|---|` row that markdown
+requires and models omit freely, so the table was never recognised as one. To a
+user that is indistinguishable from a broken tool, and no eval that grades
+*answers* would ever have caught it. It runs the real functions out of
+`base.html` against a stub DOM, so it cannot drift from what the browser does.
 
 `tools_join_eval.py` and `tools_user_eval.py` score the same system twenty points
 apart, and the only difference is whose vocabulary the questions use — the first

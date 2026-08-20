@@ -1192,11 +1192,114 @@
             .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
             .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
         }
-        var PIPE_RE=/^\s*\|(.+)\|\s*$/;
-        var PIPE_SEP_RE=/^\s*\|[\s:|-]+\|\s*$/;
-        function pipeCells(line){
-          var m=PIPE_RE.exec(line);
-          return m ? m[1].split('|').map(function(c){ return c.trim(); }) : null;
+        // ---- markdown pipe tables -------------------------------------------
+        // Every rule here exists because a real answer hit it. A table that
+        // fails to parse does not degrade politely: it lands on screen as a
+        // wall of literal pipes, which reads as a broken tool.
+        //
+        // Splitting honours a backslash-escaped pipe, so a cell holding
+        // "Class A \| Class B" stays one cell instead of silently shifting
+        // every column after it one place to the left.
+        function splitPipes(line){
+          var s=String(line==null?'':line).trim();
+          if(s.indexOf('|')<0) return null;
+          var lead = s.charAt(0)==='|';
+          var trail = s.length>1 && s.charAt(s.length-1)==='|'
+                      && s.charAt(s.length-2)!=='\\';
+          var cells=[], cur='';
+          for(var n=0;n<s.length;n++){
+            var ch=s.charAt(n);
+            if(ch==='\\' && s.charAt(n+1)==='|'){ cur+='|'; n++; continue; }
+            if(ch==='|'){ cells.push(cur); cur=''; continue; }
+            cur+=ch;
+          }
+          cells.push(cur);
+          // an outer pipe produces exactly one empty edge cell, which is not a
+          // column. Removing it by position rather than by emptiness keeps a
+          // genuinely blank first column ("| | b | c |") intact.
+          if(lead) cells.shift();
+          if(trail) cells.pop();
+          if(!cells.length) return null;
+          // Two cells is the bar for an UNBOUNDED line, because a sentence can
+          // contain one pipe. A line fenced by pipes on both sides is a row
+          // whatever it holds - "| 1 |" is a short row, and rejecting it ended
+          // the run early and took the entire table down with it.
+          if(cells.length<2 && !(lead && trail)) return null;
+          return cells.map(function(c){ return c.trim(); });
+        }
+        // |---|:--:| is a separator. "| - | - |" is data: a single dash is the
+        // usual placeholder for "no value", so at least one cell must carry
+        // three dashes before a row is discarded as decoration.
+        function isSepRow(cells){
+          var wide=false;
+          for(var n=0;n<cells.length;n++){
+            if(!/^:?-+:?$/.test(cells[n])) return false;
+            if(/-{3,}/.test(cells[n])) wide=true;
+          }
+          return wide;
+        }
+        // A run of pipe rows starting at `start`, or null.
+        //
+        // THE SEPARATOR ROW IS OPTIONAL. Requiring it is what put a rendered
+        // three-column product listing on screen as raw text: the model wrote
+        // the header and the rows and skipped |---|---|, which markdown demands
+        // and models omit freely. Without one, the first row is the header.
+        function pipeRun(lines, start){
+          var raw=[], k=start;
+          while(k<lines.length){
+            var cells=splitPipes(lines[k]);
+            if(!cells) break;
+            raw.push({cells:cells, line:String(lines[k]).trim()});
+            k++;
+          }
+          if(raw.length<2) return null;
+          // Two consecutive lines holding pipes are not proof of a table - a
+          // sentence can contain one. Any of three signals settles it: a
+          // separator row, outer pipes on most rows, or three-plus columns at a
+          // consistent count with no cell long enough to be prose.
+          //
+          // That last clause needs all three conditions. Two sentences ending
+          // "...went from Draft | Accepted after the reviewer signed it off"
+          // and "...history | to_status for every revision" agree on a count of
+          // two and stay under the length ceiling, and were rendered as a
+          // table. A model that emits a genuine two-column table uses outer
+          // pipes or a separator, so it is still caught by the other two.
+          var seps=0, bounded=0, sameCount=true, longCell=false;
+          var n0=raw[0].cells.length;
+          raw.forEach(function(r){
+            if(isSepRow(r.cells)) seps++;
+            if(r.line.charAt(0)==='|') bounded++;
+            if(r.cells.length!==n0) sameCount=false;
+            r.cells.forEach(function(c){ if(c.length>80) longCell=true; });
+          });
+          var shaped = sameCount && n0>=3 && !longCell;
+          if(!(seps>0 || bounded*2>=raw.length || shaped)) return null;
+          // separators are dropped wherever they fall, not just at index+1:
+          // models repeat them, and occasionally put one under the data.
+          var body=raw.filter(function(r){ return !isSepRow(r.cells); });
+          if(body.length<2) return null;   // a header alone carries nothing
+          var head=body[0].cells.slice();
+          var width=head.length;
+          var rows=[];
+          body.slice(1).forEach(function(r){
+            var cells=r.cells.slice();
+            if(cells.length>width){
+              // more cells than headers means an unescaped pipe split a value.
+              // The excess is joined back into the last column rather than
+              // dropped: nothing is lost, and no value slides under a header
+              // that does not describe it. A mislabelled value is the exact
+              // failure this whole tool is built to avoid.
+              var keep=cells.slice(0, width-1);
+              keep.push(cells.slice(width-1).join(' | '));
+              cells=keep;
+            }
+            while(cells.length<width) cells.push('');
+            var any=false;
+            for(var n=0;n<cells.length;n++){ if(cells[n]!==''){ any=true; break; } }
+            if(any) rows.push(cells);   // an all-blank row renders as a gap
+          });
+          if(!rows.length) return null;
+          return {head:head, rows:rows, end:k};
         }
         // Beyond this many columns a table cannot fit the panel, and the model
         // is asked for a list instead - but asking is not guaranteeing, and a
@@ -1206,40 +1309,44 @@
         var MAX_TABLE_COLS = 5;
         function buildRecords(head, rows){
           var box=document.createElement('div'); box.className='labai-recs';
-          rows.forEach(function(line){
-            var cells=pipeCells(line); if(!cells) return;
+          rows.forEach(function(cells){
             var rec=document.createElement('div'); rec.className='labai-rec';
             // the first non-empty cell titles the block - it is nearly always
-            // the identifier the reader is scanning for
-            var title=null;
+            // the identifier the reader is scanning for. Tracked by INDEX: two
+            // columns can hold the same string, and matching by value dropped
+            // the second one.
+            var titleIdx=-1;
             for(var n=0;n<cells.length;n++){
-              if(cells[n]){ title=cells[n]; break; }
+              if(cells[n]){ titleIdx=n; break; }
             }
-            if(title){
+            if(titleIdx>=0){
               var h=document.createElement('div'); h.className='labai-rec-h';
-              h.innerHTML=inline(title); rec.appendChild(h);
+              h.innerHTML=inline(cells[titleIdx]); rec.appendChild(h);
             }
-            head.forEach(function(label, idx){
-              var v=cells[idx];
-              // skip the cell used as the title, and anything empty: a blank
-              // "Notes —" line is noise in a block layout
-              if(!v || v===title) return;
+            for(var m=0;m<cells.length;m++){
+              if(m===titleIdx) continue;
+              var v=cells[m];
+              if(!v) continue;   // a blank "Notes -" line is noise in a block
               var kv=document.createElement('div'); kv.className='labai-kv';
-              var k=document.createElement('span'); k.className='labai-k';
-              k.innerHTML=inline(label);
+              var label=head[m]||'';
+              if(label){
+                var k=document.createElement('span'); k.className='labai-k';
+                k.innerHTML=inline(label); kv.appendChild(k);
+              }
               var val=document.createElement('span'); val.className='labai-v';
-              val.innerHTML=inline(v);
-              kv.appendChild(k); kv.appendChild(val); rec.appendChild(kv);
-            });
-            box.appendChild(rec);
+              val.innerHTML=inline(v); kv.appendChild(val);
+              rec.appendChild(kv);
+            }
+            if(rec.children.length) box.appendChild(rec);
           });
           return box.children.length ? box : null;
         }
-        // A markdown pipe table, which is what the model is now asked to emit
-        // when it has rows. Reuses the same table styling as the fixed-width
-        // path so a listing looks the same however it arrived.
-        function buildPipeTable(header, rows){
-          var head=pipeCells(header); if(!head) return null;
+        // Reuses the same table styling as the fixed-width path so a listing
+        // looks the same however it arrived. Takes parsed cells, not lines:
+        // padding and merging happen once, in pipeRun, so the header and every
+        // row are guaranteed the same width by the time they reach here.
+        function buildPipeTable(head, rows){
+          if(!head || head.length<2 || !rows || !rows.length) return null;
           if(head.length > MAX_TABLE_COLS){
             var recs=buildRecords(head, rows);
             if(recs) return recs;
@@ -1252,8 +1359,7 @@
           });
           thead.appendChild(tr); t.appendChild(thead);
           var tb=document.createElement('tbody');
-          rows.forEach(function(line){
-            var cells=pipeCells(line); if(!cells) return;
+          rows.forEach(function(cells){
             var r=document.createElement('tr');
             cells.forEach(function(c){
               var td=document.createElement('td'); td.innerHTML=inline(c);
@@ -1331,13 +1437,13 @@
             }
             if(listBlock()){ continue; }
             if(quote()){ continue; }
-            // a markdown pipe table: | a | b | then |---|---| then rows
-            if(i+1<lines.length && PIPE_RE.test(lines[i])
-               && PIPE_SEP_RE.test(lines[i+1])){
-              var ph=lines[i], prows=[], k=i+2;
-              while(k<lines.length && PIPE_RE.test(lines[k])){ prows.push(lines[k]); k++; }
-              var pel=buildPipeTable(ph, prows);
-              if(pel){ flush(); bub.appendChild(pel); i=k; continue; }
+            // a markdown pipe table. pipeRun decides where it starts and ends
+            // and whether it is one at all - the |---|---| row is optional
+            // there, which is the whole point.
+            var run=pipeRun(lines, i);
+            if(run){
+              var pel=buildPipeTable(run.head, run.rows);
+              if(pel){ flush(); bub.appendChild(pel); i=run.end; continue; }
             }
             // a header line followed by a separator line starts a table
             if(i+1<lines.length && SEP_RE.test(lines[i+1].trim()) && lines[i].trim()){

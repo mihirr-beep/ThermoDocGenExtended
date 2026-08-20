@@ -42,7 +42,7 @@ PURPOSES = {
     "maintenance": "maintenance records for lab equipment",
     "equipment_history": "audit trail of changes to equipment records (who changed what, when)",
     # -- the request / job domain -----------------------------------------
-    "iec_emc_requests": "MASTER EMC test request, one row per TCO/job: product, requester, status, assignment, key dates. is_synthetic=1 marks SEEDED DEMO rows (product names start with DEMO): exclude them unless the question is about the demo corpus, and never quote one as a real job.",
+    "iec_emc_requests": "MASTER EMC test request, one row per TCO/job: product, requester, status, assignment, key dates. is_synthetic=1 marks SEEDED DEMO rows (product_name starts with 'DEMO '). Leave them out of totals, rankings and list-everything answers, and never quote one as a real job. BUT A NAME THE USER TYPES WILL NOT CARRY THE PREFIX: match product_name with LIKE on the words they gave, and if the only rows matching are synthetic, ANSWER ABOUT THOSE ROWS and say they are seeded demo data. Never report a product as absent when a DEMO row for it exists - that reads as a missing record rather than as a filter.",
     "iec_emc_request_tests": "one row per EMC test per request (test_code CE/RE/EFT/ESD/SURGE...); is_selected=1 = in scope; per-test workflow status + engineer",
     "iec_emc_request_service_types": "service types requested (per request)",
     "iec_emc_request_serial_numbers": "EUT serial numbers (per request)",
@@ -501,19 +501,34 @@ _NOT_A_CLASS = re.compile(
     r"version$|^make$|^model|serial|comment|remark|^note|descri", re.I)
 
 
+# "Not filled in" spelled the several ways this schema spells it. These are not
+# values in their own right, so they should not tip a column one way or the
+# other when deciding what KIND of column it is.
+_SENTINEL_VALUES = {"", "na", "n/a", "none", "null", "-", "--", "?", "tbd", "nil"}
+
+
 def _values_are_measurements(vals):
     """Numbers and ranges kept in a text column: data, not categories."""
     seen = [str(v).strip() for v in vals if str(v).strip()]
     if not seen:
         return False
-    if set(seen) <= {"0", "1"}:
+    real = [v for v in seen if v.lower() not in _SENTINEL_VALUES]
+    if set(real) <= {"0", "1"}:
         # A boolean is not a measurement. datasheet_modification.mod_state is
         # varchar holding '0'/'1' and the numeric test threw it away.
+        #
+        # A boolean WITH a sentinel beside it is still a boolean, and testing
+        # the raw value list missed that: datasheet.eut_modification_state
+        # holds '0' (9 rows), 'NA' (31) and '1' (1), so two of its three values
+        # are digits, the ratio test called the column a measurement, and the
+        # model was told nothing about a plainly categorical field. Asked which
+        # units were modified it then has to guess the encoding, and a guess of
+        # 'Yes' returns no rows and reads as a real absence.
         return False
     numeric = sum(
-        1 for v in seen
+        1 for v in real
         if v.replace(".", "").replace("-", "").replace(" ", "").replace(",", "").isdigit())
-    return numeric > len(seen) / 2
+    return numeric > len(real) / 2
 
 
 def _value_shape_ok(vals, ctype):
