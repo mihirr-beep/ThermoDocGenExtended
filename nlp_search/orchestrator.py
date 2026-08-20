@@ -125,7 +125,26 @@ MAX_QUESTION_CHARS = 2000
 # it likes in a prior "assistant" turn. Treating it as context only means the
 # worst a forged turn can do is misdirect a question, not manufacture a fact.
 MAX_HISTORY_TURNS = 7
-MAX_HISTORY_ANSWER_CHARS = 600
+# Was 600, set when an answer was a paragraph. A markdown table of eight
+# campaigns runs past that on its own, and the row the follow-up asks about is as
+# likely to be the last as the first - so a follow-up could be answered against a
+# transcript that had cut the very row it named.
+MAX_HISTORY_ANSWER_CHARS = 2200
+
+
+def _clip_at_line(text, limit):
+    """Cut to the last complete LINE inside the limit, never mid-row.
+
+    Half a table row reads as a corrupt one: "| RS_RI | FA" invites the model to
+    guess the rest rather than notice it is missing.
+    """
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    nl = cut.rfind("\n")
+    if nl > limit // 2:
+        cut = cut[:nl]
+    return cut.rstrip() + "\n[...earlier lines of this answer are not shown]"
 
 
 _ANTECEDENT_RE = re.compile(r"\b[A-Z]{2,5}(?:-[A-Z0-9]{2,6}){1,3}-\d{1,4}\b")
@@ -179,32 +198,67 @@ def _antecedents(history):
                 seen.add(tok)
                 names.append(tok)
         found.extend(names[:4])
-        if len(found) < 2:
-            return ""           # one subject or none: no narrowing to notice
+        # ONE subject still needs the block. The `< 2` guard here was written
+        # when its only job was "do not narrow the set", and one subject cannot
+        # be narrowed. But the block now also says WHAT THE SUBJECT IS, and that
+        # matters most when there is exactly one: "tell me about the Vantage
+        # Water Purifier" produces an answer naming one product, and the
+        # follow-up "why did the RS_RI test fail" was the turn that got asked
+        # which product it meant.
+        if not found:
+            return ""
         shown = found[:MAX_ANTECEDENTS]
         more = "" if len(found) <= MAX_ANTECEDENTS else \
             " (and %d more)" % (len(found) - MAX_ANTECEDENTS)
-        return ("\n\nWHAT YOUR LAST ANSWER WAS ABOUT: %s%s. If this question says "
-                "\"these\", \"those\", \"them\" or \"the same\", it means THAT set - "
-                "not one member of it, and not a subject from an earlier turn. "
-                "Cover all of them, or say which ones you are leaving out and "
-                "why. Narrowing to a single one of these and then reporting that "
-                "nothing else exists is the specific mistake to avoid."
-                % (", ".join(shown), more))
+        return (
+            "\n\nWHAT YOUR LAST ANSWER WAS ABOUT: %s%s\n\n"
+            "THIS IS THE SUBJECT UNTIL THE USER CHANGES IT. If the question "
+            "below does not name a product or a job of its own, it is about "
+            "these - carry them into your tool calls and your SQL. Do NOT ask "
+            "the user which product they mean when the answer is right here, and "
+            "do NOT widen to the whole lab.\n\n"
+            "The wording will often not tell you. \"Why did the RS_RI test fail\" "
+            "names a test and no product, and the honest reading is \"the RS_RI "
+            "test ON THE THING WE HAVE BEEN DISCUSSING\" - it was answered with "
+            "\"please specify the product\" while the previous answer had "
+            "RS_RI FAIL against that product two lines up. A question with no "
+            "pronoun in it is still a follow-up.\n\n"
+            "If it says \"these\", \"those\", \"them\" or \"the same\", it means "
+            "the whole set above and not one member of it: cover all of them, or "
+            "say which you are leaving out and why. Narrowing to one and then "
+            "reporting that nothing else exists is the other half of this mistake."
+            % (", ".join(shown), more))
     return ""
 
 
 def _history_block(history):
-    """The prior turns, as a prompt block. "" when there are none."""
+    """The prior turns, as a prompt block. "" when there are none.
+
+    LINE BREAKS ARE KEPT. This used to collapse all whitespace with
+    " ".join(text.split()), which was harmless when an answer was prose and
+    destroys one now that answers are markdown: a six-row table arrived as a
+    single line of pipes and dashes, and the model had to reconstruct the grid
+    before it could read a cell out of it.
+
+    Answers are also longer than they were, because a table of eight campaigns
+    is worth more than a paragraph about them - so the per-answer budget went up
+    with the format. Truncating mid-table is the specific failure to avoid: the
+    row the follow-up is about is as likely to be the last one as the first.
+    """
     turns = []
-    for turn in (history or [])[-MAX_HISTORY_TURNS:]:
+    # *2 because history alternates user/assistant: MAX_HISTORY_TURNS is a count
+    # of exchanges, and slicing it as messages kept half of them.
+    for turn in (history or [])[-(MAX_HISTORY_TURNS * 2):]:
         role = str((turn or {}).get("role") or "").strip().lower()
-        text = " ".join(str((turn or {}).get("text") or "").split())
+        text = str((turn or {}).get("text") or "").strip()
+        # tidy runs of blank lines, keep the single ones that carry structure
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"[ \t]+", " ", text)
         if not text or role not in ("user", "assistant"):
             continue
         if role == "assistant" and len(text) > MAX_HISTORY_ANSWER_CHARS:
-            text = text[:MAX_HISTORY_ANSWER_CHARS] + " [...]"
-        turns.append("%s: %s" % ("User" if role == "user" else "You", text))
+            text = _clip_at_line(text, MAX_HISTORY_ANSWER_CHARS)
+        turns.append("%s:\n%s" % ("User" if role == "user" else "You", text))
     if not turns:
         return ""
     return ("\n## The conversation so far, oldest first\n" + "\n".join(turns)

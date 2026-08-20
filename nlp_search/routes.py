@@ -79,14 +79,26 @@ def _history(raw):
     if not isinstance(raw, list):
         return []
     out = []
-    for turn in raw[-(orchestrator.MAX_HISTORY_TURNS * 2):]:
+    for turn in raw:
         if not isinstance(turn, dict):
             continue
         role = str(turn.get("role") or "").strip().lower()
         text = str(turn.get("text") or "").strip()
         if role in ("user", "assistant") and text:
             out.append({"role": role, "text": text[:MAX_TURN_CHARS]})
-    return out[-orchestrator.MAX_HISTORY_TURNS:]
+
+    # MESSAGES, NOT TURNS. This list alternates user/assistant, so a turn is TWO
+    # entries - and the cap was applied as out[-MAX_HISTORY_TURNS:], which kept
+    # the last seven MESSAGES: three and a half exchanges, not seven. Half the
+    # intended history, silently, for as long as the feature has existed.
+    #
+    # The slice is also aligned to start on a user message. Landing on an
+    # assistant one leaves an answer with no question above it, and the model has
+    # to guess what was asked to know what the answer was about.
+    keep = out[-(orchestrator.MAX_HISTORY_TURNS * 2):]
+    if keep and keep[0].get("role") == "assistant":
+        keep = keep[1:]
+    return keep
 
 
 # One turn's text, before the orchestrator trims answers further. Generous
