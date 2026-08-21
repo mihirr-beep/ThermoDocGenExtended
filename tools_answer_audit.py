@@ -143,6 +143,36 @@ def check_absence_claim(turn, ctx):
     return None
 
 
+_NAMES_ONE_RE = re.compile(r"\b(?:DEMO|IEC|TFS)[- ][A-Z0-9-]{3,}\b")
+
+
+def check_mixed_scope(turn, ctx):
+    """An answer about ONE thing carrying a number counted over everything.
+
+    Asked which of DEMO Kestrel Spectrometer's tests were finished, the answer
+    ended "There are also 14 tests in draft status and 3 tests with no results".
+    Both were SELECT COUNT(*) with no product filter - the whole lab. Kestrel has
+    one draft and nothing without a result, so the reader learns this product has
+    fourteen unfinished tests when it has one.
+
+    Fires when the answer names exactly ONE job or product AND one of its
+    queries is a bare unfiltered total. Calibrated at 1 of 37 turns.
+    """
+    from nlp_search import sql_tool
+    answer = turn["answer"] or ""
+    # EXACTLY ONE subject. An answer listing many jobs is a lab-wide answer and a
+    # lab-wide count belongs in it; the damage is done when one product is named
+    # and the number beside it came from all of them. Without this the check fired
+    # on 4 of 37 turns and only one was real.
+    if len(set(_NAMES_ONE_RE.findall(answer))) != 1:
+        return None
+    for sql in _statements(turn["sql_queries"]):
+        if sql_tool._whole_lab_note(sql):
+            return (HIGH, "names one product but counted the whole lab: %s"
+                    % sql[:64])
+    return None
+
+
 def check_alias_confusion(turn, ctx):
     """A column aliased to the name of a DIFFERENT real column.
 
@@ -200,6 +230,7 @@ def check_render_artifact(turn, ctx):
 
 
 CHECKS = (
+    ("mixed_scope", check_mixed_scope),
     ("alias_confusion", check_alias_confusion),
     ("status_as_time", check_status_as_time),
     ("absence_claim", check_absence_claim),

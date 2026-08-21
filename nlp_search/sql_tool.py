@@ -307,6 +307,92 @@ _THING_COLUMNS = ("product_name", "product", "eut_name", "eut_model",
 _END_DATE_RE = re.compile(r"(end_date|due_date|deadline|planned_end)", re.I)
 
 
+_BARE_TOTAL_RE = re.compile(r"^\s*SELECT\s+(?:COUNT|SUM|AVG|MIN|MAX)\s*\(", re.I)
+_SCOPED_FILTER_RE = re.compile(
+    r"\b(?:product_name|product|tco_id|job_number|job_id|eut_name|eut_model|"
+    r"eut_model_sku_number|planner_entry_id|datasheet_id|request_id|"
+    r"test_request_id|request_test_id)\b\s*(?:=|LIKE|IN\b)", re.I)
+_GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.I)
+
+
+def _whole_lab_note(sql):
+    """One number covering every product, which is about to be read as one.
+
+    Asked which of DEMO Kestrel Spectrometer's tests were finished, the answer
+    ended "There are also 14 tests in draft status and 3 tests with no results".
+    Both numbers came from
+
+        SELECT COUNT(*) FROM `datasheet` WHERE status = 'Draft'
+
+    with no product filter at all - they are the whole lab. Kestrel has ONE
+    draft and NOTHING without a result. The sentence was inside a paragraph
+    about one product, so a reader learns that this product has fourteen
+    unfinished tests when it has one.
+
+    Deliberately narrow: a single bare aggregate, nothing else selected, no
+    GROUP BY, and no filter naming a product or a job. A grouped aggregate is a
+    breakdown and reads as one; a filtered one already gets a denominator from
+    _scope_note. This is the shape that becomes a sentence.
+    """
+    text = str(sql or "")
+    if not _BARE_TOTAL_RE.match(text):
+        return {}
+    head = re.split(r"\bFROM\b", text, 1)[0]
+    if "," in head:
+        return {}                      # more than one thing selected
+    if _GROUP_BY_RE.search(text) or _SCOPED_FILTER_RE.search(text):
+        return {}
+    return {"whole_lab_check": (
+        "THIS NUMBER IS THE WHOLE LAB. Nothing in the query names a product, a "
+        "job or a datasheet, so it counts every row of every product. If the "
+        "answer you are writing is about ONE product, this number does not "
+        "belong in it - re-run the count with that product's filter, or say "
+        "plainly that the figure is lab-wide.")}
+
+
+# What datasheet.result actually holds, in the lab's own words. There is no
+# other vocabulary: `compliant` is not a column, not a value, and not a word any
+# template in this app uses - the five columns matching "compl" are all
+# COMPLETION dates. Asked which tests were finished, the answer invented
+# "COMPLIANT / NOT COMPLIANT" as a gloss for PASS-or-A-or-B, and the reader came
+# back asking what a compliant test was, because it is not their word and there
+# is nowhere to look it up.
+_RESULT_WORDS = {
+    "PASS": "passed",
+    "FAIL": "failed",
+    "A": "met performance criterion A (acceptable)",
+    "B": "met performance criterion B (acceptable)",
+    "C": "performance criterion C - NOT acceptable, this is a failure",
+    "D": "performance criterion D - NOT acceptable, this is a failure",
+}
+
+
+def _result_words_note(names, rows):
+    """The lab's wording for the result values present, so none gets invented."""
+    low = [str(n or "").lower() for n in names]
+    idx = [i for i, n in enumerate(low)
+           if n in ("result", "overall_result", "met_performance_criteria",
+                    "required_performance_criteria")]
+    if not idx:
+        return {}
+    seen = []
+    for row in rows or ():
+        for i in idx:
+            if i >= len(row) or not isinstance(row[i], str):
+                continue
+            key = row[i].strip().upper()
+            if key in _RESULT_WORDS and key not in seen:
+                seen.append(key)
+    if not seen:
+        return {}
+    return {"result_words": (
+        "SAY IT IN THESE WORDS, and do not coin your own: " + "; ".join(
+            "%s = %s" % (k, _RESULT_WORDS[k]) for k in seen) +
+        ". There is no such thing as a 'compliant' test in this lab - that word "
+        "is in no column, no value and no screen, and using it leaves the reader "
+        "with a term they cannot look up.")}
+
+
 def _stale_dates_note(names, rows):
     """Every end date in the result already behind us - stated as a measured fact.
 
@@ -571,9 +657,10 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "overdue_check", "subject_check", "reason_words",
-                  "alias_check", "dead_columns", "repeated_columns",
-                  "scope_check", "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "whole_lab_check", "overdue_check", "subject_check",
+                  "reason_words", "result_words", "alias_check",
+                  "dead_columns", "repeated_columns", "scope_check",
+                  "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -709,6 +796,8 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
+            payload.update(_whole_lab_note(cleaned))
+            payload.update(_result_words_note(names, rows))
             payload.update(_stale_dates_note(names, rows))
             payload.update(_unnamed_subject_note(names))
             payload.update(_reason_label_note(rows))

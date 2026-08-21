@@ -620,8 +620,20 @@ _SCHEDULE_NOTE = (
     "stalled work as current activity. If the two disagree, say so: report the "
     "count and that their scheduled window has closed.")
 
+_DONE_NOTE = (
+    "FINISHED AND PASSED ARE DIFFERENT COLUMNS. `status` says how far the "
+    "PAPERWORK got - Approved (33 rows) or Draft (14) - and `result` says what "
+    "HAPPENED to the unit. A test that is complete is status='Approved'; a test "
+    "that passed is result IN ('PASS','A','B'). Asked which tests were completed "
+    "and which were not, an answer grouped them by result instead and reported "
+    "compliance, which is a different question: a Draft sheet can already hold a "
+    "PASS, and an Approved one can hold a D. And there is no third word for "
+    "either - `compliant` is not a column, not a value, and appears on no screen "
+    "in this app, so inventing it hands the reader a term with nowhere to look "
+    "it up.")
+
 SEMANTIC_NOTES = {
-    "datasheet": (_FAILED_NOTE,),
+    "datasheet": (_FAILED_NOTE, _DONE_NOTE),
     "datasheet_revision": (_FAILED_NOTE,),
     "iec_emc_requests": (_REJECTED_NOTE,),
     "planner_entries": (_SCHEDULE_NOTE,),
