@@ -204,6 +204,22 @@ check(g, 'a real list around an empty marker keeps both items',
 check(g, 'a real --- rule is still a rule',
   render('above\n\n---\n\nbelow').tags('hr').length, 1);
 
+// A heading is for a reader. The model labels columns with the identifier it
+// selected, and reason_code / what_it_means / products_affected arrived on
+// screen verbatim. NULL under Job Number arrived the same way.
+g = 'headings and blanks are for a reader';
+const raw = render('| reason_code | what_it_means | products_affected |\n|---|---|---|\n| CE_LIMIT_EXCEEDED | Conducted emission above the limit | 4 |');
+check(g, 'snake_case headings humanised', raw.tags('th').map(e => e.innerHTML),
+  ['Reason code', 'What it means', 'Products affected']);
+check(g, 'an UPPER_SNAKE value is NOT touched', raw.tags('td')[0].innerHTML,
+  'CE_LIMIT_EXCEEDED');
+const already = render('| Job Number | Test |\n|---|---|\n| TFS-EMC-2026-002 | CE |');
+check(g, 'a heading already written for a person is left alone',
+  already.tags('th').map(e => e.innerHTML), ['Job Number', 'Test']);
+const nulls = render('| Job Number | Test |\n|---|---|\n| NULL | CE |\n| None | ESD |');
+check(g, 'NULL and None render as a dash, not as data',
+  nulls.tags('td').map(e => e.innerHTML), ['—', 'CE', '—', 'ESD']);
+
 g = 'escaping and alignment';
 const xss = render('| Product | Note |\n|---|---|\n| <img src=x onerror=alert(1)> | <b>hi</b> |');
 const cells = xss.tags('td').map(e => e.innerHTML);

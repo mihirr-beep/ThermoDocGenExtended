@@ -680,12 +680,20 @@ def failure_modes(conn, limit=40):
     answers. The right primitive was cohort, and now every row points at it.
     """
     rows = _rows(conn, """
-        SELECT d.failure_reason_code AS reason_code,
-               COALESCE(e.label, d.failure_reason_code) AS what_it_means,
-               COUNT(*) AS failing_campaigns,
-               COUNT(DISTINCT r.product_name) AS products_affected,
+        -- The NAMES come first and the count is gone. products_affected used to
+        -- sit here beside products, and asked what had failed recently the model
+        -- printed "products_affected: 4" and dropped the four names - every
+        -- figure right and the only thing a reader wanted missing. A count that
+        -- can be shown INSTEAD of the names is what allowed that, so it is not
+        -- offered; anyone who wants it can count the list. Ordering still uses
+        -- it, which needs no column.
+        SELECT COALESCE(e.label, d.failure_reason_code) AS what_it_means,
                GROUP_CONCAT(DISTINCT r.product_name
                             ORDER BY r.product_name SEPARATOR '; ') AS products,
+               GROUP_CONCAT(DISTINCT d.test_code
+                            ORDER BY d.test_code SEPARATOR ', ') AS tests,
+               d.failure_reason_code AS reason_code,
+               COUNT(*) AS failing_campaigns,
                MIN(d.test_date) AS first_seen, MAX(d.test_date) AS last_seen
         FROM `datasheet` d
         JOIN planner_entries p ON p.id = d.planner_entry_id
@@ -693,7 +701,7 @@ def failure_modes(conn, limit=40):
         LEFT JOIN emc_reason_code e ON e.code = d.failure_reason_code
         WHERE d.failure_reason_code IS NOT NULL
         GROUP BY d.failure_reason_code, e.label
-        ORDER BY products_affected DESC, failing_campaigns DESC
+        ORDER BY COUNT(DISTINCT r.product_name) DESC, failing_campaigns DESC
         LIMIT %(lim)s
     """, lim=int(limit))
     # The caveat goes SECOND, right after the code, not last. Appended at the end
@@ -729,13 +737,25 @@ def rejection_modes(conn, limit=40):
     many datasheets.
     """
     return _rows(conn, """
-        SELECT COALESCE(h.reason_code, '(unclassified)') AS reason_code,
-               COALESCE(e.label, 'no code recorded - see the reviewer comment')
+        -- products and tests were absent entirely. Asked whether anything had
+        -- been sent back, the answer was five reason codes and two counts, and a
+        -- reader could not tell WHICH datasheet on WHICH product had been
+        -- returned - the one thing they were asking. The join to reach a product
+        -- from a status-history row is the declared spine, three hops, and it was
+        -- simply never made.
+        SELECT COALESCE(e.label, 'no code recorded - see the reviewer comment')
                    AS what_it_means,
+               GROUP_CONCAT(DISTINCT r.product_name
+                            ORDER BY r.product_name SEPARATOR '; ') AS products,
+               GROUP_CONCAT(DISTINCT d.test_code
+                            ORDER BY d.test_code SEPARATOR ', ') AS tests,
+               COALESCE(h.reason_code, '(unclassified)') AS reason_code,
                COUNT(*) AS rejection_events,
-               COUNT(DISTINCT h.datasheet_id) AS datasheets_affected,
                MIN(SUBSTRING(h.comment, 1, 90)) AS example_comment
         FROM datasheet_status_history h
+        JOIN `datasheet` d ON d.id = h.datasheet_id
+        JOIN planner_entries p ON p.id = d.planner_entry_id
+        JOIN iec_emc_requests r ON r.id = p.test_request_id
         LEFT JOIN emc_reason_code e ON e.code = h.reason_code
         WHERE h.to_status = 'Rejected'
         GROUP BY COALESCE(h.reason_code, '(unclassified)'), e.label

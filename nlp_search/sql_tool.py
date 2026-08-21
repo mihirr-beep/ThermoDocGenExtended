@@ -26,7 +26,7 @@ import pymysql
 from . import sql_guard
 from .ledger import BudgetExceeded
 from .schema_catalog import (ALLOWED_TABLES, DENIED_STAR_TABLES,
-                             COLUMNS as CATALOG_COLUMNS)
+                             COLUMNS as CATALOG_COLUMNS, REASON_FAMILIES)
 
 MAX_ROWS = 200            # hard cap on rows returned to the model
 MAX_CELL_CHARS = 400      # long text cells are truncated
@@ -292,6 +292,63 @@ def _alias_confusion_note(sql):
         "English phrase, and never with another column's name." % "; ".join(bad))}
 
 
+# Columns that identify WORK, and columns that identify the THING under test.
+# A row carrying the first and none of the second is unreadable: "DEMO-EMC-311 /
+# CRF / 2026-08-14" tells a reader which record it is and nothing about what was
+# on the bench. Asked what was being tested right now, the answer listed 23 rows
+# of job, TCO, test and date with no product on any of them - every fact correct
+# and the one thing a person wanted absent.
+_WORK_COLUMNS = ("tco_id", "job_number", "job_id", "test_code", "test_name",
+                 "planner_entry_id", "datasheet_id", "request_test_id")
+_THING_COLUMNS = ("product_name", "product", "eut_name", "eut_model",
+                  "eut_model_sku_number", "model_number", "eut_serial_number")
+
+
+def _unnamed_subject_note(names):
+    """A listing of work with nothing naming the product it was done on."""
+    low = [str(n or "").lower() for n in names]
+    if not any(w in low for w in _WORK_COLUMNS):
+        return {}
+    if any(t in low for t in _THING_COLUMNS):
+        return {}
+    return {"subject_check": (
+        "NO PRODUCT IN THIS RESULT. The rows identify the work (%s) but nothing "
+        "says what was being tested, and a reader cannot tell one job from "
+        "another by its TCO. Add the product: iec_emc_requests.product_name via "
+        "the declared join, or datasheet.product_name, which is already "
+        "denormalised and needs no join at all. A TCO is a filing reference, not "
+        "a name." % ", ".join(n for n in low if n in _WORK_COLUMNS))}
+
+
+def _reason_label_note(rows):
+    """Human wording for any coded reason in the result.
+
+    CE_LIMIT_EXCEEDED is what the database stores and not what anybody asked
+    for. The label lives in emc_reason_code and is carried in the catalog, so
+    the wording is attached here rather than left to a join the model has to
+    remember - and rather than left to a prompt line, which was already there
+    and did not survive.
+    """
+    seen = {}
+    for row in rows or ():
+        for cell in row:
+            if not isinstance(cell, str):
+                continue
+            code = cell.strip().upper()
+            if code in REASON_FAMILIES and code not in seen:
+                family, label = REASON_FAMILIES[code]
+                seen[code] = "%s = %s (%s)" % (
+                    code, label,
+                    "why the UNIT failed a standard" if family == "test_failure"
+                    else "why the RECORD was sent back in review")
+    if not seen:
+        return {}
+    return {"reason_words": (
+        "SAY THE REASON, NOT THE CODE. Write the wording and keep the code only "
+        "if the reader would use it to search: " + "; ".join(
+            seen[k] for k in sorted(seen)))}
+
+
 def _repeated_column_note(names, rows):
     """Columns holding the SAME value on every row. Context, not data.
 
@@ -418,8 +475,9 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "alias_check", "dead_columns", "repeated_columns",
-                  "scope_check", "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "subject_check", "reason_words", "alias_check",
+                  "dead_columns", "repeated_columns", "scope_check",
+                  "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -551,6 +609,8 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
+            payload.update(_unnamed_subject_note(names))
+            payload.update(_reason_label_note(rows))
             payload.update(_alias_confusion_note(cleaned))
             payload.update(_null_column_note(names, rows))
             payload.update(_repeated_column_note(names, rows))

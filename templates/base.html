@@ -1192,6 +1192,30 @@
             .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
             .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
         }
+        // A column heading is for a reader, not for a query. The model labels
+        // its columns with the identifier it selected - `reason_code`,
+        // `what_it_means`, `products_affected` - and those arrived on screen
+        // verbatim as table headings. Asking it not to has been tried; doing it
+        // here cannot be ignored.
+        //
+        // Only snake_case is touched. A heading the model already wrote for a
+        // person ("Job Number", "Test") is left exactly as it is, and so is
+        // anything carrying a capital, so RS_RI and CE_LIMIT_EXCEEDED survive.
+        var SNAKE_RE = /^[a-z0-9]+(?:_[a-z0-9]+)+$/;
+        function humanLabel(s){
+          var t = String(s == null ? '' : s).trim();
+          if(!SNAKE_RE.test(t)) return t;
+          t = t.replace(/_/g, ' ');
+          return t.charAt(0).toUpperCase() + t.slice(1);
+        }
+        // A database NULL is not a value a reader can do anything with, and
+        // "NULL" printed in a cell reads as data. Ten of twenty-three rows in
+        // one schedule table said NULL under Job Number.
+        var NULLISH = {'null':1, 'none':1, 'nan':1, 'undefined':1};
+        function cellText(s){
+          var t = String(s == null ? '' : s).trim();
+          return NULLISH[t.toLowerCase()] ? '—' : t;
+        }
         // ---- markdown pipe tables -------------------------------------------
         // Every rule here exists because a real answer hit it. A table that
         // fails to parse does not degrade politely: it lands on screen as a
@@ -1331,10 +1355,10 @@
               var label=head[m]||'';
               if(label){
                 var k=document.createElement('span'); k.className='labai-k';
-                k.innerHTML=inline(label); kv.appendChild(k);
+                k.innerHTML=inline(humanLabel(label)); kv.appendChild(k);
               }
               var val=document.createElement('span'); val.className='labai-v';
-              val.innerHTML=inline(v); kv.appendChild(val);
+              val.innerHTML=inline(cellText(v)); kv.appendChild(val);
               rec.appendChild(kv);
             }
             if(rec.children.length) box.appendChild(rec);
@@ -1354,7 +1378,7 @@
           var t=document.createElement('table'); t.className='labai-table';
           var thead=document.createElement('thead'), tr=document.createElement('tr');
           head.forEach(function(h){
-            var th=document.createElement('th'); th.innerHTML=inline(h);
+            var th=document.createElement('th'); th.innerHTML=inline(humanLabel(h));
             tr.appendChild(th);
           });
           thead.appendChild(tr); t.appendChild(thead);
@@ -1362,7 +1386,7 @@
           rows.forEach(function(cells){
             var r=document.createElement('tr');
             cells.forEach(function(c){
-              var td=document.createElement('td'); td.innerHTML=inline(c);
+              var td=document.createElement('td'); td.innerHTML=inline(cellText(c));
               if(/^-?[\d,]*\.?\d+%?$/.test(c)) td.className='num';
               r.appendChild(td);
             });

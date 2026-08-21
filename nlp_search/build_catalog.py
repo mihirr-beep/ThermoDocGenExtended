@@ -731,7 +731,14 @@ _JOIN_HINTS = """Core relationships (use these joins):
   datasheet_observation_legend, datasheet_equipment, datasheet_software,
   datasheet_modification, datasheet_status_history and datasheet_revision.
   `datasheet` already carries tco_id, job_number, product_name, engineer_name
-  and result denormalised, so most questions need NO join at all.
+  and result denormalised, so most questions ABOUT A DATASHEET need NO join at
+  all. But a question about the SCHEDULE is not one of those: 10 of the 23
+  in_progress planner entries have no datasheet row yet, so LEFT JOINing to
+  `datasheet` to read job_number or product_name off it prints NULL on every one
+  of them. Asked what was being tested right now, that is exactly what happened -
+  ten NULLs under Job Number, while iec_emc_requests held the value for all of
+  them. For a planner listing take those fields from iec_emc_requests via
+  p.test_request_id = r.id.
 - REQUESTED vs RECORDED is the distinction people get wrong: what a customer
   asked for is in iec_emc_request_test_*, what the lab measured is in
   datasheet_*. "What level was the ESD test run at" is the datasheet;
