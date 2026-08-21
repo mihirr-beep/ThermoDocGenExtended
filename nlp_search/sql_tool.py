@@ -315,6 +315,64 @@ _SCOPED_FILTER_RE = re.compile(
 _GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.I)
 
 
+# The two places a grid cell can land, and they are not interchangeable:
+# datasheet_measurement holds NUMBERS (with value_num, so they can be compared)
+# and datasheet_observation holds CRITERION LETTERS. An emission test has no
+# criterion letters and an immunity test has few numbers, so asking the wrong one
+# returns zero rows and looks exactly like "the lab never recorded this".
+_GRID_SIBLINGS = {
+    "datasheet_observation": ("datasheet_measurement",
+                             "numbers, with value_num for comparisons"),
+    "datasheet_measurement": ("datasheet_observation",
+                              "performance criterion letters"),
+}
+
+
+def _sibling_table_note(conn, sql, rows):
+    """An empty grid table when its SIBLING holds the rows.
+
+    Asked which CE frequency breaches the limit most often, the assistant
+    queried datasheet_observation, got nothing, and answered "there is no
+    per-frequency breach breakdown available in this dataset ... frequency-level
+    mapping is not recoverable". It was looking in the right shape of table and
+    the wrong one of the pair: datasheet_observation has 0 CE rows because CE has
+    no criterion letters, while datasheet_measurement has 288, fourteen of them
+    with qp_margin > 0 - which is to say fourteen actual breaches, sitting there.
+
+    An empty result is the one shape that must never be taken at face value, and
+    the catalog already explains the split. It was not enough, so the count comes
+    back with the empty result instead: 0 here, N there.
+    """
+    if rows:
+        return {}
+    low = str(sql or "").lower()
+    for named, (sibling, holds) in _GRID_SIBLINGS.items():
+        if named not in low or sibling in low:
+            continue
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT COUNT(*) FROM `%s`" % sibling)
+                total = cur.fetchone()[0]
+            finally:
+                cur.close()
+            conn.rollback()
+        except Exception:                     # noqa: BLE001
+            return {}
+        if not total:
+            return {}
+        return {"sibling_check": (
+            "`%s` IS EMPTY FOR THIS FILTER, AND THAT IS NOT AN ABSENCE. A grid "
+            "cell lands in one of two tables and they are not interchangeable. "
+            "You queried `%s`; the other one, `%s`, holds %s and has %d row(s) "
+            "in it. An emission test records no criterion letters and an "
+            "immunity test records few numbers, so the wrong half of the pair "
+            "returns nothing and reads exactly as though the lab never wrote it "
+            "down. Re-run against `%s` before reporting that the data does not "
+            "exist." % (named, named, sibling, holds, total, sibling))}
+    return {}
+
+
 def _whole_lab_note(sql):
     """One number covering every product, which is about to be read as one.
 
@@ -657,10 +715,10 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "whole_lab_check", "overdue_check", "subject_check",
-                  "reason_words", "result_words", "alias_check",
-                  "dead_columns", "repeated_columns", "scope_check",
-                  "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "sibling_check", "whole_lab_check", "overdue_check",
+                  "subject_check", "reason_words", "result_words",
+                  "alias_check", "dead_columns", "repeated_columns",
+                  "scope_check", "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -794,6 +852,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "all (COUNT(*) WHERE it IS NOT NULL): an entirely empty date column "
                 "means you cannot answer by period, which is not the same as the "
                 "events not having happened.")
+            payload.update(_sibling_table_note(conn, cleaned, rows))
         else:
             payload.update(_emptiness_note(rows))
             payload.update(_whole_lab_note(cleaned))
