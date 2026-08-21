@@ -608,10 +608,23 @@ _REJECTED_NOTE = (
     "this table's columns returned zero and produced the answer \"there are zero "
     "rejections logged in peer review\" when there were six.")
 
+_SCHEDULE_NOTE = (
+    "A STATUS IS NOT A DATE. in_progress / scheduled / datasheet_uploaded are "
+    "WORKFLOW states: an entry stays in_progress until a person advances it, "
+    "however long ago its dates passed. So a question about what is happening "
+    "NOW, TODAY or CURRENTLY must test start_date / end_date against CURDATE() "
+    "as well, and an entry whose end_date is behind us is OVERDUE, not active. "
+    "Asked what was being tested right now, a status-only filter returned 23 "
+    "in_progress rows whose scheduled end dates had EVERY ONE already passed - "
+    "the most recent by six days, the oldest by four months - and presented "
+    "stalled work as current activity. If the two disagree, say so: report the "
+    "count and that their scheduled window has closed.")
+
 SEMANTIC_NOTES = {
     "datasheet": (_FAILED_NOTE,),
     "datasheet_revision": (_FAILED_NOTE,),
     "iec_emc_requests": (_REJECTED_NOTE,),
+    "planner_entries": (_SCHEDULE_NOTE,),
 }
 
 _OBS_NOTE = ("the *_json columns hold this test's grids with their own labels "

@@ -1435,6 +1435,13 @@
               var hr=document.createElement('hr'); hr.className='labai-hr';
               bub.appendChild(hr); i++; continue;
             }
+            // A list marker with nothing after it. The model emits these when
+            // it opens a list and has nothing to put in it, and they reach the
+            // screen as stray dashes hanging under the answer - two of them
+            // appeared below a perfectly good schedule table. An empty item
+            // carries nothing, so it is dropped rather than rendered. Placed
+            // AFTER the hr test above, so a real --- rule still becomes one.
+            if(/^\s*(?:[-*+]|\d+[.)])\s*$/.test(lines[i])){ i++; continue; }
             if(listBlock()){ continue; }
             if(quote()){ continue; }
             // a markdown pipe table. pipeRun decides where it starts and ends

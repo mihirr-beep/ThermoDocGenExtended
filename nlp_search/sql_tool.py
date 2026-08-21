@@ -25,7 +25,8 @@ import pymysql
 
 from . import sql_guard
 from .ledger import BudgetExceeded
-from .schema_catalog import ALLOWED_TABLES, DENIED_STAR_TABLES
+from .schema_catalog import (ALLOWED_TABLES, DENIED_STAR_TABLES,
+                             COLUMNS as CATALOG_COLUMNS)
 
 MAX_ROWS = 200            # hard cap on rows returned to the model
 MAX_CELL_CHARS = 400      # long text cells are truncated
@@ -240,6 +241,57 @@ def _null_column_note(names, rows):
            "it" if len(dead) == 1 else "them"))}
 
 
+_ALIAS_RE = re.compile(
+    r"\b(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)\s+AS\s+`?([A-Za-z_][A-Za-z0-9_]*)`?",
+    re.I)
+
+
+def _alias_confusion_note(sql):
+    """An alias must not be the name of a DIFFERENT real column.
+
+    Asked what was being tested right now, the model wrote
+
+        SELECT p.tco_id AS job_number ... FROM planner_entries p
+
+    and the answer arrived with a column headed "Job Number" listing
+    IEC-EMC-006, IEC-EMC-004, IEC-EMC-900. Those are TCOs. The job number for
+    IEC-EMC-004 is TFS-EMC-2026-002, and planner_entries has no job_number
+    column at all - the name was borrowed from another table, where it means
+    something else. A reader who copies one of those values and searches for it
+    as a job number finds nothing, which is the same shape as a real absence.
+
+    The rule is general, not a patch for that one pair: an alias that names a
+    real column of some OTHER table, applied to a real column of a table in this
+    query, renames data to something it is not. Measured against all 224 queries
+    the assistant has run against this database, it fires once - on exactly the
+    query above.
+    """
+    tables = {m.group(1).lower() for m in _ALL_FROM_RE.finditer(sql or "")}
+    here = set()
+    for t in tables:
+        here.update(c.lower() for c in (CATALOG_COLUMNS.get(t) or ()))
+    if not here:
+        return {}
+    everywhere = set()
+    for cols in CATALOG_COLUMNS.values():
+        everywhere.update(c.lower() for c in cols)
+    bad = []
+    for m in _ALIAS_RE.finditer(sql or ""):
+        col, alias = m.group(1), m.group(2)
+        lc, la = col.lower(), alias.lower()
+        if lc == la or lc not in here or la in here or la not in everywhere:
+            continue
+        bad.append("`%s` renamed to `%s`" % (col, alias))
+    if not bad:
+        return {}
+    return {"alias_check": (
+        "MISLEADING COLUMN NAME - %s. That alias is the name of a real column "
+        "somewhere else in this schema, and it is NOT the column you selected, "
+        "so the heading will tell the reader the value is something it is not. "
+        "Label it with the name of the column it actually came from, or a plain "
+        "English phrase, and never with another column's name." % "; ".join(bad))}
+
+
 def _repeated_column_note(names, rows):
     """Columns holding the SAME value on every row. Context, not data.
 
@@ -366,8 +418,8 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "dead_columns", "repeated_columns", "scope_check",
-                  "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "alias_check", "dead_columns", "repeated_columns",
+                  "scope_check", "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -499,6 +551,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
+            payload.update(_alias_confusion_note(cleaned))
             payload.update(_null_column_note(names, rows))
             payload.update(_repeated_column_note(names, rows))
         out = json.dumps(_fold_guidance(payload), ensure_ascii=False, default=str)

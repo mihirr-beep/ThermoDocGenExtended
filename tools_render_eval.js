@@ -191,6 +191,19 @@ const dup = render('| Product | A | B | C | D | Note |\n|---|---|---|---|---|---
 check(g, 'a value repeating the title is kept', dup.find('labai-v').map(e => e.innerHTML),
   ['x', 'y', 'z', 'w', 'Smart2pure']);
 
+// Two empty bullets arrived under a schedule table and rendered as stray
+// dashes. An item with nothing in it is not an item.
+g = 'empty list markers';
+const trailing = render('Scope: 23 of 61 entries are in progress.\n\n- \n-');
+check(g, 'no stray dash survives',
+  trailing.find('labai-para').map(e => e.innerHTML).join('').indexOf('-') >= 0, false);
+check(g, 'no empty list element', trailing.tags('ul').length + trailing.tags('ol').length, 0);
+const realList = render('- first\n-\n- second');
+check(g, 'a real list around an empty marker keeps both items',
+  realList.tags('li').map(e => e.innerHTML), ['first', 'second']);
+check(g, 'a real --- rule is still a rule',
+  render('above\n\n---\n\nbelow').tags('hr').length, 1);
+
 g = 'escaping and alignment';
 const xss = render('| Product | Note |\n|---|---|\n| <img src=x onerror=alert(1)> | <b>hi</b> |');
 const cells = xss.tags('td').map(e => e.innerHTML);
