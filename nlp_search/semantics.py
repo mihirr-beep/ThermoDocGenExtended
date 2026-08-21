@@ -436,7 +436,12 @@ RELATIONSHIPS = [
         "join": "`datasheet` d JOIN planner_entries p ON d.planner_entry_id = p.id",
         "note": ("This is the only link between WHO WAS SCHEDULED and WHAT WAS "
                  "MEASURED. A planner entry with no datasheet row is work not "
-                 "yet recorded - LEFT JOIN and test d.id IS NULL to find it."),
+                 "yet recorded - LEFT JOIN and test d.id IS NULL to find it. "
+                 "NEVER join these two on tco_id: a job has up to twelve "
+                 "datasheets and several planner entries, so d.tco_id = p.tco_id "
+                 "is a cross product within the job - measured, it turns 47 "
+                 "datasheet rows into 262, one tco_id matching 77 times. It "
+                 "errors on nothing and every count taken from it is inflated."),
         "sql": ("SELECT COUNT(*) FROM `datasheet` d "
                 "JOIN planner_entries p ON d.planner_entry_id = p.id"),
     },
