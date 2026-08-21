@@ -52,6 +52,33 @@ _CAMPAIGN_JOIN = """
     JOIN iec_emc_requests r ON r.id = p.test_request_id
 """
 
+# The argument called `product` is whatever the USER called the thing under
+# test, and that is not always its product_name.
+#
+# Asked what was changed before a unit passed, the model passed
+# 'DEMO-50199311'. That is the model/SKU - it lives in
+# iec_emc_requests.model_number and datasheet.eut_model_sku_number, and NOT in
+# product_name, which holds 'DEMO Vantage Water Purifier'. Matching
+# product_name alone therefore found no campaigns at all, and the empty result
+# was reported as "No changes were recorded as introduced before the unit
+# passed": an absence the filter had manufactured, stated as a finding. The
+# change was a common-mode choke, and it was sitting in the modification record
+# the whole time.
+#
+# So every column that NAMES the same thing is matched. This is deliberately
+# generous - over-matching returns a superset the reader can see and argue with,
+# while under-matching returns a confident nothing.
+_PRODUCT_COLS_CAMPAIGN = ("r.product_name", "r.model_number",
+                          "d.eut_model_sku_number", "d.eut_name")
+# review_history selects from `datasheet` alone, with no request join, so only
+# the sheet's own identifier columns are in scope there.
+_PRODUCT_COLS_SHEET = ("d.product_name", "d.eut_model_sku_number", "d.eut_name")
+
+
+def _product_where(cols):
+    """An OR over every column that can carry the identifier the user typed."""
+    return "(" + " OR ".join("%s LIKE %%(prod)s" % c for c in cols) + ")"
+
 
 def _open(db_params):
     """A read-only, time-capped connection - the same one semantics uses.
@@ -85,8 +112,8 @@ def timeline(conn, product=None, tco=None, limit=60):
     """
     where, params = [], {"lim": int(limit)}
     if product:
-        where.append("r.product_name LIKE %(prod)s")
-        params["prod"] = "%" + product + "%"
+        where.append(_product_where(_PRODUCT_COLS_CAMPAIGN))
+        params["prod"] = "%" + str(product).strip() + "%"
     if tco:
         where.append("r.tco_id = %(tco)s")
         params["tco"] = tco
@@ -116,7 +143,13 @@ def timeline(conn, product=None, tco=None, limit=60):
                    AND h.reason_code IS NOT NULL) AS record_rejected_for,
                r.is_synthetic
     """ + _CAMPAIGN_JOIN + " WHERE " + " AND ".join(where) + """
-        ORDER BY d.test_date, r.tco_id LIMIT %(lim)s
+        -- test_date is NULL on a third of the datasheets and has only four
+        -- distinct values across the rest, so ordering on it alone put
+        -- undated campaigns first and tied same-day retests arbitrarily.
+        -- Falling back to when the record was submitted, then created,
+        -- keeps the sequence honest; tco_id is the final tiebreak.
+        ORDER BY COALESCE(d.test_date, DATE(d.submitted_at), DATE(d.created_at)),
+                 d.submitted_at, r.tco_id LIMIT %(lim)s
     """
     rows = _rows(conn, sql, **params)
     # Say what the letter MEANS, per row. Handed result='D' the model wrote "it
@@ -380,22 +413,89 @@ def metric_delta(conn, tco_before, tco_after, rev_before=None,
 # 4. modifications_before_pass - "which changes were introduced before it passed?"
 # ---------------------------------------------------------------------------
 
-def modifications_before_pass(conn, product):
+# mod_state '0' is the unmodified baseline: it is the string 'Initial state' on
+# every one of the 47 rows that carry it, one per datasheet. It is not a change,
+# and offering it as one credits the wrong thing - "Initial state was introduced
+# before the pass" reads as a finding and is noise.
+_BASELINE_MOD_STATE = "0"
+
+# Free text the engineer used to mean "nothing to declare". A deviation holding
+# one of these is not a description of a change.
+_NO_DEVIATION = frozenset(("", "na", "n/a", "none", "nil", "-", "--", "not applicable"))
+
+
+def modifications_before_pass(conn, product, test_code=None):
     """What was on the unit when it passed that was not there when it last failed.
 
     Set difference on the description, because the modification record is
     cumulative - a unit that passes still carries the ferrite fitted two
     campaigns ago, and listing every fitted part as "introduced before the pass"
     would credit the wrong change.
+
+    NOT test-specific: it works from the product's whole campaign timeline, so
+    it answers for CE, ESD, RE or any other sheet. Pass test_code to pin it to
+    one, which you should whenever the question came out of a conversation about
+    a particular test.
+
+    Four ways this answered confidently and wrongly before, all fixed here.
+    Asked "what did they change before it passed" it replied "No changes were
+    recorded", while the modification record held a common-mode choke:
+
+      identifier missed      the caller passed 'DEMO-50199311', the model/SKU,
+                             and product matching only looked at product_name.
+                             Fixed in _PRODUCT_COLS_CAMPAIGN, above.
+      empty read as absence  it returned {"passed": None, "introduced": []},
+                             which is indistinguishable from "nothing was
+                             changed". An identifier matching nothing now says
+                             so in `note`, and must not be reported as a finding.
+      the wrong test         it takes the FIRST pass in the timeline, so a
+                             question about CE was answered from a CRF sheet.
+                             test_code pins it.
+      nothing to subtract    with no earlier failure, EVERY modification landed
+                             in `introduced`. There is no "before the pass"
+                             without a failure before it; `note` says that
+                             instead of implying a fix.
+
+    The deviation text is returned alongside, because the modification TABLE is
+    not the only place a change is recorded: on the sheet that prompted all of
+    this, datasheet_modification said 'Initial state' while `deviation` read
+    "Class A limit line applied and the conducted emission remeasured after
+    fitting a common-mode choke". Structured silence is not evidence.
     """
+    code = str(test_code or "").strip().upper()
     camps = timeline(conn, product=product)
+    if code:
+        camps = [c for c in camps if (c.get("test_code") or "").upper() == code]
+
+    def _shell(note):
+        return {"product": product, "test_code": code or None, "passed": None,
+                "last_failure": None, "introduced": [], "already_present": [],
+                "note": note}
+
+    if not camps:
+        return _shell(
+            "NO CAMPAIGN MATCHED product=%r%s. This is NOT evidence that nothing "
+            "was changed - it means the identifier matched no rows. Do not report "
+            "an absence: say the product could not be found, and check the name."
+            % (product, " test_code=%r" % code if code else ""))
+
     passed = next((c for c in camps if outcome(c) == "pass"), None)
     if not passed:
-        return {"passed": None, "introduced": [], "already_present": []}
-    before = [c for c in camps
-              if c["test_date"] and passed["test_date"]
-              and c["test_date"] < passed["test_date"]
-              and outcome(c) == "fail"]
+        return _shell(
+            "%d campaign(s) matched but NONE of them passed%s, so there is no pass "
+            "to explain. Say the unit has not passed yet - not that nothing was "
+            "changed." % (len(camps), " for " + code if code else ""))
+
+    # POSITION in the timeline, not a date comparison. Comparing test_date
+    # required both dates to exist and the earlier one to be STRICTLY earlier,
+    # and neither holds here: test_date is NULL on 16 of 47 datasheets - both CE
+    # sheets in the case that exposed this - and the 31 that have one share four
+    # dates between them. A unit that fails and is retested the same day is the
+    # normal case, and it could never find its own prior failure. timeline is
+    # already ordered chronologically, so everything ahead of the pass in that
+    # list is before it.
+    at = next((i for i, c in enumerate(camps) if c is passed), 0)
+    before = [c for c in camps[:at] if outcome(c) == "fail"]
     last_fail = before[-1] if before else None
 
     def mods(tco):
@@ -410,18 +510,48 @@ def modifications_before_pass(conn, product):
             JOIN `datasheet` d ON d.id = mo.datasheet_id
             JOIN planner_entries p ON p.id = d.planner_entry_id
             JOIN iec_emc_requests r ON r.id = p.test_request_id
-            WHERE r.tco_id = %(tco)s
+            WHERE r.tco_id = %(tco)s AND COALESCE(mo.mod_state, '') <> %(base)s
             ORDER BY mo.mod_state, mo.description
-        """, tco=tco)
+        """, tco=tco, base=_BASELINE_MOD_STATE)
+
+    def deviation(tco):
+        for r in _rows(conn, """
+            SELECT DISTINCT d.deviation AS dev
+            FROM `datasheet` d
+            JOIN planner_entries p ON p.id = d.planner_entry_id
+            JOIN iec_emc_requests r ON r.id = p.test_request_id
+            WHERE r.tco_id = %(tco)s AND d.deviation IS NOT NULL
+        """, tco=tco):
+            text = str(r.get("dev") or "").strip()
+            if text.lower() not in _NO_DEVIATION:
+                return text
+        return None
 
     at_pass = mods(passed["tco_id"])
-    at_fail = {m["description"] for m in mods(last_fail["tco_id"])} if last_fail else set()
-    return {
-        "passed": passed,
-        "last_failure": last_fail,
-        "introduced": [m for m in at_pass if m["description"] not in at_fail],
-        "already_present": [m for m in at_pass if m["description"] in at_fail],
-    }
+    out = {"product": product, "test_code": code or None,
+           "passed": passed, "last_failure": last_fail,
+           "deviation_at_pass": deviation(passed["tco_id"]),
+           "deviation_at_failure": deviation(last_fail["tco_id"]) if last_fail else None}
+
+    if last_fail is None:
+        out.update({"introduced": [], "already_present": at_pass,
+                    "note": ("no FAILED campaign precedes this pass%s, so nothing can "
+                             "be called introduced-before-the-pass. What is listed in "
+                             "already_present is simply what the unit carries; it is "
+                             "not a fix for a failure."
+                             % (" for " + code if code else ""))})
+        return out
+
+    at_fail = {m["description"] for m in mods(last_fail["tco_id"])}
+    out["introduced"] = [m for m in at_pass if m["description"] not in at_fail]
+    out["already_present"] = [m for m in at_pass if m["description"] in at_fail]
+    if not out["introduced"]:
+        out["note"] = ("the modification record shows nothing fitted between the "
+                       "failure and the pass. Check deviation_at_failure before "
+                       "concluding nothing changed - the engineer's own words are "
+                       "kept there, and the modification table can be left at its "
+                       "baseline while the deviation describes the change.")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -468,8 +598,8 @@ def resolve_reason_codes(conn, reason_code=None, product=None):
             FROM `datasheet` d
             JOIN planner_entries p ON p.id = d.planner_entry_id
             JOIN iec_emc_requests r ON r.id = p.test_request_id
-            WHERE r.product_name LIKE %(prod)s AND d.failure_reason_code IS NOT NULL
-        """, prod="%" + product + "%")
+            WHERE %s AND d.failure_reason_code IS NOT NULL
+        """ % _product_where(_PRODUCT_COLS_CAMPAIGN), prod="%" + str(product).strip() + "%")
         if rows:
             return [r["c"] for r in rows]
     rows = _rows(conn, "SELECT DISTINCT failure_reason_code AS c FROM `datasheet` "
@@ -891,7 +1021,7 @@ def review_history(conn, product=None, tco=None, limit=40):
     """
     where, args = [], {"lim": int(limit)}
     if product:
-        where.append("d.product_name LIKE %(prod)s")
+        where.append(_product_where(_PRODUCT_COLS_SHEET))
         args["prod"] = "%" + str(product).strip() + "%"
     if tco:
         where.append("d.tco_id = %(tco)s")

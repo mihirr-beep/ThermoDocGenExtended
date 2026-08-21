@@ -372,9 +372,21 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
                                                         readings that breached
           metric_delta               tco_before=, tco_after=   per-frequency
                                                         change between two campaigns
-          modifications_before_pass  product=           what was fitted before
-                                                        the first pass that was
-                                                        not there at the last failure
+          modifications_before_pass  product=,          what was fitted before
+                                     test_code=         the first pass that was
+                                                        not there at the last failure.
+                                                        Works for ANY test, not just
+                                                        CE. PASS test_code whenever
+                                                        the question came out of talk
+                                                        about one test - without it
+                                                        the first pass of ANY test is
+                                                        used, and a CE question gets
+                                                        answered off a CRF sheet.
+                                                        product= accepts the name OR
+                                                        the model/SKU. If it answers
+                                                        with a `note`, READ IT: it
+                                                        distinguishes "matched nothing"
+                                                        from "nothing was changed"
           cohort                     product= OR        other products that failed
                                      reason_code=       the SAME WAY as the one
                                                         you name. Pass the PRODUCT
