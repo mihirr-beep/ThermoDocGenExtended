@@ -60,11 +60,26 @@ any table not listed, so a table missing from the catalog cannot be queried at a
 python tools_routing_eval.py     # FREE, deterministic, ~1s. Must stay 32/32.
 python tools_insight_probe.py    # FREE. Calls all 10 insight primitives.
 node   tools_render_eval.js      # FREE. Does the answer SURVIVE rendering.
+python tools_answer_audit.py     # FREE. Re-reads every answer ALREADY given.
 python tools_join_eval.py        # spends tokens; answers vs SQL truth
 python tools_user_eval.py        # spends tokens; questions in the APP's words
 ```
 
-Run the three free ones after any change to `nlp_search` — and run the render one
+`tools_answer_audit.py` is the one that does not need a person. Every defect in
+this file was found because somebody read an answer and felt something was off —
+which only catches a wrong answer when somebody happens to be looking at it. But
+`nlp_search_audit` already stores the question, answer, route and SQL of every
+turn ever run, so the inspection can be replayed over the whole history at once.
+It cannot tell you an answer is wrong; it tells you an answer has the SHAPE of
+answers that turned out to be wrong, and each check carries the hit rate it was
+calibrated at. A check firing on half the turns has stopped being a signal —
+`schema_leak` matched `equipment` and `users` on 15 of 30 before it was
+restricted to identifiers carrying an underscore.
+
+Run it after a testing session. It is the only suite whose corpus grows on its
+own, because the questions in it are the ones somebody actually asked.
+
+Run the four free ones after any change to `nlp_search` — and run the render one
 after any change to `templates/base.html` too, which is where the answer stops
 being text and becomes something a person reads.
 
