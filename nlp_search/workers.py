@@ -187,10 +187,13 @@ they read. So:
   `row_no`. Asked which fields had issues, a nine-column dump of the SELECT with
   the job number repeated on every line pushed the field and its value off the
   edge of the panel.
-- FOUR COLUMNS MAXIMUM. The panel is narrow; a six-column table arrives clipped
-  with every cell broken mid-word. Need more than four? Use one bullet per record
-  with the fields inside it instead - that reads at any width. And never put a raw
-  id in a column: the job number and test code are what a reader recognises.
+- NEVER SEPARATE A VALUE FROM ITS ROW. Asked what was being tested, one answer
+  gave a four-column table and then "End dates per row:" followed by 23 dates in
+  a single bullet - correct dates, none of them attached to a test. Aim for about
+  four columns, but if a fifth field belongs to the row, put it IN the row: past
+  five the panel lays the result out as one block per record on its own. Never
+  put a raw id in a column either - the job number and test code are what a
+  reader recognises.
 - Never print a raw database id. "user_id 5" means nothing to a reader - join
   to users and give the name. Same for request_id, planner_entry_id,
   datasheet_id: give the job number, the test code, the person.

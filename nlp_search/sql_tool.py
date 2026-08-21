@@ -304,6 +304,102 @@ _THING_COLUMNS = ("product_name", "product", "eut_name", "eut_model",
                   "eut_model_sku_number", "model_number", "eut_serial_number")
 
 
+_END_DATE_RE = re.compile(r"(end_date|due_date|deadline|planned_end)", re.I)
+
+
+def _stale_dates_note(names, rows):
+    """Every end date in the result already behind us - stated as a measured fact.
+
+    A note in the catalog told the model that in_progress is a workflow state and
+    not a statement about time. It was in the prompt for the query that asked
+    what was being tested right now, and the answer still presented 23 stalled
+    entries as current activity. Advice did not survive; a counted fact in the
+    evidence has a better chance, and it is checkable.
+    """
+    import datetime
+    idx = [i for i, n in enumerate(names) if _END_DATE_RE.search(str(n or ""))]
+    if not idx or not rows:
+        return {}
+    today = datetime.date.today()
+    seen = past = 0
+    latest = None
+    for row in rows:
+        for i in idx:
+            if i >= len(row):
+                continue
+            v = row[i]
+            if isinstance(v, datetime.datetime):
+                v = v.date()
+            elif isinstance(v, str):
+                try:
+                    v = datetime.date(*[int(x) for x in v[:10].split("-")])
+                except Exception:      # noqa: BLE001
+                    continue
+            if not isinstance(v, datetime.date):
+                continue
+            seen += 1
+            if v < today:
+                past += 1
+                if latest is None or v > latest:
+                    latest = v
+    if not seen or past != seen:
+        return {}
+    return {"overdue_check": (
+        "ALL %d of these end dates are already behind us - the most recent was "
+        "%s, %d days ago. Whatever their status column says, this work is "
+        "OVERDUE, not in progress right now. Say so: a reader who asked what is "
+        "happening today must not be handed stalled work as current activity."
+        % (seen, latest, (today - latest).days))}
+
+
+def _name_the_subject(conn, columns, rows):
+    """Add the product to a result that identifies work but names no product.
+
+    Twice the model was TOLD to name the product and did not. Asked what was
+    being tested right now it returned test / job / tester / start date, which
+    is every fact about the work and nothing about the thing on the bench - a
+    reader cannot tell one job from another by its TCO. A note in the guidance
+    did not change it, and neither did a line in the prompt.
+
+    So the product is put into the EVIDENCE instead of into the advice. A column
+    that is already in the rows cannot be left out of the answer for want of
+    remembering a join, and the ledger sees it too, so an answer that does name
+    the product can be verified against it.
+
+    One extra lookup, only when the result has a TCO and no product, only up to
+    200 distinct jobs. It adds a column; it never changes one.
+    """
+    low = [str(c or "").lower() for c in columns]
+    if any(t in low for t in _THING_COLUMNS):
+        return columns, rows                      # already named
+    key = next((i for i, c in enumerate(low) if c in ("tco_id", "job_id")), None)
+    if key is None or not rows:
+        return columns, rows
+    ids = sorted({str(r[key]) for r in rows
+                  if key < len(r) and r[key] not in (None, "")})
+    if not ids or len(ids) > 200:
+        return columns, rows
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT tco_id, product_name FROM iec_emc_requests "
+                "WHERE tco_id IN (%s)" % ",".join(["%s"] * len(ids)), ids)
+            found = {str(a): b for a, b in cur.fetchall() if b}
+        finally:
+            cur.close()
+        conn.rollback()
+    except Exception:                             # noqa: BLE001
+        return columns, rows                      # enrichment is never fatal
+    if not found:
+        return columns, rows
+    out = []
+    for r in rows:
+        val = found.get(str(r[key]), "") if key < len(r) else ""
+        out.append(list(r) + [val])
+    return list(columns) + ["product_name"], out
+
+
 def _unnamed_subject_note(names):
     """A listing of work with nothing naming the product it was done on."""
     low = [str(n or "").lower() for n in names]
@@ -475,9 +571,9 @@ def _as_objects(names, rows):
 # into one list so the model can tell evidence from instruction at a glance -
 # everything under "rows" came from the database, everything under "guidance"
 # came from us.
-_GUIDANCE_KEYS = ("note", "subject_check", "reason_words", "alias_check",
-                  "dead_columns", "repeated_columns", "scope_check",
-                  "join_check", "nulls")
+_GUIDANCE_KEYS = ("note", "overdue_check", "subject_check", "reason_words",
+                  "alias_check", "dead_columns", "repeated_columns",
+                  "scope_check", "join_check", "nulls")
 
 
 def _fold_guidance(payload):
@@ -548,6 +644,10 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
         truncated = forced_truncated or len(fetched) > MAX_ROWS
         rows = [[_jsonable(v) for v in row] for row in fetched[:MAX_ROWS]]
 
+        # Before the ledger, so the product counts as evidence and an answer
+        # naming it can be verified against the rows.
+        columns, rows = _name_the_subject(conn, columns, rows)
+
         # Into the ledger BEFORE any size-trimming below: the answer is checked
         # against what the database returned, not against the abridged copy the
         # model was shown.
@@ -609,6 +709,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
                 "events not having happened.")
         else:
             payload.update(_emptiness_note(rows))
+            payload.update(_stale_dates_note(names, rows))
             payload.update(_unnamed_subject_note(names))
             payload.update(_reason_label_note(rows))
             payload.update(_alias_confusion_note(cleaned))

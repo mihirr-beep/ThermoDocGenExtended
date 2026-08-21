@@ -374,11 +374,16 @@ And one deterministic lookup you can call yourself:
        reader wanted pushed off the right-hand edge.
      * Give the headers the words a person uses. `col_key` is not a heading;
        "Point" or "Field" is. Never `row_no` when a row label exists.
-     * FOUR COLUMNS IS THE LIMIT. The panel is not wide, and a six-column table
-       arrives with its first column clipped and every cell broken mid-word -
-       "CE_LIMIT_EXC / EEDED". If you genuinely need more than four, do not use
-       a table: give one bullet per record with the fields inside it, which
-       reads at any width.
+     * NEVER SEPARATE A VALUE FROM ITS ROW. This is the one absolute rule about
+       tables. Told "four columns maximum", a listing of 23 scheduled tests came
+       back as a four-column table followed by "End dates per row:" and 23 dates
+       in one comma-separated bullet - every date correct and not one of them
+       attached to a test. A wide table is a layout problem; an amputated column
+       is an unanswerable answer.
+     * Keep it to about four columns where you can, but if a fifth field belongs
+       to the row, PUT IT IN THE ROW. Past five columns the panel lays the whole
+       thing out as one block per record by itself - you do not have to do
+       anything, and you must not drop a field to stay under a count.
 
            - **DEMO-JOB-311** — DEMO Vantage Water Purifier
              CE, FAIL, CE_LIMIT_EXCEEDED. Reviewer: Class A limit line applied
