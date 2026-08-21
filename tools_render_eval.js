@@ -220,6 +220,14 @@ const nulls = render('| Job Number | Test |\n|---|---|\n| NULL | CE |\n| None | 
 check(g, 'NULL and None render as a dash, not as data',
   nulls.tags('td').map(e => e.innerHTML), ['—', 'CE', '—', 'ESD']);
 
+// cellText only ever ran on table cells, so "Product type: NULL" reached a
+// bullet list untouched. A NULL mid-sentence is still ordinary prose.
+const bulletNull = render('- Product type: NULL\n- Class type: None\n- Model: DEMO-50199315\n- Note: NULL values are excluded');
+check(g, 'a bullet whose whole value is NULL is dashed',
+  bulletNull.tags('li').map(e => e.innerHTML),
+  ['Product type: —', 'Class type: —',
+   'Model: DEMO-50199315', 'Note: NULL values are excluded']);
+
 g = 'escaping and alignment';
 const xss = render('| Product | Note |\n|---|---|\n| <img src=x onerror=alert(1)> | <b>hi</b> |');
 const cells = xss.tags('td').map(e => e.innerHTML);

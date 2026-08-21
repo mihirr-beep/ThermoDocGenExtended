@@ -1436,7 +1436,12 @@
             var el=document.createElement(ordered ? 'ol' : 'ul');
             el.className='labai-list';
             items.forEach(function(it){
-              var li=document.createElement('li'); li.innerHTML=inline(it);
+              // "Product type: NULL" reached a bullet list untouched, because
+              // cellText only ever ran on table cells. A label whose whole value
+              // is a database NULL is the same noise in a list as in a row.
+              var li=document.createElement('li');
+              li.innerHTML=inline(String(it).replace(
+                /(:\s*)(NULL|None|NaN|undefined)\s*$/i, '$1—'));
               el.appendChild(li);
             });
             bub.appendChild(el); return true;
