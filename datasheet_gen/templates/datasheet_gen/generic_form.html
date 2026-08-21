@@ -317,6 +317,13 @@
               </div>
 
             {% elif it.layout == 'esd_obs' %}
+              {# The Test Level columns follow this grid's discharge field in the Test
+                 Specification, cumulatively: +-4kV shows +2 -2 +4 -4 and no more. Every
+                 column on the ladder is rendered so a level chosen later has a cell to put
+                 its observation in; the ones above the selection are hidden here, and
+                 esdSyncLevels() keeps that in step as the selection changes. #}
+              {% set _lad = esd_ladder or [{'label':'+2','kv':2},{'label':'-2','kv':2},{'label':'+4','kv':4},{'label':'-4','kv':4},{'label':'+8','kv':8},{'label':'-8','kv':8}] %}
+              {% set _vis = it.levels or ['+2','-2','+4','-4','+8','-8'] %}
               <div class="md:col-span-2">
                 <div class="text-sm font-semibold text-gray-700 mb-1">{{ it.label }}:</div>
                 <div class="overflow-x-auto">
@@ -325,11 +332,11 @@
                     <tr>
                       <th rowspan="2" class="p-1 border border-gray-300">S. No.</th>
                       <th rowspan="2" class="p-1 border border-gray-300">Name of test points</th>
-                      <th colspan="6" class="p-1 border border-gray-300">Test Level (kV)</th>
+                      <th colspan="{{ _vis|length }}" class="p-1 border border-gray-300 js-esd-banner">Test Level (kV)</th>
                       {% if it.allow_add_rows %}<th rowspan="2" class="p-1 w-6"></th>{% endif %}
                     </tr>
                     <tr>
-                      <th class="p-1 border border-gray-300">+2</th><th class="p-1 border border-gray-300">-2</th><th class="p-1 border border-gray-300">+4</th><th class="p-1 border border-gray-300">-4</th><th class="p-1 border border-gray-300">+8</th><th class="p-1 border border-gray-300">-8</th>
+                      {% for _c in _lad %}<th class="p-1 border border-gray-300 js-esd-lvl" data-kv="{{ _c.kv }}"{% if _c.label not in _vis %} style="display:none"{% endif %}>{{ _c.label }}</th>{% endfor %}
                     </tr>
                   </thead>
                   <tbody data-esd-group="{{ it.key_prefix }}"
@@ -340,8 +347,8 @@
                     <tr>
                       <td class="p-1 border border-gray-300 js-esd-sno">{{ row.sno }}</td>
                       <td class="p-1 border border-gray-300">{% if it.name_editable or not row.name %}<input name="{{ row.key }}_name" value="{{ prefill.get(row.key ~ '_name', '') }}" class="w-full px-1 py-1 border rounded">{% else %}{{ row.name }}{% endif %}</td>
-                      {% for n in [1, 2, 3, 4, 5, 6] %}
-                      <td class="p-1 border border-gray-300">
+                      {% for _c in _lad %}{% set n = loop.index %}
+                      <td class="p-1 border border-gray-300 js-esd-lvl" data-kv="{{ _c.kv }}"{% if _c.label not in _vis %} style="display:none"{% endif %}>
                         <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded js-obs-code">
                           <option value=""></option>
                           {% for o in ['A', 'B', 'C', 'D', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'NA'] %}<option {{ 'selected' if prefill.get(row.key ~ '_c' ~ n, '') == o }}>{{ o }}</option>{% endfor %}
@@ -1497,6 +1504,69 @@
   // inherits the option list (no second copy of the codes to keep in step). An added row
   // always gets an editable name and a cross to remove it again; the shipped rows have
   // neither - their names come from the standard and they must stay.
+  /* ---- ESD Test Level columns follow the Test Specification ------------------
+   * Discharge levels are cumulative: choosing +-4kV for a discharge means +-2kV was
+   * applied too, so that grid shows +2 -2 +4 -4 and nothing above. The whole ladder is in
+   * the DOM (so a level chosen later has a cell to go in) and the columns above the
+   * selection are hidden. Mirrors esd_group_levels() / _esd_selected_kv() on the server,
+   * which is what the document is built from.
+   */
+  var ESD_LEVEL_FIELDS = {{ esd_level_fields|tojson if esd_level_fields else '{}' }};
+  var ESD_LADDER = {{ esd_ladder|tojson if esd_ladder else '[]' }};
+  var ESD_DEFAULT_TOP_KV = 8;
+
+  function esdTopKv(value) {
+    var steps = [], seen = {};
+    ESD_LADDER.forEach(function (c) { if (!seen[c.kv]) { seen[c.kv] = 1; steps.push(c.kv); } });
+    var top = null;
+    String(value || '').replace(/\d+(?:\.\d+)?/g, function (m) {
+      var kv = parseFloat(m);
+      steps.forEach(function (step) { if (step <= kv && (top === null || step > top)) top = step; });
+      return m;
+    });
+    return top;
+  }
+
+  function esdSyncLevels() {
+    Object.keys(ESD_LEVEL_FIELDS).forEach(function (grp) {
+      var body = document.querySelector('tbody[data-esd-group="' + grp + '"]');
+      if (!body) return;
+      var top = null;
+      ESD_LEVEL_FIELDS[grp].forEach(function (name) {
+        var el = document.querySelector('[name="' + name + '"]');
+        var kv = esdTopKv(el ? el.value : '');
+        if (kv !== null && (top === null || kv > top)) top = kv;
+      });
+      if (top === null) top = ESD_DEFAULT_TOP_KV;   // nothing chosen: leave the grid as it ships
+      var table = body.closest('table');
+      if (!table) return;
+      var shown = 0;
+      table.querySelectorAll('.js-esd-lvl').forEach(function (cell) {
+        var kv = parseFloat(cell.getAttribute('data-kv'));
+        var on = !(kv > top);
+        cell.style.display = on ? '' : 'none';
+        if (on && cell.tagName === 'TH') shown++;
+      });
+      var banner = table.querySelector('.js-esd-banner');
+      if (banner && shown) banner.setAttribute('colspan', String(shown));
+    });
+    // the worst code shown in Met Performance Criteria must ignore a hidden column
+    if (typeof syncMetFromObservations === 'function') syncMetFromObservations();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!Object.keys(ESD_LEVEL_FIELDS).length) return;
+    var watched = [];
+    Object.keys(ESD_LEVEL_FIELDS).forEach(function (grp) {
+      ESD_LEVEL_FIELDS[grp].forEach(function (n) { if (watched.indexOf(n) < 0) watched.push(n); });
+    });
+    watched.forEach(function (name) {
+      var el = document.querySelector('[name="' + name + '"]');
+      if (el) el.addEventListener('change', esdSyncLevels);
+    });
+    esdSyncLevels();
+  });
+
   function __esdReindexObsRows(body) {
     var group = body.getAttribute('data-esd-group');
     // The row count is POSTED. A draft save merges rather than replaces, so a removed
@@ -1754,6 +1824,10 @@
     if (!__MET_OBS_SELECTOR) return '';
     var worst = -1;
     document.querySelectorAll(__MET_OBS_SELECTOR).forEach(function (sel) {
+      // A Test Level column the specification does not include is hidden, and the document
+      // does not read it either - so it cannot decide Met Performance Criteria.
+      var cell = sel.closest ? sel.closest('td') : null;
+      if (cell && cell.style && cell.style.display === 'none') return;
       var i = __MET_PERF_ORDER.indexOf((sel.value || '').trim().toUpperCase().charAt(0));
       if (i > worst) worst = i;
     });

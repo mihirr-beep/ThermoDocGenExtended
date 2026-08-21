@@ -267,18 +267,31 @@ def _crf_spec_checkboxes(form_data):
     out["eut_configuration_col_1"] = human_checkbox(_g("eut_configuration"), ["Tabletop"])
     out["eut_configuration_col_2"] = human_checkbox(_g("eut_configuration"), ["Floor standing"])
 
-    # Test Level: two boxes per line, so the cell reads
+    # Test Level: two boxes per line, so each cell reads
     #   [ ] 1 Vrms [x] 3 Vrms
     #   [ ] 10 Vrms [ ] Custom___
+    # The two cells are the Power Line and Signal Line columns, exactly as the Test Port
+    # row above them (Power Line | Signal Line) and the Coupling Method row (CDN | EM
+    # Clamp) read. So a cell only carries the tick when ITS port was tested: the level
+    # used to be stamped into both, which said a Signal Line level had been applied on a
+    # Power-Line-only test. Both cells keep all four options so the row still reads as a
+    # pair of option groups; the untested port simply has nothing ticked.
     chosen = _g("test_level")
-    rt = RunsXml()
-    for i, (value, label) in enumerate(_CRF_TEST_LEVELS):
-        rt.add(_box_run(chosen == value))
-        rt.add(_label_run(" " + label + ("    " if i % 2 == 0 else "")))
-        if i == 1:
-            rt.add('<w:r><w:br/></w:r>')
-    out["test_level_col_1"] = rt
-    out["test_level_col_2"] = RunsXml(str(rt))
+    ports = _crf_ports(form_data)
+
+    def _level_cell(ticked):
+        rt = RunsXml()
+        for i, (value, label) in enumerate(_CRF_TEST_LEVELS):
+            rt.add(_box_run(bool(ticked) and chosen == value))
+            rt.add(_label_run(" " + label + ("    " if i % 2 == 0 else "")))
+            if i == 1:
+                rt.add('<w:r><w:br/></w:r>')
+        return rt
+
+    # No port chosen yet (a draft, or a preview before the spec is filled in) keeps the
+    # level visible in the first cell rather than dropping it from the document.
+    out["test_level_col_1"] = _level_cell("Power Line" in ports or not ports)
+    out["test_level_col_2"] = _level_cell("Signal Line" in ports)
     return out
 
 
@@ -614,7 +627,72 @@ _ESD_OBS_GROUPS = {
     "dir": (3, ()),
     "air": (3, ()),
 }
-_ESD_ROW_KEY_RE = re.compile(r"^(ind|dir|air)_r(\d+)_(?:name|c[1-6])$")
+_ESD_ROW_KEY_RE = re.compile(r"^(ind|dir|air)_r(\d+)_(?:name|c[1-8])$")
+
+#: The ESD discharge ladder, in the order the observation grids print it: each level is a
+#: pair of columns, +kV then -kV. Air discharge is the only field that reaches 15 kV.
+_ESD_LEVEL_KV = (2, 4, 8, 15)
+
+#: Which Test Specification field(s) decide a grid's Test Level columns. The Indirect grid
+#: carries both the HCP and the VCP test points, so it follows whichever went higher.
+_ESD_GROUP_FIELDS = {"ind": ("indirect_hcp", "indirect_vcp"),
+                     "dir": ("direct_contact_discharge",),
+                     "air": ("air_discharge",)}
+
+#: What a grid shows before any level has been chosen - +-2 / +-4 / +-8, as the template
+#: ships it. A half-filled draft is never silently narrowed.
+_ESD_DEFAULT_TOP_KV = 8
+
+#: Every column the form renders, so a level chosen later has a cell to go in. The document
+#: only ever prints the ones esd_group_levels() returns.
+ESD_LEVEL_COLUMNS = tuple("%s%g" % (sign, kv) for kv in _ESD_LEVEL_KV for sign in ("+", "-"))
+
+
+def _esd_selected_kv(value):
+    """The highest kV named in a discharge field, or None for 'NA' / 'Custom' / blank.
+
+    Reads what the field can actually hold: a single '±4kV', a multi-select '±2kV, ±8kV',
+    or a Custom value with a number in it. A Custom level that is not on the ladder counts
+    as the highest ladder level at or below it, so '6kV' still prints +-2 and +-4.
+    """
+    top = None
+    for found in re.findall(r"(\d+(?:\.\d+)?)", _s(value)):
+        try:
+            kv = float(found)
+        except ValueError:
+            continue
+        for step in _ESD_LEVEL_KV:
+            if step <= kv and (top is None or step > top):
+                top = step
+    return top
+
+
+def esd_group_levels(form_data, group):
+    """The Test Level (kV) columns the ESD grid `group` carries, e.g. ['+2','-2','+4','-4']
+    when +-4kV is the highest level selected for it.
+
+    Cumulative, exactly as the Test Specification checkboxes already tick: the EUT is
+    stressed UP THROUGH the chosen level, so selecting +-4kV means +-2kV was applied too and
+    both pairs of columns print, while +-8kV and above do not. Nothing selected leaves the
+    grid as the template ships it.
+    """
+    top = None
+    for key in _ESD_GROUP_FIELDS.get(group, ()):
+        kv = _esd_selected_kv((form_data or {}).get(key))
+        if kv is not None:
+            top = kv if top is None else max(top, kv)
+    if top is None:
+        top = _ESD_DEFAULT_TOP_KV
+    out = []
+    for kv in _ESD_LEVEL_KV:
+        if kv <= top:
+            out.extend(["+%g" % kv, "-%g" % kv])
+    return out or ["+2", "-2"]
+
+
+def esd_group_columns(form_data, group):
+    """How many cells of a row the grid `group` prints: two per selected level."""
+    return len(esd_group_levels(form_data, group))
 
 
 def esd_row_count(form_data, group):
@@ -641,8 +719,12 @@ def esd_row_count(form_data, group):
 
 
 def _esd_row_has_content(fd, group, i):
+    # Only the columns the grid prints count. The form keeps a cell for every level on the
+    # ladder so a level chosen later has somewhere to go, so a value left above the selected
+    # level must not make an added row look used.
+    cols = esd_group_columns(fd, group)
     return bool(_s(fd.get("%s_r%d_name" % (group, i))) or
-                any(_s(fd.get("%s_r%d_c%d" % (group, i, c))) for c in range(1, 7)))
+                any(_s(fd.get("%s_r%d_c%d" % (group, i, c))) for c in range(1, cols + 1)))
 
 
 def _esd_filled_groups(form_data):
@@ -655,9 +737,10 @@ def _esd_filled_groups(form_data):
     fd = form_data or {}
     out = set()
     for grp in _ESD_OBS_GROUPS:
+        _cols = esd_group_columns(fd, grp)
         for i in range(1, esd_row_count(fd, grp) + 1):
             # the Indirect rows carry their names from the standard, so only cells count there
-            if any(_s(fd.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)) or \
+            if any(_s(fd.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, _cols + 1)) or \
                (grp != "ind" and _s(fd.get("%s_r%d_name" % (grp, i)))):
                 out.add(grp)
                 break
@@ -690,22 +773,31 @@ def _esd_build_context(form_data):
     # is dropped - it is a row they opened and did not use. The shipped rows always print,
     # blank or not, which is how this datasheet has always read.
     for grp, (base, names) in _ESD_OBS_GROUPS.items():
+        # The Test Level columns this grid prints follow the Test Specification: +-4kV means
+        # +-2 and +-4 only. Cells above that level are never read, so a value entered before
+        # the level was narrowed cannot come back into the document.
+        levels = esd_group_levels(form_data, grp)
+        ncols = len(levels)
         rows = []
         for i in range(1, esd_row_count(form_data, grp) + 1):
             name = _s(form_data.get("%s_r%d_name" % (grp, i)))
             if not name and i <= len(names):
                 name = names[i - 1]
-            cells = [_s(form_data.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, 7)]
+            cells = [_s(form_data.get("%s_r%d_c%d" % (grp, i, c))) for c in range(1, ncols + 1)]
             if i > base and not _esd_row_has_content(form_data, grp, i):
                 continue
             row = {"sno": str(len(rows) + 1), "name": name}
-            row.update({"c%d" % c: cells[c - 1] for c in range(1, 7)})
+            row.update({"c%d" % c: cells[c - 1] for c in range(1, ncols + 1)})
+            # the template ships six level placeholders: the ones above this grid's level
+            # render empty, and _esd_finalize drops their columns
+            row.update({"c%d" % c: "" for c in range(ncols + 1, len(ESD_LEVEL_COLUMNS) + 1)})
             rows.append(row)
             # kept alongside the loop for anything still reading the flat keys
             ctx["%s_r%d_name" % (grp, i)] = name
-            for c in range(1, 7):
+            for c in range(1, ncols + 1):
                 ctx["%s_r%d_c%d" % (grp, i, c)] = cells[c - 1]
         ctx["esd_%s_rows" % grp] = rows
+        ctx["esd_%s_levels" % grp] = levels
 
     # Met Performance Criteria = the WORST code observed anywhere in the three grids, as a
     # bare letter: A (no degradation) is the least severe and D the worst, a sub-case such as
@@ -715,7 +807,8 @@ def _esd_build_context(form_data):
     ctx["met_performance_criteria"] = (
         worst_performance_code([_c for grp in _ESD_OBS_GROUPS
                                 for _row in ctx.get("esd_%s_rows" % grp, [])
-                                for _c in (_row.get("c%d" % i) for i in range(1, 7))])
+                                for _c in (_row.get("c%d" % i) for i in
+                                           range(1, len(ctx.get("esd_%s_levels" % grp) or []) + 1))])
         or _s(form_data.get("met_performance_criteria")))
     return ctx
 
@@ -726,9 +819,10 @@ def esd_met_criteria(form_data):
     will carry."""
     cells = []
     for grp in _ESD_OBS_GROUPS:
+        cols = esd_group_columns(form_data, grp)
         for i in range(1, esd_row_count(form_data, grp) + 1):
             cells.extend(_s((form_data or {}).get("%s_r%d_c%d" % (grp, i, c)))
-                         for c in range(1, 7))
+                         for c in range(1, cols + 1))
     return worst_performance_code(cells)
 
 
@@ -2540,7 +2634,10 @@ def _re_extra_photos(form_data):
     out = []
     for n, slot in enumerate(re_extra_photo_slots(form_data), start=1):
         cap = slot["caption"]
-        if not cap.lower().startswith("photo"):
+        # Skip the number only when the engineer typed one themselves ("Photo 3: ..."),
+        # not merely because the label opens with the word: "Photo of the rear panel"
+        # used to print with no number at all while every other picture had one.
+        if not re.match(r"(?i)^photo\s*\d", cap):
             cap = f"Photo {n}: {cap}".rstrip()
         out.append({"key": slot["key"], "caption": cap})
     return out

@@ -1205,6 +1205,39 @@ def _re_relabel_captions_custom_range(doc, custom_range, bands=None):
     return renamed
 
 
+def _keep_captions_with_pictures(doc):
+    """A picture and the label printed under it must never land on different pages.
+
+    Word breaks freely between two paragraphs, so a picture near the bottom of a page
+    left its "Photo N: ..." label stranded at the top of the next one - the label was
+    no longer below its image. RE, SURGE, EFT and CE already got this from their own
+    paginators; CRF, HARMONIC, PFMF and RS_RI did not, and those are the datasheets
+    where a picture's label could appear to go missing from under it.
+
+    Marks every body-level picture paragraph whose next paragraph is its caption as
+    "keep with next". Applies equally to the fixed img_photo_N slots and to the extra
+    pictures the engineer adds, which share the Caption style. Pictures inside tables
+    (signatures) are untouched: doc.paragraphs does not reach into cells.
+    """
+    marked = 0
+    paras = list(doc.paragraphs)
+    for i, p in enumerate(paras[:-1]):
+        if not p._p.findall(".//" + qn("w:drawing")):
+            continue
+        nxt = paras[i + 1]
+        text = (nxt.text or "").strip()
+        if not text:
+            continue
+        style = (nxt.style.name if nxt.style is not None else "") or ""
+        if style != "Caption" and not text.upper().startswith("PHOTO "):
+            continue
+        if p.paragraph_format.keep_with_next:
+            continue
+        p.paragraph_format.keep_with_next = True
+        marked += 1
+    return marked
+
+
 def _drop_captionless_photos(doc):
     """Remove a Test-Setup photo caption when nothing was uploaded for that slot. The
     template pairs each '{{ img_photo_N }}' paragraph with its caption, so an empty slot
@@ -1586,6 +1619,52 @@ def _surge_bold_port_headings(doc, heading="TEST PROCEDURE"):
 _HARMONIC_VALUE_REGRID = (3, 3)
 
 
+#: HARMONIC's "Average and Maximum harmonic current results" grid, in twips, summing to
+#: the 9010 the template's table already occupies. The shipped template gave all ten
+#: columns roughly equal width, which is wrong for this content: Hn holds one or two
+#: digits while the two Result columns and Harmonic Result hold "PASS" / "n/a" / "NA".
+_HARMONIC_AVGMAX_GRID = (560,                    # Hn
+                         830, 900, 830, 940,     # Average:  Ieff, of Limit, Limit, Result
+                         830, 900, 830, 940,     # Maximum:  Ieff, of Limit, Limit, Result
+                         1450)                   # Harmonic Result
+
+
+def _harmonic_fix_avgmax_table(doc):
+    """Repair the Functional Check "Average and Maximum harmonic current results" table.
+
+    Three faults shipped in the template together made the last columns unreadable -
+    headers breaking mid-word ("Harmoni c Result", "Resul t") and "PASS" printing as
+    "PAS":
+
+      * the table asked for tblW 100% with NO tblLayout, so Word autofitted it and
+        recomputed the columns instead of using the grid;
+      * the second header row declared w:tcW 0 for its first and last cells, which is
+        what collapsed the Hn and Harmonic Result columns;
+      * the loop row carried trHeight 288 with hRule "exact" - a hard one-line height,
+        so a value that wrapped was CLIPPED rather than given a second line. That is
+        the missing "S": the text was there, the row just would not grow for it.
+
+    Fixed layout + a grid proportioned to the content fixes the widths, and relaxing
+    the height rule to "atLeast" means nothing can ever be cut off again.
+    """
+    for tb in doc.tables:
+        if not tb.rows:
+            continue
+        head = " ".join((c.text or "") for c in tb.rows[0].cells).lower()
+        if "average and maximum harmonic current results" not in head:
+            continue
+        if len(_grid_widths(tb)) == len(_HARMONIC_AVGMAX_GRID):
+            _surge_set_grid(tb, list(_HARMONIC_AVGMAX_GRID))
+        else:
+            _sync_row_widths(tb)          # unexpected column count: at least agree with the grid
+        for tr in tb._tbl.findall(qn("w:tr")):
+            h = tr.find(qn("w:trPr") + "/" + qn("w:trHeight"))
+            if h is not None and h.get(qn("w:hRule")) == "exact":
+                h.set(qn("w:hRule"), "atLeast")
+        return True
+    return False
+
+
 def _harmonic_finalize(doc, context):
     """HARMONIC reference-format corrections.
 
@@ -1616,6 +1695,9 @@ def _harmonic_finalize(doc, context):
            ("software name" in hdr and "software version" in hdr) or \
            ("modification state" in hdr and "description" in hdr):
             _ce_center_table(tb2)
+    # Functional Check avg/max grid: fixed layout, content-proportioned columns and a
+    # height rule that lets a wrapped value show (it was clipping "PASS" to "PAS").
+    _harmonic_fix_avgmax_table(doc)
     # Extra pictures continue the sequence after the standard slot.
     _re_renumber_photos(doc)
 
@@ -1741,6 +1823,11 @@ def _pfmf_finalize(doc, context):
         # the three stacked heading rows (Coil Orientation / method / orientation)
         for ri in range(min(3, len(obs.rows))):
             _bold_row(obs, ri)
+        # Every cell reads centred, as the reference draws it: the stacked headings
+        # (Coil Orientation, the method, and the 0/90/180/270 orientations) and the
+        # values under them (field strength, frequency, observation letters). Runs after
+        # the column drop so the cells that survived are the ones centred.
+        _ce_center_table(obs)
         break
 
     _bullet_monitoring_parameters(doc)
@@ -1752,6 +1839,8 @@ def _pfmf_finalize(doc, context):
            ("modification state" in hdr and "description" in hdr):
             _ce_center_table(tb2)
     _re_renumber_photos(doc)
+    # 2.x RESULT: the criteria values read centred in their cell, not hard left.
+    _center_result_criteria(doc)
     _re_fix_signature(doc)
     # the template's spare paragraphs after the sign-off table would spill to a blank page
     _strip_trailing_empty_paragraphs(doc)
@@ -1779,6 +1868,140 @@ def _set_row_height(tb, cm, exact=False):
                            else WD_ROW_HEIGHT_RULE.AT_LEAST)
         n += 1
     return n
+
+
+#: The ESD observation grids: the two label columns are fixed, everything after them is a
+#: Test Level column. Grid total stays what the template ships (9016 twips).
+_ESD_OBS_LABEL_COLS = 2
+_ESD_OBS_TOTAL_TWIPS = 9016
+_ESD_OBS_LABEL_TWIPS = (933, 4075)
+
+#: Which grid each observation table is, taken from its own heading paragraph - the same
+#: match _esd_drop_empty_observation() uses.
+_ESD_OBS_TABLE_LABELS = (("indirect", "ind"), ("direct", "dir"), ("air discharge", "air"))
+
+
+def _esd_obs_group(doc, tbl_el):
+    """Which ESD group ('ind'/'dir'/'air') an observation table belongs to, from the nearest
+    non-empty paragraph above it. None when the heading names no group."""
+    els = list(doc.element.body.iterchildren())
+    pm = {p._p: p for p in doc.paragraphs}
+    try:
+        i = els.index(tbl_el)
+    except ValueError:
+        return None
+    j = i - 1
+    while j >= 0 and els[j].tag == qn("w:p"):
+        text = " ".join((pm.get(els[j]).text or "").split()).lower() if pm.get(els[j]) else ""
+        if text:
+            for needle, grp in _ESD_OBS_TABLE_LABELS:
+                if needle in text:
+                    return grp
+            return None
+        j -= 1
+    return None
+
+
+def _esd_clone_level_column(tb):
+    """Append one more Test Level column, cloned from the last one so it carries the same
+    borders, shading and paragraph formatting. Used for +-15kV, which the template does not
+    ship a placeholder for."""
+    from copy import deepcopy
+    for tr in tb._tbl.findall(qn("w:tr")):
+        spans = _tc_spans(tr)
+        if not spans:
+            continue
+        last_tc, _start, span = spans[-1]
+        if span > 1:
+            _set_span(last_tc, span + 1)      # the "Test Level (kV)" banner grows instead
+            continue
+        new_tc = deepcopy(last_tc)
+        last_tc.addnext(new_tc)
+
+
+def _esd_set_cell_text(tc, text):
+    """Replace a cell's text, keeping the first run's formatting."""
+    paras = tc.findall(qn("w:p"))
+    if not paras:
+        return
+    for extra in paras[1:]:
+        tc.remove(extra)
+    p = paras[0]
+    runs = p.findall(qn("w:r"))
+    for extra in runs[1:]:
+        p.remove(extra)
+    if runs:
+        for t in runs[0].findall(qn("w:t")):
+            runs[0].remove(t)
+        t = runs[0].makeelement(qn("w:t"), {})
+        t.set(qn("xml:space"), "preserve")
+        t.text = text
+        runs[0].append(t)
+    else:
+        r = p.makeelement(qn("w:r"), {})
+        t = r.makeelement(qn("w:t"), {})
+        t.set(qn("xml:space"), "preserve")
+        t.text = text
+        r.append(t)
+        p.append(r)
+
+
+def _esd_set_observation_levels(doc, context):
+    """Give each ESD observation grid the Test Level columns its Test Specification implies.
+
+    The template ships every grid with six level columns (+-2/+-4/+-8). The levels are
+    cumulative, so choosing +-4kV for a discharge means +-2kV was applied too and that grid
+    shows FOUR columns, not six; Air discharge reaching +-15kV needs eight, which the
+    template has no placeholder for, so those columns are cloned and filled here.
+
+    Column widths are re-derived so the table stays exactly as wide as it was, and the
+    "Test Level (kV)" banner is re-spanned to the surviving columns.
+    """
+    changed = 0
+    for tb in list(doc.tables):
+        if not tb.rows:
+            continue
+        head = " ".join((tb.rows[0].cells[0].text or "").split()).lower()
+        if not (head.startswith("s. no") or head.startswith("s.no")):
+            continue                                  # not an observation grid
+        grp = _esd_obs_group(doc, tb._tbl)
+        if grp is None:
+            continue
+        levels = list((context or {}).get("esd_%s_levels" % grp) or [])
+        if not levels:
+            continue
+        have = len(_grid_widths(tb)) - _ESD_OBS_LABEL_COLS
+        want = len(levels)
+        if want > have:
+            for _ in range(want - have):
+                _esd_clone_level_column(tb)
+        elif want < have:
+            _drop_grid_columns(tb, range(_ESD_OBS_LABEL_COLS + want,
+                                         _ESD_OBS_LABEL_COLS + have))
+        # the banner spans whatever is left, and the level names are rewritten in order
+        for tc, start, span in _tc_spans(tb.rows[0]._tr):
+            if start >= _ESD_OBS_LABEL_COLS:
+                _set_span(tc, want)
+                break
+        for tc, start, span in _tc_spans(tb.rows[1]._tr):
+            if start >= _ESD_OBS_LABEL_COLS and (start - _ESD_OBS_LABEL_COLS) < want:
+                _esd_set_cell_text(tc, levels[start - _ESD_OBS_LABEL_COLS])
+        # a cloned column carries the cell it was copied from: fill it from the context
+        if want > have:
+            rows = (context or {}).get("esd_%s_rows" % grp) or []
+            for ri, tr in enumerate(tb._tbl.findall(qn("w:tr"))[2:]):
+                if ri >= len(rows):
+                    break
+                for tc, start, span in _tc_spans(tr):
+                    ci = start - _ESD_OBS_LABEL_COLS
+                    if 0 <= ci < want:
+                        _esd_set_cell_text(tc, rows[ri].get("c%d" % (ci + 1)) or "")
+        share = (_ESD_OBS_TOTAL_TWIPS - sum(_ESD_OBS_LABEL_TWIPS)) // max(1, want)
+        widths = list(_ESD_OBS_LABEL_TWIPS) + [share] * want
+        widths[-1] += _ESD_OBS_TOTAL_TWIPS - sum(widths)      # keep the exact total
+        _surge_set_grid(tb, widths)
+        changed += 1
+    return changed
 
 
 def _esd_drop_empty_observation(doc, filled):
@@ -1855,6 +2078,10 @@ def _esd_finalize(doc, context):
                 _re_fit_row_font(tb0, needle)
 
     _esd_drop_empty_observation(doc, meta.get("filled") or set())
+    # Each surviving grid carries only the Test Level columns its discharge field selected
+    # (cumulative: +-4kV prints +-2 and +-4). Runs after the drop so a grid that is not
+    # printed is not reshaped first.
+    _esd_set_observation_levels(doc, context)
 
     _re_fill_missing_na(doc, header_needle="calibration due", value="NA")
     # A blank Software Name / Version reads as '-' rather than an empty box.
@@ -1922,6 +2149,8 @@ def _eft_finalize(doc, context):
     _eft_tighten_legend(doc)
     _bullet_monitoring_parameters(doc)
     _re_fill_missing_na(doc, header_needle="calibration due", value="NA")
+    # 2.x RESULT: the criteria values read centred in their cell, not hard left.
+    _center_result_criteria(doc)
     _re_fix_signature(doc)
     _strip_trailing_empty_paragraphs(doc)
 
@@ -2137,6 +2366,8 @@ def _crf_finalize(doc, context):
            ("frequency range" in hdr and "coupling method" in hdr):   # 2.4 TEST OBSERVATION
             _ce_center_table(tb2)
 
+    # 2.x RESULT: the criteria values read centred in their cell, not hard left.
+    _center_result_criteria(doc)
     _re_fix_signature(doc)
 
 
@@ -2154,6 +2385,42 @@ def _bold_row(tb, row_idx):
                     run.bold = True
                     n += 1
     return n
+
+
+def _center_result_criteria(doc):
+    """Centre the values in the 2.x RESULT table's two criteria rows.
+
+    EFT, PFMF, CRF (and the same table in ESD, RS_RI and SURGE) share a two-row RESULT
+    table - Required Performance Criteria / Met Performance Criteria against a single
+    value cell - and the template left every cell with no alignment of its own, so a
+    lone "A" or "B" sat hard against the left edge of a half-page-wide cell. The labels
+    stay left, as they are in the template; only the value columns are centred.
+
+    Matched on the row labels rather than a table index so a template edit cannot point
+    it at the wrong table. Returns the number of value cells centred.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    done = 0
+    for tb in doc.tables:
+        labels = [" ".join((row.cells[0].text or "").split()).lower() for row in tb.rows if row.cells]
+        if not any("required performance criteria" == l for l in labels):
+            continue
+        if not any("met performance criteria" == l for l in labels):
+            continue
+        for row in tb.rows:
+            label = " ".join((row.cells[0].text or "").split()).lower()
+            if label not in ("required performance criteria", "met performance criteria"):
+                continue
+            seen = set()
+            for ci, cell in enumerate(row.cells):
+                if ci == 0 or cell._tc in seen:
+                    continue
+                seen.add(cell._tc)
+                for para in cell.paragraphs:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    done += 1
+        return done
+    return done
 
 
 def _center_row_values(tb, row_idx, skip_label=True):
@@ -2215,13 +2482,19 @@ def _vdips_finalize(doc, context):
            ("test level" in hdr and "observation" in hdr):        # TEST OBSERVATION
             _ce_center_table(tb2)
         elif "required performance criteria" in hdr:
-            # r0 headings (Voltage Dips / Interruption) and r1, the % row, are bold;
-            # the Met Performance Criteria row's values are centred.
+            # 2.8 RESULT. r0 headings (Voltage Dips / Interruption) and r1, the % row,
+            # are bold. EVERY value column is centred, not just the Met Performance
+            # Criteria row: the template left the other rows' cells with no alignment of
+            # their own, so the Required Performance Criteria letters and the % values sat
+            # left while the Met row's identical letters sat centred - the same table
+            # reading two different ways. The first column keeps its labels left.
             _bold_row(tb2, 0)
             _bold_row(tb2, 1)
-            for ri, row in enumerate(tb2.rows):
-                if "met performance criteria" in " ".join((row.cells[0].text or "").split()).lower():
-                    _center_row_values(tb2, ri)
+            # The template centred the "Required Performance Criteria" label (it is merged
+            # down three rows) but left "Met Performance Criteria" and every value cell
+            # except the Met row's alone, so one table read two ways. Centre it whole, as
+            # TEST OBSERVATION and the equipment tables above already are.
+            _ce_center_table(tb2)
 
     _bullet_monitoring_parameters(doc)
     _re_fix_signature(doc)          # no border on the signature image
@@ -2637,6 +2910,9 @@ def render(code, context, img_keys, img_paths, output_path):
         _eft_finalize(tpl.docx, context)
     elif code == "ESD":
         _esd_finalize(tpl.docx, context)
+    # Last, so no paginator can undo it: every picture stays on the page that carries
+    # the label printed under it.
+    _keep_captions_with_pictures(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

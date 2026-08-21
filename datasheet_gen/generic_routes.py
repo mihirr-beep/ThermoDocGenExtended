@@ -121,6 +121,7 @@ def g_form(code, assignment_id):
     draft_status = ""
     measurement_groups = []
     extra_photos = []
+    esd_ladder, esd_level_fields = [], {}
     if draft:
         draft_status = (record or {}).get("status", "")
         for k, v in draft.items():
@@ -222,7 +223,8 @@ def g_form(code, assignment_id):
         if code == "ESD":
             # a draft still holding '<Standard name>' gets the basic standard
             from .generic_service import (normalize_procedure_basic, _DERIVED_BASIC_STANDARDS,
-                                          esd_row_count, esd_met_criteria)
+                                          esd_row_count, esd_met_criteria,
+                                          esd_group_levels)
             normalize_procedure_basic(
                 pre, (pre.get("basic_standard") or "").strip()
                 or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
@@ -352,6 +354,22 @@ def g_form(code, assignment_id):
     # from the same table the document is built from and the admin page edits, so the three
     # cannot drift - the two hardcoded copies in the template did.
     from . import procedures as _procedures
+    if code == "ESD":
+        # The Test Level columns each observation grid shows follow its discharge field in
+        # the Test Specification, cumulatively: +-4kV means +-2kV was applied too, so that
+        # grid shows +2 -2 +4 -4 and nothing above. Every column on the ladder is still
+        # rendered (hidden) so a level chosen later has a cell to put its observation in,
+        # and the same rule builds the document. This sits outside the draft branch above
+        # because a fresh datasheet needs it as much as a reloaded one.
+        from .generic_service import esd_group_levels, _ESD_LEVEL_KV, _ESD_GROUP_FIELDS
+        esd_ladder = [{"label": "%s%g" % (sign, kv), "kv": kv}
+                      for kv in _ESD_LEVEL_KV for sign in ("+", "-")]
+        esd_level_fields = {g: list(f) for g, f in _ESD_GROUP_FIELDS.items()}
+        for _sec in schema.get("sections", []):
+            for _it in _sec.get("items", []):
+                if _it.get("layout") == "esd_obs":
+                    _it["levels"] = esd_group_levels(pre, _it.get("key_prefix"))
+
     return render_template(
         "datasheet_gen/generic_form.html",
         proc_rule=(_procedures.rules_for_ui([code]).get(code) or {}),
@@ -375,6 +393,7 @@ def g_form(code, assignment_id):
         vdips_obs_seed=_vdips_obs_seed(code, draft),
         measurement_groups=measurement_groups,
         extra_photos=extra_photos,
+        esd_ladder=esd_ladder, esd_level_fields=esd_level_fields,
         reviewers=_reviewer_candidates(),
         assigned_reviewer_id=a.peer_reviewer_user_id,
         entry_status=a.status,
