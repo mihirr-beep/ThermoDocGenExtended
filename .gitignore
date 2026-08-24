@@ -55,6 +55,11 @@ Thumbs.db
 *.tmp
 *.temp
 Dump20260624.sql
+harmonic_sheet75_backup.sql
+
+# Flask's default instance folder - local runtime state (catalog_stats.json is
+# a measured-fresh cache; committing it would freeze a stale snapshot into git).
+instance/
 
 # Generated datasheets / uploaded images (never commit runtime artifacts)
 uploads/

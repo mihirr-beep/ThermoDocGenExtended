@@ -450,56 +450,6 @@
 </div>
 </template>
 
-<!-- Preview / Cropper feature: self-contained styles (independent of the purged Tailwind build) -->
-<style>
-  #previewBtn{position:fixed;right:96px;bottom:24px;z-index:50;display:flex;align-items:center;gap:8px;
-    padding:12px 20px;background:#059669;color:#fff;font-weight:600;border:none;border-radius:9999px;
-    box-shadow:0 10px 20px rgba(0,0,0,.25);cursor:pointer;font-size:15px;}
-  #previewBtn:hover{background:#047857;}
-  .ds-overlay{position:fixed;inset:0;z-index:1000;display:none;}
-  .ds-overlay.open{display:block;}
-  .ds-overlay.ds-cropz{z-index:1001;}
-  .ds-bg{position:absolute;inset:0;background:rgba(0,0,0,.55);}
-  .ds-center{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;}
-  .ds-center.mid{align-items:center;}
-  .ds-panel{position:relative;background:#f3f4f6;border-radius:12px;box-shadow:0 25px 50px rgba(0,0,0,.4);width:100%;max-width:920px;margin:24px 0;}
-  .ds-panel.narrow{max-width:760px;background:#fff;}
-  .ds-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid #e5e7eb;background:#fff;border-radius:12px 12px 0 0;position:sticky;top:0;}
-  .ds-head h3{font-weight:700;color:#111827;margin:0;font-size:16px;}
-  .ds-head p{font-size:11px;color:#6b7280;margin:2px 0 0;max-width:560px;}
-  .ds-doc{background:#fff;margin:0 auto;border:1px solid #e5e7eb;max-width:820px;padding:44px 48px;min-height:200px;}
-  .ds-b{padding:6px 12px;font-size:13px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;}
-  .ds-b.primary{background:#2563eb;color:#fff;border-color:#2563eb;}
-  .ds-b.green{background:#059669;color:#fff;border-color:#059669;}
-  .ds-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid #e5e7eb;}
-</style>
-
-<!-- Floating Preview button -->
-<button type="button" id="previewBtn">
-  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-  Preview
-</button>
-
-<!-- Preview modal -->
-<div id="previewModal" class="ds-overlay">
-  <div class="ds-bg" onclick="closePreview()"></div>
-  <div class="ds-center" onclick="if(event.target===this){closePreview();}">
-    <div class="ds-panel">
-      <div class="ds-head">
-        <div>
-          <h3>Document Preview</h3>
-          <p>Layout preview of the .docx with the data entered so far. Images are shown at their true document size &amp; fit.</p>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button type="button" class="ds-b primary" onclick="closePreview(); document.getElementById('genBtn').click();">Send to Peer Review</button>
-          <button type="button" class="ds-b" onclick="closePreview()">Close</button>
-        </div>
-      </div>
-      <div style="padding:20px;"><div id="previewDoc" class="ds-doc"></div></div>
-    </div>
-  </div>
-</div>
-
 <!-- (image editing handled by the shared Edit dialog: datasheet_gen/static/ds_image_editor.js) -->
 {% endblock %}
 
@@ -1210,33 +1160,6 @@
     v.textContent=(val && String(val).trim()!=='') ? val : '—';
     d.appendChild(v); return d;
   }
-  function renderPreviewImage(key,label){
-    var box=imageBoxMM(key), w=Math.round(box[0]*PXMM), h=Math.round(box[1]*PXMM);
-    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
-    var lbl=document.createElement('div'); lbl.style.cssText='font-weight:600;font-size:12px;margin-bottom:4px;'; lbl.textContent=label||key; wrap.appendChild(lbl);
-    var frame=document.createElement('div');
-    frame.style.cssText='position:relative;border:1px solid #cbd5e1;background:#f8fafc;width:'+w+'px;height:'+h+'px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
-    var file=imgFileFor(key);
-    if (file){ var img=document.createElement('img'); img.style.cssText='max-width:100%;max-height:100%;object-fit:contain;'; img.src=URL.createObjectURL(file); frame.appendChild(img); frame.appendChild(makeRemoveBadge(key)); }
-    else { var ph=document.createElement('div'); ph.style.cssText='color:#94a3b8;font-size:11px;'; ph.textContent='(no image uploaded)'; frame.appendChild(ph); }
-    wrap.appendChild(frame);
-    var cap=document.createElement('div'); cap.style.cssText='font-size:10px;color:#64748b;margin-top:2px;'; cap.textContent='Document size: '+box[0]+' × '+box[1]+' mm'; wrap.appendChild(cap);
-    if (file){
-      var actions=document.createElement('div'); actions.style.marginTop='5px';
-      var cropBtn=document.createElement('button'); cropBtn.type='button';
-      cropBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #10b981;color:#059669;background:#fff;border-radius:6px;margin-right:6px;cursor:pointer;';
-      cropBtn.innerHTML='<span style="display:inline-block;transform:scaleX(-1)">✎</span> Edit'; cropBtn.onclick=function(){ openImageEditor(key); };
-      actions.appendChild(cropBtn);
-      if (originalFiles[key]){
-        var resetBtn=document.createElement('button'); resetBtn.type='button';
-        resetBtn.style.cssText='font-size:11px;padding:2px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;';
-        resetBtn.textContent='↺ Reset'; resetBtn.onclick=function(){ resetImage(key); };
-        actions.appendChild(resetBtn);
-      }
-      wrap.appendChild(actions);
-    }
-    return wrap;
-  }
   // Inline thumbnail shown right under each image picker as soon as a file is chosen.
   function renderInlineThumb(key){
     var holder=document.getElementById('inlinethumb-'+key);
@@ -1271,73 +1194,18 @@
     wrap.appendChild(actions);
     holder.appendChild(wrap);
   }
-  function renderDomTable(t){
-    var ths=Array.prototype.slice.call(t.querySelectorAll('thead th')).map(function(x){return x.textContent.trim();});
-    if (ths.length && ths[ths.length-1]==='') ths.pop();
-    var rows=[];
-    Array.prototype.slice.call(t.querySelectorAll('tbody tr')).forEach(function(tr){
-      var vals=[];
-      Array.prototype.slice.call(tr.children).forEach(function(td){
-        if (td.querySelector('button')) return;               // actions cell
-        var ctrl=td.querySelector('input, select, textarea');
-        vals.push(ctrl ? ctrl.value.trim() : td.textContent.trim());
-      });
-      if (vals.some(function(v){return v!=='';})) rows.push(vals);
-    });
-    var wrap=document.createElement('div'); wrap.style.margin='6px 0 12px';
-    var tb=document.createElement('table'); tb.style.cssText='border-collapse:collapse;width:100%;font-size:11px;';
-    var head='<tr>'+ths.map(function(h){return '<th style="border:1px solid #999;padding:3px;background:#f3f4f6;text-align:left;">'+esc(h)+'</th>';}).join('')+'</tr>';
-    var body=rows.map(function(r){return '<tr>'+r.map(function(v){return '<td style="border:1px solid #999;padding:3px;">'+esc(v)+'</td>';}).join('')+'</tr>';}).join('');
-    if (!rows.length) body='<tr><td colspan="'+Math.max(ths.length,1)+'" style="border:1px solid #999;padding:6px;color:#999;text-align:center;">(no rows entered)</td></tr>';
-    tb.innerHTML=head+body; wrap.appendChild(tb); return wrap;
-  }
-  function buildPreview(){
-    var doc=document.getElementById('previewDoc'); doc.innerHTML='';
-    var head=document.createElement('div');
-    head.innerHTML='<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px;">'
-      +'<div style="font-size:18px;font-weight:700;">CE Test Data Sheet</div>'
-      +'<div style="font-size:12px;color:#555;">IEC-FRM-504 &middot; TCO '+esc(DS_TCO)+'</div></div>';
-    doc.appendChild(head);
-    document.querySelectorAll('#ceForm section').forEach(function(sec){
-      var secEl=document.createElement('div');
-      var h2=sec.querySelector('h2');
-      var title=document.createElement('div'); title.style.cssText='font-weight:700;font-size:14px;margin:14px 0 6px;'; title.textContent=h2?h2.textContent.trim():''; secEl.appendChild(title);
-      // scalar fields: a <label> paired with an input(non-file)/select in the same wrapper, not inside a table
-      sec.querySelectorAll('label').forEach(function(lbl){
-        var ctrl=lbl.parentElement.querySelector('input:not([type=file]), select');
-        if (ctrl && !ctrl.closest('table')) secEl.appendChild(kv(lbl.textContent.trim(), ctrl.value, false));
-      });
-      // textareas (deviation / test procedure have no <label>)
-      sec.querySelectorAll('textarea').forEach(function(ta){
-        var lbl=ta.parentElement.querySelector('label');
-        secEl.appendChild(kv(lbl?lbl.textContent.trim():pretty(ta.name), ta.value, true));
-      });
-      // images
-      sec.querySelectorAll('input[type=file]').forEach(function(f){
-        var lbl=f.parentElement.querySelector('label');
-        secEl.appendChild(renderPreviewImage(f.name, lbl?lbl.textContent.trim():f.name));
-      });
-      // tables
-      sec.querySelectorAll('table').forEach(function(t){ secEl.appendChild(renderDomTable(t)); });
-      doc.appendChild(secEl);
-    });
-  }
-  function openPreview(){ buildPreview(); document.getElementById('previewModal').classList.add('open'); }
-  function closePreview(){ document.getElementById('previewModal').classList.remove('open'); }
-
   /* ---- set / reset the underlying file input ---- */
   function setInputFile(key,file){
     var el=inputByName(key); if(!el) return;
     try { var dt=new DataTransfer(); dt.items.add(file); el.files=dt.files; pendingImages[key]=true; if(typeof triggerAutoSave==='function') triggerAutoSave(); }
     catch(e){ showMessage('Your browser does not support in-place cropping.','error'); }
   }
-  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); buildPreview(); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
+  function resetImage(key){ if (originalFiles[key]){ setInputFile(key, originalFiles[key]); renderInlineThumb(key); showMessage('Reverted to the original image.','success'); triggerAutoSave(); } }
   function removeImage(key){
     var inp=inputByName(key);
     if (inp){ try { inp.value=''; } catch(e){} }
     delete originalFiles[key];
     renderInlineThumb(key);
-    if (typeof buildPreview==='function') buildPreview();
     if (typeof triggerAutoSave==='function') triggerAutoSave();
     if (typeof showMessage==='function') showMessage('Image removed.','success');
   }
@@ -1358,7 +1226,7 @@
     if(!window.DSImageEditor){ showMessage('Image editor failed to load.','error'); return; }
     DSImageEditor.open({
       file:orig, boxMM:imageBoxMM(key), sizeCm:imageCm(key),
-      onApply:function(edited, sz){ setInputFile(key, edited); if(sz&&sz.w>0&&sz.h>0) setImageCm(key, sz.w, sz.h); buildPreview(); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
+      onApply:function(edited, sz){ setInputFile(key, edited); if(sz&&sz.w>0&&sz.h>0) setImageCm(key, sz.w, sz.h); renderInlineThumb(key); showMessage('Image updated.','success'); triggerAutoSave(); }
     });
   }
 
@@ -1550,9 +1418,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', function(){
-    // lift the preview modal out of any positioned/stacking container so it overlays the fixed navbar
-    var pm=document.getElementById('previewModal'); if(pm) document.body.appendChild(pm);
-    document.getElementById('previewBtn').addEventListener('click', openPreview);
     document.querySelectorAll('#ceForm input[type=file]').forEach(wireImageInput);   // fixed images (func/photo/signature)
 
     // Rows are added from many places (Add row, CSV import, draft restore, Add Test), so
