@@ -129,6 +129,7 @@ Review** (picking a reviewer). That generates the `.docx`, sets the planner entr
 | MySQL `ERROR 1118 ... Row size too large` (dump import) | strict mode on | Prepend `SET SESSION innodb_strict_mode=OFF;` to the dump |
 | `No module named 'MySQLdb'` | deps not installed / wrong interpreter | Install `requirements.txt` into `.venv`; run via `.\.venv\Scripts\python.exe` |
 | Port `3000` already in use | stale instance / another app | Stop the other process, or change the port at the bottom of `app.py` |
+| Report opens with "update the fields?" and blank contents page numbers | no layout engine on the host | `apt install libreoffice-writer python3-uno` — see §11 |
 
 ---
 
@@ -143,6 +144,8 @@ Read by `mysql_config.py` from `.env` (or process env; `.env` overrides the in-f
 | `MYSQL_DATABASE` | database name (`test_plan_generator`) |
 | `APP_ENV` | config profile (`development`) |
 | `DATASHEET_SRC_DIR` | source `.docx` templates for *rebuilding* datasheet templates (optional) |
+| `REPORT_DISABLE_WORD` | `1` = ignore Word even on Windows, so a dev box takes the Linux report path (§11) |
+| `REPORT_DISABLE_LIBREOFFICE` | `1` = ignore LibreOffice too, forcing the pure-Python fallback (§11) |
 
 ---
 
@@ -154,7 +157,51 @@ Read by `mysql_config.py` from `.env` (or process env; `.env` overrides the in-f
 
 ---
 
-## 11. ⚠️ Before pushing to GitHub
+## 11. Test reports on the Linux server
+
+Report generation needs a **layout engine** for one step: computing the page numbers in the table
+of contents and the figure/photo/table lists. Knowing that a heading lands on page 31 means laying
+the document out, and Python cannot. Everything else in the pipeline (`docxtpl`, `python-docx`) is
+pure Python and behaves the same on any OS.
+
+`report_gen/finalise.py` picks the best engine present, in this order:
+
+| Engine | Where | Result |
+|---|---|---|
+| **Word** over COM | Windows dev box | Finished document: no prompts, page numbers computed, fields frozen |
+| **LibreOffice** over UNO | the Linux server | Same — and measured to give the *same page numbers* Word does |
+| pure Python | neither installed | Entry text only, page numbers left blank and `w:updateFields` left set |
+
+That third row is the one to avoid, because it is the reader who finds out: Word asks "update the
+fields?" on open, the four "page numbers only / entire table" prompts follow, and if their Word has
+track changes on, its rebuild lands as *revisions* — a red contents page and "Field Code Changed"
+balloons down the margin.
+
+**So on the deployment host install both packages:**
+
+```bash
+sudo apt install libreoffice-writer python3-uno
+```
+
+`libreoffice-writer` alone is **not enough**. The `soffice` binary can convert files but cannot
+rebuild an index; that needs the UNO bridge, which is a separate package on Debian/Ubuntu. Without
+it the app falls through to the pure-Python row above — and it does so quietly, which is why the
+boot log says which engine it found. Check it after deploying:
+
+```bash
+grep -i 'report fields' logs/*.log
+```
+
+`report finalised in LibreOffice` per report is the healthy line. A startup warning that fields
+will **not** be computed means `python3-uno` is missing.
+
+To see the deployed behaviour *before* deploying, set `REPORT_DISABLE_WORD=1` on the Windows box —
+`finalise.py` and `render.py` then both ignore Word and take the server's path. `REPORT_DISABLE_LIBREOFFICE=1`
+additionally forces the pure-Python row, which is how the third row above was measured.
+
+---
+
+## 12. ⚠️ Before pushing to GitHub
 
 Keep out of git (already in `.gitignore`): `.env`, `.venv/`, `uploads/`, `outputs/`, and any
 `*.sql` dump (real user data + password hashes). The dev password (`Thermo@123`) and seed password

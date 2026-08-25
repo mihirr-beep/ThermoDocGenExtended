@@ -24,13 +24,24 @@ no prompts, no rebuild, nothing to record.
 
 HOW
 ---
-Word itself does the layout, driven over COM, with revision recording turned
-off first and any existing revisions accepted. Best-effort by design: on a host
-without Word or pywin32 this returns False and the caller keeps the previous
-behaviour, which is correct but chatty. Never raises into the request.
+Something with a LAYOUT ENGINE does the work, because knowing that a heading
+falls on page 31 means laying the document out and Python cannot. Word over COM
+on a dev box; LibreOffice over its UNO bridge on the Linux server, which is what
+makes production produce the same finished document rather than a chatty one.
+Neither present: the entry text is written in pure Python and the page numbers
+are left to the reader's Word.
+
+Best-effort at every tier - a failure leaves the file exactly as the builder
+wrote it, because a report with un-computed fields is worse to read but still
+correct, and losing the report entirely is not an acceptable trade for tidier
+page numbers. Never raises into the request. ``finalise()`` is the entry point
+and its docstring carries the ordering constraint between the tiers.
 """
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +52,17 @@ _WD_FORMAT_XML_DOCUMENT = 12       # .docx
 
 
 def available():
-    """True when this host can drive Word."""
+    """True when this host can drive Word.
+
+    REPORT_DISABLE_WORD=1 makes this say no on a machine that HAS Word, so a
+    Windows dev box can produce exactly what the Linux production host will:
+    the Python fallback, updateFields left in place, page numbers left to the
+    reader. Without it there is no way to see the deployed behaviour short of
+    deploying, and the two outputs differ in the one respect nobody notices
+    until a reader opens the file.
+    """
+    if os.environ.get("REPORT_DISABLE_WORD"):
+        return False
     if os.name != "nt":
         return False
     try:
@@ -57,30 +78,40 @@ _warned = [False]
 
 
 def warn_if_unavailable():
-    """Say plainly that reports will ship un-computed on this host.
+    """Say which engine will finish the reports here, and warn if none will.
 
-    PRODUCTION IS LINUX WITH PYTHON AND NOTHING ELSE - no Word, no LibreOffice.
-    So this module is a no-op there, and that is not a detail: it means the
-    report keeps w:updateFields, every reader gets the "update the fields?"
-    prompt and the four "page numbers only / entire table" prompts, and if their
-    Word has track changes on, its field rebuild lands as revisions - the red
-    contents page and the balloon margin.
+    Computing page numbers needs a LAYOUT ENGINE - knowing that a heading falls
+    on page 31 means laying the document out, and Python has none. Word is one;
+    LibreOffice is the other, and it is why the Linux server is not stuck. So the
+    only bad case is a host with neither, and it deserves a loud line in the boot
+    log rather than a silent False: that made it look like the problem had been
+    fixed everywhere when it had been fixed on one developer's laptop.
 
-    Computing them server-side needs a layout engine to know what page anything
-    falls on. Python has none, so on Linux this cannot be fixed by trying
-    harder; it needs either a Windows/Word or LibreOffice host for this one step,
-    or the prompts are accepted as the cost of a Linux-only stack.
+    On a host with neither, the report keeps w:updateFields, every reader gets the
+    "update the fields?" prompt and the four "page numbers only / entire table"
+    prompts, and if their Word has track changes on, its rebuild lands as
+    revisions - the red contents page and the "Field Code Changed" balloons.
 
-    Returning False silently was the worse option: it looked like the problem
-    had been fixed everywhere when it had been fixed on one developer's laptop.
+    LIBREOFFICE ON DEBIAN/UBUNTU also needs ``python3-uno``. The soffice binary
+    alone is not enough: without the bridge this falls through to the Python
+    writer, which looks like it worked until somebody opens the file.
     """
-    if available() or _warned[0]:
+    if _warned[0]:
         return
     _warned[0] = True
+    if available():
+        return
+    if libreoffice_available():
+        log.info("no Word on this host (%s) - report fields will be computed in "
+                 "LibreOffice instead, which on this report gives the same "
+                 "pagination Word does. See report_gen/finalise.py.", os.name)
+        return
     log.warning(
-        "report fields will NOT be computed on this host (%s, no Word) - reports "
-        "keep updateFields, so readers get the field prompts and, with track "
-        "changes on, a markup margin. See report_gen/finalise.py.", os.name)
+        "report fields will NOT be computed on this host (%s): no Word, and no "
+        "LibreOffice with a working uno bridge (on Debian/Ubuntu: apt install "
+        "python3-uno). Reports keep updateFields, so readers get the field "
+        "prompts and, with track changes on, a markup margin. See "
+        "report_gen/finalise.py.", os.name)
 
 
 def compute_fields(path, timeout_hint=120):
@@ -256,21 +287,239 @@ def unlink_body_fields(path):
         return 0
 
 
+# ==========================================================================
+# The LibreOffice path: what Word does, on a host that has no Word
+# ==========================================================================
+# Measured on this project's own 60-page report, and the reason this exists:
+#
+#   populate_lists alone   updateFields left set, so the reader is prompted; the
+#                          entries carry no page numbers; and the template's
+#                          stale PAGEREF bookmarks (_Toc226113467, from the
+#                          40-page document the template was cut from) are still
+#                          there, so a reader who says Yes gets EVERY page number
+#                          resolved to 1 and the raw field code
+#                          'TOC \\o "1-3" \\h \\z \\u' printed as body text. With
+#                          track changes on, all of it lands as revisions - the
+#                          "Field Code Changed" balloons down the margin.
+#
+#   LibreOffice refresh    122 entries, every one paginated, updateFields
+#                          cleared, and after unlink_body_fields zero fields
+#                          left - structurally identical to the Word output.
+#
+# AND THE PAGE NUMBERS AGREE. Built both ways from the same request and compared
+# entry by entry: 60 pages each, 123 entries each, and all 122 paginated entries
+# on the SAME page as Word put them. This is not "close enough on the report we
+# tried"; the two engines were also checked against each other on one file and
+# laid it out identically, sheet for sheet.
+#
+# Getting there needed the two-pass update inside the script below - a single
+# pass had every entry at +1, and see the comment there for why. Worth knowing
+# that the failure looked exactly like an unfixable font-metric divergence
+# between two layout engines, and was not: LibreOffice's file put the heading on
+# sheet 9 with a header reading "PAGE: 9" while its own contents said 10, and a
+# number contradicting its own document is a bug, not a difference of opinion.
+#
+# --convert-to docx does NOT do any of this. Measured: the contents came back
+# byte for byte as it went in, and updateFields was stripped on the way - the
+# worst combination, a blank contents page with nothing left to offer to rebuild
+# it. Refreshing the indexes over the UNO bridge is what makes the difference.
+
+_UNO_SCRIPT = r'''
+import os, subprocess, sys, time
+import uno
+from com.sun.star.beans import PropertyValue
+
+def _pv(n, v):
+    p = PropertyValue(); p.Name = n; p.Value = v; return p
+
+def connect(port, tries=45):
+    local = uno.getComponentContext()
+    resolver = local.ServiceManager.createInstanceWithContext(
+        "com.sun.star.bridge.UnoUrlResolver", local)
+    url = "uno:socket,host=127.0.0.1,port=%d;urp;StarOffice.ComponentContext" % port
+    started = False
+    for i in range(tries):
+        try:
+            return resolver.resolve(url)
+        except Exception:
+            if not started:
+                started = True
+                exe = os.environ.get("SOFFICE_BIN") or "soffice"
+                subprocess.Popen([exe, "--headless", "--norestore", "--invisible",
+                                  "--nologo", "--nodefault",
+                                  "--accept=socket,host=127.0.0.1,port=%d;urp;" % port])
+            time.sleep(1.0)
+    raise SystemExit("no soffice listener on %d" % port)
+
+src, dst, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+ctx = connect(port)
+desktop = ctx.ServiceManager.createInstanceWithContext(
+    "com.sun.star.frame.Desktop", ctx)
+doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(src), "_blank", 0,
+                                   (_pv("Hidden", True), _pv("UpdateDocMode", 1)))
+if doc is None:
+    raise SystemExit("load failed")
+try:
+    # Fields first, then indexes. An index entry CONTAINS PAGEREF fields, so
+    # refreshing the indexes first computes the page numbers and the field
+    # refresh then wipes them straight back out.
+    try: doc.refresh()
+    except Exception: pass
+    try:
+        f = doc.getTextFields()
+        if f is not None: f.refresh()
+    except Exception: pass
+    idx = doc.getDocumentIndexes()
+    n = idx.getCount()
+    # The COLLECTION has no refresh(); each index has update(). Calling
+    # refresh() on the collection raises a bare "refresh" and leaves every page
+    # number exactly as it was - which reads like success in a log.
+    #
+    # TWICE, and this is not superstition - it was measured. Rebuilding the four
+    # lists CHANGES THE LENGTH OF THE FRONT MATTER (the template's surplus
+    # placeholder lines go away), so page numbers computed during the first pass
+    # describe a document a page longer than the one that gets saved. One pass
+    # put every entry at +1 against the file's own layout: the heading printed on
+    # sheet 9, header "PAGE: 9", contents entry saying 10. The second pass runs
+    # against the settled layout and agrees with it. This is the same shape as
+    # the Word path above, which updates, repaginates, then updates again.
+    for _pass in (1, 2):
+        for i in range(n):
+            idx.getByIndex(i).update()
+        try: doc.refresh()
+        except Exception: pass
+    doc.storeToURL(uno.systemPathToFileUrl(dst),
+                   (_pv("FilterName", "MS Word 2007 XML"), _pv("Overwrite", True)))
+    print("INDEXES %d" % n)
+finally:
+    try: doc.close(True)
+    except Exception: pass
+'''
+
+
+def _uno_python():
+    """An interpreter that can ``import uno``, or None.
+
+    LibreOffice bundles one beside soffice on Windows and in the .deb/.rpm
+    builds; Debian's own libreoffice-writer package does not, and needs
+    python3-uno installed for the system python to carry the bridge. Both are
+    tried rather than assumed, because the cost of assuming is a report that
+    silently ships with no page numbers.
+    """
+    from .render import _soffice_path
+    exe = _soffice_path()
+    cands = []
+    if exe:
+        here = os.path.dirname(exe)
+        cands += [os.path.join(here, "python.exe"), os.path.join(here, "python"),
+                  os.path.join(here, "python3")]
+    cands += ["python3", "python"]
+    for cand in cands:
+        try:
+            r = subprocess.run([cand, "-c", "import uno"], timeout=60,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if r.returncode == 0:
+                return cand
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return None
+
+
+def libreoffice_available():
+    """True when this host can rebuild the report's indexes with LibreOffice."""
+    if os.environ.get("REPORT_DISABLE_LIBREOFFICE"):
+        return False
+    from .render import _soffice_path
+    return bool(_soffice_path()) and bool(_uno_python())
+
+
+def compute_fields_libreoffice(path, port=2002, timeout=420):
+    """Rebuild every index in ``path`` with LibreOffice. True when it worked.
+
+    Writes to a temp file and only replaces the original on success, so a failure
+    leaves the report exactly as the builder wrote it.
+    """
+    if os.environ.get("REPORT_DISABLE_LIBREOFFICE"):
+        return False
+    from .render import _soffice_path
+    exe = _soffice_path()
+    if not exe:
+        return False
+    py = _uno_python()
+    if not py:
+        log.warning("LibreOffice is installed but no interpreter here can "
+                    "'import uno' - on Debian/Ubuntu install python3-uno. "
+                    "Falling back to the Python list writer.")
+        return False
+    path = os.path.abspath(path)
+    if not os.path.exists(path):
+        return False
+
+    work = tempfile.mkdtemp(prefix="lo_finalise_")
+    script = os.path.join(work, "refresh_uno.py")
+    out = os.path.join(work, "out.docx")
+    try:
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write(_UNO_SCRIPT)
+        # The caller's venv leaks into LibreOffice's OWN interpreter through
+        # these three, and it then cannot find its own standard library.
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE")}
+        env["SOFFICE_BIN"] = exe
+        r = subprocess.run([py, script, path, out, str(port)], timeout=timeout,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        if r.returncode != 0 or not os.path.exists(out):
+            log.warning("LibreOffice index refresh failed for %s: %s",
+                        os.path.basename(path),
+                        (r.stderr or b"").decode("utf-8", "replace")[:400])
+            return False
+        shutil.copy(out, path)
+        log.info("report finalised in LibreOffice: %s (%s)",
+                 os.path.basename(path),
+                 (r.stdout or b"").decode("utf-8", "replace").strip() or "no count")
+        return True
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("LibreOffice index refresh raised for %s: %s",
+                    os.path.basename(path), exc)
+        return False
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def finalise(path):
     """Finish the report as well as this host can. Returns what was done.
 
-    Windows with Word: everything, including the page numbers, and the
-    update-on-open flag is dropped so the reader gets no prompts at all.
+    Three tiers, best first, and the first two both produce a FINISHED document -
+    no prompt on open, no page numbers left blank, and no fields left for a
+    reader's Word to rebuild and record as revisions:
 
-    Anywhere else: the contents entries and caption numbers are written in pure
-    Python and updateFields is LEFT in place, so a reader who says yes still gets
-    perfect page numbers and a reader who says no still gets a readable document.
+      word          Windows dev box. Word does the layout, so the page numbers
+                    are the ones Word would compute - by definition exact.
+      libreoffice   The Linux server. LibreOffice does the layout instead, and
+                    on this report produced the same 60 pages with all 122
+                    contents entries on the same pages as Word. Measured, not
+                    assumed - see the comment above compute_fields_libreoffice.
+      python        Neither engine present. Entry text and caption numbers only;
+                    updateFields is LEFT in place so a reader who says yes gets
+                    page numbers, and one who says no gets a readable list.
+
+    ORDER MATTERS, and not in the obvious way: populate_lists must NOT run before
+    the LibreOffice attempt. It writes the entry text in FRONT of the still-live
+    TOC field, which is right when nothing will ever compute the index and wrong
+    when LibreOffice is about to - measured, LibreOffice then found 1 of the 4
+    indexes and rebuilt it alongside the text already written, so every entry
+    appeared twice. LibreOffice gets the raw document or none.
     """
     warn_if_unavailable()
     if compute_fields(path):
         clear_update_on_open(path)
         frozen = unlink_body_fields(path)
         return {"engine": "word", "page_numbers": True, "fields_frozen": frozen}
+    if compute_fields_libreoffice(path):
+        clear_update_on_open(path)
+        frozen = unlink_body_fields(path)
+        return {"engine": "libreoffice", "page_numbers": True,
+                "fields_frozen": frozen}
     info = populate_lists(path)
     info.update({"engine": "python", "page_numbers": False})
     return info

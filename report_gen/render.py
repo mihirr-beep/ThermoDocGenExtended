@@ -34,6 +34,11 @@ _WD_ALERTS_NONE = 0
 
 
 def _word_available():
+    # REPORT_DISABLE_WORD=1 also steers the PDF preview to LibreOffice on a
+    # machine that has both, which is the only way to see on a dev box what the
+    # Linux host will actually render. Same flag as finalise.available().
+    if os.environ.get("REPORT_DISABLE_WORD"):
+        return False
     if os.name != "nt":
         return False
     try:
