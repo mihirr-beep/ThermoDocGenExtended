@@ -250,48 +250,96 @@ def failure_detail(conn, product=None, tco=None, limit=40):
     summary column: the margin is the measurement's own arithmetic, so a row
     here cannot claim a breach the numbers do not support.
 
-    Pinned to the campaign's LATEST revision. Without that, a campaign whose
-    record was re-issued after a review rejection returned every reading twice
-    - once from the withdrawn revision, once from the replacement - and the
-    duplicate looked exactly like a second genuine breach at the same
-    frequency. A re-issued record is the same test, not another failure.
+    WHICH REVISION THE BREACH IS READ FROM, and why it is not the latest one.
+    This used to pin to MAX(revision_no) to stop a re-issued record returning
+    every reading twice - once from the withdrawn revision, once from the
+    replacement - which is a real problem and the wrong fix for it. On a
+    campaign that FAILED and was then remeasured, the latest revision is the
+    CORRECTED one: DEMO-EMC-311's CE sheet breached 0.720 MHz by +8.8 dB on
+    revision 1 and cleared it on revision 2, so pinning to the latest returned
+    an EMPTY breach list for a campaign recorded as FAIL. Asked which reading
+    was over the limit, the assistant answered "the breaching reading cannot be
+    shown as a numeric value in this dataset" - a confident absence, with the
+    number sitting in datasheet_measurement the whole time.
+
+    So each CELL is read from the EARLIEST revision where it breached, which
+    deduplicates a re-issued record just as well (one row per cell) without
+    hiding the reading that caused the failure. `latest_measured` and
+    `latest_margin` carry the same cell's current value alongside, because
+    "what did it come down to" is the other half of the question and should not
+    need a second call.
     """
     camps = [c for c in timeline(conn, product=product, tco=tco, limit=limit)
              if outcome(c) == "fail"]
     out = []
     for c in camps:
         breaches = _rows(conn, """
-            SELECT f.value AS frequency_mhz, q.value AS measured,
-                   l.value AS limit_value, g.value AS margin_db, q.grid_key
-            FROM datasheet_measurement g
-            JOIN `datasheet` d ON d.id = g.datasheet_id
+            SELECT b.revision_no AS breached_on_revision,
+                   f.value AS frequency_mhz, q.value AS measured,
+                   l.value AS limit_value, b.value AS margin_db, b.grid_key,
+                   (SELECT q2.value FROM datasheet_measurement q2
+                     WHERE q2.datasheet_id = b.datasheet_id
+                       AND q2.grid_key = b.grid_key AND q2.row_no = b.row_no
+                       AND q2.block_label <=> b.block_label
+                       AND q2.col_key = 'qp'
+                       AND q2.revision_no = (SELECT MAX(m3.revision_no)
+                                               FROM datasheet_measurement m3
+                                              WHERE m3.datasheet_id = b.datasheet_id))
+                     AS latest_measured,
+                   (SELECT g2.value FROM datasheet_measurement g2
+                     WHERE g2.datasheet_id = b.datasheet_id
+                       AND g2.grid_key = b.grid_key AND g2.row_no = b.row_no
+                       AND g2.block_label <=> b.block_label
+                       AND g2.col_key = 'qp_margin'
+                       AND g2.revision_no = (SELECT MAX(m4.revision_no)
+                                               FROM datasheet_measurement m4
+                                              WHERE m4.datasheet_id = b.datasheet_id))
+                     AS latest_margin
+            FROM datasheet_measurement b
+            JOIN `datasheet` d ON d.id = b.datasheet_id
             JOIN planner_entries p ON p.id = d.planner_entry_id
             JOIN iec_emc_requests r ON r.id = p.test_request_id
-            JOIN datasheet_measurement f ON f.datasheet_id = g.datasheet_id
-                 AND f.revision_no = g.revision_no AND f.grid_key = g.grid_key
-                 AND f.row_no = g.row_no AND f.col_key = 'qp_freq'
-            JOIN datasheet_measurement q ON q.datasheet_id = g.datasheet_id
-                 AND q.revision_no = g.revision_no AND q.grid_key = g.grid_key
-                 AND q.row_no = g.row_no AND q.col_key = 'qp'
-            JOIN datasheet_measurement l ON l.datasheet_id = g.datasheet_id
-                 AND l.revision_no = g.revision_no AND l.grid_key = g.grid_key
-                 AND l.row_no = g.row_no AND l.col_key = 'qp_limit'
-            WHERE r.tco_id = %(tco)s AND g.col_key = 'qp_margin' AND g.value_num > 0
-              AND g.revision_no = (SELECT MAX(m2.revision_no)
+            JOIN datasheet_measurement f ON f.datasheet_id = b.datasheet_id
+                 AND f.revision_no = b.revision_no AND f.grid_key = b.grid_key
+                 AND f.row_no = b.row_no
+                 AND f.block_label <=> b.block_label AND f.col_key = 'qp_freq'
+            JOIN datasheet_measurement q ON q.datasheet_id = b.datasheet_id
+                 AND q.revision_no = b.revision_no AND q.grid_key = b.grid_key
+                 AND q.row_no = b.row_no
+                 AND q.block_label <=> b.block_label AND q.col_key = 'qp'
+            JOIN datasheet_measurement l ON l.datasheet_id = b.datasheet_id
+                 AND l.revision_no = b.revision_no AND l.grid_key = b.grid_key
+                 AND l.row_no = b.row_no
+                 AND l.block_label <=> b.block_label AND l.col_key = 'qp_limit'
+            WHERE r.tco_id = %(tco)s AND d.test_code = %(code)s
+              AND b.col_key = 'qp_margin' AND b.value_num > 0
+              AND b.revision_no = (SELECT MIN(m2.revision_no)
                                      FROM datasheet_measurement m2
-                                    WHERE m2.datasheet_id = g.datasheet_id)
-            ORDER BY g.value_num DESC
-        """, tco=c["tco_id"])
+                                    WHERE m2.datasheet_id = b.datasheet_id
+                                      AND m2.grid_key = b.grid_key
+                                      AND m2.row_no = b.row_no
+                                      AND m2.block_label <=> b.block_label
+                                      AND m2.col_key = 'qp_margin'
+                                      AND m2.value_num > 0)
+            ORDER BY b.value_num DESC
+        """, tco=c["tco_id"], code=c["test_code"])
         c["breaches"] = breaches
+        # SCOPED TO THIS DATASHEET, not to the job. Without the test_code filter
+        # every failing test on a TCO received every review comment on that TCO:
+        # DEMO-EMC-311's RS_RI row came back carrying the CE sheet's "Class B
+        # limit applied; this EUT is Class A" comment while its own
+        # times_sent_back was 0 - a row contradicting itself, and the reviewer's
+        # words attached to a test they were never written about.
         c["reviewer_said"] = _rows(conn, """
             SELECT h.to_status, h.reason_code, h.comment, h.actor_name
             FROM datasheet_status_history h
             JOIN `datasheet` d ON d.id = h.datasheet_id
             JOIN planner_entries p ON p.id = d.planner_entry_id
             JOIN iec_emc_requests r ON r.id = p.test_request_id
-            WHERE r.tco_id = %(tco)s AND h.to_status IN ('Approved', 'Rejected')
+            WHERE r.tco_id = %(tco)s AND d.test_code = %(code)s
+              AND h.to_status IN ('Approved', 'Rejected')
             ORDER BY h.id
-        """, tco=c["tco_id"])
+        """, tco=c["tco_id"], code=c["test_code"])
         out.append(c)
     return out
 
