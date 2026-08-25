@@ -2,12 +2,12 @@
 
 {% block title %}Report - Tests - {{ preview.tco_id or request_id }}{% endblock %}
 
-{# Page 3. Report section 3 (the criteria note) and sections 4 onward (one per
-   test), both read-only. The per-test values come from the same S.collect() the
-   build uses; "spliced" versus "filled from the template" is decided by
-   splice.region_start() on the actual file, not by whether a path is recorded -
-   build_report falls back silently on any exception, so a path alone is not a
-   promise. #}
+{# Page 3. Report section 3 (the criteria note) - read-only.
+
+   The per-test breakdown (sections 4 onward: result, approved revision,
+   reviewer, splice status per test) used to render here too. Removed - the
+   Generate page already gates on the same readiness data, so this was a second
+   place to look at the same 11 tests without changing anything about them. #}
 
 {% block content %}
 <div class="rw-wrap">
@@ -31,132 +31,48 @@
   {% else %}
 
   <!-- ---------------------------------------- report section 3 -->
-  <fieldset class="rw-group">
-    <legend>3. IMMUNITY CRITERIA AND DECISION RULE</legend>
+  <fieldset class="rw-group rw-crit">
+    <legend>3. Immunity criteria and decision rule</legend>
 
-    <p class="rw-help">
-      <strong>3.1 PERFORMANCE CRITERIA</strong> prints the same definitions of
-      criteria {{ preview.criteria.criteria_letters }} on every report. Nothing on
-      this page changes it.
-      {% if preview.criteria.no_d_paragraph %}
-        Worth knowing: the report defines those criteria only. If a datasheet
-        recorded criterion <strong>D</strong>, section 1.1 will show D but 3.1 will
-        not define it.
-      {% endif %}
-    </p>
-
-    <label class="rw-sublabel">3.2 DECISION RULE</label>
-    {% if preview.criteria.none %}
-      <div class="rw-note">
-        <strong>Nothing will be ticked.</strong> The request selected no decision
-        rule, so all five rules ship unmarked and the report does not say which one
-        applies. This is set on the test request, not here.
-      </div>
-    {% else %}
-      <ul class="rw-list">
-        {% for r in preview.criteria.ticked %}
-          <li><span class="rw-tick">&#10004;</span> {{ r }}</li>
-        {% endfor %}
-        {% for r in preview.criteria.unticked %}
-          <li class="rw-off"><span class="rw-tick rw-off">&#9744;</span> {{ r }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  </fieldset>
-
-  <!-- ---------------------------------------- report sections 4..N -->
-  <fieldset class="rw-group">
-    <legend>4 onward - one section per test ({{ preview.tests|length }})</legend>
-
-    {% if not preview.tests %}
-      <p class="rw-help">
-        None of this request's tests could be matched to a report section, so
-        there is nothing to build. The Generate page explains what is missing.
+    <div class="rw-crit-block">
+      <h3 class="rw-crit-h">3.1 Performance criteria</h3>
+      <p class="rw-crit-text">
+        Prints the same definitions of criteria
+        <strong>{{ preview.criteria.criteria_letters }}</strong> on every report.
+        Nothing on this page changes it.
+        {% if preview.criteria.no_d_paragraph %}
+          Worth knowing: the report defines those criteria only. If a datasheet
+          recorded criterion <strong>D</strong>, section 1.1 will show D but 3.1
+          will not define it.
+        {% endif %}
       </p>
-    {% endif %}
+    </div>
 
-    {% for t in preview.tests %}
-      <div class="rw-test{% if not t.approved %} rw-test-warn{% endif %}">
-        <div class="rw-test-head">
-          <span class="rw-test-name">{{ t.section }}</span>
-          <span class="rw-code">{{ t.code }}{% if t.form_no %} &middot; {{ t.form_no }}{% endif %}</span>
-          <span class="rw-flex"></span>
-          {% if t.approved %}
-            <span class="rw-badge rw-good">approved</span>
-          {% else %}
-            <span class="rw-badge rw-warn">not approved - {{ t.review_status }}</span>
-          {% endif %}
-          {% if t.will_splice %}
-            <span class="rw-badge">spliced</span>
-          {% else %}
-            <span class="rw-badge rw-warn">template fallback</span>
-          {% endif %}
+    <div class="rw-crit-block">
+      <h3 class="rw-crit-h">3.2 Decision rule</h3>
+      {% if preview.criteria.none %}
+        <div class="rw-note">
+          <strong>Nothing will be ticked.</strong> The request selected no decision
+          rule, so all five rules ship unmarked and the report does not say which one
+          applies. This is set on the test request, not here.
         </div>
-
-        <dl class="rw-kv">
-          <dt>Result in 1.1</dt>
-          <dd>{% if t.result %}{{ t.result }}{% else %}<span class="rw-empty">none recorded</span>{% endif %}
-              {% if t.recorded_result and t.recorded_result != t.result %}
-                <span class="rw-help">(the datasheet record says {{ t.recorded_result }})</span>
-              {% endif %}
-          </dd>
-
-          <dt>Performance criterion</dt>
-          <dd>
-            {% if t.required_criterion or t.met_criterion %}
-              required {{ t.required_criterion or '-' }},
-              met {{ t.met_criterion or '-' }}
-              {% if t.criterion_mismatch %}
-                <span class="rw-badge rw-warn" title="Nothing in the builder compares these two, so 1.1 prints the met criterion with nothing marking it as a miss.">met criterion differs from required</span>
-              {% endif %}
-            {% else %}
-              <span class="rw-empty">not an immunity criterion test, or not recorded</span>
-            {% endif %}
-          </dd>
-
-          <dt>Approved revision</dt>
-          <dd>
-            {% if t.revision %}
-              rev {{ t.revision }}
-              {% if t.live_revision %}
-                <span class="rw-help">(peer review approved revision {{ t.revision }}; the datasheet has since moved on to revision {{ t.live_revision }})</span>
-              {% endif %}
-            {% else %}
-              <span class="rw-empty">no frozen revision recorded</span>
-            {% endif %}
-          </dd>
-
-          <dt>Reviewed by</dt>
-          <dd>
-            {% if t.reviewer %}{{ t.reviewer }}{% else %}<span class="rw-empty">not recorded</span>{% endif %}
-            {% if t.decided_at %}<span class="rw-help">on {{ t.decided_at }}</span>{% endif %}
-          </dd>
-
-          <dt>Datasheet file</dt>
-          <dd>
-            {% if t.datasheet %}
-              <code>{{ t.datasheet }}</code>
-            {% else %}
-              <span class="rw-empty">none on disk</span>
-            {% endif %}
-          </dd>
-
-          <dt>This section will be</dt>
-          <dd>
-            {{ t.source }}{% if t.note %} <span class="rw-help">- {{ t.note }}</span>{% endif %}
-          </dd>
-
-          <dt>Data</dt>
-          <dd>
-            {% if t.has_data %}
-              saved datasheet data present, {{ t.images }} image(s)
-            {% else %}
-              <span class="rw-empty">no datasheet data saved - this test's section will print as the empty form</span>
-            {% endif %}
-          </dd>
-        </dl>
-      </div>
-    {% endfor %}
+      {% else %}
+        <ul class="rw-rule-list">
+          {% for r in preview.criteria.ticked %}
+            <li class="rw-rule rw-rule-on">
+              <span class="rw-rule-icon">&#10004;</span>
+              <span class="rw-rule-label">{{ r }}</span>
+            </li>
+          {% endfor %}
+          {% for r in preview.criteria.unticked %}
+            <li class="rw-rule">
+              <span class="rw-rule-icon"></span>
+              <span class="rw-rule-label">{{ r }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
   </fieldset>
 
   {% if preview.skipped %}
@@ -187,27 +103,30 @@
   .rw-group{border:1px solid #e2e6ea;border-radius:8px;padding:14px 16px;margin:0 0 16px}
   .rw-group legend{font-weight:600;padding:0 6px}
   .rw-help{font-size:11px;color:#5a6472}
-  .rw-badge{font-size:10px;background:#e3f2fd;color:#1565c0;border-radius:3px;padding:1px 5px;font-weight:600}
-  .rw-badge.rw-warn{background:#fff3e0;color:#b25000}
-  .rw-badge.rw-good{background:#e8f5e9;color:#2e7d32}
   .rw-actions{display:flex;gap:10px;align-items:center}
   .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
   .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
-  .rw-code{font-size:10px;color:#8a94a0;font-family:monospace}
-  .rw-empty{color:#8a94a0;font-style:italic}
-  .rw-list{margin:6px 0 0;padding-left:18px;font-size:13px}
-  .rw-list li{margin:3px 0}
-  .rw-list li.rw-off{color:#8a94a0}
-  .rw-tick{font-weight:700;color:#2e7d32}
-  .rw-tick.rw-off{color:#b0b8c1;font-weight:400}
-  .rw-sublabel{display:block;font-size:13px;font-weight:600;margin:10px 0 0}
-  .rw-test{border:1px solid #e2e6ea;border-left:3px solid #a5d6a7;border-radius:6px;padding:10px 12px;margin:10px 0;background:#fff}
-  .rw-test.rw-test-warn{border-left-color:#ffb74d}
-  .rw-test-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .rw-test-name{font-weight:600;font-size:13px}
-  .rw-flex{flex:1}
-  .rw-kv{display:grid;grid-template-columns:minmax(140px,180px) 1fr;gap:2px 12px;margin:8px 0 0;font-size:13px}
-  .rw-kv dt{color:#5a6472;font-size:12px}
-  .rw-kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+
+  /* Section 3 - bumped up from the page's normal 11-13px: this fieldset reads as
+     the informational summary of what the report will and will not say about
+     compliance criteria, so it earns more visual weight than a status line. */
+  .rw-crit{padding:20px 22px}
+  .rw-crit legend{font-size:19px;font-weight:700;padding:0 8px}
+  .rw-crit-block{margin:18px 0 0}
+  .rw-crit-block:first-of-type{margin-top:6px}
+  .rw-crit-h{margin:0 0 8px;font-size:16px;font-weight:700;color:#1f2933}
+  .rw-crit-text{margin:0;font-size:15px;line-height:1.6;color:#3c4450}
+  .rw-crit .rw-note{font-size:14px;line-height:1.55;padding:12px 16px}
+
+  .rw-rule-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .rw-rule{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:7px;
+           border:1px solid #e2e6ea;background:#fafbfc;font-size:15px;color:#8a94a0;
+           transition:background .15s}
+  .rw-rule-icon{width:22px;height:22px;flex:none;border-radius:50%;border:2px solid #cfd6dd;
+                background:#fff;display:flex;align-items:center;justify-content:center;
+                font-size:13px;line-height:1;color:transparent}
+  .rw-rule-on{background:#e8f5e9;border-color:#a5d6a7;color:#1f2933;font-weight:600}
+  .rw-rule-on .rw-rule-icon{border-color:#2e7d32;background:#2e7d32;color:#fff}
+  .rw-rule-label{min-width:0}
 </style>
 {% endblock %}

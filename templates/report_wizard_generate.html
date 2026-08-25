@@ -101,6 +101,42 @@
     </fieldset>
   {% endif %}
 
+  <!-- ---------------------------------------------- generate -->
+  {# Was below the download panel - Generate now comes first, since you cannot
+     download or preview anything until you have generated it. #}
+  <fieldset class="rw-group">
+    <legend>Generate</legend>
+
+    {% if state.already_generated %}
+      <div class="rw-note">
+        <strong>This will REGENERATE the report.</strong>
+        A new file is written and the request goes back for report approval.
+        The earlier file is kept.
+      </div>
+    {% endif %}
+
+    <div class="rw-field rw-wide">
+      <label for="rw-comments">Comments for the report approval flow</label>
+      <textarea id="rw-comments" rows="3"
+                placeholder="Left empty, this records: EMI EMC Test Report generated from {{ state.with_data or 0 }} approved datasheet(s)."></textarea>
+      <span class="rw-help">Shown to the reviewer. Leave empty for the default.</span>
+    </div>
+
+    <div class="rw-actions">
+      {% if nav.back %}<a class="rw-btn" href="{{ nav.back }}">Back</a>{% endif %}
+      <button type="button" class="rw-btn rw-primary" id="rw-generate"
+              data-url="{{ generate_url }}"
+              {% if not state.ready %}disabled{% endif %}>
+        {% if state.already_generated %}Regenerate the report{% else %}Generate the report{% endif %}
+      </button>
+      <span class="rw-help">
+        {{ state.tests or 0 }} test section(s) will be written.
+      </span>
+    </div>
+
+    <div id="rw-result" class="rw-result" hidden></div>
+  </fieldset>
+
   <!-- ---------------------------------------------- the last generated file -->
   {# Legend was "Preview", which read as a preview of the CHANGES YOU JUST MADE -
      so the help text underneath had to spend a sentence denying it. Naming the
@@ -134,43 +170,9 @@
         <p class="rw-help">{{ state.pdf_note }} The .docx above is unaffected.</p>
       {% endif %}
     {% else %}
-      <p class="rw-help">Nothing generated yet &mdash; generate below, then the
+      <p class="rw-help">Nothing generated yet &mdash; generate above, then the
         .docx and the PDF both appear here.</p>
     {% endif %}
-  </fieldset>
-
-  <!-- ---------------------------------------------- generate -->
-  <fieldset class="rw-group">
-    <legend>Generate</legend>
-
-    {% if state.already_generated %}
-      <div class="rw-note">
-        <strong>This will REGENERATE the report.</strong>
-        A new file is written and the request goes back for report approval.
-        The earlier file is kept.
-      </div>
-    {% endif %}
-
-    <div class="rw-field rw-wide">
-      <label for="rw-comments">Comments for the report approval flow</label>
-      <textarea id="rw-comments" rows="3"
-                placeholder="Left empty, this records: EMI EMC Test Report generated from {{ state.with_data or 0 }} approved datasheet(s)."></textarea>
-      <span class="rw-help">Shown to the reviewer. Leave empty for the default.</span>
-    </div>
-
-    <div class="rw-actions">
-      {% if nav.back %}<a class="rw-btn" href="{{ nav.back }}">Back</a>{% endif %}
-      <button type="button" class="rw-btn rw-primary" id="rw-generate"
-              data-url="{{ generate_url }}"
-              {% if not state.ready %}disabled{% endif %}>
-        {% if state.already_generated %}Regenerate the report{% else %}Generate the report{% endif %}
-      </button>
-      <span class="rw-help">
-        {{ state.tests or 0 }} test section(s) will be written.
-      </span>
-    </div>
-
-    <div id="rw-result" class="rw-result" hidden></div>
   </fieldset>
 </div>
 
