@@ -5946,6 +5946,39 @@ Please do not reply to this email.
             import traceback
             logger.error(traceback.format_exc())
             return jsonify({'success': False, 'error': str(e)}), 500
+    def _rehome_upload_path(stored):
+        """Re-anchor a path stored by a DIFFERENT host onto this one's uploads.
+
+        Every file path in the DB is absolute and belongs to whichever machine
+        wrote it - 'D:\\EMC\\ThermoDocGenExtended\\uploads\\reports\\37\\x.docx'
+        from a Windows dev box. Serve the same database from Linux and that
+        string is not a path any more: POSIX os.path.isabs says it is RELATIVE
+        (no leading slash), so it gets joined onto the app root, and normpath
+        leaves the backslashes alone because on POSIX they are ordinary filename
+        characters. The result is one 90-character filename that cannot exist,
+        and the reader gets "File not found on disk" for a report that is sitting
+        right there in uploads/.
+
+        Everything after the 'uploads' segment is host-independent, so that is
+        what gets kept. Returns None when the stored path has no uploads segment
+        or nothing is there - callers keep their own not-found handling rather
+        than being handed a path that only looks plausible.
+        """
+        if not stored:
+            return None
+        # split on BOTH separators: which one appears depends on the writer's OS,
+        # not the reader's, so os.sep is the wrong thing to ask.
+        parts = [p for p in str(stored).replace('\\', '/').split('/') if p
+                 and p not in ('.', '..')]
+        lowered = [p.lower() for p in parts]
+        if 'uploads' not in lowered:
+            return None
+        tail = parts[lowered.index('uploads') + 1:]
+        if not tail:
+            return None
+        candidate = os.path.join(flask_app.root_path, 'uploads', *tail)
+        return candidate if os.path.exists(candidate) else None
+
     @flask_app.route('/api/files/download', methods=['GET'])
     @login_required
     def download_file_by_path():
@@ -5982,8 +6015,17 @@ Please do not reply to this email.
                 )
             logger.info(f'Attempting to download file: {absolute_path}')
             if not os.path.exists(absolute_path):
-                logger.error(f'File not found: {absolute_path}')
-                return jsonify({'error': 'File not found'}), 404
+                # Most likely this path was written by a different host - see
+                # _rehome_upload_path. Try the local uploads tree before giving
+                # up, so a DB carried over from the dev box still serves.
+                rehomed = _rehome_upload_path(file_path)
+                if rehomed:
+                    logger.info('Re-anchored a foreign path onto this host: '
+                                f'{file_path} -> {rehomed}')
+                    absolute_path = rehomed
+                else:
+                    logger.error(f'File not found: {absolute_path}')
+                    return jsonify({'error': 'File not found'}), 404
             # Security - verify file is within the uploads directory
             if os.path.isabs(UPLOAD_FOLDER):
                 allowed_dir = os.path.normpath(UPLOAD_FOLDER)
@@ -15096,6 +15138,20 @@ Please do not reply to this email.
             )
 
         new_status = 'Completed' if skips_report_review else 'Draft Report'
+        # What to tell the reader about the contents page depends on whether this
+        # host had a layout engine, so ask instead of asserting. This used to say
+        # "Open it in Word once to let the table of contents and page numbers
+        # calculate" unconditionally - which became false once finalise learned to
+        # compute them (Word on Windows, LibreOffice on the server), and telling
+        # someone to trigger a rebuild that is no longer needed is how the
+        # "Field Code Changed" balloons get invited back in.
+        finalised = report_summary.get('finalised') or {}
+        if finalised.get('page_numbers'):
+            toc_note = ('The contents page and page numbers are already '
+                        'computed, so it opens with no prompts.')
+        else:
+            toc_note = ('Open it in Word once and answer Yes to the field prompt '
+                        'so the contents page and page numbers fill in.')
         notes = []
         if report_summary.get('dropped_sections'):
             notes.append('Not tested (section omitted): '
@@ -15110,13 +15166,19 @@ Please do not reply to this email.
                 f'{merged_count} test(s). '
                 + ('Developmental Assistance request completed. ' if skips_report_review
                    else 'It is now in the report approval flow (Draft Report). ')
-                + 'Open it in Word once to let the table of contents and page '
-                  'numbers calculate.'
+                + toc_note
                 + ((' ' + ' '.join(notes)) if notes else '')
             ),
             'new_status': new_status,
             'file_path': output_path,
+            'file_name': os.path.basename(output_path),
             'datasheet_count': merged_count,
+            # Which engine finished the document, so the UI can say whether the
+            # page numbers are real without guessing from the OS.
+            'finalised': {
+                'engine': finalised.get('engine'),
+                'page_numbers': bool(finalised.get('page_numbers')),
+            },
             'report': {
                 'tests': report_summary.get('tests'),
                 'omitted': report_summary.get('dropped_sections'),
@@ -15355,9 +15417,19 @@ Please do not reply to this email.
         if not os.path.isabs(file_path):
             file_path = os.path.join(flask_app.root_path, file_path)
         if not os.path.exists(file_path):
-            current_app.logger.error(
-                f'Report file not found on disk: {file_path} (original: {planner_entry.report_file_path})')
-            return jsonify({'success': False, 'error': 'File not found on disk'}), 404
+            # Same cross-host path problem as /api/files/download; see
+            # _rehome_upload_path for why a stored Windows path cannot be opened
+            # on Linux even though the file itself is present.
+            rehomed = _rehome_upload_path(planner_entry.report_file_path)
+            if rehomed:
+                current_app.logger.info(
+                    'Re-anchored a foreign report path onto this host: '
+                    f'{planner_entry.report_file_path} -> {rehomed}')
+                file_path = rehomed
+            else:
+                current_app.logger.error(
+                    f'Report file not found on disk: {file_path} (original: {planner_entry.report_file_path})')
+                return jsonify({'success': False, 'error': 'File not found on disk'}), 404
         return send_file(
             file_path,
             mimetype=_report_file_mimetype(file_path),

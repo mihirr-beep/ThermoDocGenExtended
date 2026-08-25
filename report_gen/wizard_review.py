@@ -918,6 +918,10 @@ def readiness(request_id):
         # than letting Generate look like a first run.
         "already_generated": bool(already),
         "existing_report": os.path.basename(existing) if existing else None,
+        # The basename is what a reader recognises, but the download endpoint
+        # takes a path - so carry both rather than making the template
+        # reconstruct one from the other.
+        "existing_report_path": existing or None,
         "pdf_backend": R.backend(),
         "pdf_available": R.available(),
         "pdf_note": None if R.available() else R.unavailable_note(),

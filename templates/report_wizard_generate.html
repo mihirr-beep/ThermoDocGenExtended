@@ -101,25 +101,41 @@
     </fieldset>
   {% endif %}
 
-  <!-- ---------------------------------------------- preview -->
+  <!-- ---------------------------------------------- the last generated file -->
+  {# Legend was "Preview", which read as a preview of the CHANGES YOU JUST MADE -
+     so the help text underneath had to spend a sentence denying it. Naming the
+     section after what it actually holds removes the need for the denial.
+
+     Both formats are offered here. The .docx was only reachable from the review
+     page, so anyone finishing the wizard could read their report but not keep a
+     copy of the thing that gets issued. #}
   <fieldset class="rw-group rw-ro">
-    <legend>Preview</legend>
-    {% if state.pdf_available %}
-      {% if state.existing_report %}
-        <p class="rw-help">
-          <code>{{ state.existing_report }}</code> &mdash; the last generated file,
-          not the changes you have made since.
-        </p>
-        <a class="rw-btn" href="{{ pdf_url }}" target="_blank" rel="noopener">
-          Open the last report as PDF
-        </a>
-      {% else %}
-        <p class="rw-help">Nothing generated yet &mdash; generate below, then come
-          back to read it as a PDF.</p>
+    <legend>Last generated report</legend>
+    {% if state.existing_report %}
+      <p class="rw-help rw-file">
+        <code>{{ state.existing_report }}</code>
+      </p>
+      <p class="rw-help">This is the last file written &mdash; not any changes you
+        have made since.</p>
+      <div class="rw-actions rw-actions-tight">
+        {% if state.existing_report_path %}
+          <a class="rw-btn rw-primary"
+             href="{{ url_for('download_file_by_path', path=state.existing_report_path) }}">
+            Download the .docx
+          </a>
+        {% endif %}
+        {% if state.pdf_available %}
+          <a class="rw-btn" href="{{ pdf_url }}" target="_blank" rel="noopener">
+            Open as PDF
+          </a>
+        {% endif %}
+      </div>
+      {% if not state.pdf_available %}
+        <p class="rw-help">{{ state.pdf_note }} The .docx above is unaffected.</p>
       {% endif %}
     {% else %}
-      <p class="rw-help">{{ state.pdf_note }} Use the earlier steps to check the
-        content instead.</p>
+      <p class="rw-help">Nothing generated yet &mdash; generate below, then the
+        .docx and the PDF both appear here.</p>
     {% endif %}
   </fieldset>
 
@@ -179,7 +195,13 @@
   .rw-help{font-size:11px;color:#5a6472}
   .rw-ro{background:#fafbfc}
   .rw-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
-  .rw-btn{padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933}
+  .rw-actions-tight{margin-top:8px}
+  /* display:inline-block is not cosmetic. .rw-btn is used on <a> as well as
+     <button>, and an inline <a>'s vertical padding does not grow its line box -
+     so the 9px top padding painted UP over the paragraph above it and clipped
+     the filename's ascenders. <button> is inline-block already, which is why
+     only the link buttons showed it. */
+  .rw-btn{display:inline-block;padding:9px 16px;border-radius:6px;border:1px solid #cfd6dd;background:#fff;cursor:pointer;font:inherit;text-decoration:none;color:#1f2933;line-height:1.2}
   .rw-btn.rw-primary{background:#1a73e8;border-color:#1a73e8;color:#fff}
   .rw-btn[disabled]{opacity:.5;cursor:not-allowed}
   .rw-scroll{overflow-x:auto}
@@ -188,7 +210,12 @@
   .rw-table th{background:#f5f7f9;font-size:12px}
   .rw-list{margin:6px 0 0;padding-left:18px;font-size:13px}
   .rw-list li{margin:3px 0}
+  /* a report filename is ~45 characters with no spaces in it, so it has to be
+     allowed to break or it forces the whole panel wider than the viewport */
+  .rw-file{margin:0 0 2px}
+  .rw-file code{font-size:12px;word-break:break-all;background:#eef1f5;padding:2px 5px;border-radius:4px}
   .rw-result{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:13px;border:1px solid #cfd6dd;background:#fafbfc}
+  .rw-result .rw-help{margin:8px 0 0}
   .rw-result.rw-ok{background:#e8f5e9;border-color:#a5d6a7}
   .rw-result.rw-bad{background:#fdecea;border-color:#f5b5ae}
 </style>
@@ -199,6 +226,19 @@
   var out = document.getElementById('rw-result');
   var comments = document.getElementById('rw-comments');
   if (!btn) return;
+
+  var DOWNLOAD_BASE = {{ url_for('download_file_by_path')|tojson }} + '?path=';
+  var PDF_URL = {{ (pdf_url if state.pdf_available else '')|tojson }};
+
+  // The message and the filename come back from the server and land in
+  // innerHTML. Neither is attacker-controlled today, but the comments box a few
+  // lines up is echoed into the approval flow and this is the one place on the
+  // page that builds markup from a response.
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
 
   btn.addEventListener('click', function () {
     // Generating takes a while and the endpoint is repeatable - a second click
@@ -221,10 +261,41 @@
         // The endpoint reports failure as "error", success as "message".
         if (!res.ok || !d.success) throw new Error(d.error || d.message || 'Generation failed');
         out.className = 'rw-result rw-ok';
-        var bits = ['<strong>Generated.</strong> ' + (d.message || '')];
-        if (d.file_path) bits.push('<div><code>' + d.file_path + '</code></div>');
-        if (d.new_status) bits.push('<div>Request status: ' + d.new_status + '</div>');
-        bits.push('<div>Reload this page to enable the PDF preview of the new file.</div>');
+        var bits = ['<strong>Generated.</strong> ' + esc(d.message || '')];
+        // The full server path was printed here - "D:\EMC\ThermoDocGenExtended\
+        // uploads\reports\37\IEC-EMC-911_...docx". It tells the reader nothing
+        // they can act on and publishes the server's directory layout. The name
+        // is what they will look for in their downloads folder.
+        var name = d.file_name || (d.file_path || '').split(/[\\/]/).pop();
+        if (name) bits.push('<div class="rw-file"><code>' + esc(name) + '</code></div>');
+        if (d.new_status) bits.push('<div>Request status: ' + esc(d.new_status) + '</div>');
+
+        // ...and then it said "Reload this page to enable the PDF preview",
+        // which is the page asking the reader to do its job. The two things
+        // anyone wants at this point are the file and a look at it, so offer
+        // them here. The PDF route renders the latest file on demand, so it
+        // needs no reload; the download needs the path this response just gave.
+        var acts = [];
+        if (d.file_path) {
+          acts.push('<a class="rw-btn rw-primary" href="' +
+                    esc(DOWNLOAD_BASE + encodeURIComponent(d.file_path)) +
+                    '">Download the .docx</a>');
+        }
+        if (PDF_URL) {
+          acts.push('<a class="rw-btn" href="' + esc(PDF_URL) +
+                    '" target="_blank" rel="noopener">Open as PDF</a>');
+        }
+        if (acts.length) {
+          bits.push('<div class="rw-actions rw-actions-tight">' +
+                    acts.join('') + '</div>');
+        }
+        if (d.finalised && d.finalised.page_numbers === false) {
+          bits.push('<div class="rw-help">Page numbers could not be computed on ' +
+                    'this server, so Word will ask to update the fields on ' +
+                    'open. Answer Yes.</div>');
+        }
+        bits.push('<div class="rw-help">Generating again writes another file: ' +
+                  '<a href="">reload this page</a> first.</div>');
         out.innerHTML = bits.join('');
         btn.textContent = 'Generated';
       })
