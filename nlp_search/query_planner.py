@@ -610,12 +610,17 @@ def prompt_block(plan_dict, verdict=None):
             "empty result rather than an error, so a hand-written version looks "
             "like it worked:")
         lines.append(
-            "      review_history            every review round: the decision, "
-            "the coded finding, the reviewer's comment, and which fields the "
-            "engineer changed since the previous revision")
+            "      review_history            every review round of ONE datasheet: "
+            "the decision, the coded finding, the reviewer's comment, and the "
+            "field-by-field before/after of what the engineer changed since the "
+            "previous revision. THIS is the one for 'what changed between the two "
+            "versions', 'what did they fix', 'why did it take three goes' - a FAIL "
+            "and a PASS on the SAME job are two REVISIONS, and this is the only "
+            "analysis that diffs them")
         lines.append(
-            "      modifications_before_pass  what was fitted before the first "
-            "pass that was absent at the last failure")
+            "      modifications_before_pass  what was fitted between two "
+            "CAMPAIGNS - a failure on one job and a pass on a LATER job. NOT for a "
+            "fix-and-resubmit inside one job; that is review_history")
         lines.append(
             "      metric_delta               per-frequency change between two "
             "campaigns, matched on frequency rather than row number")

@@ -369,19 +369,33 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
                                                         in peer review, lab-wide
           review_history             product= or tco=   ONE datasheet's review
                                                         rounds: what the reviewer
-                                                        found each time, and which
-                                                        fields the engineer changed
+                                                        found each time, and the
+                                                        field-by-field before/after
+                                                        of what the engineer changed
                                                         in response. Use this for
                                                         "why was this sent back",
                                                         "why did it take three
-                                                        goes", "what did they fix"
+                                                        goes", "what did they fix",
+                                                        and for "what changed
+                                                        between the two versions".
+                                                        A FAIL and a PASS on the
+                                                        SAME job are two REVISIONS
+                                                        of one datasheet, and this
+                                                        is the only analysis that
+                                                        diffs them.
           timeline                   product= or tco=   every campaign, in order
           failure_detail             product= or tco=   the failures, with the
                                                         readings that breached
           metric_delta               tco_before=, tco_after=   per-frequency
                                                         change between two campaigns
-          modifications_before_pass  product=,          what was fitted before
-                                     test_code=         the first pass that was
+          modifications_before_pass  product=,          what was fitted between
+                                     test_code=         two CAMPAIGNS - a failure on
+                                                        one job and a pass on a LATER
+                                                        job. NOT for a fix-and-
+                                                        resubmit inside one job:
+                                                        that is review_history.
+                                                        What was fitted before
+                                                        the first pass that was
                                                         not there at the last failure.
                                                         Works for ANY test, not just
                                                         CE. PASS test_code whenever

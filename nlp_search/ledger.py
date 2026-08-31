@@ -333,6 +333,50 @@ _INT_RE = re.compile(r"^\d+$")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9.]+")
 
 
+_MAX_LEAVES = 600       # a nested cell is evidence, not licence to explode the set
+_MAX_DEPTH = 6
+
+
+def _iter_leaves(cell, depth=0, budget=None):
+    """Every scalar inside a nested cell, dict keys included.
+
+    An insight primitive does not return a flat row. review_history returns a
+    list of rounds each carrying a `changed` list of {field, before, after};
+    modifications_before_pass returns `revision_transition` holding
+    `fields_changed` holding `changed_count`. Those land in the ledger as ONE
+    cell, and str(cell) plus the capped sub-token pass in _normalise decided
+    citability by POSITION: `conditions_before.ambient` (32) sits inside the
+    first 60 tokens and grounded, `fields_changed[0].changed_count` (38) sits
+    past the cap and was rejected as unsupported. The answer was true, the
+    number was in the evidence, and the prose was replaced by a raw dump that
+    then truncated the very cell holding it.
+
+    Recursing instead of tokenising takes position out of it.
+    """
+    if budget is None:
+        budget = [_MAX_LEAVES]
+    if budget[0] <= 0 or depth > _MAX_DEPTH:
+        return
+    if isinstance(cell, dict):
+        for key, val in cell.items():
+            if budget[0] <= 0:
+                return
+            budget[0] -= 1
+            yield key
+            for leaf in _iter_leaves(val, depth + 1, budget):
+                yield leaf
+        return
+    if isinstance(cell, (list, tuple, set, frozenset)):
+        for val in cell:
+            if budget[0] <= 0:
+                return
+            for leaf in _iter_leaves(val, depth + 1, budget):
+                yield leaf
+        return
+    budget[0] -= 1
+    yield cell
+
+
 def _normalise(cell):
     """The forms a cell might legitimately be written back in.
 
@@ -341,9 +385,24 @@ def _normalise(cell):
     - and an answer that cites "61000-4-2" or "2008" is quoting the evidence,
     not inventing. Whole-cell matching alone rejects those and triggers a
     pointless rewrite of a perfectly good answer.
+
+    A dict or list cell is walked structurally - see _iter_leaves. Note that
+    id_only_numbers() does not descend: it tests str(cell) against _INT_RE, so
+    a nested cell is skipped there and an id buried in one stays citable. That
+    is narrow on purpose - nested cells come from the reviewed insight
+    primitives, not from model-authored SQL.
     """
     if cell is None:
         return ("none", "null", "-")
+    if isinstance(cell, (dict, list, tuple, set, frozenset)):
+        out = set()
+        whole = str(cell).strip().lower()
+        if whole:
+            # the structure verbatim, for an answer that quotes it whole
+            out.add(whole)
+        for leaf in _iter_leaves(cell):
+            out.update(_normalise(leaf))
+        return tuple(out)
     s = str(cell).strip()
     if not s:
         return ()

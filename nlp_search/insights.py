@@ -654,12 +654,16 @@ def modifications_before_pass(conn, product, test_code=None):
                 "revision_transition": within,
                 "note": ("no earlier CAMPAIGN failed, but this datasheet itself "
                          "went from FAIL to PASS between revisions %s and %s - "
-                         "the fix was a resubmission, not a second job. The "
-                         "fields the engineer changed are in "
-                         "revision_transition; report those, and use "
-                         "review_history for the reviewer's own words."
+                         "the fix was a resubmission, not a second job, which "
+                         "makes THIS THE WRONG ANALYSIS for the question asked. "
+                         "Call review_history(product=%r): it returns each "
+                         "round's decision, the reviewer's own comment, and the "
+                         "field-by-field before/after of what the engineer "
+                         "changed. revision_transition below carries the same "
+                         "diff in summary form - use it only if you do not call "
+                         "review_history."
                          % (within.get("failed_revision"),
-                            within.get("passed_revision")))})
+                            within.get("passed_revision"), product))})
             return out
         out.update({"introduced": [], "already_present": at_pass,
                     "note": ("no FAILED campaign precedes this pass%s, and this "
@@ -1115,7 +1119,43 @@ def _short(value):
 # changing is ONE act by the engineer - "filled in the rest of the indirect
 # discharge grid" - and listing them individually crowded out the field that
 # actually mattered and hit the reporting cap on its own.
-_CELL_RE = re.compile(r"^(.*?)(?:_r\d+_c\d+|_col_\d+|__c\d+|_r\d+_name)$")
+#
+# __h\d+ is in here because a grid's HEADER row is part of the grid. Left out,
+# meas_line0__h0 .. __h7 counted as eight separate changed fields per grid, so
+# one re-keyed CE grid reported sixteen header changes alongside the two cell
+# blocks - and "Frequency (MHz)" moving is not something anybody asked about.
+# The trailing (?:\[\])? matters: a list-valued cell is stored as
+# meas_line0__c0[], and with the pattern anchored straight to $ that key never
+# matched, so only the HEADERS of a grid collapsed while its eight columns of
+# readings were still listed one by one as "filled in from blank".
+_CELL_RE = re.compile(
+    r"^(.*?)(?:_r\d+_c\d+|_col_\d+|__c\d+|__h\d+|_r\d+_name)(?:\[\])?$")
+
+
+def _cell_sig(value):
+    """One grid cell, flattened for identity comparison across a re-key."""
+    if isinstance(value, list):
+        return "|".join(str(v).strip() for v in value)
+    return "" if value is None else str(value).strip()
+
+
+def _grids_by_stem(form):
+    """{stem: {cell-suffix: value-signature}} for every grid in one form."""
+    out = {}
+    for key, val in form.items():
+        match = _CELL_RE.match(key)
+        stem = match.group(1) if match else ""
+        if stem:
+            out.setdefault(stem, {})[key[len(stem):]] = _cell_sig(val)
+    return out
+
+
+def _same_readings(before_grid, after_grid, minimum=3):
+    """Is this the SAME grid under a different stem, cell for cell?"""
+    shared = set(before_grid) & set(after_grid)
+    if len(shared) < minimum or len(shared) < len(after_grid):
+        return False
+    return all(before_grid[k] == after_grid[k] for k in shared)
 
 
 def _form_diff(before, after):
@@ -1125,6 +1165,14 @@ def _form_diff(before, after):
     completed observation grid reads as one change and not as twenty-four.
     """
     singles, grids = [], {}
+    # A grid re-keyed to a different index - meas_line1__* copied to
+    # meas_line0__* with byte-identical readings while meas_index flips 1 -> 0 -
+    # is the FORM renumbering a grid, not the engineer measuring anything. Keys
+    # diffed literally, that reported 33 cells as "FILLED IN (were blank)", so
+    # "what changed between the two revisions" answered "the whole CE
+    # measurement grid was entered" about readings that had not moved by a
+    # single digit. Measured on datasheet 375 revision 1 -> 2.
+    before_grids = _grids_by_stem(before)
     for key in sorted(set(before) | set(after)):
         if key in _REVIEW_NOISE:
             continue
@@ -1146,6 +1194,23 @@ def _form_diff(before, after):
                      and str(vb or "").strip())
         cleared = sum(1 for _k, va, vb in cells if str(va or "").strip()
                       and not str(vb or "").strip())
+
+        moved_from = None
+        if filled == len(cells):
+            after_grid = {k[len(stem):]: _cell_sig(vb) for k, _va, vb in cells}
+            for other, other_grid in sorted(before_grids.items()):
+                if other != stem and _same_readings(other_grid, after_grid):
+                    moved_from = other
+                    break
+        if moved_from:
+            singles.append({
+                "field": stem + " grid",
+                "before": "the same readings, under %s" % moved_from,
+                "after": "re-keyed from %s - THE READINGS DID NOT CHANGE, the "
+                         "form renumbered the grid" % moved_from,
+                "cells": ", ".join(k for k, _a, _b in cells[:8])})
+            continue
+
         what = "%d cell(s) changed" % len(cells)
         if filled:
             what = "%d cell(s) FILLED IN (were blank)" % filled
