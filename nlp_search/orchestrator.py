@@ -719,6 +719,108 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     return agent, blocks, undefined
 
 
+# --------------------------------------------------------------------------
+# A COUNT THAT NO QUERY ANSWERED IS NOT AN ANSWER
+# --------------------------------------------------------------------------
+# The orchestrator resolves "Smart2Pure" to four jobs, reads match_count = 4,
+# and replies "Smart2Pure has four tests assigned" - listing four TCO ids as
+# though they were tests. The real answer is 24. No worker was ever dispatched,
+# so no counting query was written: route comes back "probe-only".
+#
+# The prompt already forbids this in as many words - "Never count, total or
+# list from a resolve_entity reply - dispatch and let a worker run the actual
+# query, even when the answer looks obvious." It is ignored, which is the
+# pattern this whole package documents: what the model is TOLD gets lost, what
+# it is HANDED survives. _plan_mismatch already DETECTS the state precisely,
+# and detection is where it stops - the repair pass rewrites from evidence and
+# there is no evidence, so it can only re-word the same wrong figure.
+#
+# So this stops asking and enforces. If the plan says a figure is wanted and
+# nothing measured one, a worker is dispatched and its answer replaces the
+# lookup arithmetic. Costs a second agent run, in the failure case only.
+
+# METRICS label the equipment domain "equipment"; the worker that owns those
+# tables is called "inventory". One mapping, rather than renaming either.
+_METRIC_DOMAIN_TO_WORKER = {"equipment": "inventory"}
+
+
+def _requires_measurement(plan):
+    """True when the plan asks for a figure, which must come from a query."""
+    return bool(plan) and plan.get("operation") in ("COUNT", "AGGREGATE")
+
+
+def _measured_anything(ledger):
+    """Did any real query succeed? Semantics-only counts - it ran SQL too."""
+    return any(not e.get("error") for e in (ledger.entries or []))
+
+
+def _worker_for_plan(plan, question):
+    """Which worker should have answered this. None when nothing suggests one.
+
+    Three sources, most specific first: the domain a candidate reviewed measure
+    belongs to, the domain owning the most tables the retriever picked, and
+    finally intent's own scoring of the question.
+    """
+    plan = plan or {}
+    for name in (plan.get("candidate_metrics") or []):
+        dom = (semantics.METRICS.get(name) or {}).get("domain")
+        dom = _METRIC_DOMAIN_TO_WORKER.get(dom, dom)
+        if dom in workers.DOMAIN_META:
+            return dom
+
+    tables = [t.lower() for t in (plan.get("source_tables") or [])]
+    if tables:
+        best, best_n = None, 0
+        for dom in workers.DOMAIN_META:
+            owned = set(schema_catalog.DOMAIN_TABLES.get(dom, ()))
+            n = sum(1 for t in tables if t in owned)
+            if n > best_n:
+                best, best_n = dom, n
+        if best:
+            return best
+
+    try:
+        ranked = intent.domain_scores(question) or []
+        if ranked and ranked[0][0] in workers.DOMAIN_META:
+            return ranked[0][0]
+    except Exception:  # noqa: BLE001 - scoring is a hint, not a requirement
+        pass
+    return None
+
+
+_FORCED_BRIEF = """
+## A FIGURE WAS ASKED FOR AND NOTHING HAS MEASURED ONE YET
+The previous attempt answered without running a query. Whatever number it
+produced was read off a name lookup, which counts records matching a NAME - not
+the things being counted. Resolving a product to four jobs does not mean four
+tests.
+
+Run the SQL. Answer ONLY from rows a query you executed returned. If the
+question names a product, job or person, filter on the identifiers given above
+rather than on the words the user typed.
+"""
+
+
+def _force_worker(question, db_params, ledger, blocks, data_scope, plan):
+    """Dispatch a worker for a figure nothing measured. (result, draft) or None."""
+    domain = _worker_for_plan(plan, question)
+    if not domain:
+        return None
+    try:
+        from agents import Runner
+        agent = workers.build_standalone(
+            domain, db_params, ledger,
+            extra_blocks=tuple(blocks) + (_FORCED_BRIEF,), scope=data_scope)
+        result = Runner.run_sync(agent, question, max_turns=MAX_TURNS)
+        draft = str(result.final_output or "").strip()
+        log.info("forced dispatch to the %s worker: a %s had no query behind it",
+                 domain, (plan or {}).get("operation"))
+        return result, draft
+    except Exception as exc:  # noqa: BLE001 - the first answer still stands
+        log.warning("forced dispatch failed (%s); keeping the first answer", exc)
+        return None
+
+
 def _resolve_first_entity(question, db_params, ledger, data_scope):
     """The first entity in the question that resolves, or None.
 
@@ -1122,6 +1224,24 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
             result = Runner.run_sync(agent, question, max_turns=MAX_TURNS)
             draft = str(result.final_output or "").strip()
             steps = _extract_steps(result)
+            extra_results = []
+
+            # ENFORCEMENT, not instruction. A figure was asked for and nothing
+            # ran a query, so the number in that draft came off a lookup. See
+            # _force_worker.
+            if _requires_measurement(ledger.plan) and not _measured_anything(ledger):
+                forced = _force_worker(question, db_params, ledger, blocks,
+                                       scope_mod.detect(question), ledger.plan)
+                if forced is not None:
+                    f_result, f_draft = forced
+                    extra_results.append(f_result)
+                    steps = steps + _extract_steps(f_result)
+                    # Only if the worker actually measured something. A second
+                    # empty-handed pass must not overwrite the first answer with
+                    # a differently-worded version of the same guess.
+                    if f_draft and _measured_anything(ledger):
+                        draft = f_draft
+
             route = _route_label(ledger, steps)
 
             # Nothing leaves without being checked against the rows we actually
@@ -1174,6 +1294,16 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
                     pass
         tracing.flush()
         inp, out, tot, model, cached = _extract_usage(result)
+        # A forced dispatch is a second agent run and its tokens are real. Not
+        # adding them would make the audit row understate the cost of exactly
+        # the questions that cost the most.
+        for extra in extra_results:
+            e_in, e_out, e_tot, e_model, e_cached = _extract_usage(extra)
+            inp += e_in
+            out += e_out
+            tot += e_tot
+            cached += e_cached
+            model = model or e_model
         audit.log_query(question=question, answer=answer_text, user_id=user_id,
                         username=user, route=route, model=(model or model_name),
                         input_tokens=inp, output_tokens=out, total_tokens=tot,
