@@ -605,7 +605,30 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     # entity in SQL, which is the only place the filter can actually be applied.
     named_entity = bool((entity or {}).get("candidates")
                         or (entity or {}).get("excluded_by_scope"))
-    if not named_entity:
+    # A reference with nothing to refer to is the other way a lab-wide figure
+    # gets mistaken for an answer, and it is not covered by named_entity:
+    # "Is this test requests are properly filled" names no entity at all, so
+    # entity resolution finds nothing, so the measures ran and reported 77
+    # unfilled for a product with 0 unfilled out of 3.
+    #
+    # Stood down when our own conversation history can recover the antecedent -
+    # a resolvable follow-up is a normal question and must not be interrogated.
+    refers_out = intent.depends_on_earlier_turn(question)
+    history_resolves = bool(_antecedents(history))
+    dangling = refers_out and not history_resolves
+
+    # WHERE the specific thing was named does not change that the question is
+    # about one thing. Testing only named_entity meant a follow-up whose subject
+    # came from the PREVIOUS answer still got the lab-wide measures pre-computed,
+    # and they were duly reported: asked whether "this" product's tests were
+    # filled, with the product named one turn earlier, the answer came back
+    # "73 unfilled, 166 with no datasheet" across every job in the lab.
+    #
+    # So an antecedent recovered from history counts the same as one typed here:
+    # the definitions travel, the numbers do not, and the worker applies the
+    # filter in SQL where the filter can actually be applied.
+    about_one_thing = named_entity or (refers_out and history_resolves)
+    if not about_one_thing and not dangling:
         resolved = semantics.execute(resolved, db_params, ledger=ledger,
                                      scope=data_scope)
 
@@ -642,7 +665,14 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     # Stated against THIS question it stands a chance; left in a standing prompt
     # it lost. Injected for workers too, since routing now sends more questions
     # straight to one.
-    if not intent.names_something(question):
+    # These two are mutually exclusive by construction and must not both fire:
+    # NO_NARROWING says "you named nothing, so answer about everything", which
+    # is the exact opposite of what an unresolved reference needs. A question
+    # saying "this product" names nothing by names_something's reckoning, so
+    # without the elif it would be told to answer lab-wide AND to ask which one.
+    if dangling:
+        blocks = blocks + (intent.UNRESOLVED_REFERENCE_DIRECTIVE,)
+    elif not intent.names_something(question):
         blocks = blocks + (intent.NO_NARROWING_DIRECTIVE,)
     # First, so the model reads what was already said before the rest of the
     # per-question material. Workers get it too: routing sends most questions

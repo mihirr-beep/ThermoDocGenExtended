@@ -526,6 +526,97 @@ def names_something(question):
     return False
 
 
+# --------------------------------------------------------------------------
+# A REFERENCE WITH NOTHING IN THIS MESSAGE TO REFER TO
+# --------------------------------------------------------------------------
+# This is the single largest cause of wrong answers in the audit log, and it
+# always fails the same way: the question says "this product", nothing resolves
+# it, and the pre-computed LAB-WIDE figure is handed over as though it answered.
+# Measured on real turns - "Is this test requests are properly filled" was
+# answered "77 tests unfilled" for a product with 0 unfilled out of 3.
+#
+# So the check is not "is this a follow-up" (unknowable from one message) but
+# "does this message contain a referring word with no antecedent of its own".
+# That IS knowable, and when it is true the honest move is to resolve the
+# reference from conversation history or ask - never to substitute a total.
+#
+# Four exemptions, each closing a measured false positive:
+#   named entity here      "why did CE fail for Mihirs Product" - self-contained
+#   explicit lab scope     "how many in total across the lab" - the total IS it
+#   same-sentence link     "what is out of calibration and does it affect..."
+#                          - "it" is the thing named two words earlier
+#   generic nouns          "this database", "this week", "this report" - "this"
+#                          modifying the system or a time span refers to nothing
+#                          in the data
+_DANGLING_REF_RE = re.compile(
+    r"\b(?:these|those|them|it|its|that one|this one|the above|"
+    r"the other one|the same one|same as before|as before|"
+    r"the (?:previous|last) "
+    r"(?!day\b|days\b|week\b|weeks\b|month\b|months\b|quarter\b|quarters\b|"
+    r"year\b|years\b|hour\b|hours\b)\w+|"
+    r"the (?:same|one) (?:product|test|campaign))\b"
+    # Bare "this <noun>". Without this branch the check caught 2 of 9 real
+    # failures: every other one said "this product" / "this test requests" /
+    # "this in review", and "this" alone was not in the list. With it, 9 of 9,
+    # and the generic-noun exclusions keep "this database" and "this week" out.
+    r"|\bthis\s+(?!lab\b|database\b|system\b|app\b|tool\b|week\b|month\b|"
+    r"year\b|quarter\b|day\b|report\b|file\b|document\b|page\b|time\b|"
+    r"session\b|screen\b)\w+",
+    re.I)
+
+# A TCO/job id or a Capitalized Multi-Word phrase named IN THIS message: either
+# means the reference has a same-message antecedent and needs nothing carried.
+_NAMED_ENTITY_HERE_RE = re.compile(
+    r"\b[A-Za-z]{2,}-[A-Za-z]{2,}-\d+\b|"
+    r"\b(?:[A-Z][a-z]+\s){1,4}[A-Z][a-z]+\b")
+
+_GLOBAL_SCOPE_RE = re.compile(
+    r"\bacross (?:the )?(?:lab|every|all)\b|\ball products?\b|"
+    r"\bthe whole lab\b|\bin total\b|\boverall\b|"
+    r"\bevery (?:product|job|request)\b|\bhow many.{0,20}(?:in total|altogether)\b",
+    re.I)
+
+_SAME_SENTENCE_LINK_RE = re.compile(
+    r"\b(?:and|but|or)\s+(?:does|is|are|was|were|will|would|can|could|has|"
+    r"have|had)\s+(?:it|its|they|them|these|those)\b", re.I)
+
+
+def depends_on_earlier_turn(question):
+    """True when the question refers to something it does not itself name.
+
+    Says nothing about whether the reference CAN be resolved - only that it
+    needs resolving. The caller decides what to do with that: orchestrator
+    checks conversation history first and stands this down when the antecedent
+    is recoverable, because a resolvable follow-up is a normal question.
+    """
+    q = question or ""
+    if not _DANGLING_REF_RE.search(q):
+        return False
+    if _NAMED_ENTITY_HERE_RE.search(q):
+        return False
+    if _GLOBAL_SCOPE_RE.search(q):
+        return False
+    if _SAME_SENTENCE_LINK_RE.search(q):
+        return False
+    return True
+
+
+UNRESOLVED_REFERENCE_DIRECTIVE = """
+## THIS QUESTION REFERS TO SOMETHING IT DOES NOT NAME, AND NOTHING RESOLVES IT
+The question says "this"/"these"/"it" with no product, job or person named in
+it, and the conversation so far does not settle which one is meant.
+
+A LAB-WIDE TOTAL IS NOT THE ANSWER. The reviewed measures were deliberately NOT
+run for this question, because handing over a whole-lab figure for a question
+about one unnamed thing is how this system produced its most confident wrong
+answers - "77 tests unfilled" for a product with none unfilled out of three.
+
+Ask which product, job or person is meant. One short question, nothing else. Do
+not answer about everything, and do not pick the most recently mentioned thing
+and hope.
+"""
+
+
 NO_NARROWING_DIRECTIVE = """
 ## THIS QUESTION NAMES NOTHING SPECIFIC - SO IT IS ABOUT EVERYTHING
 
