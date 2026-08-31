@@ -220,10 +220,16 @@ DOMAINS = {
         "blurb": ("What was actually MEASURED and recorded: results, ambient "
                   "conditions, per-test parameters, every observation cell, the "
                   "equipment and software used, and the review history."),
-        # deliberately NOT iec_emc_requests: `datasheet` already denormalises
-        # tco_id, job_number, product_name and eut_class, and that table is the
-        # single biggest block of catalog text. A question that genuinely needs
-        # request detail is a cross-domain question - the orchestrator's job.
+        # iec_emc_requests WAS deliberately excluded here, on the grounds that
+        # `datasheet` already denormalises tco_id, job_number, product_name and
+        # eut_class, and that table is the single biggest block of catalog text.
+        # Sound reasoning until scope enforcement arrived, and now wrong: the
+        # scope guard REJECTS any query touching `datasheet` that does not reach
+        # iec_emc_requests.is_synthetic, and this worker touches `datasheet` on
+        # essentially every question. Without the table in its slice the guard
+        # demands a join to something the allowlist forbids - the worker cannot
+        # comply, and every datasheets query fails with no way out. A guard the
+        # worker is unable to satisfy is not a guard, it is an outage.
         # emc_reason_code is 16 rows of vocabulary and the join target for both
         # datasheet.failure_reason_code and datasheet_status_history.reason_code.
         # Left out of the catalog it was worse than absent: insights.py queries
@@ -231,7 +237,8 @@ DOMAINS = {
         # referenced codes whose meaning it could not look up - and any worker
         # writing that join had it REJECTED by sql_guard for an unlisted table.
         "tables": ["datasheet", "datasheet_*", "basic_standard_map",
-                   "emc_reason_code", "planner_entries", "users"],
+                   "emc_reason_code", "planner_entries", "users",
+                   "iec_emc_requests"],
     },
     "inventory": {
         "title": "equipment and calibration",
@@ -242,8 +249,16 @@ DOMAINS = {
         # used-on-a-datasheet list AND the calibration dates, and they sat in
         # different workers. Note it joins by NAME, not id, and the name is
         # not unique - see RELATIONSHIPS in semantics.py.
+        #
+        # `datasheet` and iec_emc_requests come with it, and only because of
+        # scope: datasheet_equipment is 78% synthetic-derived, so the guard
+        # requires it to reach is_synthetic, and the only route there is
+        # datasheet_equipment -> datasheet -> iec_emc_requests. Two extra tables
+        # to keep one bridge usable. equipment / maintenance / equipment_history
+        # are lab-wide infrastructure with no request of their own and need no
+        # filter, so a pure inventory question pays nothing for this.
         "tables": ["equipment", "equipment_history", "maintenance", "users",
-                   "datasheet_equipment"],
+                   "datasheet_equipment", "datasheet", "iec_emc_requests"],
     },
 }
 

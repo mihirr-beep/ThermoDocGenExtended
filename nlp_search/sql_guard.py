@@ -238,11 +238,17 @@ def enforce_row_cap(sql, max_rows):
     return sql[:m.start()] + tail, True
 
 
-def validate_sql(sql, allowed_tables, denied_star_tables=()):
+def validate_sql(sql, allowed_tables, denied_star_tables=(), scope=None):
     """Validate an LLM-written query.
 
     Returns (ok, reason_or_none, cleaned_sql). The reason is written for the
     LLM to read and self-correct.
+
+    `scope` is REAL / DEMO / ALL from scope.py. When it asks for a filter, a
+    query that reads a scope-bearing table without mentioning is_synthetic is
+    rejected here rather than trusted to have remembered - see _check_scope.
+    Left None the check does not run, so every existing caller behaves exactly
+    as it did before scope existed.
     """
     if not isinstance(sql, str) or not sql.strip():
         return False, "Empty SQL. Provide one SELECT statement.", ""
@@ -337,4 +343,50 @@ def validate_sql(sql, allowed_tables, denied_star_tables=()):
             return False, ("SELECT * is not allowed on '%s' because it contains restricted "
                            "columns. List the specific columns you need instead." % touched[0]), ""
 
+    ok, why = _check_scope(idents, scope)
+    if not ok:
+        return False, why, ""
+
     return True, None, cleaned
+
+
+def _check_scope(idents, scope):
+    """Reject a query that reads the request table without honouring scope.
+
+    Three quarters of the schedule in this database is synthetic demonstration
+    data, so an unfiltered aggregate is not slightly wrong, it is mostly about
+    rows that do not exist. The rule cannot live in the prompt: it has to hold
+    on every query, including the ones written after the model has forgotten
+    the instruction four turns ago.
+
+    The check is deliberately shallow - it asks whether is_synthetic is
+    mentioned at all, not whether it is compared correctly. A guard that tried
+    to parse the WHERE clause would be a SQL engine, and would reject correct
+    queries it failed to understand. Getting the model to WRITE the column is
+    the hard part; writing `is_synthetic = 0` and meaning something else is not
+    a mistake anyone makes by accident. Semantic verification re-checks the
+    actual returned rows afterwards, which is where a wrong comparison surfaces.
+    """
+    try:
+        from . import scope as scope_mod
+    except Exception:  # noqa: BLE001 - scope is advisory if it cannot import
+        return True, None
+    if not scope or not scope_mod.wants_filter(scope):
+        return True, None
+    touched = sorted(set(_referenced_tables(idents)) & scope_mod.SCOPED_TABLES)
+    if not touched:
+        return True, None
+    if re.search(r"\b%s\b" % scope_mod.FLAG_COLUMN, idents, re.I):
+        return True, None
+    # Percentages measured on THIS database on 2026-08-31, not inherited: the
+    # schedule is 73% synthetic and the datasheets 83%. Quoting a number from
+    # somebody else's copy is how a catalog goes stale.
+    return False, (
+        "This question is scoped to %s data, but this query reads %s without "
+        "honouring it. Join back to %s and add `%s`. Most of this database is "
+        "synthetic: the schedule is 73%% demo rows and the datasheets 83%%, so "
+        "an unfiltered count here is mostly about data the lab never produced. "
+        "Do NOT filter on the tco_id prefix instead - two synthetic jobs carry "
+        "a real-looking IEC-EMC- id, so only the flag is reliable."
+        % (scope, ", ".join(touched[:3]), scope_mod.FLAG_TABLE,
+           scope_mod.sql_predicate(scope, "r")))

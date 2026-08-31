@@ -113,11 +113,18 @@ def ask():
     _require_admin()
     payload = request.get_json(silent=True) or {}
     question = (payload.get("question") or "").strip()
+    # Debug mode returns every pipeline stage, so a wrong answer can be traced
+    # to the stage that produced it instead of guessed at. Admin-only, like
+    # everything else on this blueprint. Accepted from the JSON body or the
+    # query string, since the handy way to use it is curl.
+    debug = str(payload.get("debug") or request.args.get("debug") or "").lower() \
+        in ("1", "true", "yes")
     try:
         result = orchestrator.answer(question, _db_params(),
                                      user=getattr(current_user, "username", None),
                                      user_id=getattr(current_user, "id", None),
-                                     history=_history(payload.get("history")))
+                                     history=_history(payload.get("history")),
+                                     debug=debug)
     except Exception as exc:  # noqa: BLE001 - belt & suspenders; answer() shouldn't raise
         current_app.logger.error("NL search error: %s", exc)
         return jsonify(success=False, message="NL search failed unexpectedly."), 500

@@ -42,6 +42,12 @@ class Ledger:
         # for grounding, and a caveat is commentary, not evidence - it must not
         # become something a claim can be grounded against.
         self.metrics = []
+        # The structured plan this question was answered against, and what
+        # plan_guard made of it. Same reasoning as self.metrics: kept off
+        # self.notes so a figure appearing in the plan cannot be cited as
+        # evidence by the answer.
+        self.plan = None
+        self.plan_verdict = None
 
     # -- budget ------------------------------------------------------------
 
@@ -98,6 +104,17 @@ class Ledger:
         self.metrics.append({"name": name, "caveat": (caveat or "").strip(),
                              "label": label or name})
 
+    def set_plan(self, plan, verdict=None):
+        """Record WHY the queries on this ledger were run.
+
+        Deliberately not appended to `notes`: note text is tokenised into
+        values() for grounding, and a plan is a statement of intent, not
+        evidence. A count that appears in the plan must not become something
+        the answer can cite.
+        """
+        self.plan = plan or None
+        self.plan_verdict = verdict or None
+
     def note(self, kind, text):
         """Record something that is evidence but is not a SELECT result -
         a probe that listed a column's real values, or a refusal."""
@@ -105,6 +122,56 @@ class Ledger:
                            "at": round(time.time() - self.started, 2)})
 
     # -- reading -----------------------------------------------------------
+
+    def plan_summary(self):
+        """The plan reduced to what an audit row or a debug trace needs."""
+        p = self.plan or {}
+        ent = p.get("entity") or {}
+        return {
+            "operation": p.get("operation"),
+            "subject": p.get("subject"),
+            "state": p.get("state"),
+            "scope": p.get("scope"),
+            "source_tables": p.get("source_tables") or [],
+            "entity": ent.get("value"),
+            "entity_type": ent.get("type"),
+            "query_purpose": self.query_purpose(),
+            "plan_verdict": (self.plan_verdict or {}).get("verdict"),
+        }
+
+    def query_purpose(self):
+        """A short slug naming what this question set out to measure.
+
+        Used in the audit row so a later reader can tell at a glance which
+        reading of an ambiguous word was taken, without reconstructing it from
+        the SQL.
+        """
+        p = self.plan or {}
+        bits = [str(p.get("operation") or "").lower(),
+                str(p.get("state") or p.get("subject") or "").lower()]
+        slug = "_".join(b for b in bits if b)
+        return slug.replace(" ", "_") or None
+
+    def sql_text(self):
+        """All executed SQL as one lower-cased blob, for containment checks."""
+        return "\n".join((e.get("sql") or "") for e in self.entries
+                         if not e.get("error")).lower()
+
+    def tables_queried(self):
+        """Every table name appearing in an executed query on this ledger.
+
+        Cheap and approximate on purpose - it feeds a consistency CHECK, not a
+        query plan. Over-reporting a table costs a missed warning; parsing SQL
+        properly here would cost a dependency and a new class of bug.
+        """
+        names = set()
+        for e in self.entries:
+            if e.get("error"):
+                continue
+            for m in re.finditer(r"\b(?:FROM|JOIN)\s+`?([A-Za-z_][A-Za-z0-9_]*)`?",
+                                 e.get("sql") or "", re.I):
+                names.add(m.group(1).lower())
+        return names
 
     @property
     def query_count(self):

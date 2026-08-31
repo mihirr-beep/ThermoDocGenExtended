@@ -36,6 +36,9 @@ import re
 import time
 
 from . import decompose, gates, intent, probes, semantics, verify, workers
+from . import final_answer, plan_guard, query_planner, schema_catalog
+from . import scope as scope_mod
+from . import table_retriever
 from .ledger import Ledger
 
 # Domain workers ON by default - measured, not assumed.
@@ -552,7 +555,8 @@ what to ask next, and they stop asking.
 """
 
 
-def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None):
+def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None,
+             trace=None):
     """Everything that must happen BEFORE the model is asked anything.
 
     The gates test what the question assumes; the semantic layer replaces the
@@ -560,15 +564,69 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     plain SQL, so neither can invent, and a fact established here cannot be
     argued away by whatever the model writes next.
 
+    Since the planning layer was added this also decides the data scope, the
+    tables worth looking at, the entity, and the structured plan - in that
+    order, because each one narrows the next. The plan is written into the
+    ledger so verification can ask whether the executed query implemented it,
+    rather than only whether its numbers appeared somewhere.
+
+    `trace` (when given) is a dict that collects the intermediate steps for
+    debug mode.
+
     Returns (agent, prompt_blocks, undefined_terms).
     """
     verdicts = gates.run(question, db_params, ledger=ledger) if verify_answer else []
-    resolved = semantics.execute(semantics.resolve(question), db_params, ledger=ledger)
+
+    # Scope, domain and tables first: each narrows the next, and the retriever
+    # needs the domain to know which pool to rank within.
+    data_scope = scope_mod.detect(question)
+    # Routing still reads OUR history-aware text, so a short follow-up routes on
+    # what it is actually about rather than on its four words.
+    domain = None if kind == intent.SCHEMA else intent.single_domain(
+        _routing_text(question, history))
+    retrieved = table_retriever.retrieve(question, domain=domain)
+
+    # Entity BEFORE semantics, because whether the entity resolved decides
+    # whether running the reviewed measures is useful or actively misleading.
+    entity = _resolve_first_entity(question, db_params, ledger, data_scope)
+
+    resolved = semantics.resolve(question)
+    # Every reviewed measure is LAB-WIDE. That is right for "how many tests are
+    # assigned" and wrong for "how many tests are assigned for Smart2Pure":
+    # asked the second, the layer pre-computed the whole lab's figures and handed
+    # them over as though they answered it. Real numbers, none of them about the
+    # product named in the question - and this is the exact failure this system
+    # produced four separate times in manual testing, reporting "77 tests
+    # unfilled" for a product that had 0 unfilled out of 3.
+    #
+    # So when the question names an entity, the DEFINITIONS still travel (the
+    # plan carries them, and they are what stops the worker inventing its own
+    # reading) but the numbers do not. The worker applies the definition to the
+    # entity in SQL, which is the only place the filter can actually be applied.
+    named_entity = bool((entity or {}).get("candidates")
+                        or (entity or {}).get("excluded_by_scope"))
+    if not named_entity:
+        resolved = semantics.execute(resolved, db_params, ledger=ledger)
+
     # A word the semantic layer defines is no longer "undefined" - it has an
     # answer, it just has more than one.
     undefined = [t for t in intent.undefined_terms_in(question)
                  if not any(t in a["term"] for a in resolved.get("ambiguous", []))]
-    blocks = (gates.prompt_block(verdicts), semantics.prompt_block(resolved))
+
+    plan = query_planner.plan(question, kind=kind, domain=domain,
+                              resolved=resolved, entity=entity,
+                              scope=data_scope, tables=retrieved)
+    verdict = plan_guard.validate(
+        plan,
+        allowed_tables=schema_catalog.tables_for(domain) if domain else None)
+    ledger.set_plan(plan, verdict)
+
+    blocks = (gates.prompt_block(verdicts), semantics.prompt_block(resolved),
+              scope_mod.prompt_block(data_scope),
+              table_retriever.prompt_block(retrieved),
+              query_planner.prompt_block(plan, verdict),
+              plan_guard.prompt_block(verdict))
+    blocks = tuple(b for b in blocks if b)
     if undefined:
         blocks = blocks + (intent.UNDEFINED_DIRECTIVE.format(
             terms=", ".join("'%s'" % t for t in undefined)),)
@@ -593,16 +651,27 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     if conversation:
         blocks = (conversation,) + blocks
 
+    if trace is not None:
+        trace.update({
+            "question": question,
+            "question_kind": kind,
+            "domain": domain,
+            "scope": data_scope,
+            "retrieved_tables": retrieved,
+            "entity": entity,
+            "undefined_terms": undefined,
+            "plan": plan,
+            "plan_verdict": verdict,
+        })
+
     # A question that plainly belongs to one domain goes straight to that
     # worker. The orchestrator's own turns were most of the cost - it spends
     # one deciding to dispatch and more relaying the answer back, around a
     # single worker loop that was already going to do the work.
-    if kind != intent.SCHEMA:
-        domain = intent.single_domain(_routing_text(question, history))
-        if domain:
-            agent = workers.build_standalone(domain, db_params, ledger,
-                                             extra_blocks=blocks)
-            return agent, blocks, undefined
+    if domain:
+        agent = workers.build_standalone(domain, db_params, ledger,
+                                         extra_blocks=blocks, scope=data_scope)
+        return agent, blocks, undefined
 
     # No single worker owns it, so the ORCHESTRATOR chooses - and it was
     # choosing from tool descriptions alone. Asked to count shielded cables it
@@ -614,8 +683,29 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
 
     agent = _build_orchestrator(
         db_params, ledger, kind=kind, undefined=undefined, extra_blocks=blocks,
-        code_hint=intent.test_code_in(question) if kind == intent.SCHEMA else None)
+        code_hint=intent.test_code_in(question) if kind == intent.SCHEMA else None,
+        scope=data_scope)
     return agent, blocks, undefined
+
+
+def _resolve_first_entity(question, db_params, ledger, data_scope):
+    """The first entity in the question that resolves, or None.
+
+    Candidates are tried most-specific first. A name excluded by scope counts
+    as resolved for planning purposes - "this exists but not in the corpus you
+    asked about" is a finding the plan must carry, not a miss.
+    """
+    for kind_hint, text in query_planner.candidate_entities(question):
+        try:
+            payload = json.loads(probes.resolve_entity(
+                db_params, kind_hint, text, ledger=ledger))
+        except Exception:  # noqa: BLE001 - entity resolution is best-effort
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("candidates") or payload.get("excluded_by_scope"):
+            return payload
+    return None
 
 
 def _answer_in_parts(parts, question, db_params, ledger, kind, user, user_id,
@@ -712,10 +802,12 @@ def _matched_columns(find_field_json):
 
 
 def _build_orchestrator(db_params, ledger, model=None, kind=intent.DATA,
-                        code_hint=None, undefined=(), extra_blocks=()):
+                        code_hint=None, undefined=(), extra_blocks=(),
+                        scope=None):
     from agents import Agent, function_tool
 
-    tools = (list(workers.worker_tools(db_params, ledger, model=model))
+    tools = (list(workers.worker_tools(db_params, ledger, model=model,
+                                       scope=scope))
              if USE_DOMAIN_WORKERS
              else [workers.author_tool(db_params, ledger, model=model)])
 
@@ -899,7 +991,7 @@ def _extract_usage(result):
 # --------------------------------------------------------------------------
 
 def answer(question, db_params, user=None, user_id=None, verify_answer=True,
-           history=None):
+           history=None, debug=False):
     """Run the orchestrator on one question. Returns a dict for the API layer:
 
     `history` is the last few turns as [{role: user|assistant, text: str}],
@@ -908,6 +1000,12 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
     keeps grounding meaningful.
     {"success": True, "answer": str, "route": str, "steps": [...],
      "grounding": {...}} or {"success": False, "message": str}. Never raises.
+
+    `debug` returns every pipeline stage under a "debug" key - scope, retrieved
+    tables with their scores and reasons, the resolved entity, the structured
+    plan, the guard verdict, the draft, the grounding result and the final
+    rewrite. When an answer is wrong this says WHICH STAGE was wrong; without
+    it, diagnosing one means guessing.
 
     `user`/`user_id` (the admin who asked) are attached to the Langfuse trace
     and recorded in nlp_search_audit."""
@@ -977,8 +1075,10 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
         if len(parts) > 1:
             return _answer_in_parts(parts, question, db_params, ledger, kind,
                                     user, user_id, sp, traced, _tag, t0)
+        trace = {} if debug else None
         agent, blocks, undefined = _prepare(question, db_params, ledger, kind,
-                                           verify_answer, history=history)
+                                           verify_answer, history=history,
+                                           trace=trace)
         with (sp if sp is not None else contextlib.nullcontext()):
             if sp is not None:
                 _tag(sp)
@@ -1009,6 +1109,30 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
             # means it survives every path: grounded, repaired, or withheld.
             answer_text = semantics.attach_caveats(answer_text, ledger)
 
+            # THE LANGUAGE STAGE. Everything above decided what is TRUE; this
+            # decides how it READS. Safe to run only because _guard() inside it
+            # discards any rewrite containing a figure the verified draft did not
+            # already carry - so the worst case is the answer we had a line ago.
+            # See final_answer.py.
+            verified_text = answer_text
+            answer_text, fa_note = final_answer.write(
+                question, answer_text, ledger,
+                verdict=grounding.get("verdict"))
+            # Both of these run AGAIN, and that is not redundancy. The rewrite is
+            # handed ledger.evidence_digest(), which contains SQL, and it copies
+            # from what it sees - so machinery can reappear. And it is a fresh
+            # generation, so a caveat the previous pass appended can be dropped.
+            answer_text = verify.strip_machinery(answer_text)
+            answer_text = semantics.attach_caveats(answer_text, ledger)
+
+            if trace is not None:
+                trace.update({"draft": draft, "verified_answer": verified_text,
+                              "grounding": grounding, "final_note": fa_note,
+                              "final_answer": answer_text,
+                              "sql": ledger.queries(),
+                              "evidence": ledger.summary(),
+                              "plan_summary": ledger.plan_summary()})
+
             if sp is not None:
                 try:
                     sp.set_attribute("langfuse.trace.output", answer_text)
@@ -1028,12 +1152,18 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
                                                     if s.get("type") == "call"
                                                     and s.get("tool")})) or None,
                         sql_queries=ledger.sql_log() or None,
-                        success=True, trace_id=trace_id)
-        return {"success": True, "answer": answer_text, "route": route,
-                "steps": steps, "grounding": grounding,
-                "evidence": ledger.summary(), "sql": ledger.queries(),
-                "tokens": {"input": inp, "output": out, "total": tot,
-                           "cached": cached}}
+                        success=True, trace_id=trace_id,
+                        query_purpose=ledger.query_purpose(),
+                        data_scope=(ledger.plan or {}).get("scope"))
+        payload = {"success": True, "answer": answer_text, "route": route,
+                   "steps": steps, "grounding": grounding,
+                   "evidence": ledger.summary(), "sql": ledger.queries(),
+                   "plan": ledger.plan_summary(),
+                   "tokens": {"input": inp, "output": out, "total": tot,
+                              "cached": cached}}
+        if trace is not None:
+            payload["debug"] = trace
+        return payload
     except MaxTurnsExceeded:
         audit.log_query(question=question, user_id=user_id, username=user, route="none",
                         model=model_name, success=False, error="Max turns exceeded",

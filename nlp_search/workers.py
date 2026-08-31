@@ -215,7 +215,7 @@ they read. So:
 
 
 def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
-               standalone=False):
+               standalone=False, scope=None):
     """One worker agent, wired to its own slice of the schema.
 
     ``standalone`` means it is answering the user directly rather than
@@ -223,6 +223,10 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
     filing a terse report. Running a worker at the top level for a question
     that plainly belongs to one domain removes the orchestrator's turns, which
     were most of the cost: nine model calls for a question needing one SELECT.
+
+    ``scope`` (REAL / DEMO / ALL) is captured by the run_sql closure and handed
+    to the guard on every query, so the corpus rule is enforced where the query
+    runs rather than asked for in a prompt the model may have stopped reading.
     """
     from agents import Agent, function_tool
 
@@ -238,7 +242,8 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
                 include a LIMIT clause (max 200 rows).
         """
         return sql_tool.run_select(sql, db_params, allowed_tables=allowed,
-                                   ledger=ledger, worker=domain)
+                                   ledger=ledger, worker=domain,
+                                   data_scope=scope)
 
     @function_tool(name_override="list_values")
     def list_values(table: str, column: str, contains: str = "") -> str:
@@ -514,22 +519,25 @@ _TOOL_DESCRIPTIONS = {
 }
 
 
-def build_standalone(domain, db_params, ledger, model=None, extra_blocks=()):
+def build_standalone(domain, db_params, ledger, model=None, extra_blocks=(),
+                     scope=None):
     """One worker, answering the user directly. No orchestrator above it."""
     return _build_one(domain, db_params, ledger, model=model,
-                      extra_blocks=extra_blocks, standalone=True)
+                      extra_blocks=extra_blocks, standalone=True, scope=scope)
 
 
-def build_workers(db_params, ledger, model=None):
+def build_workers(db_params, ledger, model=None, scope=None):
     """[(domain, Agent, tool_description)] for every domain in the catalog."""
-    return [(d, _build_one(d, db_params, ledger, model=model), _TOOL_DESCRIPTIONS[d])
+    return [(d, _build_one(d, db_params, ledger, model=model, scope=scope),
+             _TOOL_DESCRIPTIONS[d])
             for d in DOMAIN_META if d in _TOOL_DESCRIPTIONS]
 
 
-def worker_tools(db_params, ledger, model=None):
+def worker_tools(db_params, ledger, model=None, scope=None):
     """The workers, wrapped as tools the orchestrator can call."""
     out = []
-    for domain, agent, description in build_workers(db_params, ledger, model=model):
+    for domain, agent, description in build_workers(db_params, ledger, model=model,
+                                                    scope=scope):
         out.append(agent.as_tool(
             tool_name="ask_%s" % domain,
             tool_description=description))

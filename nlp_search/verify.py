@@ -331,8 +331,21 @@ def check(question, draft, ledger, model=None, kind="data", undefined=()):
         notes.append("presents %s, a peer-review finding, as why the unit failed "
                      "a standard" % crossed)
 
+    # Did the SQL implement the PLAN, or answer a nearby question with real
+    # numbers? Value-matching cannot see this, which is the whole reason the
+    # plan is written down before any SQL exists. Both are advisory signals
+    # into adjudication, not verdicts of their own.
+    mismatch = _plan_mismatch(ledger, draft)
+    if mismatch:
+        notes.append(mismatch)
+
+    contamination = _scope_breach(ledger)
+    if contamination:
+        notes.append(contamination)
+
     if (not flagged and not unprobed_absence and not missed and not phantom
-            and not counting and not undisclosed and not id_leak and not crossed):
+            and not counting and not undisclosed and not id_leak and not crossed
+            and not mismatch and not contamination):
         return {"verdict": "grounded", "answer": draft, "unsupported": [], "notes": notes}
 
     # Pass 2: let a model adjudicate the flags against the evidence.
@@ -1061,6 +1074,204 @@ _MISSING_FIELD_RE = re.compile(
     r"(?im)(?:^|(?<=[.!?;])[ \t])[ \t>*-]*(?:total[ \t]+)?"
     r"\w+(?:[ \t]+\w+){0,2}[ \t]*:[ \t]*(?:missing|unknown|not available|n/?a)[ \t]*\.?")
 
+# The scope filter, narrated. Arrived with the real/demo policy: told that any
+# query touching the request table must carry is_synthetic, the worker started
+# explaining that it had - "10 EMC test requests in the system. Filtering on
+# r.is_synthetic = 0 to exclude synthetic data." The filter is correct and
+# mandatory and the user does not need to hear about it; what they are owed is
+# the plain-language scope caveat, which attach_caveats adds separately.
+#
+# Stripped rather than prompted away because it is a predictable consequence
+# of an instruction the worker cannot be allowed to ignore - the more firmly
+# the guard insists on the filter, the more the model wants credit for it.
+# The tail is bounded to scope vocabulary rather than "everything up to the
+# full stop". An earlier version used [^.\n]* and deleted the answer: given
+# "Filtering on r.is_synthetic = 0, there are 10 requests." it swallowed the
+# clause carrying the figure and returned an empty string. Over-deletion in
+# this module is worse than a leak - the leak is untidy, the deletion is a
+# blank reply to a question that was answered correctly.
+_SCOPE_TAIL = (r"(?:\s*(?:[=,]|\b(?:\d+|to|for|and|the|only|out|of|"
+               r"non-?synthetic|synthetic|demo|real|rows?|records?|entries|"
+               r"data|dataset|exclude[sd]?|excluding|include[sd]?|including|"
+               r"filter(?:ed)?)\b))*")
+
+_SCOPE_PROSE_RE = re.compile(
+    r"(?:(?:^|(?<=[.\n]))\s*"
+    r"(?:\(?\s*(?:note|nb)[:,]?\s*)?"
+    r"(?:this (?:count|figure|result)\s+)?"
+    r"(?:filter(?:ed|ing)?|exclud(?:ed|ing)|restrict(?:ed|ing)?|scoped?)"
+    # [^\n] not [^.\n]: the gap has to cross the dot in "r.is_synthetic",
+    # which is exactly how the alias-qualified form is written.
+    r"[^\n]{0,60}?\bis_synthetic\b" + _SCOPE_TAIL + r"\.?\)?)"
+    r"|(?:\b(?:where|with)\s+\w*\.?is_synthetic\s*=\s*\d\b" + _SCOPE_TAIL + r")"
+    r"|(?:\b\w*\.?is_synthetic\s*=\s*\d\b)",
+    re.I)
+
+
+# Which tables can hold one row per SUBJECT. Counting a subject from a table
+# whose grain is something else is the most common way to get a real number
+# that answers the wrong question, and it is invisible to value-matching:
+# asked how many TESTS are assigned for a product, the worker counted
+# iec_emc_requests rows and answered 4. Four is the number of JOBS. The answer
+# is 16, and nothing about "4" looked wrong.
+#
+# Only subjects with an unambiguous grain are listed. PRODUCT is absent on
+# purpose - products are counted off the request table, so the grain question
+# does not arise.
+_SUBJECT_TABLES = {
+    "TEST": ("iec_emc_request_tests", "planner_entries", "datasheet"),
+    "DATASHEET": ("datasheet", "datasheet_records", "datasheet_revision"),
+    "REQUEST": ("iec_emc_requests",),
+    "ENGINEER": ("users", "planner_entries", "iec_emc_request_tests", "datasheet"),
+    "EQUIPMENT": ("equipment", "datasheet_equipment", "maintenance"),
+    "MEASUREMENT": ("datasheet_measurement", "datasheet_observation"),
+    "REVIEW": ("datasheet_status_history", "datasheet_revision", "planner_entries"),
+}
+
+# Does the answer tell the reader the thing lives in the other corpus? Any of
+# these words does the job; the exact phrasing is the writer's business.
+_DISCLOSES_SCOPE_RE = re.compile(
+    r"\bdemo\b|\bdemonstration\b|\bsynthetic\b|\bsample\s+data\b"
+    r"|\bnot\s+(?:in|part of)\s+(?:the\s+)?real\b"
+    r"|\bonly\s+(?:in|exists?\s+in)\b", re.I)
+
+# Which column has to appear in the SQL for a state to have been measured at
+# all. This is the concrete form of "did the query implement the plan": you
+# cannot have counted assigned-on-the-request without reading
+# assigned_engineer_id, whatever else the query did.
+#
+# Only states with an unambiguous column are listed. A state whose definition
+# is a join shape rather than a column is left out deliberately - a check that
+# guesses produces false alarms, and a false alarm here rewrites a correct
+# answer.
+#
+# NOTE FOR THIS TREE: 8 of these 11 names are metrics our semantics.METRICS
+# does not define yet, so those entries are inert until it does. Kept whole
+# rather than trimmed to the three we have, because the cost of an unused key
+# is nothing and the cost of forgetting to add it back is a silent check.
+_STATE_COLUMNS = {
+    "test_assigned_on_request": ("assigned_engineer_id", "assigned_engineer_name"),
+    "test_assigned_in_schedule": ("engineer_user_id",),
+    "request_assigned_status": ("status",),
+    "datasheet_submitted": ("submitted_at",),
+    "datasheet_approved": ("status",),
+    "datasheet_draft": ("status",),
+    "datasheet_rejected_in_review": ("to_status",),
+    "request_rejected": ("rejected_at",),
+    "test_passed": ("result",),
+    "test_failed": ("result",),
+    "test_in_progress": ("status",),
+}
+
+
+def _plan_mismatch(ledger, draft=None):
+    """Did the executed SQL implement the plan, or answer something adjacent?
+
+    The grounding check asks whether a number is real. This asks whether it is
+    the ANSWER - which is a different question, and the one that was invisible
+    before a plan existed to compare against. A figure from query A attaches
+    perfectly well to a claim about query B, and value-matching cannot tell.
+    """
+    plan = getattr(ledger, "plan", None)
+    if not plan:
+        return None
+
+    entity = plan.get("entity") or {}
+
+    # Checked FIRST because it needs the opposite answer from a plain miss.
+    # "Not resolved" means say it does not exist; this means it DOES exist, in
+    # the corpus the question excluded, and reporting zero says the thing is
+    # here with no work against it - a different and false statement.
+    if entity.get("excluded_by_scope") and not _DISCLOSES_SCOPE_RE.search(draft or ""):
+        return ("%r has records ONLY in the corpus this question excludes. The "
+                "answer must say that - reporting zero, or 'no records', "
+                "implies the thing exists here with no work against it, which "
+                "is a different and false statement" % entity.get("value"))
+
+    # A count must come from a query, never from the size of a lookup result.
+    # Resolving a product to four jobs does not mean four tests.
+    if plan.get("operation") in ("COUNT", "AGGREGATE"):
+        ran_sql = [e for e in ledger.entries if not e.get("error")]
+        if not ran_sql:
+            return ("this question asks for a %s and no query was executed - "
+                    "any figure in the answer was read off a lookup, not "
+                    "measured" % plan["operation"].lower())
+
+    if not ledger.entries:
+        return None
+    if all(e.get("worker") == "semantics" for e in ledger.entries if not e.get("error")):
+        return None
+
+    queried = ledger.tables_queried()
+    if not queried:
+        return None
+
+    # PLAN CONSISTENCY - the planned tables were never read.
+    planned = {t.lower() for t in (plan.get("source_tables") or [])}
+    if planned and not (planned & queried):
+        return ("the plan expected %s and the queries read %s instead"
+                % (", ".join(sorted(planned)[:3]), ", ".join(sorted(queried)[:3])))
+
+    # SUBJECT GRAIN - a count off the wrong table counts the wrong thing.
+    subject = plan.get("subject")
+    if plan.get("operation") in ("COUNT", "AGGREGATE"):
+        grain = _SUBJECT_TABLES.get(subject)
+        if grain and not (set(grain) & queried):
+            return ("the question counts %ss, which live in %s, but the "
+                    "queries only read %s - a count off the wrong table counts "
+                    "the wrong thing"
+                    % (subject.lower(), " / ".join(grain[:3]),
+                       ", ".join(sorted(queried)[:3])))
+
+    # ENTITY SCOPE - the question named a thing and no query filtered on it.
+    # This is the "77 unfilled tests" bug, detected instead of shipped.
+    idents = [str(i) for i in (entity.get("identifiers") or []) if i]
+    if entity.get("resolved") and idents:
+        sql = ledger.sql_text()
+        value = str(entity.get("value") or "").lower()
+        named = any(i.lower() in sql for i in idents) or (value and value in sql)
+        if not named:
+            return ("the question is about %s (%s) and no executed query "
+                    "filters on it - these figures look lab-wide"
+                    % (entity.get("value"), ", ".join(idents[:3])))
+
+    # The defining column of a single reviewed reading was never read.
+    metrics = plan.get("candidate_metrics") or []
+    if len(metrics) == 1:
+        cols = _STATE_COLUMNS.get(metrics[0])
+        if cols:
+            sql = ledger.sql_text()
+            if not any(c in sql for c in cols):
+                return ("the question is about %s, which is defined by %s, and "
+                        "no executed query reads that column"
+                        % (metrics[0], " / ".join(cols)))
+    return None
+
+
+def _scope_breach(ledger):
+    """Did a REAL-scoped answer end up standing on synthetic rows?
+
+    The guard rejects a query that does not mention is_synthetic, but it is
+    deliberately shallow - it does not check the comparison is the right way
+    round. This is where a wrong comparison surfaces: the returned rows
+    themselves are inspected, and only when the query actually selected the
+    flag as an output column, which is the only case that can be checked
+    without re-running anything.
+    """
+    plan = getattr(ledger, "plan", None)
+    if not plan or plan.get("scope") != "REAL":
+        return None
+    for entry in ledger.entries:
+        cols = [str(c).lower() for c in (entry.get("columns") or [])]
+        if "is_synthetic" not in cols:
+            continue
+        idx = cols.index("is_synthetic")
+        for row in entry.get("rows") or ():
+            if idx < len(row) and str(row[idx]).strip() in ("1", "True", "true"):
+                return ("a query returned synthetic/demo rows although this "
+                        "question is scoped to real lab data")
+    return None
+
 
 def strip_machinery(text):
     """Remove SQL, tool calls and internal labels from an answer.
@@ -1078,6 +1289,7 @@ def strip_machinery(text):
     out = _INSIGHT_LABEL_RE.sub("", out)
     out = _PROCESS_PROSE_RE.sub("", out)
     out = _ROWCOUNT_PROSE_RE.sub("", out)
+    out = _SCOPE_PROSE_RE.sub("", out)
     out = _MISSING_FIELD_RE.sub("", out)
     out = _KWARG_RE.sub("", out)
     # tidy what removal left behind: orphaned punctuation and blank runs

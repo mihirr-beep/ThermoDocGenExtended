@@ -730,7 +730,8 @@ def _fold_guidance(payload):
     return payload
 
 
-def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
+def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql",
+               data_scope=None):
     """Validate + execute one SELECT. Returns a JSON string for the model.
 
     Success: {"columns": [...], "rows": [[...], ...], "row_count": N,
@@ -743,6 +744,15 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
     ``ledger`` (when given) receives the executed SQL and every row returned -
     that record, not the model's account of it, is what the answer is later
     checked against.
+    ``data_scope`` (REAL / DEMO / ALL) is handed to the guard, which REJECTS a
+    query reading a scope-bearing table without honouring it. Left None the
+    check does not run, so a caller with no opinion about it is unaffected.
+
+    Named data_scope, not scope, ON PURPOSE. This module already uses "scope"
+    for something else entirely - how much of a table a result covers, in
+    payload["scope"] ("12 of 59 rows in `datasheet`") and _scope_note(). Two
+    unrelated meanings of one word in one file is how the next person reading
+    it introduces a bug.
     """
     tables = allowed_tables or ALLOWED_TABLES
 
@@ -753,7 +763,7 @@ def run_select(sql, db_params, allowed_tables=None, ledger=None, worker="sql"):
             return json.dumps({"error": str(exc), "budget_exceeded": True})
 
     ok, reason, cleaned = sql_guard.validate_sql(
-        sql, tables, denied_star_tables=DENIED_STAR_TABLES)
+        sql, tables, denied_star_tables=DENIED_STAR_TABLES, scope=data_scope)
     if not ok:
         if ledger is not None:
             ledger.record(worker, sql, error=reason)

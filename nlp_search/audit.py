@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS nlp_search_audit (
   success TINYINT NOT NULL DEFAULT 1,
   error TEXT NULL,
   trace_id VARCHAR(64) NULL,
+  query_purpose VARCHAR(120) NULL,
+  data_scope VARCHAR(10) NULL,
   KEY idx_nsa_created (created_at),
   KEY idx_nsa_user (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -119,7 +121,9 @@ def ensure_audit_table(app):
 # audit table was therefore missing precisely the expensive questions, which
 # is the worst possible sample to lose from a cost record.
 _WIDEN = {"route": "VARCHAR(120)", "tool_calls": "VARCHAR(255)"}
-_ADD = {"cached_tokens": "INT NULL AFTER input_tokens"}
+_ADD = {"cached_tokens": "INT NULL AFTER input_tokens",
+        "query_purpose": "VARCHAR(120) NULL",
+        "data_scope": "VARCHAR(10) NULL"}
 
 
 def _widen_columns(app, db, text, inspect):
@@ -160,8 +164,15 @@ def log_query(question, answer=None, user_id=None, username=None, route=None,
               model=None, input_tokens=None, output_tokens=None, total_tokens=None,
               cached_tokens=None,
               latency_ms=None, tool_calls=None, sql_queries=None, success=True,
-              error=None, trace_id=None, cost=None):
-    """Insert one audit row. Best-effort — never raises."""
+              error=None, trace_id=None, cost=None, query_purpose=None,
+              data_scope=None):
+    """Insert one audit row. Best-effort — never raises.
+
+    `query_purpose` and `data_scope` come from the structured plan. They are
+    what let a later reader tell, at a glance, WHICH READING of an ambiguous
+    word a row took and WHICH CORPUS it measured - the two things that had to be
+    reconstructed by hand from the SQL every time an answer looked wrong.
+    """
     try:
         from models import db
         from sqlalchemy import text
@@ -188,18 +199,20 @@ def log_query(question, answer=None, user_id=None, username=None, route=None,
             "success": 1 if success else 0,
             "error": (str(error)[:65000] if error else None),
             "trace_id": (trace_id or None),
+            "query_purpose": ((query_purpose or None) and str(query_purpose)[:120]),
+            "data_scope": ((data_scope or None) and str(data_scope)[:10]),
         }
         db.session.execute(text("""
             INSERT INTO nlp_search_audit
               (created_at, user_id, username, question, answer, route, model,
                input_tokens, cached_tokens, output_tokens, total_tokens,
                estimated_cost_usd, latency_ms, tool_calls, sql_queries, success,
-               error, trace_id)
+               error, trace_id, query_purpose, data_scope)
             VALUES
               (:created_at, :user_id, :username, :question, :answer, :route, :model,
                :input_tokens, :cached_tokens, :output_tokens, :total_tokens,
                :estimated_cost_usd, :latency_ms, :tool_calls, :sql_queries, :success,
-               :error, :trace_id)
+               :error, :trace_id, :query_purpose, :data_scope)
         """), params)
         db.session.commit()
         return True
