@@ -236,9 +236,24 @@ def candidate_entities(question):
             out.append((kind_hint, text))
     for m in _PROPER_RE.findall(q):
         text = m.strip()
-        words = [w for w in text.split() if w.lower() not in _NOT_AN_ENTITY]
-        if not words:
+        raw = text.split()
+        # Trim stopwords from the EDGES only. Removing them from the middle
+        # rewrites the name: this lab has a product called "Mihirs Product",
+        # and "product" is in the stoplist, so "Mihirs Product CE test" was
+        # reduced to "Mihirs CE" - a string matching nothing. The resolver got
+        # zero rows and the question came back unanswerable, for a product
+        # that exists.
+        #
+        # The stoplist is still doing its job at the edges, which is what it
+        # was written for: "How many tests" begins with a capital and must not
+        # propose "How" as an entity.
+        while raw and raw[0].lower() in _NOT_AN_ENTITY:
+            raw.pop(0)
+        while raw and raw[-1].lower() in _NOT_AN_ENTITY:
+            raw.pop()
+        if not raw:
             continue
+        words = raw
         text = " ".join(words)
         if len(text) < 3 or text.lower() in _NOT_AN_ENTITY:
             continue
