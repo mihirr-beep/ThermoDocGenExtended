@@ -787,6 +787,62 @@ def _domains_for(name):
     return out
 
 
+# --------------------------------------------------------------------------
+# Two facts that read like ordinary columns and are not
+# --------------------------------------------------------------------------
+# Both were measured after an answer went wrong on them, and both are stated as
+# NUMBERS taken from the live database rather than as prose someone typed once -
+# a claim about the data that cannot re-check itself is how the catalog went
+# stale before.
+
+def _revision_pointer(cur, name):
+    """Is <table>.revision_no a NEXT-TO-EDIT pointer? (checked, higher, gap).
+
+    Asked what changed in the revision that passed, a worker joined
+    datasheet_draft_history on dh.revision_no = d.revision_no. datasheet.
+    revision_no was 3; the frozen revisions are 1 and 2, and revision 3 does not
+    exist yet. It found nothing and answered "no recorded changes" against 22
+    draft-history rows and up to 95 changed fields.
+    """
+    if name != "datasheet":
+        return None
+    try:
+        cur.execute(
+            "SELECT COUNT(*), SUM(d.revision_no > f.maxrev), "
+            "       MIN(d.revision_no - f.maxrev), MAX(d.revision_no - f.maxrev) "
+            "FROM `datasheet` d JOIN (SELECT datasheet_id, MAX(revision_no) maxrev "
+            "  FROM datasheet_revision GROUP BY datasheet_id) f ON f.datasheet_id = d.id")
+        checked, higher, lo, hi = cur.fetchone()
+        if not checked or not higher:
+            return None
+        return int(checked), int(higher), int(lo or 0), int(hi or 0)
+    except Exception:  # noqa: BLE001 - a note is never worth failing over
+        return None
+
+
+def _reason_in_comment(cur, name):
+    """Does the reason live in `comment` rather than `reason_code`? (n, total).
+
+    Same answer reported "approval reason code is not recorded (null)". True -
+    and the reason was sitting in `comment`: "Equipment listed are not the ones
+    which were in the Request object", then "Now its correct".
+    """
+    if name != "datasheet_status_history":
+        return None
+    try:
+        cur.execute(
+            "SELECT SUM(reason_code IS NULL AND comment IS NOT NULL AND comment <> ''), "
+            "       SUM(reason_code IS NOT NULL), COUNT(*) "
+            "FROM datasheet_status_history "
+            "WHERE to_status IN ('Approved','Rejected')")
+        only_comment, coded, total = cur.fetchone()
+        if not total or not only_comment:
+            return None
+        return int(only_comment), int(coded or 0), int(total)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def introspect(conn, database):
     cur = conn.cursor()
     cur.execute("SHOW TABLES")
@@ -970,10 +1026,14 @@ def introspect(conn, database):
             if profile:
                 json_cols[c] = profile
 
+        pointer = _revision_pointer(cur, name)
+        reason_gap = _reason_in_comment(cur, name)
+
         tables.append({"name": name, "rows": rows, "cols": cols,
                        "fks": fks, "enums": enums, "constants": constants,
                        "coverage": coverage,
                        "json": json_cols, "fanout": fanout,
+                       "pointer": pointer, "reason_gap": reason_gap,
                        "domains": _domains_for(name)})
     return tables
 
@@ -1157,6 +1217,28 @@ def render_table_text(t):
             "it. Matching on serial_no instead is worse, not better: it covers "
             "fewer rows and multiplies more."
             % (ptable, pcol, matched, src, joined, examples, t["name"], t["name"]))
+    if t.get("pointer"):
+        checked, higher, lo, hi = t["pointer"]
+        lines.append(
+            "  revision_no HERE IS A POINTER, NOT A REVISION THAT EXISTS. Measured "
+            "on this database: %d of %d datasheets carry a revision_no HIGHER than "
+            "their highest frozen revision (by %s). It means 'the next revision to "
+            "be edited'. So `WHERE revision_no = <the parent's revision_no>` against "
+            "datasheet_revision or datasheet_draft_history matches NOTHING and looks "
+            "exactly like 'no changes were recorded'. To read what actually happened "
+            "use MAX(revision_no) from datasheet_revision, or compare consecutive "
+            "revisions - or better, call analyse_history(review_history), which does "
+            "this correctly."
+            % (higher, checked, "%d" % lo if lo == hi else "%d-%d" % (lo, hi)))
+    if t.get("reason_gap"):
+        only_comment, coded, total = t["reason_gap"]
+        lines.append(
+            "  THE REASON IS OFTEN IN `comment`, NOT `reason_code`. Measured on "
+            "this database: of %d decided rows, %d carry a written comment with NO "
+            "reason_code, and %d carry a code. So reporting 'no reason was recorded' "
+            "on the strength of a NULL reason_code is wrong whenever a comment "
+            "exists - read BOTH, and quote the comment when the code is absent."
+            % (total, only_comment, coded))
     # Value lists, constants and JSON keys are NOT baked in. They are measured
     # per render by catalog_stats, because they change when somebody uses the
     # app rather than when somebody migrates the schema.

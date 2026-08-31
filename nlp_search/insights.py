@@ -472,6 +472,63 @@ _BASELINE_MOD_STATE = "0"
 _NO_DEVIATION = frozenset(("", "na", "n/a", "none", "nil", "-", "--", "not applicable"))
 
 
+def _revision_transition(conn, tco, test_code=None):
+    """FAIL -> PASS inside ONE datasheet, or None. The resubmission case.
+
+    Reads datasheet_revision, never datasheet.revision_no: that column is a
+    NEXT-TO-EDIT pointer, one higher than any revision that exists on 47 of 47
+    datasheets here, so filtering on it matches nothing and returns an empty
+    result indistinguishable from "nothing changed".
+    """
+    revs = _rows(conn, """
+        SELECT dr.revision_no, dr.result, dr.ambient_temperature,
+               dr.relative_humidity, dr.deviation
+        FROM datasheet_revision dr
+        JOIN `datasheet` d ON d.id = dr.datasheet_id
+        WHERE d.tco_id = %(tco)s
+          AND (%(code)s IS NULL OR UPPER(d.test_code) = %(code)s)
+        ORDER BY dr.revision_no
+    """, tco=tco, code=(str(test_code).upper() if test_code else None))
+    if len(revs) < 2:
+        return None
+
+    def bad(r):
+        return str(r.get("result") or "").strip().upper() in ("FAIL", "C", "D")
+
+    passed_at = next((r for r in reversed(revs) if not bad(r)), None)
+    failed_at = next((r for r in revs if bad(r)), None)
+    if not passed_at or not failed_at:
+        return None
+    if int(failed_at["revision_no"]) >= int(passed_at["revision_no"]):
+        return None
+
+    # Which fields the engineer actually edited, from the save history of the
+    # revision that passed. changed_fields is the app's own record of the edit.
+    changed = _rows(conn, """
+        SELECT dh.revision_no, dh.changed_fields, dh.changed_count, dh.saved_by_name
+        FROM datasheet_draft_history dh
+        JOIN `datasheet` d ON d.id = dh.datasheet_id
+        WHERE d.tco_id = %(tco)s
+          AND (%(code)s IS NULL OR UPPER(d.test_code) = %(code)s)
+          AND dh.revision_no = %(rev)s
+        ORDER BY dh.saved_at
+    """, tco=tco, code=(str(test_code).upper() if test_code else None),
+        rev=passed_at["revision_no"])
+
+    return {
+        "failed_revision": failed_at["revision_no"],
+        "passed_revision": passed_at["revision_no"],
+        "conditions_before": {"ambient": failed_at.get("ambient_temperature"),
+                              "humidity": failed_at.get("relative_humidity")},
+        "conditions_after": {"ambient": passed_at.get("ambient_temperature"),
+                            "humidity": passed_at.get("relative_humidity")},
+        "deviation_before": failed_at.get("deviation"),
+        "deviation_after": passed_at.get("deviation"),
+        "saves_on_the_passing_revision": len(changed),
+        "fields_changed": changed,
+    }
+
+
 def modifications_before_pass(conn, product, test_code=None):
     """What was on the unit when it passed that was not there when it last failed.
 
@@ -582,9 +639,33 @@ def modifications_before_pass(conn, product, test_code=None):
            "deviation_at_failure": deviation(last_fail["tco_id"]) if last_fail else None}
 
     if last_fail is None:
+        # A unit can fail and pass WITHOUT a second campaign: the engineer fixes
+        # the sheet and resubmits, so the transition is between REVISIONS of one
+        # datasheet, not between two jobs. timeline works per campaign, so that
+        # case arrives here with nothing before the pass and used to be reported
+        # as "no failure precedes this pass" - which is false, and was measured
+        # on a real record: IEC-EMC-010's CE sheet has revision 1 FAIL and
+        # revision 2 PASS, with 22 draft-history saves between them.
+        within = _revision_transition(conn, passed["tco_id"],
+                                      passed.get("test_code"))
+        if within:
+            out.update({
+                "introduced": [], "already_present": at_pass,
+                "revision_transition": within,
+                "note": ("no earlier CAMPAIGN failed, but this datasheet itself "
+                         "went from FAIL to PASS between revisions %s and %s - "
+                         "the fix was a resubmission, not a second job. The "
+                         "fields the engineer changed are in "
+                         "revision_transition; report those, and use "
+                         "review_history for the reviewer's own words."
+                         % (within.get("failed_revision"),
+                            within.get("passed_revision")))})
+            return out
         out.update({"introduced": [], "already_present": at_pass,
-                    "note": ("no FAILED campaign precedes this pass%s, so nothing can "
-                             "be called introduced-before-the-pass. What is listed in "
+                    "note": ("no FAILED campaign precedes this pass%s, and this "
+                             "datasheet's own revisions never recorded a failure "
+                             "either, so nothing can be called "
+                             "introduced-before-the-pass. What is listed in "
                              "already_present is simply what the unit carries; it is "
                              "not a fix for a failure."
                              % (" for " + code if code else ""))})

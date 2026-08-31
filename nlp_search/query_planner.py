@@ -274,7 +274,7 @@ def candidate_entities(question):
 
 
 def plan(question, kind=None, domain=None, resolved=None, entity=None,
-         scope=None, tables=None, model=None):
+         scope=None, tables=None, model=None, insight=False):
     """A structured query plan, or None when one cannot be formed.
 
     `resolved` is semantics.resolve()'s output (already executed, so its
@@ -282,12 +282,14 @@ def plan(question, kind=None, domain=None, resolved=None, entity=None,
     caller already resolved one. Everything else is derived here.
     """
     try:
-        return _plan(question, kind, domain, resolved, entity, scope, tables, model)
+        return _plan(question, kind, domain, resolved, entity, scope, tables,
+                     model, insight)
     except Exception:  # noqa: BLE001 - a missing plan must never cost an answer
         return None
 
 
-def _plan(question, kind, domain, resolved, entity, scope, tables, model):
+def _plan(question, kind, domain, resolved, entity, scope, tables, model,
+          insight=False):
     q = (question or "").strip()
     if not q:
         return None
@@ -342,6 +344,7 @@ def _plan(question, kind, domain, resolved, entity, scope, tables, model):
         "operation": operation,
         "subject": subject,
         "asks": asks,
+        "insight": bool(insight),
         "scope": sc,
         "scope_definition": scope_mod.describe(sc),
         "state": state,
@@ -588,6 +591,37 @@ def prompt_block(plan_dict, verdict=None):
                          "equality test against it returns zero rows that look "
                          "exactly like a real answer of none."
                          % ", ".join("'%s'" % i for i in idents[:4]))
+    if p.get("insight"):
+        # A reviewed primitive exists for this shape of question and is better
+        # than SQL written on the spot, because the traps here are the kind that
+        # return a clean empty result rather than an error.
+        #
+        # Measured: asked what changed in the revision that passed, a worker
+        # wrote its own join on dh.revision_no = d.revision_no. That column is a
+        # NEXT-TO-EDIT pointer - 47 of 47 datasheets carry a value one higher
+        # than any revision that exists - so it matched nothing and the answer
+        # was "no recorded changes" against 22 draft-history rows. The SAME
+        # question answered correctly on an earlier run, when the worker called
+        # review_history instead.
+        lines.append(
+            "  THIS IS AN ANALYSIS QUESTION AND analyse_history ALREADY ANSWERS "
+            "IT. Call it before writing your own SQL over revisions, review "
+            "history or measurements - those joins have traps that return an "
+            "empty result rather than an error, so a hand-written version looks "
+            "like it worked:")
+        lines.append(
+            "      review_history            every review round: the decision, "
+            "the coded finding, the reviewer's comment, and which fields the "
+            "engineer changed since the previous revision")
+        lines.append(
+            "      modifications_before_pass  what was fitted before the first "
+            "pass that was absent at the last failure")
+        lines.append(
+            "      metric_delta               per-frequency change between two "
+            "campaigns, matched on frequency rather than row number")
+        lines.append(
+            "      timeline / failure_detail / cohort / resolved_how / "
+            "config_diff / common_config")
     if p.get("grouping"):
         lines.append("  group by    %s" % p["grouping"])
     if p.get("date_range"):

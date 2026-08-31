@@ -639,7 +639,8 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
 
     plan = query_planner.plan(question, kind=kind, domain=domain,
                               resolved=resolved, entity=entity,
-                              scope=data_scope, tables=retrieved)
+                              scope=data_scope, tables=retrieved,
+                              insight=intent.is_insight(question))
     verdict = plan_guard.validate(
         plan,
         allowed_tables=schema_catalog.tables_for(domain) if domain else None)
