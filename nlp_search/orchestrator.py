@@ -606,7 +606,8 @@ def _prepare(question, db_params, ledger, kind, verify_answer=True, history=None
     named_entity = bool((entity or {}).get("candidates")
                         or (entity or {}).get("excluded_by_scope"))
     if not named_entity:
-        resolved = semantics.execute(resolved, db_params, ledger=ledger)
+        resolved = semantics.execute(resolved, db_params, ledger=ledger,
+                                     scope=data_scope)
 
     # A word the semantic layer defines is no longer "undefined" - it has an
     # answer, it just has more than one.

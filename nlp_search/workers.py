@@ -324,7 +324,7 @@ def _build_one(domain, db_params, ledger, model=None, extra_blocks=(),
             include_rows: True to also return the rows behind the figure.
         """
         return semantics.run_metric(name, db_params, ledger=ledger,
-                                    include_rows=include_rows)
+                                    include_rows=include_rows, scope=scope)
 
     @function_tool(name_override="describe_table")
     def describe_table(tables: str) -> str:

@@ -118,12 +118,47 @@ _CANON_R = canon_sql("d.test_code")
 
 
 # --------------------------------------------------------------------------
+# SCOPE: how a reviewed measure honours REAL vs DEMO
+# --------------------------------------------------------------------------
+# Every measure here is lab-wide, and most of this database is synthetic - 73%
+# of the schedule, 83% of the datasheets. So a measure that ignores scope
+# answers a REAL-scoped question with a mostly-fictional number, and it does it
+# with a reviewed query, which is worse than a model guess because nothing
+# downstream doubts it. Measured: asked for engineer1's workload under REAL
+# scope, the unscoped metric returned 2 and the scoped detail query returned 1
+# - the answer printed the 2 above a list of one.
+#
+# Substitution, not SQL rewriting. Each measure puts {SCOPE} where its own
+# author knows the predicate belongs; a rewriter would have to understand the
+# query, and would be wrong on the ones with subqueries. ALL (and any import
+# failure) substitutes `1 = 1` so the SQL stays grammatical.
+_SCOPE_TOKEN = "{SCOPE}"
+
+
+def _apply_scope(sql, scope=None):
+    """Fill a measure's {SCOPE} placeholder with the corpus predicate."""
+    if not sql or _SCOPE_TOKEN not in sql:
+        return sql
+    predicate = "1 = 1"
+    try:
+        from . import scope as scope_mod
+        if scope and scope_mod.wants_filter(scope):
+            predicate = scope_mod.sql_predicate(scope, "r")
+    except Exception:  # noqa: BLE001 - an unscoped measure beats a broken one
+        predicate = "1 = 1"
+    return sql.replace(_SCOPE_TOKEN, predicate)
+
+
+# --------------------------------------------------------------------------
 # METRICS - one name, one meaning, one query
 # --------------------------------------------------------------------------
 # `value_sql` must return a single number. `rows_sql` (optional) returns the
 # rows behind it, so the assistant can show the list as well as the count.
 # The counts in the comments are what these returned on 2026-08-07 - they will
 # drift, and validate() only checks the SQL still runs, not the number.
+#
+# A measure that reads a request-derived table MUST carry {SCOPE} and an alias
+# `r` on iec_emc_requests. Without it the measure is silently lab-wide.
 
 METRICS = {
     # -- equipment ---------------------------------------------------------
@@ -354,6 +389,135 @@ METRICS = {
         "value_sql": ("SELECT COUNT(*) FROM iec_emc_requests "
                       "WHERE job_number IS NULL OR job_number = ''"),
     },
+
+    # ======================================================================
+    # ASSIGNED - the word with two readings, which is why it is here
+    # ======================================================================
+    # "How many tests are assigned for X" was answered with the number of JOBS
+    # the product resolved to, and separately with a lab-wide total. Neither is
+    # the count of tests. The word has two legitimate readings that give
+    # different numbers, and the whole point of putting both here is that the
+    # guard can then say so instead of the worker picking one silently.
+    "test_assigned_on_request": {
+        "label": "tests with an engineer named on the REQUEST",
+        "domain": "requests",
+        "value_sql": ("SELECT COUNT(*) FROM iec_emc_request_tests t "
+                      "JOIN iec_emc_requests r ON r.id = t.request_id "
+                      "WHERE t.is_selected = 1 AND t.assigned_engineer_id IS NOT NULL "
+                      "AND {SCOPE}"),
+        "rows_sql": ("SELECT r.tco_id, t.test_code, t.assigned_engineer_name "
+                     "FROM iec_emc_request_tests t "
+                     "JOIN iec_emc_requests r ON r.id = t.request_id "
+                     "WHERE t.is_selected = 1 AND t.assigned_engineer_id IS NOT NULL "
+                     "AND {SCOPE} ORDER BY r.tco_id, t.test_code"),
+        "caveat": ("This is the engineer named on the request, which is not the "
+                   "same as the engineer the test was scheduled to. A test can "
+                   "be assigned here and never appear on the planner."),
+    },
+    "test_assigned_in_schedule": {
+        "label": "tests scheduled to an engineer on the PLANNER",
+        "domain": "schedule",
+        "value_sql": ("SELECT COUNT(*) FROM planner_entries p "
+                      "JOIN iec_emc_requests r ON r.id = p.test_request_id "
+                      "WHERE p.engineer_user_id IS NOT NULL "
+                      "AND p.status <> 'cancelled' AND {SCOPE}"),
+        "rows_sql": ("SELECT r.tco_id, p.test_name, "
+                     "COALESCE(u.username, p.test_person_name) AS engineer, p.status "
+                     "FROM planner_entries p "
+                     "JOIN iec_emc_requests r ON r.id = p.test_request_id "
+                     "LEFT JOIN users u ON u.id = p.engineer_user_id "
+                     "WHERE p.engineer_user_id IS NOT NULL "
+                     "AND p.status <> 'cancelled' AND {SCOPE} "
+                     "ORDER BY r.tco_id, p.test_name"),
+        "caveat": ("This counts SCHEDULED tests. A test named on the request "
+                   "but never put on the planner is not in this figure."),
+    },
+
+    # ======================================================================
+    # THE TWO AXES. Never mixed. This is the distinction the taxonomy exists
+    # to protect, and it had no reviewed measure until now.
+    # ======================================================================
+    # AXIS 1 - did the UNIT meet the standard? datasheet.result, entered by the
+    # engineer on the test form. PASS/FAIL for emission tests, A/B/C/D for
+    # immunity criteria - C and D are failures.
+    "test_passed": {
+        "label": "tests where the UNIT met its criterion (datasheet.result)",
+        "domain": "datasheets",
+        "value_sql": ("SELECT COUNT(*) FROM `datasheet` d "
+                      "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                      "WHERE UPPER(TRIM(d.result)) IN ('PASS','A','B') AND {SCOPE}"),
+        "rows_sql": ("SELECT d.tco_id, d.product_name, d.test_code, d.result "
+                     "FROM `datasheet` d "
+                     "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                     "WHERE UPPER(TRIM(d.result)) IN ('PASS','A','B') AND {SCOPE} "
+                     "ORDER BY d.tco_id, d.test_code"),
+        "caveat": ("A passing RESULT is the unit meeting the standard. It says "
+                   "nothing about whether the paperwork was approved in peer "
+                   "review - that is a different column and a different axis."),
+    },
+    "test_failed": {
+        "label": "tests where the UNIT did NOT meet its criterion (datasheet.result)",
+        "domain": "datasheets",
+        "value_sql": ("SELECT COUNT(*) FROM `datasheet` d "
+                      "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                      "WHERE UPPER(TRIM(d.result)) IN ('FAIL','C','D') AND {SCOPE}"),
+        "rows_sql": ("SELECT d.tco_id, d.product_name, d.test_code, d.result, "
+                     "d.failure_reason_code FROM `datasheet` d "
+                     "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                     "WHERE UPPER(TRIM(d.result)) IN ('FAIL','C','D') AND {SCOPE} "
+                     "ORDER BY d.tco_id, d.test_code"),
+        "caveat": ("FAIL, C and D are all the unit failing - C and D are "
+                   "immunity criteria that were not met. This is NOT the same "
+                   "as a datasheet being rejected in peer review."),
+    },
+    # AXIS 2 - was the RECORD accepted by the reviewer?
+    # datasheet_status_history.to_status, set in peer review.
+    "datasheet_approved_in_review": {
+        # The label names the STORED VALUE, not the word the user said. Asked
+        # "how many datasheets were accepted by the reviewer", the worker wrote
+        # its own query against to_status = 'ACCEPTED' - a value that appears
+        # zero times in this column - got 0, and reported 0 over this measure's
+        # correct 1. "Accepted" is the lab's word; 'Approved' is the data's. The
+        # measure has to say both or the model goes looking for the wrong one.
+        "label": ("datasheet records accepted in peer review "
+                  "(to_status = 'Approved' - the column never says 'Accepted')"),
+        "domain": "datasheets",
+        "value_sql": ("SELECT COUNT(DISTINCT h.datasheet_id) "
+                      "FROM datasheet_status_history h "
+                      "JOIN `datasheet` d ON d.id = h.datasheet_id "
+                      "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                      "WHERE h.to_status = 'Approved' AND {SCOPE}"),
+        "rows_sql": ("SELECT d.tco_id, d.test_code, h.revision_no, h.actor_name, "
+                     "h.created_at FROM datasheet_status_history h "
+                     "JOIN `datasheet` d ON d.id = h.datasheet_id "
+                     "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                     "WHERE h.to_status = 'Approved' AND {SCOPE} "
+                     "ORDER BY h.created_at"),
+        "caveat": ("Approval is about the RECORD, not the unit. An approved "
+                   "datasheet can record a FAILING test - that is a correctly "
+                   "documented failure, not a contradiction. The only values "
+                   "this column takes are 'Peer Review', 'Approved' and "
+                   "'Rejected'; do not query for any other spelling."),
+    },
+    "datasheet_rejected_in_review": {
+        "label": ("datasheet records sent back in peer review "
+                  "(to_status = 'Rejected')"),
+        "domain": "datasheets",
+        "value_sql": ("SELECT COUNT(DISTINCT h.datasheet_id) "
+                      "FROM datasheet_status_history h "
+                      "JOIN `datasheet` d ON d.id = h.datasheet_id "
+                      "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                      "WHERE h.to_status = 'Rejected' AND {SCOPE}"),
+        "rows_sql": ("SELECT d.tco_id, d.test_code, h.revision_no, h.reason_code, "
+                     "h.comment FROM datasheet_status_history h "
+                     "JOIN `datasheet` d ON d.id = h.datasheet_id "
+                     "JOIN iec_emc_requests r ON r.id = d.test_request_id "
+                     "WHERE h.to_status = 'Rejected' AND {SCOPE} "
+                     "ORDER BY h.created_at"),
+        "caveat": ("Rejection is the PAPERWORK being sent back, and its "
+                   "reason_code is from the review_rejection family - never "
+                   "report it as why the unit failed a standard."),
+    },
 }
 
 
@@ -559,6 +723,32 @@ AMBIGUOUS = {
     "in progress": ["test_in_progress"],
     "ongoing": ["test_in_progress"],
     "active": ["test_in_progress"],
+
+    # "assigned" - genuinely two numbers. Both readings travel so the guard can
+    # say so; picking one silently is the failure this entry exists to stop.
+    "assigned": ["test_assigned_on_request", "test_assigned_in_schedule"],
+    "assigned to": ["test_assigned_on_request", "test_assigned_in_schedule"],
+    "allocated": ["test_assigned_on_request", "test_assigned_in_schedule"],
+    "responsible for": ["test_assigned_on_request", "test_assigned_in_schedule"],
+    "working on": ["test_assigned_in_schedule", "test_in_progress"],
+
+    # THE TWO AXES, kept apart in the vocabulary itself. A user saying "passed"
+    # means the unit; saying "accepted" or "approved" means the reviewer. They
+    # are never offered as alternative readings of each other, because they are
+    # not ambiguous - they are different questions that sound alike.
+    "passed": ["test_passed"],
+    "pass": ["test_passed"],
+    "failed": ["test_failed"],
+    "fail": ["test_failed"],
+    "failing": ["test_failed"],
+    "did not meet": ["test_failed"],
+
+    "accepted": ["datasheet_approved_in_review"],
+    "approved": ["datasheet_approved_in_review"],
+    "signed off": ["datasheet_approved_in_review"],
+    "rejected": ["datasheet_rejected_in_review"],
+    "sent back": ["datasheet_rejected_in_review"],
+    "turned down": ["datasheet_rejected_in_review"],
 }
 
 
@@ -670,7 +860,7 @@ def resolve(question):
 _ROWS_LIMIT = 60
 
 
-def execute(resolved, db_params, ledger=None, force_rows=False):
+def execute(resolved, db_params, ledger=None, force_rows=False, scope=None):
     """Run every candidate metric NOW and record the answers in the ledger.
 
     Handing the model the SQL and trusting it to run it does not work - it
@@ -693,11 +883,16 @@ def execute(resolved, db_params, ledger=None, force_rows=False):
         with conn.cursor() as cur:
             for item in resolved["ambiguous"]:
                 for mtc in item["metrics"]:
+                    # Scope is filled in HERE, not in the literal, so the same
+                    # reviewed measure serves REAL and DEMO without a second
+                    # copy - and so the SQL that reaches the ledger is the SQL
+                    # that actually ran, scope predicate included.
+                    value_sql = _apply_scope(mtc["value_sql"], scope)
                     try:
-                        cur.execute(mtc["value_sql"])
+                        cur.execute(value_sql)
                         mtc["value"] = cur.fetchall()[0][0]
                         if ledger is not None:
-                            ledger.record("semantics", mtc["value_sql"],
+                            ledger.record("semantics", value_sql,
                                           columns=[mtc["name"]],
                                           rows=[[mtc["value"]]])
                     except Exception as exc:  # noqa: BLE001
@@ -727,7 +922,7 @@ def execute(resolved, db_params, ledger=None, force_rows=False):
                         # and 60 came back looking complete, with the engineer
                         # who has the most unfilled work showing 1 instead of
                         # 13. Silent truncation reads as a full answer.
-                        sql = mtc["rows_sql"]
+                        sql = _apply_scope(mtc["rows_sql"], scope)
                         capped = " limit " not in sql.lower()
                         if capped:
                             sql += " LIMIT %d" % (_ROWS_LIMIT + 1)
@@ -871,7 +1066,7 @@ def metric_menu(domain=None):
     return "\n".join(head + rows)
 
 
-def run_metric(name, db_params, ledger=None, include_rows=False):
+def run_metric(name, db_params, ledger=None, include_rows=False, scope=None):
     """Execute one reviewed measure by name. Returns text for the model."""
     m = METRICS.get(name)
     if not m:
@@ -882,7 +1077,7 @@ def run_metric(name, db_params, ledger=None, include_rows=False):
         ledger.used_metric(name, m.get("caveat"), m.get("label"))
     item = {"term": name, "metrics": [dict(m, name=name)]}
     resolved = execute({"ambiguous": [item], "undefined": []}, db_params,
-                       ledger=ledger, force_rows=include_rows)
+                       ledger=ledger, force_rows=include_rows, scope=scope)
     mtc = resolved["ambiguous"][0]["metrics"][0]
     out = ["%s = %s" % (m["label"], mtc.get("value", "could not be computed"))]
     if m.get("caveat"):
@@ -986,8 +1181,17 @@ def validate(db_params=None, verbose=True):
                     if not mtc.get(key):
                         continue
                     try:
-                        cur.execute(mtc[key])
-                        rows = cur.fetchall()
+                        # {SCOPE} has to be substituted before the SQL can run
+                        # at all - a measure carrying the raw token is not valid
+                        # SQL and would be reported as broken when it is fine.
+                        # Validated under BOTH corpora, because a predicate that
+                        # is grammatical for one and not the other is exactly
+                        # the bug this function exists to catch.
+                        for sc in ("REAL", "ALL"):
+                            cur.execute(_apply_scope(mtc[key], sc))
+                            rows = cur.fetchall()
+                            if _SCOPE_TOKEN not in mtc[key]:
+                                break        # scope-free measure: once is enough
                         if key == "value_sql" and verbose:
                             print("  %-26s %-52s = %s"
                                   % (name, mtc["label"][:52], rows[0][0]))

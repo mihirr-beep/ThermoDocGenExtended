@@ -1145,18 +1145,20 @@ _DISCLOSES_SCOPE_RE = re.compile(
 # guesses produces false alarms, and a false alarm here rewrites a correct
 # answer.
 #
-# NOTE FOR THIS TREE: 8 of these 11 names are metrics our semantics.METRICS
-# does not define yet, so those entries are inert until it does. Kept whole
-# rather than trimmed to the three we have, because the cost of an unused key
-# is nothing and the cost of forgetting to add it back is a silent check.
+# The two axes are separate entries on purpose. test_passed/test_failed are
+# defined by datasheet.result - the UNIT's outcome, typed on the test form.
+# datasheet_approved_in_review/datasheet_rejected_in_review are defined by
+# datasheet_status_history.to_status - the RECORD's peer review. An answer that
+# counted one while reading the other's column is the axis confusion the whole
+# taxonomy exists to prevent, and this is where it becomes detectable.
 _STATE_COLUMNS = {
     "test_assigned_on_request": ("assigned_engineer_id", "assigned_engineer_name"),
     "test_assigned_in_schedule": ("engineer_user_id",),
     "request_assigned_status": ("status",),
     "datasheet_submitted": ("submitted_at",),
-    "datasheet_approved": ("status",),
-    "datasheet_draft": ("status",),
+    "datasheet_approved_in_review": ("to_status",),
     "datasheet_rejected_in_review": ("to_status",),
+    "datasheet_draft": ("status",),
     "request_rejected": ("rejected_at",),
     "test_passed": ("result",),
     "test_failed": ("result",),
