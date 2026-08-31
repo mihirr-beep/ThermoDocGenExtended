@@ -300,10 +300,17 @@ def _plan(question, kind, domain, resolved, entity, scope, tables, model):
 
     state, state_definition, metric_names = _state_from(resolved)
 
-    if not operation or not subject:
+    # The model is consulted when the regexes did not settle the shape, AND
+    # when the question looks like it wants more than one thing - because a
+    # compound question that the regexes DID settle is exactly the case that
+    # was silently answered in half. Same call either way, so a question that
+    # needs neither pays nothing.
+    guessed = {}
+    if not operation or not subject or _maybe_compound(q):
         guessed = _ask_model(q, model)
-        operation = operation or guessed.get("operation")
-        subject = subject or guessed.get("subject")
+    operation = operation or guessed.get("operation")
+    subject = subject or guessed.get("subject")
+    asks = guessed.get("asks") or []
 
     # intent.classify decides schema-vs-data, and it decides it AFTER the model
     # has had its say, not before.
@@ -334,6 +341,7 @@ def _plan(question, kind, domain, resolved, entity, scope, tables, model):
     out = {
         "operation": operation,
         "subject": subject,
+        "asks": asks,
         "scope": sc,
         "scope_definition": scope_mod.describe(sc),
         "state": state,
@@ -437,11 +445,35 @@ operation - what is being asked for:
 subject - what the answer is about:
   TEST DATASHEET REQUEST PRODUCT ENGINEER EQUIPMENT MEASUREMENT REVIEW SCHEMA
 
-Return JSON only: {{"operation": "...", "subject": "..."}}
+asks - the SEPARATE things this question wants, as a list of short phrases.
+  One entry if it wants one thing. "give me brief info and the timeline" wants
+  TWO: ["brief info about the product", "timeline of its tests"]. Split only
+  what the user actually asked for - do not invent a part, and do not split a
+  single ask that merely names several fields.
+
+Return JSON only: {{"operation": "...", "subject": "...", "asks": ["..."]}}
 
 QUESTION
 {question}
 """
+
+# Does this question look like it wants more than one thing? Deliberately
+# high-recall and dumb: it only decides whether to ASK the model, never what
+# the answer is. The model does the judging.
+#
+# The reason it is not a classification regex: decompose.looks_multipart is
+# one, and it misses exactly the shape a person types. "Genpure xCAD plus UVUF
+# TOC BM give me brief info and timeline for tests on this product" contains no
+# question word at all, so its two-question-words test scored zero and the
+# question was treated as single-part. The answer covered the timeline, found
+# none, and never mentioned the product it had been asked about - which exists,
+# with 11 tests requested and one engineer assigned.
+_COORDINATOR_RE = re.compile(r"\band\s+(?!so\b)\w|;|\?[^?]*\?", re.I)
+
+
+def _maybe_compound(question):
+    q = (question or "").strip()
+    return len(q) >= 25 and bool(_COORDINATOR_RE.search(q))
 
 
 def _ask_model(question, model=None):
@@ -469,6 +501,15 @@ def _ask_model(question, model=None):
         out["operation"] = op
     if su in SUBJECTS:
         out["subject"] = su
+    asks = data.get("asks")
+    if isinstance(asks, list):
+        clean = [" ".join(str(x).split())[:120] for x in asks
+                 if x and str(x).strip()]
+        # One ask is the normal case and carries no instruction, so it is not
+        # worth putting in the plan. Capped at 4: past that the model has
+        # started itemising fields rather than separating asks.
+        if 2 <= len(clean) <= 4:
+            out["asks"] = clean
     return out
 
 
@@ -489,6 +530,21 @@ def prompt_block(plan_dict, verdict=None):
     p = plan_dict
     lines = ["STRUCTURED QUERY PLAN - your SQL must implement THIS question, "
              "not a nearby one:"]
+    # First, because a question answered in half is not a partly-right answer -
+    # the reader has no way to tell which half they got. Observed: asked for a
+    # product's brief info AND its test timeline, the reply gave the timeline
+    # verdict alone ("no timeline data found"), never mentioned the product, and
+    # read as though nothing existed. Eleven tests were requested on it.
+    asks = p.get("asks") or []
+    if len(asks) > 1:
+        lines.append("  THIS QUESTION ASKS FOR %d SEPARATE THINGS. Answer EVERY "
+                     "one of them, each under its own short heading, in this "
+                     "order:" % len(asks))
+        for i, a in enumerate(asks, 1):
+            lines.append("      %d. %s" % (i, a))
+        lines.append("      If one part has no data, say so for THAT part and "
+                     "still answer the others - do not let an empty result for "
+                     "one part stand as the whole answer.")
     lines.append("  operation   %s" % (p.get("operation") or "(unclear)"))
     lines.append("  subject     %s" % (p.get("subject") or "(unclear)"))
     if p.get("state"):
