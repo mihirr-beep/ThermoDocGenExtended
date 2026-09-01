@@ -15129,9 +15129,22 @@ Please do not reply to this email.
         # Compared on report_uploaded_at, not on filename or mtime: the name
         # carries the time the run STARTED, and mtime moves again when the
         # fallback rewrites the file, which is exactly the wrong ordering.
+        #
+        # Both sides are dropped to naive first. get_ist_now() is tz-AWARE and a
+        # MySQL DATETIME column reads back NAIVE, so comparing them directly
+        # raised "can't compare offset-naive and offset-aware datetimes" and
+        # took down the whole endpoint with a 500 - after the report had already
+        # been written. Both are IST on the same clock, so stripping the tzinfo
+        # compares the right two instants rather than converting between zones.
+        def _naive(value):
+            if value is None:
+                return None
+            return value.replace(tzinfo=None) if value.tzinfo else value
+
+        now_naive = _naive(now)
         superseded = any(
-            getattr(e, 'report_uploaded_at', None) is not None
-            and e.report_uploaded_at > now
+            _naive(getattr(e, 'report_uploaded_at', None)) is not None
+            and _naive(e.report_uploaded_at) > now_naive
             and getattr(e, 'report_file_path', None)
             for e in entries
         )
