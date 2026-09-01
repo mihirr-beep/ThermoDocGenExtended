@@ -9295,7 +9295,16 @@ Please do not reply to this email.
                 assignment_key = _normalize_assignment_test_key(
                     assignment.get('test_name') if isinstance(assignment, dict) else None
                 )
-                if reschedule_existing_assignments and assignment_key:
+                # merge_existing_assignments, not reschedule_existing_assignments:
+                # the merge commit fe8c468 brought together two branches that had
+                # renamed this flag differently and left exactly this one site on
+                # the old name, so every assign-tests POST died with NameError
+                # before a single engineer could be assigned. The guard belongs to
+                # merging because existing_assignment_by_key is only ever filled by
+                # _remember_existing_assignment, and that is only called inside the
+                # merge branch above - with merging off the dict is empty and this
+                # block has nothing to contribute.
+                if merge_existing_assignments and assignment_key:
                     existing_assignment = existing_assignment_by_key.get(
                         assignment_key, {}
                     )
