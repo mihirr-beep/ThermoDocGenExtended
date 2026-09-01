@@ -4878,6 +4878,19 @@ Please do not reply to this email.
     # Import and register authentication routes
     from auth_routes import auth_bp
     flask_app.register_blueprint(auth_bp)
+
+    # Start LibreOffice now rather than inside the first report request. A cold
+    # start builds a profile, and on the Linux host that takes longer than a
+    # request is allowed to live: measured, it blew a 120s timeout with nothing
+    # else running, while a warm instance finishes the same document in about
+    # four seconds. Backgrounded and best-effort - it must not slow or break
+    # boot, and a host where it fails still has the in-request path.
+    if not flask_app.config.get('TESTING'):
+        try:
+            from report_gen import finalise as _finalise
+            _finalise.prewarm()
+        except Exception as exc:  # noqa: BLE001
+            flask_app.logger.info('LibreOffice pre-warm skipped: %s', exc)
     @flask_app.route('/')
     @login_required
     def index():

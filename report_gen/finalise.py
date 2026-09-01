@@ -547,6 +547,80 @@ def _free_port(base, span=40):
     return base
 
 
+def _lo_port():
+    """The port this process uses, chosen once."""
+    if not _LO_PORT_CHOSEN:
+        _LO_PORT_CHOSEN.append(_free_port(_LO_PORT_BASE))
+    return _LO_PORT_CHOSEN[0]
+
+
+def _lo_profile(port):
+    """This port's profile directory, created if new. (path, was_already_there)."""
+    profile = os.path.join(_LO_PROFILE_ROOT, "p%d" % port)
+    warm = os.path.isdir(profile)
+    os.makedirs(profile, exist_ok=True)
+    return profile, warm
+
+
+def prewarm(background=True):
+    """Start this process's soffice BEFORE anybody asks for a report.
+
+    A cold LibreOffice start builds a profile, and on the Azure host that takes
+    longer than the whole request is allowed to - measured, it blew a 120s
+    timeout with no other report running, while a warm instance finishes the
+    same document in about four seconds. The work is identical either way; the
+    only question is whether a person is waiting on it. Doing it at boot means
+    the first report costs what the tenth costs.
+
+    Best-effort and silent on failure: this is an optimisation, and a host where
+    it does not work still gets the ordinary in-request path with its own
+    fallbacks. Returns the port it warmed, or None.
+    """
+    if os.environ.get("REPORT_DISABLE_LIBREOFFICE"):
+        return None
+    if available():
+        return None                     # Word host - LibreOffice is not the path
+    from .render import _soffice_path
+    exe = _soffice_path()
+    if not exe:
+        return None
+
+    def _go():
+        try:
+            with _LO_LOCK:
+                port = _lo_port()
+                profile, warm = _lo_profile(port)
+                # Already answering? Then it is warm and there is nothing to do.
+                probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                probe.settimeout(1.0)
+                try:
+                    if probe.connect_ex(("127.0.0.1", port)) == 0:
+                        log.info("LibreOffice already listening on %d", port)
+                        return
+                finally:
+                    probe.close()
+                env = {k: v for k, v in os.environ.items()
+                       if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE")}
+                subprocess.Popen(
+                    [exe, "--headless", "--norestore", "--invisible", "--nologo",
+                     "--nodefault",
+                     "-env:UserInstallation=file:///"
+                     + profile.replace("\\", "/").lstrip("/"),
+                     "--accept=socket,host=127.0.0.1,port=%d;urp;" % port],
+                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                log.info("warming LibreOffice on port %d (%s profile at %s) so the "
+                         "first report does not pay for it",
+                         port, "existing" if warm else "new", profile)
+        except Exception as exc:  # noqa: BLE001 - an optimisation may not break boot
+            log.info("could not pre-warm LibreOffice: %s", exc)
+
+    if background:
+        threading.Thread(target=_go, name="lo-prewarm", daemon=True).start()
+        return _LO_PORT_CHOSEN[0] if _LO_PORT_CHOSEN else None
+    _go()
+    return _LO_PORT_CHOSEN[0] if _LO_PORT_CHOSEN else None
+
+
 def compute_fields_libreoffice(path, port=None, timeout=None):
     """Rebuild every index in ``path`` with LibreOffice. True when it worked.
 
@@ -580,23 +654,21 @@ def compute_fields_libreoffice(path, port=None, timeout=None):
         if queued > 1.0:
             log.info("waited %.0fs for the LibreOffice slot on %s",
                      queued, os.path.basename(path))
-        if port is not None:
-            chosen = port
-        else:
-            if not _LO_PORT_CHOSEN:
-                _LO_PORT_CHOSEN.append(_free_port(_LO_PORT_BASE))
-            chosen = _LO_PORT_CHOSEN[0]
+        chosen = port if port is not None else _lo_port()
         limit = timeout if timeout is not None else _LO_TIMEOUT_S
         # Kept between runs - see _LO_PROFILE_ROOT. The first report on a fresh
-        # host pays for building it; every one after that reuses it.
-        profile = os.path.join(_LO_PROFILE_ROOT, "p%d" % chosen)
-        warm = os.path.isdir(profile)
+        # host pays for building it; every one after that reuses it. prewarm()
+        # uses the same two helpers, so what boot starts is exactly what this
+        # connects to.
         try:
-            os.makedirs(profile, exist_ok=True)
+            profile, warm = _lo_profile(chosen)
         except OSError as exc:
-            log.warning("cannot create the LibreOffice profile at %s (%s) - "
+            # Name the directory from the root, not from `profile` - that is
+            # only bound on success, and referencing it here would turn a
+            # disk-permission problem into a NameError inside the handler.
+            log.warning("cannot create the LibreOffice profile under %s (%s) - "
                         "falling back to the Python list writer rather than "
-                        "sharing the default profile.", profile, exc)
+                        "sharing the default profile.", _LO_PROFILE_ROOT, exc)
             shutil.rmtree(work, ignore_errors=True)
             return False
         if not warm:
