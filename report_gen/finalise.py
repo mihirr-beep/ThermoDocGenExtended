@@ -486,6 +486,46 @@ _LO_LOCK = threading.Lock()
 # callers never negotiate for the same listener.
 _LO_PORT_BASE = int(os.environ.get("REPORT_LO_PORT", "2002"))
 
+# Profiles live HERE, keyed by port, and are kept between runs.
+#
+# The first version of this put the profile inside the per-call mkdtemp, which
+# the finally block deletes - so every report built a LibreOffice profile from
+# scratch and threw it away. Building one is the slow, hang-prone part of a
+# cold start: it is what made the very first report on a fresh server sit until
+# the timeout. Paying that on EVERY report replaced an occasional stall with a
+# guaranteed one.
+#
+# Keyed by port rather than shared, because the point of the port is that two
+# concurrent callers get two independent soffice processes, and two soffice
+# processes cannot share a profile - LibreOffice locks it to one instance. Per
+# port gives both properties: warm after the first run, and never contended.
+_LO_PROFILE_ROOT = (os.environ.get("REPORT_LO_PROFILE_ROOT")
+                    or os.path.join(tempfile.gettempdir(), "thermodocgen_lo"))
+
+# How long LibreOffice gets before we give up and fall back.
+#
+# This MUST be shorter than the proxy in front of the app. At 420s against an
+# nginx proxy_read_timeout of 180s, nginx gave up first and handed the browser
+# an HTML 504 - which the page tried to parse as JSON and reported as
+# "Unexpected token '<'", with the Generate button left disabled. The backend
+# was still working and the reader had no way to know. Better to fall back at
+# 120s and return a real answer the page can render.
+_LO_TIMEOUT_S = int(os.environ.get("REPORT_LO_TIMEOUT_S", "120"))
+
+
+# The port THIS process settled on. Picked once, then reused for every report.
+#
+# Without it _free_port ran per call and kept stepping past the port our own
+# soffice was still listening on - so run two took 2003, built a second profile
+# and paid a second cold start, and so on. Measured: 25.4s then 17.1s, when the
+# second should have been a straight reconnect to a warm instance.
+#
+# Reusing the port is what makes it warm: the UNO script resolves first and only
+# spawns soffice when nothing answers. Safe because _LO_LOCK means one report at
+# a time in this process; a different process picks a different free port and
+# gets its own soffice, which is the isolation that matters.
+_LO_PORT_CHOSEN = []
+
 
 def _free_port(base, span=40):
     """A port nothing is listening on, near ``base``.
@@ -507,7 +547,7 @@ def _free_port(base, span=40):
     return base
 
 
-def compute_fields_libreoffice(path, port=None, timeout=420):
+def compute_fields_libreoffice(path, port=None, timeout=None):
     """Rebuild every index in ``path`` with LibreOffice. True when it worked.
 
     Writes to a temp file and only replaces the original on success, so a failure
@@ -534,14 +574,35 @@ def compute_fields_libreoffice(path, port=None, timeout=420):
     work = tempfile.mkdtemp(prefix="lo_finalise_")
     script = os.path.join(work, "refresh_uno.py")
     out = os.path.join(work, "out.docx")
-    profile = os.path.join(work, "profile")
     waited = time.time()
     with _LO_LOCK:
         queued = time.time() - waited
         if queued > 1.0:
             log.info("waited %.0fs for the LibreOffice slot on %s",
                      queued, os.path.basename(path))
-        chosen = port if port is not None else _free_port(_LO_PORT_BASE)
+        if port is not None:
+            chosen = port
+        else:
+            if not _LO_PORT_CHOSEN:
+                _LO_PORT_CHOSEN.append(_free_port(_LO_PORT_BASE))
+            chosen = _LO_PORT_CHOSEN[0]
+        limit = timeout if timeout is not None else _LO_TIMEOUT_S
+        # Kept between runs - see _LO_PROFILE_ROOT. The first report on a fresh
+        # host pays for building it; every one after that reuses it.
+        profile = os.path.join(_LO_PROFILE_ROOT, "p%d" % chosen)
+        warm = os.path.isdir(profile)
+        try:
+            os.makedirs(profile, exist_ok=True)
+        except OSError as exc:
+            log.warning("cannot create the LibreOffice profile at %s (%s) - "
+                        "falling back to the Python list writer rather than "
+                        "sharing the default profile.", profile, exc)
+            shutil.rmtree(work, ignore_errors=True)
+            return False
+        if not warm:
+            log.info("building a LibreOffice profile at %s - the first report "
+                     "on this host is slower for it; later ones reuse it.",
+                     profile)
         try:
             with open(script, "w", encoding="utf-8") as fh:
                 fh.write(_UNO_SCRIPT)
@@ -553,7 +614,7 @@ def compute_fields_libreoffice(path, port=None, timeout=420):
             # file:// - LibreOffice wants a URL here, not a path
             env["SOFFICE_PROFILE"] = "file:///" + profile.replace("\\", "/").lstrip("/")
             r = subprocess.run([py, script, path, out, str(chosen)],
-                               timeout=timeout, stdout=subprocess.PIPE,
+                               timeout=limit, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, env=env)
             if r.returncode != 0 or not os.path.exists(out):
                 log.warning("LibreOffice index refresh failed for %s (port %d): %s",
@@ -570,7 +631,7 @@ def compute_fields_libreoffice(path, port=None, timeout=420):
                         "(port %d). The report will fall back to the Python "
                         "list writer, which leaves updateFields set and every "
                         "page number reading 1.",
-                        timeout, os.path.basename(path), chosen)
+                        limit, os.path.basename(path), chosen)
             return False
         except (OSError, subprocess.SubprocessError) as exc:
             log.warning("LibreOffice index refresh raised for %s: %s",
