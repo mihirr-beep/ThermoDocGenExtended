@@ -1023,6 +1023,20 @@ def config_diff(conn, tco_before, tco_after):
     if refusal:
         return refusal
     a, b = _form_of(conn, tco_before), _form_of(conn, tco_after)
+    # Three empty sections read as "nothing was configured differently". They
+    # meant "neither campaign has a frozen revision to read a form off".
+    # IEC-EMC-005 and IEC-EMC-006 both have zero datasheet_revision rows, and
+    # the diff came back changed:/added:/removed: with nothing under any of
+    # them - an absence wearing the shape of a finding.
+    if not a or not b:
+        missing = [t for t, f in ((tco_before, a), (tco_after, b)) if not f]
+        return {"before": tco_before, "after": tco_after,
+                "changed": [], "added": [], "removed": [],
+                "note": ("no submitted form is stored for %s, so there is "
+                         "nothing to compare. This is a GAP IN THE RECORD, not "
+                         "a finding that the configuration matched - say so "
+                         "rather than reporting no differences."
+                         % " and ".join(missing))}
     changed, added, removed = [], [], []
     for k in sorted(set(a) | set(b)):
         if k in _NOISE or k.startswith(("line_", "neutral_", "img_")):
@@ -1040,18 +1054,61 @@ def config_diff(conn, tco_before, tco_after):
             "changed": changed, "added": added, "removed": removed}
 
 
-def common_config(conn, tcos):
+def _tcos_for_product(conn, product):
+    """Every campaign of one product, oldest first.
+
+    LIKE, never "=", and TRIM on the stored side: 9 of 59 datasheet rows and 8
+    of 22 request rows carry a trailing space in product_name, and the database
+    collation is utf8mb4_0900_ai_ci - NO PAD - so "= 'Smart2Pure Pro 16 UVUF FS
+    60L'" matches nothing while the value is plainly there. Zero rows from an
+    equality filter is indistinguishable from a genuine absence.
+    """
+    rows = _rows(conn, """
+        SELECT DISTINCT d.tco_id, MIN(d.test_date) AS first_seen
+        FROM `datasheet` d
+        WHERE """ + _product_where(_PRODUCT_COLS_SHEET) + """
+          AND d.tco_id IS NOT NULL AND d.tco_id <> ''
+        GROUP BY d.tco_id ORDER BY first_seen, d.tco_id
+    """, prod="%" + str(product).strip() + "%")
+    return [r["tco_id"] for r in rows]
+
+
+def common_config(conn, tcos=None, product=None):
     """Fields that hold the SAME value across every campaign given.
 
     Answers "what did the two successful tests have in common" - and is worth
     treating carefully, because on a short list almost everything is common.
     The caller should say how many campaigns were compared so a reader can
     judge whether a shared value means anything.
+
+    Takes tcos= OR product=. It had only tcos=, while run()'s own guard
+    REQUIRED product= for this primitive and analyse_history exposed no tcos
+    parameter at all - so every reachable call either tripped the guard or died
+    on an unexpected keyword. Measured over 110 recorded turns: this primitive
+    had never once executed.
     """
+    if not tcos and product:
+        tcos = _tcos_for_product(conn, product)
+    if not tcos:
+        return {"campaigns": [], "common": [],
+                "note": "no campaign found for %r - nothing to compare"
+                        % (product or "")}
     forms = [_form_of(conn, t) for t in tcos]
-    forms = [f for f in forms if f]
-    if len(forms) < 2:
-        return {"campaigns": tcos, "common": [], "note": "needs at least two campaigns"}
+    kept = [f for f in forms if f]
+    if len(kept) < 2:
+        # "needs at least two campaigns" was printed after FINDING two, because
+        # the count being tested was of stored FORMS, not of campaigns. The
+        # reader was told the wrong thing was missing.
+        if len(tcos) < 2:
+            why = ("only %d campaign(s) found, so there is nothing to compare "
+                   "across" % len(tcos))
+        else:
+            why = ("%d campaigns found (%s) but %d of them have no submitted "
+                   "form stored, so there is nothing to compare. This is a GAP "
+                   "IN THE RECORD, not a finding that they had nothing in "
+                   "common." % (len(tcos), ", ".join(tcos), len(tcos) - len(kept)))
+        return {"campaigns": tcos, "common": [], "note": why}
+    forms = kept
     keys = set(forms[0])
     for f in forms[1:]:
         keys &= set(f)

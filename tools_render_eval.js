@@ -97,6 +97,45 @@ check(g, 'detected', bare !== null, true);
 check(g, 'header', bare && bare.head, ['Product', 'TCO ID', 'Status']);
 check(g, 'rows', bare && bare.rows.length, 2);
 
+// Turn 124 wrote "Table: differences by tco_id" and then bulleted its rows.
+// listBlock() claimed them before pipeRun ever ran, so seven columns of EUT
+// configuration reached the screen as literal pipes inside two <li>. The model
+// had said the word "Table" and still not produced one.
+g = 'rows the model bulleted by mistake';
+const bulleted =
+  '- IEC-EMC-005 | EFT | eut_configuration="Tabletop" | eut_class="Class B"\n' +
+  '- IEC-EMC-006 | CE | eut_configuration="Tabletop" | eut_class="Class B"';
+const bulletedRun = parse(bulleted);
+check(g, 'recognised as a table', bulletedRun !== null, true);
+check(g, 'list marker is not a cell', bulletedRun && bulletedRun.rows[0][0], 'IEC-EMC-005');
+const bulletedDom = render(bulleted);
+check(g, 'renders as a table, not a list', bulletedDom.tags('li').length, 0);
+check(g, 'both rows survive rendering - neither promoted to a header',
+  bulletedDom.tags('tbody').reduce((n, b) => n + b.children.length, 0), 2);
+
+// An ordinary bullet holding one pipe is still a bullet. pipeRun refuses a
+// two-column run with no separator and no outer pipes, and listBlock only
+// steps aside when pipeRun says yes - so this must not become a table.
+g = 'a bullet with a stray pipe stays a bullet';
+const strayPipe = render('- Draft | then Peer Review\n- Approved | or Rejected');
+check(g, 'still a list', strayPipe.tags('li').length, 2);
+check(g, 'no table built', strayPipe.tags('table').length, 0);
+
+// With no separator row, body[0] is a HEADING only if it reads like one. Both
+// of turn 124's rows were data, and promoting the first deleted a row from the
+// answer. Where every row spells its own field names, the names come from the
+// keys and both rows are kept.
+g = 'headerless key="value" rows keep every row';
+const keyed = parse(
+  'IEC-EMC-005 | EFT | eut_configuration="Tabletop" | eut_class="Class B"\n' +
+  'IEC-EMC-006 | CE | eut_configuration="Tabletop" | eut_class="Class B"');
+check(g, 'detected', keyed !== null, true);
+check(g, 'headings taken from the keys', keyed && keyed.head,
+  ['', '', 'eut_configuration', 'eut_class']);
+check(g, 'no row promoted away', keyed && keyed.rows.length, 2);
+check(g, 'quotes stripped from keyed cells', keyed && keyed.rows[0][2], 'Tabletop');
+check(g, 'unkeyed column keeps its raw value', keyed && keyed.rows[1][0], 'IEC-EMC-006');
+
 // A ragged row must never shift a value under a header that does not describe
 // it. A mislabelled value is the failure this whole tool exists to avoid.
 g = 'ragged rows';

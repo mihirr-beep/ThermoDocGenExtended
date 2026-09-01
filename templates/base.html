@@ -1227,6 +1227,13 @@
         function splitPipes(line){
           var s=String(line==null?'':line).trim();
           if(s.indexOf('|')<0) return null;
+          // A model that means a table sometimes BULLETS its rows:
+          // "- IEC-EMC-005 | EFT | ...". The marker is not a cell. Left on, it
+          // made the first column read "- IEC-EMC-005", and - far worse - the
+          // list handler claimed those lines before pipeRun ever saw them, so
+          // seven columns reached the screen as literal pipes inside a bullet.
+          s = s.replace(/^(?:[-*+]|\d+[.)])\s+/, '');
+          if(s.indexOf('|')<0) return null;
           var lead = s.charAt(0)==='|';
           var trail = s.length>1 && s.charAt(s.length-1)==='|'
                       && s.charAt(s.length-2)!=='\\';
@@ -1302,6 +1309,10 @@
           // models repeat them, and occasionally put one under the data.
           var body=raw.filter(function(r){ return !isSepRow(r.cells); });
           if(body.length<2) return null;   // a header alone carries nothing
+          if(seps===0){
+            var keyed=keyedHead(body);
+            if(keyed) return {head:keyed.head, rows:keyed.rows, end:k};
+          }
           var head=body[0].cells.slice();
           var width=head.length;
           var rows=[];
@@ -1324,6 +1335,38 @@
           });
           if(!rows.length) return null;
           return {head:head, rows:rows, end:k};
+        }
+        // With no separator row, body[0] is a HEADING only if it reads like
+        // one. Turn 124 emitted two rows that were both data - every cell
+        // key="value" - and promoting the first to a header deleted a row from
+        // the answer outright. Where the rows spell their own field names,
+        // take the headings from the keys and keep both rows. A column that is
+        // not keyed in EVERY row keeps its raw value under a blank heading:
+        // unlabelled is honest, mislabelled is the failure this tool exists to
+        // avoid.
+        var KV_RE=/^\s*([A-Za-z_][\w.]*)\s*=\s*"?([\s\S]*?)"?\s*$/;
+        function keyedHead(body){
+          if(!body || body.length<2) return null;
+          var width=body[0].cells.length, names=[], keyed=0;
+          for(var c=0;c<width;c++){
+            var key=null, ok=true;
+            for(var r=0;r<body.length;r++){
+              var cells=body[r].cells;
+              var m = c<cells.length ? KV_RE.exec(cells[c]) : null;
+              if(!m || (key!==null && m[1]!==key)){ ok=false; break; }
+              key=m[1];
+            }
+            if(ok && key){ names.push(key); keyed++; } else { names.push(''); }
+          }
+          if(keyed<2) return null;
+          var out=body.map(function(r){
+            return r.cells.map(function(cell, idx){
+              if(!names[idx]) return cell;
+              var m=KV_RE.exec(cell);
+              return m ? m[2] : cell;
+            });
+          });
+          return {head:names, rows:out};
         }
         // Beyond this many columns a table cannot fit the panel, and the model
         // is asked for a list instead - but asking is not guaranteeing, and a
@@ -1421,6 +1464,13 @@
             var ordered=/^\s*\d+[.)]\s+\S/.test(lines[i]);
             var re = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
             var test = ordered ? /^\s*\d+[.)]\s+\S/ : /^\s*[-*+]\s+\S/;
+            // Rows of a table the model bulleted by mistake are not list items.
+            // pipeRun already knows what is and is not a table - and it says no
+            // to two-column runs without outer pipes, so an ordinary bullet
+            // holding one pipe stays a bullet.
+            var runEnd=i;
+            while(runEnd<lines.length && test.test(lines[runEnd])) runEnd++;
+            if(runEnd-i>=2 && pipeRun(lines, i)) return false;
             var items=[];
             while(i<lines.length && test.test(lines[i])){
               var it=lines[i].replace(re, '');
