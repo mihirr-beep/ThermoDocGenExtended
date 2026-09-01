@@ -567,10 +567,13 @@ def _value_shape_ok(vals, ctype):
             return False
     return True
 
-# Credential-ish columns: omitted from the catalog entirely. sql_guard blocks
+# Credential-ish columns, and personal contact details: omitted from the
+# catalog entirely. Keep in step with sql_guard's DENIED_COLUMN_PATTERNS
+# and DENIED_PII_PATTERNS. sql_guard blocks
 # them at validation time too - this just keeps them out of the model's sight.
 _HIDDEN_COLUMN = re.compile(
-    r"password|\bpwd\b|secret|api_key|(?:reset|auth|session|csrf|access|refresh)_token", re.I)
+    r"password|\bpwd\b|secret|api_key|(?:reset|auth|session|csrf|access|refresh)_token"
+    r"|email|phone|\bmobile\b", re.I)
 
 # Large blob columns: real data, but megabytes of it and useless to reason
 # over. Hidden so the model does not select them and blow the size budget.

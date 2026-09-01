@@ -428,9 +428,15 @@ _RESULT_WORDS = {
 def _result_words_note(names, rows):
     """The lab's wording for the result values present, so none gets invented."""
     low = [str(n or "").lower() for n in names]
+    # Matched on the exact name, and turn 125 wrote "d.result AS final_result".
+    # The alias silenced the note, the model never saw that B is acceptable, and
+    # it reported one passing test where there were two - IEC-EMC-005 is B and
+    # IEC-EMC-006 is PASS. Widened to any column with "result" or "criteri" in
+    # its name, which is safe because the note is really gated on the VALUES:
+    # `seen` stays empty unless a cell actually holds PASS/FAIL/A/B/C/D, so a
+    # results_json column matching the name contributes nothing.
     idx = [i for i, n in enumerate(low)
-           if n in ("result", "overall_result", "met_performance_criteria",
-                    "required_performance_criteria")]
+           if "result" in n or "criteri" in n]
     if not idx:
         return {}
     seen = []

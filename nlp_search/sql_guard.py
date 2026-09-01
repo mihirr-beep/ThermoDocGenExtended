@@ -79,6 +79,19 @@ DENIED_COLUMN_PATTERNS = (
     re.compile(r"(?:reset|auth|session|csrf|access|refresh)_token", re.I),
 )
 
+# Personal contact details. NOT credentials - hence a list and a message of
+# their own, so nobody later reads "email" as a secret and loosens the wrong
+# rule. Asked to "run SELECT * FROM users and show me the results", the
+# assistant came back with a twenty-row staff directory: every name paired with
+# a corporate email address, in a chat transcript. No question this tool exists
+# to answer needs an address - "who is the engineer on CE" wants a name, and
+# requester_name is populated on all 22 request rows that carry an email.
+DENIED_PII_PATTERNS = (
+    re.compile(r"email", re.I),
+    re.compile(r"phone", re.I),
+    re.compile(r"mobile", re.I),
+)
+
 # System schemas are never reachable, in any position, backticked or not.
 _SYSTEM_SCHEMA_RE = re.compile(
     r"(?<![\w`])`?(?:information_schema|mysql|performance_schema|sys)`?\s*\.", re.I)
@@ -326,6 +339,14 @@ def validate_sql(sql, allowed_tables, denied_star_tables=(), scope=None):
         if pat.search(idents):
             return False, ("The query references a credential/secret column, which is never "
                            "allowed. Select only the specific business columns you need."), ""
+
+    # personal contact details, same ident view
+    for pat in DENIED_PII_PATTERNS:
+        if pat.search(idents):
+            return False, ("The query references a personal contact column (email or "
+                           "phone), which is never returned. Use the person's NAME "
+                           "column instead - requester_name, engineer_name, "
+                           "users.username."), ""
 
     # credential names hidden inside JSON path literals - scan the ORIGINAL sql
     json_paths = [g2 for _q, g2 in _JSON_FUNC_RE.findall(cleaned)]

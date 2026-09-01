@@ -173,7 +173,10 @@ def _same_thing_many_jobs(kind, cands):
 
 
 _ENTITIES = {
-    "person": ("users", "id", ["username", "email"], ["id", "username", "email", "role"]),
+    # matches on email so a typed address still finds the person, but
+    # never returns one: a resolver hit lands in the ledger, and
+    # anything in the ledger can be quoted in an answer.
+    "person": ("users", "id", ["username", "email"], ["id", "username", "role"]),
     "job": ("iec_emc_requests", "id", ["job_number", "tco_id", "job_id"],
             ["id", "tco_id", "job_number", "product_name", "status"]),
     "product": ("iec_emc_requests", "id", ["product_name", "model_number", "manufacturer"],
