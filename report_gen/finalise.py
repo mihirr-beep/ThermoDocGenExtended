@@ -39,6 +39,7 @@ and its docstring carries the ordering constraint between the tiers.
 """
 import logging
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -713,6 +714,146 @@ def compute_fields_libreoffice(path, port=None, timeout=None):
             shutil.rmtree(work, ignore_errors=True)
 
 
+# A caption cross-reference as LIBREOFFICE names it internally: Figure!0|sequence.
+# Word has never heard of it. Illustration is LibreOffice's own default sequence
+# name; this report uses Figure/Photo/Table, but a template edited in LO can
+# produce it, and an anchor that is merely unrecognised costs nothing to accept.
+_SEQ_ANCHOR_RE = re.compile(
+    r"^(Figure|Photo|Table|Illustration)!(\d+)\|sequence$", re.I)
+_CAPTION_RE = re.compile(
+    r"^\s*(Figure|Photo|Table|Illustration)\s+(\d+)\s*[:.]", re.I)
+
+
+def relink_sequence_anchors(path):
+    """Point LIST OF FIGURES / PHOTOS / TABLES at the captions they name.
+
+    Ctrl+click in those three lists went to page 1, every time, while the table
+    of contents worked. LibreOffice's docx export converts HEADING references
+    into real Word bookmarks - __RefHeading__... - which is why the contents
+    page is fine. It does NOT convert CAPTION references: those stay in its own
+    internal form, Figure!0|sequence, naming a bookmark no document contains.
+    Word cannot find the target, so it does not move.
+
+    Nothing needs creating. Measured on a real report: all 29 captions already
+    carry a _Toc bookmark, and the per-kind counts line up exactly with the
+    broken links - 9 figures, 13 photos, 7 tables - numbered 1..N in document
+    order. So Figure!N|sequence is the (N+1)th figure caption, and the fix is to
+    write that bookmark's name into the anchor.
+
+    Counted from ZERO on the anchor and from ONE in the caption text, which is
+    the off-by-one to watch: Figure!0|sequence is "Figure 1: ...".
+
+    Returns how many anchors were repointed. Best-effort - a report with lists
+    that do not jump is worse to use but still correct, and this must not be the
+    thing that loses it.
+    """
+    try:
+        from docx import Document
+        from docx.oxml.ns import qn
+    except Exception as exc:  # noqa: BLE001
+        log.info("cannot repoint list anchors (%s)", exc)
+        return 0
+
+    def _para_text(el):
+        return "".join(t.text or "" for t in el.iter(qn("w:t"))).strip()
+
+    def _para_style(el):
+        ppr = el.find(qn("w:pPr"))
+        if ppr is None:
+            return ""
+        st = ppr.find(qn("w:pStyle"))
+        return (st.get(qn("w:val")) or "") if st is not None else ""
+
+    try:
+        doc = Document(path)
+        body = doc.element.body
+
+        # Highest bookmark id in use, so any we add cannot collide.
+        next_id = [0]
+        for mark in body.iter(qn("w:bookmarkStart")):
+            try:
+                next_id[0] = max(next_id[0], int(mark.get(qn("w:id")) or 0))
+            except (TypeError, ValueError):
+                continue
+
+        def _bookmark(para, label):
+            """Wrap a caption paragraph in a fresh bookmark and return its name."""
+            next_id[0] += 1
+            name = "_RptCap%s%d" % (label, next_id[0])
+            start = para.makeelement(qn("w:bookmarkStart"), {})
+            start.set(qn("w:id"), str(next_id[0]))
+            start.set(qn("w:name"), name)
+            end = para.makeelement(qn("w:bookmarkEnd"), {})
+            end.set(qn("w:id"), str(next_id[0]))
+            para.insert(0, start)
+            para.append(end)
+            return name
+
+        # The captions, in document order, one bookmark each.
+        #
+        # Identified by STYLE, positively. An entry inside one of the lists also
+        # reads "Figure 3: ..." and, collected as a caption, shifts every mapping
+        # after it. Excluding styles containing "Index" was fitted to one
+        # document and missed the next: the list entries there were styled
+        # TableofFigures, so all 45 were taken for captions and nothing resolved.
+        # Caption styles are Caption / Caption1 / "Caption Char"; the list styles
+        # are FigureIndex1, TableofFigures, "Table of Figures" - none of which
+        # begins with "caption".
+        captions = {}
+        made = 0
+        for para in body.iter(qn("w:p")):
+            if not _para_style(para).strip().lower().startswith("caption"):
+                continue
+            match = _CAPTION_RE.match(_para_text(para))
+            if not match:
+                continue
+            kind = match.group(1).title()
+            names = [b.get(qn("w:name")) for b in para.iter(qn("w:bookmarkStart"))]
+            names = [n for n in names if n]
+            if names:
+                captions.setdefault(kind, []).append(names[0])
+            else:
+                # A caption LibreOffice left unbookmarked - four of forty-five in
+                # one report. Giving it one costs nothing and keeps the ordinal
+                # mapping intact; dropping it would silently shift every later
+                # entry of that kind onto the wrong caption.
+                captions.setdefault(kind, []).append(_bookmark(para, kind[:3]))
+                made += 1
+
+        fixed, unresolved = 0, 0
+        for link in body.iter(qn("w:hyperlink")):
+            anchor = link.get(qn("w:anchor"))
+            if not anchor:
+                continue
+            match = _SEQ_ANCHOR_RE.match(anchor)
+            if not match:
+                continue
+            targets = captions.get(match.group(1).title()) or []
+            index = int(match.group(2))
+            target = targets[index] if 0 <= index < len(targets) else None
+            if not target:
+                unresolved += 1
+                continue
+            link.set(qn("w:anchor"), target)
+            fixed += 1
+
+        if fixed or made:
+            doc.save(path)
+            log.info("repointed %d list link(s) at their captions in %s%s%s",
+                     fixed, os.path.basename(path),
+                     " (bookmarked %d caption(s) that had none)" % made if made else "",
+                     " (%d left unresolved)" % unresolved if unresolved else "")
+        elif unresolved:
+            log.warning("%d figure/table list link(s) in %s name a caption that "
+                        "could not be found, so they will not jump",
+                        unresolved, os.path.basename(path))
+        return fixed
+    except Exception as exc:  # noqa: BLE001 - never lose the report over a link
+        log.warning("could not repoint list anchors in %s: %s",
+                    os.path.basename(path), exc)
+        return 0
+
+
 def finalise(path):
     """Finish the report as well as this host can. Returns what was done.
 
@@ -755,8 +896,13 @@ def finalise(path):
     if had_engine and compute_fields_libreoffice(path):
         clear_update_on_open(path)
         frozen = unlink_body_fields(path)
+        # LibreOffice only - Word writes proper bookmarks for caption
+        # references and has nothing to repair. Runs AFTER unlink_body_fields,
+        # which strips FIELDS; a w:hyperlink is not a field and survives it.
+        relinked = relink_sequence_anchors(path)
         return {"engine": "libreoffice", "page_numbers": True,
-                "fields_frozen": frozen, "degraded": False}
+                "fields_frozen": frozen, "links_repointed": relinked,
+                "degraded": False}
     info = populate_lists(path)
     info.update({"engine": "python", "page_numbers": False,
                  "degraded": bool(had_engine)})
