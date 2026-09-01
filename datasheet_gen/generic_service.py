@@ -456,6 +456,14 @@ def _surge_build_context(form_data):
     and the dynamic observation matrices (inserted post-render by the generator)."""
     from .layout import human_checkbox, cumulative_checkbox, RunsXml, _label_run
     ctx = {}
+    # EUT Input Voltage & Frequency carries the ONE supply the surge was applied at.
+    # The prefill already picks the first when the form is built, but a datasheet saved
+    # before that change holds the joined "230 V, 50 Hz; 100 V, 60 Hz" in its draft and
+    # the draft wins over the prefill - so the document trims it here too. A single
+    # value the engineer typed is untouched.
+    _vf = _s(form_data.get("eut_input_voltage_frequency"))
+    if ";" in _vf:
+        ctx["eut_input_voltage_frequency"] = _first_supply_of(_vf)
     POWER = ["±0.5 kV", "±1 kV", "±2 kV", "±4 kV"]
     SIGNAL = ["±0.5 kV", "±1 kV", "±2 kV", "Custom"]
 
@@ -1513,6 +1521,34 @@ _MAINS_DEFAULT_SUPPLY = "230 V, 50 Hz"
 #: ... and these are the datasheets it applies to.
 _MAINS_SUPPLY_CODES = ("HARMONIC", "VOLTAGEFLICKER")
 
+#: Datasheets that record the ONE supply the test was run at, not every supply the
+#: request lists. _fmt_supply() joins them all with "; ", so a request declaring two
+#: (230 V, 50 Hz and 100 V, 60 Hz) printed both in a single EUT Input Voltage &
+#: Frequency cell. Surge is applied at the mains supply the EUT was powered from, so
+#: the first one is the one that belongs on the sheet - and unlike _MAINS_SUPPLY_CODES
+#: this keeps the request's own value rather than hardcoding 230 V.
+_PRIMARY_SUPPLY_CODES = ("SURGE",)
+
+
+def _primary_supply(rows):
+    """The first supply the request lists, formatted, or '' when it lists none."""
+    for row in (rows or []):
+        one = _fmt_supply([row])
+        if one:
+            return one
+    return ""
+
+
+def _first_supply_of(text):
+    """The first supply in an already-formatted '230 V, 50 Hz; 100 V, 60 Hz' string.
+
+    Needed as well as _primary_supply(): a datasheet saved before this change holds the
+    joined string in its draft, and the draft overrides the prefill - so without this the
+    document would keep printing both until someone retyped the field.
+    """
+    head = _s(text).split(";")[0].strip()
+    return head or _s(text)
+
 
 def worst_performance_code(codes):
     """The most severe observation code in `codes`, as a bare letter.
@@ -1831,7 +1867,12 @@ def collect_prefill(schema, request_obj, assignment):
             # HARMONIC is always run on the mains supply, so 230 V, 50 Hz is the value the
             # field starts at - it WINS over whatever the Test Request carries, rather than
             # only filling a blank. The engineer can still type over it on the form.
-            pre[f["key"]] = _MAINS_DEFAULT_SUPPLY if _code in _MAINS_SUPPLY_CODES else vf
+            if _code in _MAINS_SUPPLY_CODES:
+                pre[f["key"]] = _MAINS_DEFAULT_SUPPLY
+            elif _code in _PRIMARY_SUPPLY_CODES:
+                pre[f["key"]] = _primary_supply(vf_rows) or vf
+            else:
+                pre[f["key"]] = vf
         elif k == "test_mode":
             # RE prints the mode NAMES ('Mode A, Mode B'), not the descriptions the
             # requester typed for each one. Other datasheets keep the full text.

@@ -2885,7 +2885,10 @@ def render(code, context, img_keys, img_paths, output_path):
     # EQUIPMENT USED / 2.7 SOFTWARE USED / 2.8 RESULT) is kept together on the last
     # page. RE has its own paginator (_re_paginate) so it is excluded.
     if code != "RE":
-        paginate_generic_datasheet(tpl.docx)
+        # SURGE: 2.6 / 2.7 carry one data row each, so forcing them onto their own page
+        # leaves the setup-pictures page half empty - the client asked for them to fill it.
+        # They stay glued together, so Word still moves the whole block if it will not fit.
+        paginate_generic_datasheet(tpl.docx, force_last_block_page=(code != "SURGE"))
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
     if code == "RE":

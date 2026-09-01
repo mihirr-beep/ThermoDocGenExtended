@@ -829,7 +829,8 @@ def _remove_blank_spacers_before(para):
         prev = nxt
 
 
-def paginate_generic_datasheet(doc, last_block_heading="TEST EQUIPMENT USED"):
+def paginate_generic_datasheet(doc, last_block_heading="TEST EQUIPMENT USED",
+                               force_last_block_page=True):
     """Pagination for the generic immunity datasheets (RS_RI / ESD / CRF / PFMF /
     HARMONIC / VOLTAGEFLICKER / VOLTAGEDIPS / EFT / SURGE).
 
@@ -837,9 +838,15 @@ def paginate_generic_datasheet(doc, last_block_heading="TEST EQUIPMENT USED"):
           a NEW page, even if the previous page has room — so section 2 never
           continues under section 1.
       (3) The final subsections (from `last_block_heading` to the end: TEST
-          EQUIPMENT USED / SOFTWARE USED / RESULT, i.e. 2.6 / 2.7 / 2.8) are pushed
-          onto a fresh page and glued together, so they always land together on
-          the LAST page instead of drifting up under the setup photos.
+          EQUIPMENT USED / SOFTWARE USED / RESULT, i.e. 2.6 / 2.7 / 2.8) are glued
+          together so they never break across pages.
+
+          With `force_last_block_page` they are also pushed onto a fresh page. That
+          is the older behaviour and the default; SURGE passes False because the
+          client reads a wasted page there - 2.6 and 2.7 hold one data row each and
+          fit under the setup photos. Glued but not forced, Word puts the block on
+          the current page when it fits and moves the whole of it when it does not,
+          which is the same guarantee without the blank space.
 
     Reflow-safe: uses page-break-before + keep-with-next + cantSplit only. Any
     manual break runs and the template's blank 'spacer' paragraphs that used to
@@ -873,8 +880,11 @@ def paginate_generic_datasheet(doc, last_block_heading="TEST EQUIPMENT USED"):
             break
     if block_head is None:
         return
+    # The template's spacer paragraphs go either way: forced or not, they only ever
+    # push the block down the page.
     _remove_blank_spacers_before(block_head)
-    block_head.paragraph_format.page_break_before = True
+    if force_last_block_page:
+        block_head.paragraph_format.page_break_before = True
 
     # recompute element positions AFTER the removals for the keep-together pass
     body = list(doc.element.body)
@@ -1313,11 +1323,41 @@ def enforce_body_arial(doc, size=11):
                 run.font.size = Pt(size)
 
 
-def shrink_wide_obs_tables(doc, size=8):
-    """Re-shrink the wide Surge observation matrices (17 columns) after the global
-    Arial pass — 11pt cannot fit 17 columns on a portrait page. Keeps the (already
-    Arial) font, only reduces the point size and centres each cell. Matched by the
-    header (Common/Differential Mode) or the Signal-line label."""
+#: Left/right cell padding for the wide Surge matrices, in twips. Word's default is 108
+#: each side: on a 494-twip column that leaves 278 for the text, and "180" with its degree
+#: sign needs 331 at 8pt and 413 at 10pt - so the headers were breaking mid-word at EVERY
+#: size, including the 8pt the client saw. 28 each side leaves 438 and they fit at 10pt.
+_OBS_CELL_MARGIN_TWIPS = 28
+
+
+def _set_table_cell_margins(tbl, left, right):
+    """Set this table's default left/right cell padding (w:tblCellMar), in twips."""
+    pr = tbl._tbl.find(qn("w:tblPr"))
+    if pr is None:
+        pr = tbl._tbl.makeelement(qn("w:tblPr"), {})
+        tbl._tbl.insert(0, pr)
+    mar = pr.find(qn("w:tblCellMar"))
+    if mar is None:
+        mar = pr.makeelement(qn("w:tblCellMar"), {})
+        pr.append(mar)
+    for side, value in (("left", left), ("right", right)):
+        el = mar.find(qn("w:" + side))
+        if el is None:
+            el = mar.makeelement(qn("w:" + side), {})
+            mar.append(el)
+        el.set(qn("w:w"), str(int(value)))
+        el.set(qn("w:type"), "dxa")
+
+
+def shrink_wide_obs_tables(doc, size=10):
+    """Re-size the wide Surge observation matrices (17 columns) after the global Arial
+    pass — 11pt cannot fit 17 columns on a portrait page.
+
+    10pt is what the datasheet asks for and what the client reads; it fits only once the
+    cell padding comes down, because Word's default 108-twip margins leave 278 twips of a
+    494-twip column and "180" + degree sign needs 413 at 10pt. Padding first, then the
+    size. Keeps the (already Arial) font and centres each cell. Matched by the header
+    (Common/Differential Mode) or the Signal-line label."""
     for t in doc.tables:
         try:
             hdr = " ".join(c.text for c in t.rows[0].cells)
@@ -1325,6 +1365,7 @@ def shrink_wide_obs_tables(doc, size=8):
         except Exception:
             continue
         if ("Common Mode" in hdr and "Differential Mode" in hdr) or first.startswith("Name of the signal"):
+            _set_table_cell_margins(t, _OBS_CELL_MARGIN_TWIPS, _OBS_CELL_MARGIN_TWIPS)
             for row in t.rows:
                 for c in row.cells:
                     for p in c.paragraphs:
