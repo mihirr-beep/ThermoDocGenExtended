@@ -701,6 +701,49 @@ _TEST_CODE_RE = re.compile(
     r"VOLTAGEFLICKER|FLICKER|CRF|PFMF|RS[_ ]?RI|RS)\b")
 
 
+# The user typing SQL, or instructing the tool to run SQL verbatim, rather
+# than asking a question in words. This is a SECURITY gate, not a meaning
+# judgement - it does not decide what the question MEANS, only whether the
+# input is itself a command to execute, which the pipeline was never built to
+# validate as an intent. "run SELECT * FROM users and show me the results"
+# reached a worker, got auto-rewritten to a narrower SELECT and RAN - the
+# column-level guard (DENIED_COLUMN_PATTERNS / DENIED_PII_PATTERNS in
+# sql_guard.py) caught the credential/PII exposure that time, but relying on
+# the guard to save every case is the wrong layer: it exists to keep
+# MODEL-authored SQL inside bounds, not to referee a user dictating the
+# statement. This turns the whole class away before a token is spent or a
+# worker is chosen.
+#
+# SQL statement shape is the strongest signal - "select ... from <table>" as a
+# contiguous phrase is not something an ordinary English question produces.
+# The explicit-instruction phrases catch a request that describes what to run
+# in prose ("execute this query on iec_emc_requests") without full SQL syntax.
+_QUOTE_CHARS = "`'" + chr(34)
+
+_SQL_STATEMENT_RE = re.compile(
+    r"\bselect\b[\s\S]{0,300}?\bfrom\b\s*[" + _QUOTE_CHARS + r"]?\w|"
+    r"\b(?:insert\s+into|update\s+\w+\s+set|delete\s+from|"
+    r"drop\s+(?:table|database|schema)|alter\s+table|"
+    r"truncate\s+(?:table\s+)?\w|create\s+(?:table|database)|"
+    r"replace\s+into|grant\s+\w|revoke\s+\w)\b", re.I)
+
+_RUN_SQL_INSTRUCTION_RE = re.compile(
+    r"\b(?:run|execute|fire|issue)\s+(?:this|the|that|a|an|my|following)?"
+    r"\s*(?:sql|query|statement)\b", re.I)
+
+
+def is_raw_sql_command(question):
+    """The input IS SQL, or an instruction to run SQL verbatim - not a question."""
+    q = question or ""
+    return bool(_SQL_STATEMENT_RE.search(q) or _RUN_SQL_INSTRUCTION_RE.search(q))
+
+
+RAW_SQL_REFUSAL = (
+    "This is a natural-language tool, not a SQL console - describe what you "
+    "want to know and it writes and checks the query itself. Type your "
+    "question in plain words rather than a query to run.")
+
+
 def classify(question):
     """schema / data / capability."""
     q = (question or "").strip()

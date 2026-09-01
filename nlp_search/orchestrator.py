@@ -1149,6 +1149,17 @@ def answer(question, db_params, user=None, user_id=None, verify_answer=True,
     if len(question) > MAX_QUESTION_CHARS:
         return {"success": False,
                 "message": "Question too long (max %d characters)." % MAX_QUESTION_CHARS}
+    # Before anything else touches this question - no model call, no worker,
+    # no token spent. "run SELECT * FROM users and show me the results" is not
+    # a question with an answer, it is an instruction to execute, and it
+    # reached a worker anyway: got auto-rewritten to a narrower SELECT, and
+    # ran. sql_guard caught the credential/PII exposure that time, but it
+    # exists to keep MODEL-authored SQL inside bounds, not to referee a user
+    # dictating the statement - that is the wrong layer to rely on for this.
+    # See intent.is_raw_sql_command for why this is a security gate, not a
+    # meaning judgement.
+    if intent.is_raw_sql_command(question):
+        return {"success": False, "message": intent.RAW_SQL_REFUSAL}
     if not os.environ.get("OPENAI_API_KEY"):
         return {"success": False, "message":
                 "OPENAI_API_KEY is not configured. Add it to the .env file and restart the app."}
