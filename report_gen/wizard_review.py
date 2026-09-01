@@ -818,7 +818,25 @@ def latest_report(request_id, entries=None):
                  request_id, exc)
     if not candidates:
         return None
-    return max(set(candidates), key=lambda p: os.path.getmtime(p))
+    # Ranked by the timestamp IN THE NAME, not by mtime. Every report is named
+    # <TCO>_Test_Report_<YYYYMMDD>_<HHMMSS>.docx at the moment the build starts,
+    # so the name orders the runs the way a person would. mtime does not: when
+    # LibreOffice times out, the Python fallback REWRITES the file it was given,
+    # and that touch made a report generated at 12:30 look newer than one
+    # generated at 12:31 - so the degraded document won, which is precisely
+    # backwards. Files whose name carries no timestamp fall back to mtime.
+    stamp = re.compile(r"_(\d{8})_(\d{6})\.docx$", re.I)
+
+    def rank(p):
+        m = stamp.search(os.path.basename(p))
+        if m:
+            return (1, m.group(1) + m.group(2))
+        try:
+            return (0, str(int(os.path.getmtime(p))))
+        except OSError:
+            return (0, "0")
+
+    return max(set(candidates), key=rank)
 
 
 def readiness(request_id):

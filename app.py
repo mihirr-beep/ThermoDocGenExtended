@@ -15110,17 +15110,41 @@ Please do not reply to this email.
             report_summary.get('dropped_sections'), report_summary.get('images', 0),
             report_summary.get('extra_blocks', 0), report_summary.get('skipped'))
 
-        # Route it into the SAME report-approval flow as an uploaded report.
-        for entry in entries:
-            entry.report_file_path = output_path
-            entry.report_comments = comments
-            entry.report_uploaded_at = now
-            entry.report_uploaded_by = current_user.id
-            if entry.status != 'cancelled':
-                entry.status = 'completed' if skips_report_review else 'report_uploaded'
-            entry.updated_at = now
-        test_request.status = 'Completed' if skips_report_review else 'Draft Report'
-        test_request.updated_at = now
+        # A run that started EARLIER can finish LATER, and this used to let it
+        # overwrite the newer report's path. Measured on IEC-EMC-900: run A
+        # began at 07:00:46 and hit its 420s LibreOffice timeout at 07:07:46;
+        # run B began at 07:01:57 and finished at 07:02:01. B wrote the good
+        # path, then A - five minutes later, holding the degraded document -
+        # wrote over it, and every download afterwards served the bad file.
+        #
+        # Compared on report_uploaded_at, not on filename or mtime: the name
+        # carries the time the run STARTED, and mtime moves again when the
+        # fallback rewrites the file, which is exactly the wrong ordering.
+        superseded = any(
+            getattr(e, 'report_uploaded_at', None) is not None
+            and e.report_uploaded_at > now
+            and getattr(e, 'report_file_path', None)
+            for e in entries
+        )
+        if superseded:
+            logger.warning(
+                'generate_test_report request %s: a NEWER report was published '
+                'while this one was still building, so %s stays on disk but is '
+                'NOT published. This run finished on the %s path.',
+                request_id, os.path.basename(output_path),
+                (report_summary.get('finalised') or {}).get('engine') or 'unknown')
+        else:
+            # Route it into the SAME report-approval flow as an uploaded report.
+            for entry in entries:
+                entry.report_file_path = output_path
+                entry.report_comments = comments
+                entry.report_uploaded_at = now
+                entry.report_uploaded_by = current_user.id
+                if entry.status != 'cancelled':
+                    entry.status = 'completed' if skips_report_review else 'report_uploaded'
+                entry.updated_at = now
+            test_request.status = 'Completed' if skips_report_review else 'Draft Report'
+            test_request.updated_at = now
 
         try:
             db.session.commit()
@@ -15149,6 +15173,15 @@ Please do not reply to this email.
         if finalised.get('page_numbers'):
             toc_note = ('The contents page and page numbers are already '
                         'computed, so it opens with no prompts.')
+        elif finalised.get('degraded'):
+            # An engine WAS here and did not finish. Saying "answer Yes to the
+            # prompt" would be advice to corrupt the document: answering it
+            # rebuilds the indexes over text already written, and the reader
+            # gets a different contents page from the one that was approved.
+            # Measured on IEC-EMC-900 - 39 of 57 entries changed on the second
+            # open. Name it as a failed generation, not a formatting quirk.
+            toc_note = (finalised.get('degraded_reason')
+                        or 'The contents page could not be computed - generate again.')
         else:
             toc_note = ('Open it in Word once and answer Yes to the field prompt '
                         'so the contents page and page numbers fill in.')
@@ -15178,6 +15211,9 @@ Please do not reply to this email.
             'finalised': {
                 'engine': finalised.get('engine'),
                 'page_numbers': bool(finalised.get('page_numbers')),
+                # True only when an engine was present and FAILED - the document
+                # is on disk but its indexes are not trustworthy.
+                'degraded': bool(finalised.get('degraded')),
             },
             'report': {
                 'tests': report_summary.get('tests'),

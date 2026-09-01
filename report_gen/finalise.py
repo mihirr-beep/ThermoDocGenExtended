@@ -40,8 +40,11 @@ and its docstring carries the ordering constraint between the tiers.
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
+import threading
+import time
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +78,10 @@ def available():
 # Said once per process, not once per report, so it is visible in the boot log
 # without burying every generation behind it.
 _warned = [False]
+
+# _uno_python()'s answer, computed once. A list rather than a bare name so
+# "probed and found nothing" (holds None) stays distinct from "not yet probed".
+_uno_python_cache = []
 
 
 def warn_if_unavailable():
@@ -338,6 +345,7 @@ def connect(port, tries=45):
         "com.sun.star.bridge.UnoUrlResolver", local)
     url = "uno:socket,host=127.0.0.1,port=%d;urp;StarOffice.ComponentContext" % port
     started = False
+    proc = None
     for i in range(tries):
         try:
             return resolver.resolve(url)
@@ -345,9 +353,26 @@ def connect(port, tries=45):
             if not started:
                 started = True
                 exe = os.environ.get("SOFFICE_BIN") or "soffice"
-                subprocess.Popen([exe, "--headless", "--norestore", "--invisible",
-                                  "--nologo", "--nodefault",
-                                  "--accept=socket,host=127.0.0.1,port=%d;urp;" % port])
+                # -env:UserInstallation gives this soffice its OWN profile.
+                # Without it every launch shares ~/.config/libreoffice/4/user,
+                # LibreOffice enforces a single-instance lock on that directory,
+                # and a second launch hands off to the running instance instead
+                # of starting an independent one. Two reports finalising at once
+                # then share one process: measured, one finished in 4 seconds and
+                # the other sat until the 420-second timeout and shipped the
+                # degraded fallback.
+                profile = os.environ.get("SOFFICE_PROFILE") or ""
+                argv = [exe, "--headless", "--norestore", "--invisible",
+                        "--nologo", "--nodefault"]
+                if profile:
+                    argv.append("-env:UserInstallation=%s" % profile)
+                argv.append("--accept=socket,host=127.0.0.1,port=%d;urp;" % port)
+                proc = subprocess.Popen(argv)
+            # A soffice that died on startup will never listen, and retrying it
+            # 45 times just spends the caller's timeout finding that out.
+            if proc is not None and proc.poll() is not None and i > 2:
+                raise SystemExit("soffice exited %s before listening on %d"
+                                 % (proc.returncode, port))
             time.sleep(1.0)
     raise SystemExit("no soffice listener on %d" % port)
 
@@ -405,7 +430,13 @@ def _uno_python():
     python3-uno installed for the system python to carry the bridge. Both are
     tried rather than assumed, because the cost of assuming is a report that
     silently ships with no page numbers.
+
+    Memoised: this probes up to five interpreters with a subprocess each, and
+    it was running on EVERY report and again on every availability check. The
+    answer cannot change while the process lives.
     """
+    if _uno_python_cache:
+        return _uno_python_cache[0]
     from .render import _soffice_path
     exe = _soffice_path()
     cands = []
@@ -414,15 +445,18 @@ def _uno_python():
         cands += [os.path.join(here, "python.exe"), os.path.join(here, "python"),
                   os.path.join(here, "python3")]
     cands += ["python3", "python"]
+    found = None
     for cand in cands:
         try:
             r = subprocess.run([cand, "-c", "import uno"], timeout=60,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if r.returncode == 0:
-                return cand
+                found = cand
+                break
         except (OSError, subprocess.SubprocessError):
             continue
-    return None
+    _uno_python_cache.append(found)
+    return found
 
 
 def libreoffice_available():
@@ -433,11 +467,53 @@ def libreoffice_available():
     return bool(_soffice_path()) and bool(_uno_python())
 
 
-def compute_fields_libreoffice(path, port=2002, timeout=420):
+# One report at a time through LibreOffice, per process.
+#
+# There was no lock at all, and the default port was hardcoded, so two people
+# clicking Generate 70 seconds apart both drove the same soffice instance. What
+# happened, measured on IEC-EMC-900: the second run finished in 4 seconds and
+# the first sat until the 420-second timeout, fell back to the Python tier, and
+# shipped a document whose contents page read "1" against every entry with a
+# raw TOC field code visible in the first line.
+#
+# A thread lock is the honest scope: it serialises the workers of ONE process.
+# Two gunicorn workers are two processes and the lock does not span them - the
+# per-call port and private profile below are what stop those colliding, since
+# each gets its own soffice rather than fighting over a shared one.
+_LO_LOCK = threading.Lock()
+
+# The base of the port range. Each call takes base + a slot, so concurrent
+# callers never negotiate for the same listener.
+_LO_PORT_BASE = int(os.environ.get("REPORT_LO_PORT", "2002"))
+
+
+def _free_port(base, span=40):
+    """A port nothing is listening on, near ``base``.
+
+    Bound and released rather than merely probed: a caller that only checks
+    "can I connect" races another caller doing the same check in the same
+    millisecond, and they both pick the same number.
+    """
+    for offset in range(span):
+        candidate = base + offset
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", candidate))
+            return candidate
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return base
+
+
+def compute_fields_libreoffice(path, port=None, timeout=420):
     """Rebuild every index in ``path`` with LibreOffice. True when it worked.
 
     Writes to a temp file and only replaces the original on success, so a failure
     leaves the report exactly as the builder wrote it.
+
+    Serialised per process and given a private soffice - see _LO_LOCK.
     """
     if os.environ.get("REPORT_DISABLE_LIBREOFFICE"):
         return False
@@ -458,32 +534,50 @@ def compute_fields_libreoffice(path, port=2002, timeout=420):
     work = tempfile.mkdtemp(prefix="lo_finalise_")
     script = os.path.join(work, "refresh_uno.py")
     out = os.path.join(work, "out.docx")
-    try:
-        with open(script, "w", encoding="utf-8") as fh:
-            fh.write(_UNO_SCRIPT)
-        # The caller's venv leaks into LibreOffice's OWN interpreter through
-        # these three, and it then cannot find its own standard library.
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE")}
-        env["SOFFICE_BIN"] = exe
-        r = subprocess.run([py, script, path, out, str(port)], timeout=timeout,
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-        if r.returncode != 0 or not os.path.exists(out):
-            log.warning("LibreOffice index refresh failed for %s: %s",
-                        os.path.basename(path),
-                        (r.stderr or b"").decode("utf-8", "replace")[:400])
+    profile = os.path.join(work, "profile")
+    waited = time.time()
+    with _LO_LOCK:
+        queued = time.time() - waited
+        if queued > 1.0:
+            log.info("waited %.0fs for the LibreOffice slot on %s",
+                     queued, os.path.basename(path))
+        chosen = port if port is not None else _free_port(_LO_PORT_BASE)
+        try:
+            with open(script, "w", encoding="utf-8") as fh:
+                fh.write(_UNO_SCRIPT)
+            # The caller's venv leaks into LibreOffice's OWN interpreter through
+            # these three, and it then cannot find its own standard library.
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE")}
+            env["SOFFICE_BIN"] = exe
+            # file:// - LibreOffice wants a URL here, not a path
+            env["SOFFICE_PROFILE"] = "file:///" + profile.replace("\\", "/").lstrip("/")
+            r = subprocess.run([py, script, path, out, str(chosen)],
+                               timeout=timeout, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, env=env)
+            if r.returncode != 0 or not os.path.exists(out):
+                log.warning("LibreOffice index refresh failed for %s (port %d): %s",
+                            os.path.basename(path), chosen,
+                            (r.stderr or b"").decode("utf-8", "replace")[:400])
+                return False
+            shutil.copy(out, path)
+            log.info("report finalised in LibreOffice: %s (%s)",
+                     os.path.basename(path),
+                     (r.stdout or b"").decode("utf-8", "replace").strip() or "no count")
+            return True
+        except subprocess.TimeoutExpired:
+            log.warning("LibreOffice index refresh TIMED OUT after %ss for %s "
+                        "(port %d). The report will fall back to the Python "
+                        "list writer, which leaves updateFields set and every "
+                        "page number reading 1.",
+                        timeout, os.path.basename(path), chosen)
             return False
-        shutil.copy(out, path)
-        log.info("report finalised in LibreOffice: %s (%s)",
-                 os.path.basename(path),
-                 (r.stdout or b"").decode("utf-8", "replace").strip() or "no count")
-        return True
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.warning("LibreOffice index refresh raised for %s: %s",
-                    os.path.basename(path), exc)
-        return False
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("LibreOffice index refresh raised for %s: %s",
+                        os.path.basename(path), exc)
+            return False
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 def finalise(path):
@@ -509,19 +603,40 @@ def finalise(path):
     when LibreOffice is about to - measured, LibreOffice then found 1 of the 4
     indexes and rebuilt it alongside the text already written, so every entry
     appeared twice. LibreOffice gets the raw document or none.
+
+    THE PYTHON TIER IS NOT ALWAYS THE SAME EVENT. On a host with no engine it is
+    the expected, documented outcome. On a host that HAS one, reaching it means
+    the engine was tried and failed, and the reader gets a document whose
+    contents page reads "1" against every entry with a raw TOC field code
+    visible in the first line - measured on IEC-EMC-900 after a 420s timeout.
+    Those two look identical to the caller unless it is told, so `degraded` says
+    which happened and the endpoint can refuse to present the second as finished.
     """
     warn_if_unavailable()
     if compute_fields(path):
         clear_update_on_open(path)
         frozen = unlink_body_fields(path)
-        return {"engine": "word", "page_numbers": True, "fields_frozen": frozen}
-    if compute_fields_libreoffice(path):
+        return {"engine": "word", "page_numbers": True, "fields_frozen": frozen,
+                "degraded": False}
+    had_engine = libreoffice_available()
+    if had_engine and compute_fields_libreoffice(path):
         clear_update_on_open(path)
         frozen = unlink_body_fields(path)
         return {"engine": "libreoffice", "page_numbers": True,
-                "fields_frozen": frozen}
+                "fields_frozen": frozen, "degraded": False}
     info = populate_lists(path)
-    info.update({"engine": "python", "page_numbers": False})
+    info.update({"engine": "python", "page_numbers": False,
+                 "degraded": bool(had_engine)})
+    if had_engine:
+        info["degraded_reason"] = (
+            "LibreOffice is installed on this host but did not finish this "
+            "report, so its contents, list of tables and list of figures were "
+            "written without a layout engine: every page number reads 1 and "
+            "Word will offer to rebuild them on open. Answering that prompt "
+            "changes the document. Generate it again.")
+        log.error("REPORT SHIPPED DEGRADED: %s - LibreOffice was available and "
+                  "did not finish it. Page numbers are not computed.",
+                  os.path.basename(path))
     return info
 
 
