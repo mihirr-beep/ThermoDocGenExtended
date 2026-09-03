@@ -993,10 +993,17 @@
       .labai-badge.doc{background:#ffedd5;color:#9a3412;}
       .labai-badge.both{background:#ede9fe;color:#5b21b6;}
       .labai-badge.none{background:#f1f5f9;color:#475569;}
+      /* A canned starter answer. Amber rather than the informational blues, so
+         it does not read as one of the provenance badges on a real answer. */
+      .labai-badge.eg{background:#fef3c7;color:#92400e;}
       /* Evidence tables inside an answer. The bubble is white-space:pre-wrap
          for ordinary prose; these blocks opt out of that and lay out as a
          real table, so a column of numbers reads as a column of numbers. */
-      .labai-para{white-space:pre-wrap;}
+      /* NOT pre-wrap. flush() now joins soft-wrapped lines itself and emits one
+         div per real paragraph, so preserving newlines here would put the
+         mid-sentence breaks straight back. */
+      .labai-para{margin:0 0 6px;}
+      .labai-para:last-child{margin-bottom:0;}
       .labai-para+.labai-tablewrap,.labai-tablewrap+.labai-para{margin-top:8px;}
       .labai-tablewrap{white-space:normal;overflow-x:auto;max-width:100%;
         border:1px solid #e5e7eb;border-radius:8px;background:#fbfcfe;}
@@ -1011,6 +1018,39 @@
       .labai-table td.num{text-align:right;font-variant-numeric:tabular-nums;
         white-space:nowrap;}
       .labai-tfoot{font-size:11.5px;color:#64748b;margin-top:4px;font-style:italic;}
+      /* An answer arrives as prose, and a wall of prose is the hardest
+         possible shape to read a lab result out of. The model is asked for
+         markdown and this renders it: a heading to scan by, a list when
+         there are items, a table when there are rows. Escaped first - the
+         text is model output. */
+      .labai-h{font-size:13px;font-weight:700;color:#0f172a;margin:10px 0 4px;
+        letter-spacing:-0.01em;}
+      .labai-h:first-child{margin-top:0;}
+      .labai-h.sub{font-size:12px;color:#334155;font-weight:600;}
+      .labai-list{margin:4px 0 4px 0;padding-left:18px;}
+      .labai-list li{margin:2px 0;}
+      .labai-para code,.labai-list code,.labai-table code{background:#eef2ff;
+        color:#3730a3;padding:1px 4px;border-radius:4px;
+        font-family:ui-monospace,Consolas,monospace;font-size:11.5px;}
+      .labai-para strong,.labai-list strong,.labai-table strong{font-weight:700;
+        color:#0f172a;}
+      .labai-hr{border:none;border-top:1px solid #e5e7eb;margin:10px 0;}
+      ol.labai-list{padding-left:20px;}
+      /* Record blocks: what a table becomes when it has too many columns to fit.
+         Reads at any width, because nothing depends on a column staying aligned
+         with the one above it. */
+      .labai-recs{display:flex;flex-direction:column;gap:8px;margin:6px 0;}
+      .labai-rec{border:1px solid #e5e7eb;border-left:3px solid #c7d2fe;
+        border-radius:8px;background:#fbfcfe;padding:8px 11px;}
+      .labai-rec-h{font-weight:700;color:#0f172a;font-size:13px;margin-bottom:5px;
+        overflow-wrap:break-word;word-break:normal;}
+      .labai-kv{display:flex;gap:8px;font-size:12.5px;line-height:1.5;
+        padding:1px 0;}
+      .labai-k{flex:0 0 40%;max-width:150px;color:#64748b;}
+      .labai-v{flex:1 1 auto;color:#0f172a;min-width:0;
+        overflow-wrap:break-word;word-break:normal;}
+      .labai-quote{border-left:3px solid #c7d2fe;background:#f5f7ff;padding:6px 10px;
+        margin:6px 0;color:#334155;font-size:13px;white-space:pre-wrap;}
       .labai-sql{margin-top:6px;}
       .labai-sql summary{cursor:pointer;font-size:11.5px;color:#4f46e5;font-weight:600;list-style:none;}
       .labai-sql summary::before{content:'▸ ';}
@@ -1045,6 +1085,85 @@
       .labai-wait.slow .labai-wait-txt{color:#b45309;}
       .labai-note{margin-top:8px;font-size:11px;color:#94a3b8;line-height:1.45;}
       @keyframes labai-blink{0%,80%,100%{opacity:.3;}40%{opacity:1;}}
+
+      /* ---- finish ----------------------------------------------------------
+         Small things, and they are the difference between a panel that looks
+         built and one that looks bolted on. Each earns its place:
+         a message that arrives rather than appears; a scrollbar that is not
+         the operating system's; a header that says the tool is listening; and
+         a table that is allowed the panel's full width, because a lab result
+         with six columns was the thing this panel kept failing to show. */
+
+      /* 392px could not hold a six-column table without scrolling it. */
+      #labai-panel{width:432px;height:640px;}
+
+      .labai-msg{animation:labai-rise .18s ease both;}
+      @keyframes labai-rise{from{opacity:0;transform:translateY(6px);}
+        to{opacity:1;transform:none;}}
+
+      /* The assistant's bubble gets a quiet left edge so a long answer is
+         visually anchored to a speaker without spending width on an avatar. */
+      .labai-msg.a .labai-bub{border-left:3px solid #ddd6fe;}
+      .labai-msg.a .labai-bub{max-width:94%;}
+
+      .labai-body{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent;}
+      .labai-body::-webkit-scrollbar{width:9px;}
+      .labai-body::-webkit-scrollbar-track{background:transparent;}
+      .labai-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px;
+        border:2px solid #f8fafc;}
+      .labai-body::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
+
+      /* A live dot in the header. It is not a connection indicator - it says
+         the panel is ready, which is the question somebody has when a reply is
+         taking ninety seconds. */
+      .labai-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;
+        box-shadow:0 0 0 3px rgba(74,222,128,.25);flex:0 0 auto;}
+      .labai-head .labai-sub{display:flex;align-items:center;gap:6px;}
+
+      .labai-x{transition:background .15s ease,transform .15s ease;}
+      .labai-x:hover{transform:rotate(90deg);}
+
+      .labai-chip{transition:background .15s ease,border-color .15s ease,
+        transform .15s ease;}
+      .labai-chip:hover{border-color:#a78bfa;transform:translateY(-1px);}
+
+      .labai-send{transition:filter .15s ease,transform .15s ease;}
+      .labai-send:hover:not(:disabled){filter:brightness(1.08);
+        transform:translateY(-1px);}
+
+      /* Tables get the width back that the bubble's padding was taking, and
+         columns size to their content rather than being squeezed into equal
+         shares - scrolling only when they genuinely cannot fit. */
+      .labai-tablewrap{margin:6px -2px;}
+      .labai-table{width:auto;min-width:100%;}
+      .labai-table th{font-size:11.5px;text-transform:uppercase;
+        letter-spacing:.03em;}
+      /* The bubble sets overflow-wrap:anywhere so a long unbroken token cannot
+         widen the panel. Inside a table that turned "IEC-EMC-004" into three
+         lines - an identifier is the one thing a reader scans a column for, and
+         breaking it costs more than the width it saves. Cells wrap between
+         words only; anywhere is restored for genuinely long single tokens. */
+      .labai-table td,.labai-table th{overflow-wrap:normal;word-break:normal;}
+      .labai-table td{max-width:260px;}
+      /* overflow-wrap:normal was not enough on its own: CSS treats the hyphens
+         in IEC-EMC-004 as fair break points, so it still came apart over three
+         lines. The first column of these answers is nearly always the
+         identifier the reader is scanning for, and the wrapper already scrolls
+         horizontally, so hold that column on one line and let the table be
+         wider instead. */
+      .labai-table td:first-child,.labai-table th:first-child{
+        white-space:nowrap;}
+
+      .labai-empty{margin-top:10px;}
+      .labai-empty-title{font-weight:700;color:#0f172a;font-size:14px;
+        margin-bottom:4px;}
+
+      @media (prefers-reduced-motion: reduce){
+        .labai-msg{animation:none;}
+        #labai-panel.labai-open{animation:none;}
+        .labai-x:hover,.labai-chip:hover,.labai-send:hover:not(:disabled){
+          transform:none;}
+      }
     </style>
     <button id="labai-fab" title="Ask the Lab Data" aria-label="Ask the Lab Data">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1054,12 +1173,13 @@
       <div class="labai-head">
         <div>
           <div class="labai-title">Ask the Lab Data</div>
-          <div class="labai-sub">Database + document search</div>
+          <div class="labai-sub"><span class="labai-dot"></span>Database + document search</div>
         </div>
         <button class="labai-x" id="labai-close" aria-label="Close">&times;</button>
       </div>
       <div class="labai-body" id="labai-body">
         <div class="labai-empty" id="labai-empty">
+          <div class="labai-empty-title">What would you like to know?</div>
           Ask about requests, datasheets, statuses, assignments — or what a generated datasheet says.
           <div class="labai-note">Answers are checked against the database before you see them, so a
           question can take 20&ndash;60 seconds.</div>
@@ -1068,6 +1188,9 @@
             <button class="labai-chip">List all EMC requests with their status</button>
             <button class="labai-chip">What do the CE datasheets say about test limits?</button>
           </div>
+          <div class="labai-note">The three above answer instantly from a
+          worked example, so you can see the shape of an answer without waiting
+          for one.</div>
         </div>
       </div>
       <div class="labai-foot">
@@ -1089,8 +1212,91 @@
         fab.addEventListener('click', function(){ panel.classList.contains('labai-open') ? closeP() : openP(); });
         closeb.addEventListener('click', closeP);
         document.addEventListener('keydown', function(e){ if(e.key==='Escape' && panel.classList.contains('labai-open')) closeP(); });
+        // The three starter chips answer from HERE, not from the model.
+        //
+        // They exist to show a newcomer what the tool does and what a good
+        // answer looks like. Sending them to the model costs a full reasoning
+        // call each - 40 to 120 seconds and real tokens - to produce an answer
+        // nobody asked a question to get. So they are pre-written.
+        //
+        // Every one is BADGED AS AN EXAMPLE, and that part is not decoration. A
+        // canned answer to "how many datasheets are waiting for peer review"
+        // contains a NUMBER, and a number on this screen that did not come from
+        // the database is the exact failure the grounding check exists to
+        // prevent. Someone will screenshot this panel. The badge is what keeps
+        // an illustration from being read as a lab figure.
+        //
+        // Typing the same question and pressing send still goes to the model and
+        // still comes back checked against the database.
+        var EXAMPLES = {
+          'How many datasheets are waiting for peer review?':
+            '## Waiting for peer review\n' +
+            '\n' +
+            'Three datasheets are sitting in **Peer Review** and have not been ' +
+            'decided yet.\n' +
+            '\n' +
+            '| TCO | Test | Submitted by | Waiting since |\n' +
+            '|---|---|---|---|\n' +
+            '| IEC-EMC-004 | HARMONIC | engineer1 | 2026-08-14 |\n' +
+            '| IEC-EMC-006 | CE | engineer2 | 2026-08-13 |\n' +
+            '| IEC-EMC-010 | CE | engineer1 | 2026-08-27 |\n' +
+            '\n' +
+            '### Worth knowing\n' +
+            'A datasheet in peer review is not the same as a test that failed. ' +
+            'This is the state of the PAPERWORK - `datasheet_status_history.' +
+            'to_status` - and says nothing about whether the unit passed.',
+          'List all EMC requests with their status':
+            '## EMC requests\n' +
+            '\n' +
+            'Ten real requests, seeded demo rows excluded.\n' +
+            '\n' +
+            '| TCO | Product | Status |\n' +
+            '|---|---|---|\n' +
+            '| IEC-EMC-001 | Genpure UV xCAD plus WM | Test Plan Approved |\n' +
+            '| IEC-EMC-004 | Smart2pure 6UV | Datasheet Uploaded |\n' +
+            '| IEC-EMC-006 | Smart2Pure Pro 16 UVUF FS 60L | Draft Report |\n' +
+            '| IEC-EMC-010 | Mihirs Product | Completed |\n' +
+            '\n' +
+            'Ask for a single job by its TCO and you get every test on it, who ' +
+            'it is assigned to, and what each one recorded.',
+          'What do the CE datasheets say about test limits?':
+            '## CE limits as recorded\n' +
+            '\n' +
+            'The CE sheets carry the limit line alongside each reading, so the ' +
+            'margin is measured rather than inferred.\n' +
+            '\n' +
+            '- Quasi-peak limit runs **56.0 to 60.0 dBuV** across 0.15 - 30 MHz\n' +
+            '- Average limit runs **46.0 to 50.0 dBuV** over the same range\n' +
+            '- Margin is reported per frequency, negative meaning inside the limit\n' +
+            '\n' +
+            '> The worst margin on IEC-EMC-010 was **-22.20 dB** at 24.07 MHz.\n' +
+            '\n' +
+            'Ask about one product and you get its own readings rather than ' +
+            'these ranges.'
+        };
+
         Array.prototype.forEach.call(document.querySelectorAll('.labai-chip'), function(c){
-          c.addEventListener('click', function(){ input.value = c.textContent.trim(); ask(); });
+          c.addEventListener('click', function(){
+            var q = c.textContent.trim();
+            var canned = EXAMPLES[q];
+            if (!canned) { input.value = q; ask(); return; }
+            addMsg('user', q);
+            var w = addMsg('assistant', canned);
+            var meta = document.createElement('div');
+            meta.className = 'labai-meta';
+            var badge = document.createElement('span');
+            badge.className = 'labai-badge eg';
+            badge.textContent = 'Example - not live data';
+            meta.appendChild(badge);
+            var hint = document.createElement('div');
+            hint.className = 'labai-docq';
+            hint.textContent = 'Type a question yourself and the answer comes '
+                             + 'from the database, checked before you see it.';
+            meta.appendChild(hint);
+            w.appendChild(meta);
+            scrollDown();
+            input.focus();
+          });
         });
         function scrollDown(){ body.scrollTop = body.scrollHeight; }
         // A withheld answer degrades to the rows the database actually
@@ -1141,16 +1347,374 @@
           wrap.appendChild(t);
           return wrap;
         }
+        // Inline markdown, on text that is ESCAPED FIRST. The answer is model
+        // output and goes in with innerHTML, so escaping is not optional: the
+        // four replacements below run on already-escaped text, and nothing else
+        // ever reaches innerHTML.
+        function esc(s){
+          return String(s==null?'':s)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;');
+        }
+        function inline(s){
+          return esc(s)
+            .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+        }
+        // A column heading is for a reader, not for a query. The model labels
+        // its columns with the identifier it selected - `reason_code`,
+        // `what_it_means`, `products_affected` - and those arrived on screen
+        // verbatim as table headings. Asking it not to has been tried; doing it
+        // here cannot be ignored.
+        //
+        // Only snake_case is touched. A heading the model already wrote for a
+        // person ("Job Number", "Test") is left exactly as it is, and so is
+        // anything carrying a capital, so RS_RI and CE_LIMIT_EXCEEDED survive.
+        var SNAKE_RE = /^[a-z0-9]+(?:_[a-z0-9]+)+$/;
+        function humanLabel(s){
+          var t = String(s == null ? '' : s).trim();
+          if(!SNAKE_RE.test(t)) return t;
+          t = t.replace(/_/g, ' ');
+          return t.charAt(0).toUpperCase() + t.slice(1);
+        }
+        // A database NULL is not a value a reader can do anything with, and
+        // "NULL" printed in a cell reads as data. Ten of twenty-three rows in
+        // one schedule table said NULL under Job Number.
+        var NULLISH = {'null':1, 'none':1, 'nan':1, 'undefined':1};
+        function cellText(s){
+          var t = String(s == null ? '' : s).trim();
+          return NULLISH[t.toLowerCase()] ? '—' : t;
+        }
+        // ---- markdown pipe tables -------------------------------------------
+        // Every rule here exists because a real answer hit it. A table that
+        // fails to parse does not degrade politely: it lands on screen as a
+        // wall of literal pipes, which reads as a broken tool.
+        //
+        // Splitting honours a backslash-escaped pipe, so a cell holding
+        // "Class A \| Class B" stays one cell instead of silently shifting
+        // every column after it one place to the left.
+        function splitPipes(line){
+          var s=String(line==null?'':line).trim();
+          if(s.indexOf('|')<0) return null;
+          // A model that means a table sometimes BULLETS its rows:
+          // "- IEC-EMC-005 | EFT | ...". The marker is not a cell. Left on, it
+          // made the first column read "- IEC-EMC-005", and - far worse - the
+          // list handler claimed those lines before pipeRun ever saw them, so
+          // seven columns reached the screen as literal pipes inside a bullet.
+          s = s.replace(/^(?:[-*+]|\d+[.)])\s+/, '');
+          if(s.indexOf('|')<0) return null;
+          var lead = s.charAt(0)==='|';
+          var trail = s.length>1 && s.charAt(s.length-1)==='|'
+                      && s.charAt(s.length-2)!=='\\';
+          var cells=[], cur='';
+          for(var n=0;n<s.length;n++){
+            var ch=s.charAt(n);
+            if(ch==='\\' && s.charAt(n+1)==='|'){ cur+='|'; n++; continue; }
+            if(ch==='|'){ cells.push(cur); cur=''; continue; }
+            cur+=ch;
+          }
+          cells.push(cur);
+          // an outer pipe produces exactly one empty edge cell, which is not a
+          // column. Removing it by position rather than by emptiness keeps a
+          // genuinely blank first column ("| | b | c |") intact.
+          if(lead) cells.shift();
+          if(trail) cells.pop();
+          if(!cells.length) return null;
+          // Two cells is the bar for an UNBOUNDED line, because a sentence can
+          // contain one pipe. A line fenced by pipes on both sides is a row
+          // whatever it holds - "| 1 |" is a short row, and rejecting it ended
+          // the run early and took the entire table down with it.
+          if(cells.length<2 && !(lead && trail)) return null;
+          return cells.map(function(c){ return c.trim(); });
+        }
+        // |---|:--:| is a separator. "| - | - |" is data: a single dash is the
+        // usual placeholder for "no value", so at least one cell must carry
+        // three dashes before a row is discarded as decoration.
+        function isSepRow(cells){
+          var wide=false;
+          for(var n=0;n<cells.length;n++){
+            if(!/^:?-+:?$/.test(cells[n])) return false;
+            if(/-{3,}/.test(cells[n])) wide=true;
+          }
+          return wide;
+        }
+        // A run of pipe rows starting at `start`, or null.
+        //
+        // THE SEPARATOR ROW IS OPTIONAL. Requiring it is what put a rendered
+        // three-column product listing on screen as raw text: the model wrote
+        // the header and the rows and skipped |---|---|, which markdown demands
+        // and models omit freely. Without one, the first row is the header.
+        function pipeRun(lines, start){
+          var raw=[], k=start;
+          while(k<lines.length){
+            var cells=splitPipes(lines[k]);
+            if(!cells) break;
+            raw.push({cells:cells, line:String(lines[k]).trim()});
+            k++;
+          }
+          if(raw.length<2) return null;
+          // Two consecutive lines holding pipes are not proof of a table - a
+          // sentence can contain one. Any of three signals settles it: a
+          // separator row, outer pipes on most rows, or three-plus columns at a
+          // consistent count with no cell long enough to be prose.
+          //
+          // That last clause needs all three conditions. Two sentences ending
+          // "...went from Draft | Accepted after the reviewer signed it off"
+          // and "...history | to_status for every revision" agree on a count of
+          // two and stay under the length ceiling, and were rendered as a
+          // table. A model that emits a genuine two-column table uses outer
+          // pipes or a separator, so it is still caught by the other two.
+          var seps=0, bounded=0, sameCount=true, longCell=false;
+          var n0=raw[0].cells.length;
+          raw.forEach(function(r){
+            if(isSepRow(r.cells)) seps++;
+            if(r.line.charAt(0)==='|') bounded++;
+            if(r.cells.length!==n0) sameCount=false;
+            r.cells.forEach(function(c){ if(c.length>80) longCell=true; });
+          });
+          var shaped = sameCount && n0>=3 && !longCell;
+          if(!(seps>0 || bounded*2>=raw.length || shaped)) return null;
+          // separators are dropped wherever they fall, not just at index+1:
+          // models repeat them, and occasionally put one under the data.
+          var body=raw.filter(function(r){ return !isSepRow(r.cells); });
+          if(body.length<2) return null;   // a header alone carries nothing
+          if(seps===0){
+            var keyed=keyedHead(body);
+            if(keyed) return {head:keyed.head, rows:keyed.rows, end:k};
+          }
+          var head=body[0].cells.slice();
+          var width=head.length;
+          var rows=[];
+          body.slice(1).forEach(function(r){
+            var cells=r.cells.slice();
+            if(cells.length>width){
+              // more cells than headers means an unescaped pipe split a value.
+              // The excess is joined back into the last column rather than
+              // dropped: nothing is lost, and no value slides under a header
+              // that does not describe it. A mislabelled value is the exact
+              // failure this whole tool is built to avoid.
+              var keep=cells.slice(0, width-1);
+              keep.push(cells.slice(width-1).join(' | '));
+              cells=keep;
+            }
+            while(cells.length<width) cells.push('');
+            var any=false;
+            for(var n=0;n<cells.length;n++){ if(cells[n]!==''){ any=true; break; } }
+            if(any) rows.push(cells);   // an all-blank row renders as a gap
+          });
+          if(!rows.length) return null;
+          return {head:head, rows:rows, end:k};
+        }
+        // With no separator row, body[0] is a HEADING only if it reads like
+        // one. Turn 124 emitted two rows that were both data - every cell
+        // key="value" - and promoting the first to a header deleted a row from
+        // the answer outright. Where the rows spell their own field names,
+        // take the headings from the keys and keep both rows. A column that is
+        // not keyed in EVERY row keeps its raw value under a blank heading:
+        // unlabelled is honest, mislabelled is the failure this tool exists to
+        // avoid.
+        var KV_RE=/^\s*([A-Za-z_][\w.]*)\s*=\s*"?([\s\S]*?)"?\s*$/;
+        function keyedHead(body){
+          if(!body || body.length<2) return null;
+          var width=body[0].cells.length, names=[], keyed=0;
+          for(var c=0;c<width;c++){
+            var key=null, ok=true;
+            for(var r=0;r<body.length;r++){
+              var cells=body[r].cells;
+              var m = c<cells.length ? KV_RE.exec(cells[c]) : null;
+              if(!m || (key!==null && m[1]!==key)){ ok=false; break; }
+              key=m[1];
+            }
+            if(ok && key){ names.push(key); keyed++; } else { names.push(''); }
+          }
+          if(keyed<2) return null;
+          var out=body.map(function(r){
+            return r.cells.map(function(cell, idx){
+              if(!names[idx]) return cell;
+              var m=KV_RE.exec(cell);
+              return m ? m[2] : cell;
+            });
+          });
+          return {head:names, rows:out};
+        }
+        // Beyond this many columns a table cannot fit the panel, and the model
+        // is asked for a list instead - but asking is not guaranteeing, and a
+        // six-column table arrived clipped on the left with every cell broken
+        // mid-word. So it is converted here rather than hoped about: one block
+        // per row, label and value on a line, which reads at any width.
+        var MAX_TABLE_COLS = 5;
+        function buildRecords(head, rows){
+          var box=document.createElement('div'); box.className='labai-recs';
+          rows.forEach(function(cells){
+            var rec=document.createElement('div'); rec.className='labai-rec';
+            // the first non-empty cell titles the block - it is nearly always
+            // the identifier the reader is scanning for. Tracked by INDEX: two
+            // columns can hold the same string, and matching by value dropped
+            // the second one.
+            var titleIdx=-1;
+            for(var n=0;n<cells.length;n++){
+              if(cells[n]){ titleIdx=n; break; }
+            }
+            if(titleIdx>=0){
+              var h=document.createElement('div'); h.className='labai-rec-h';
+              h.innerHTML=inline(cells[titleIdx]); rec.appendChild(h);
+            }
+            for(var m=0;m<cells.length;m++){
+              if(m===titleIdx) continue;
+              var v=cells[m];
+              if(!v) continue;   // a blank "Notes -" line is noise in a block
+              var kv=document.createElement('div'); kv.className='labai-kv';
+              var label=head[m]||'';
+              if(label){
+                var k=document.createElement('span'); k.className='labai-k';
+                k.innerHTML=inline(humanLabel(label)); kv.appendChild(k);
+              }
+              var val=document.createElement('span'); val.className='labai-v';
+              val.innerHTML=inline(cellText(v)); kv.appendChild(val);
+              rec.appendChild(kv);
+            }
+            if(rec.children.length) box.appendChild(rec);
+          });
+          return box.children.length ? box : null;
+        }
+        // Reuses the same table styling as the fixed-width path so a listing
+        // looks the same however it arrived. Takes parsed cells, not lines:
+        // padding and merging happen once, in pipeRun, so the header and every
+        // row are guaranteed the same width by the time they reach here.
+        function buildPipeTable(head, rows){
+          if(!head || head.length<2 || !rows || !rows.length) return null;
+          if(head.length > MAX_TABLE_COLS){
+            var recs=buildRecords(head, rows);
+            if(recs) return recs;
+          }
+          var t=document.createElement('table'); t.className='labai-table';
+          var thead=document.createElement('thead'), tr=document.createElement('tr');
+          head.forEach(function(h){
+            var th=document.createElement('th'); th.innerHTML=inline(humanLabel(h));
+            tr.appendChild(th);
+          });
+          thead.appendChild(tr); t.appendChild(thead);
+          var tb=document.createElement('tbody');
+          rows.forEach(function(cells){
+            var r=document.createElement('tr');
+            cells.forEach(function(c){
+              var td=document.createElement('td'); td.innerHTML=inline(cellText(c));
+              if(/^-?[\d,]*\.?\d+%?$/.test(c)) td.className='num';
+              r.appendChild(td);
+            });
+            tb.appendChild(r);
+          });
+          t.appendChild(tb);
+          var wrap=document.createElement('div'); wrap.className='labai-tablewrap';
+          wrap.appendChild(t); return wrap;
+        }
         function renderAnswer(bub, text){
           var lines=String(text==null?'':text).split('\n');
           var buf=[], i=0;
+          // A BLANK line separates paragraphs; a single newline inside one is a
+          // soft wrap and joins with a space. That is what markdown means, and
+          // getting it wrong cost two visible defects at once: prose broke
+          // mid-sentence wherever the model happened to wrap ("between two
+          // revisions of the same / datasheet"), and any inline span that
+          // straddled a wrap stopped rendering, because the bold and italic
+          // patterns are deliberately single-line - so *"Equipment listed are
+          // not the ones..."* arrived on screen with its asterisks showing.
           function flush(){
-            var s=buf.join('\n').replace(/^\n+|\n+$/g,'');
-            if(s){ var p=document.createElement('div'); p.className='labai-para';
-                   p.textContent=s; bub.appendChild(p); }
+            var chunks=buf.join('\n').split(/\n\s*\n+/);
+            for(var c=0;c<chunks.length;c++){
+              var s=chunks[c].split('\n').map(function(line){
+                return line.trim();
+              }).filter(function(line){ return line; }).join(' ');
+              if(!s) continue;
+              var p=document.createElement('div'); p.className='labai-para';
+              p.innerHTML=inline(s); bub.appendChild(p);
+            }
             buf=[];
           }
+          function heading(line){
+            var m=/^(#{1,6})\s+(.*)$/.exec(line.trim());
+            if(!m) return false;
+            flush();
+            var h=document.createElement('div');
+            h.className='labai-h' + (m[1].length>2 ? ' sub' : '');
+            h.innerHTML=inline(m[2]); bub.appendChild(h);
+            return true;
+          }
+          // Bulleted AND numbered. A model writing "next steps" reaches for
+          // "1." as often as "-", and an ordered list rendered as paragraphs
+          // loses the one thing it was carrying: the order.
+          function listBlock(){
+            var ordered=/^\s*\d+[.)]\s+\S/.test(lines[i]);
+            var re = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
+            var test = ordered ? /^\s*\d+[.)]\s+\S/ : /^\s*[-*+]\s+\S/;
+            // Rows of a table the model bulleted by mistake are not list items.
+            // pipeRun already knows what is and is not a table - and it says no
+            // to two-column runs without outer pipes, so an ordinary bullet
+            // holding one pipe stays a bullet.
+            var runEnd=i;
+            while(runEnd<lines.length && test.test(lines[runEnd])) runEnd++;
+            if(runEnd-i>=2 && pipeRun(lines, i)) return false;
+            var items=[];
+            while(i<lines.length && test.test(lines[i])){
+              var it=lines[i].replace(re, '');
+              // a wrapped continuation line belongs to the item above it
+              while(i+1<lines.length && /^\s{2,}\S/.test(lines[i+1])
+                    && !test.test(lines[i+1])){
+                i++; it += ' ' + lines[i].trim();
+              }
+              items.push(it); i++;
+            }
+            if(!items.length) return false;
+            flush();
+            var el=document.createElement(ordered ? 'ol' : 'ul');
+            el.className='labai-list';
+            items.forEach(function(it){
+              // "Product type: NULL" reached a bullet list untouched, because
+              // cellText only ever ran on table cells. A label whose whole value
+              // is a database NULL is the same noise in a list as in a row.
+              var li=document.createElement('li');
+              li.innerHTML=inline(String(it).replace(
+                /(:\s*)(NULL|None|NaN|undefined)\s*$/i, '$1—'));
+              el.appendChild(li);
+            });
+            bub.appendChild(el); return true;
+          }
+          function quote(){
+            var got=[];
+            while(i<lines.length && /^\s*>\s?/.test(lines[i])){
+              got.push(lines[i].replace(/^\s*>\s?/, '')); i++;
+            }
+            if(!got.length) return false;
+            flush();
+            var q=document.createElement('div'); q.className='labai-quote';
+            q.innerHTML=inline(got.join('\n')); bub.appendChild(q);
+            return true;
+          }
           while(i<lines.length){
+            if(heading(lines[i])){ i++; continue; }
+            if(/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(lines[i])){
+              flush();
+              var hr=document.createElement('hr'); hr.className='labai-hr';
+              bub.appendChild(hr); i++; continue;
+            }
+            // A list marker with nothing after it. The model emits these when
+            // it opens a list and has nothing to put in it, and they reach the
+            // screen as stray dashes hanging under the answer - two of them
+            // appeared below a perfectly good schedule table. An empty item
+            // carries nothing, so it is dropped rather than rendered. Placed
+            // AFTER the hr test above, so a real --- rule still becomes one.
+            if(/^\s*(?:[-*+]|\d+[.)])\s*$/.test(lines[i])){ i++; continue; }
+            if(listBlock()){ continue; }
+            if(quote()){ continue; }
+            // a markdown pipe table. pipeRun decides where it starts and ends
+            // and whether it is one at all - the |---|---| row is optional
+            // there, which is the whole point.
+            var run=pipeRun(lines, i);
+            if(run){
+              var pel=buildPipeTable(run.head, run.rows);
+              if(pel){ flush(); bub.appendChild(pel); i=run.end; continue; }
+            }
             // a header line followed by a separator line starts a table
             if(i+1<lines.length && SEP_RE.test(lines[i+1].trim()) && lines[i].trim()){
               var header=lines[i], sep=lines[i+1], rows=[], footer=null;
