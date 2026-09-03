@@ -99,8 +99,14 @@ def image_keys(schema):
 
 
 # Voltage-Dips derived Test Level sets. MUST stay in sync with VDIPS_LEVELS in
-# generic_form.html (the form preview); durations follow the reference document
-# (25 / 250 for every frequency). Can move to the DB fixed-values table later.
+# generic_form.html (the form preview). pct = % Ut, spec = the duration as the standard
+# words it, dur = the numeric duration at 50 Hz, crit = required criterion.
+#
+# The spec carries a PAIR wherever the duration depends on the supply frequency:
+# "25/30 cycles" is 25 cycles at 50 Hz and 30 at 60 Hz, because both are 500 ms. Same for
+# 10/12 and 250/300. _vdips_duration() picks the right one per combo; 0.5 and 1 cycle are
+# frequency-independent and carry no pair.
+# Can move to the DB fixed-values table later.
 VDIPS_LEVELS = {
     "Basic": {
         "dips": [
@@ -121,22 +127,98 @@ VDIPS_LEVELS = {
 }
 
 
+_VDIPS_PAIR_RE = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
+_VDIPS_HZ_RE = re.compile(r"(\d+(?:\.\d+)?)\s*Hz", re.I)
+
+
+def _vdips_hz(combo):
+    """The supply frequency named in a combo heading ('100 V, 60 Hz' -> 60.0), or None."""
+    m = _VDIPS_HZ_RE.search(_s(combo))
+    try:
+        return float(m.group(1)) if m else None
+    except ValueError:
+        return None
+
+
+def _vdips_duration(spec, dur, hz):
+    """The duration for THIS supply frequency, from the standard's own pair.
+
+    "25/30 cycles" means 25 cycles at 50 Hz and 30 at 60 Hz - both are 500 ms - and the
+    same for 10/12 and 250/300. Only a value that IS one of the pair gets switched, so a
+    duration from anywhere else is never rewritten, and a spec with no pair (0.5 cycle,
+    1 cycle) is frequency-independent and returned untouched.
+    """
+    m = _VDIPS_PAIR_RE.search(_s(spec))
+    if not m or hz is None:
+        return dur
+    at_50, at_60 = m.group(1), m.group(2)
+    have = _s(dur).strip()
+    if have and have not in (at_50, at_60):
+        return dur
+    return at_60 if float(hz) >= 60 else at_50
+
+
+#: The three columns every Voltage-Dips observation table starts with. Anything after
+#: them is a column the engineer added on the form and named themselves.
+VDIPS_BASE_COLS = ("Test Level % Ut", "Duration (cycles/periods)", "Observation")
+
+
 def _vdips_groups(form_data, kind):
-    """Rebuild the per-combo observation groups the form posted (kind='dips'|'intr').
-    Reads vdips_<kind>_combo_<ci> + vdips_<kind>_<ci>__{pct,dur,obs}[]."""
+    """The per-supply observation tables the form posted (kind='dips'|'intr').
+
+    Current shape - the engineer owns the grid, so both are dynamic:
+
+        vdips_<kind>_combo_<ci>       the heading (the supply)
+        vdips_<kind>_<ci>__cols       every column header, pipe-joined
+        vdips_<kind>_<ci>__c<cj>[]    one array per column, row-aligned
+
+    Legacy shape, still read so a draft saved before this renders unchanged:
+
+        vdips_<kind>_<ci>__{pct,dur,obs}[]   the three standard columns
+
+    Either way the Duration column is corrected to the table's OWN supply frequency:
+    these values are derived from the standard, and a draft carries the 50 Hz figure for
+    every supply - 25 cycles under a 60 Hz heading, where the standard says 30.
+
+    Returns [{'combo', 'cols': [...], 'rows': [[cell, ...], ...]}].
+    """
+    level_rows = (VDIPS_LEVELS.get(_s((form_data or {}).get("immunity_test_requirement")).strip())
+                  or {}).get(kind) or []
+    fd = form_data or {}
     groups = []
     ci = 0
-    while form_data.get("vdips_%s_combo_%d" % (kind, ci)) is not None:
-        pcts = _list(form_data, "vdips_%s_%d__pct[]" % (kind, ci))
-        durs = _list(form_data, "vdips_%s_%d__dur[]" % (kind, ci))
-        obs = _list(form_data, "vdips_%s_%d__obs[]" % (kind, ci))
-        n = max(len(pcts), len(durs), len(obs), 0)
-        rows = [{
-            "pct": _s(pcts[i]) if i < len(pcts) else "",
-            "dur": _s(durs[i]) if i < len(durs) else "",
-            "obs": _s(obs[i]) if i < len(obs) else "",
-        } for i in range(n)]
-        groups.append({"combo": _s(form_data.get("vdips_%s_combo_%d" % (kind, ci))), "rows": rows})
+    while fd.get("vdips_%s_combo_%d" % (kind, ci)) is not None:
+        combo = _s(fd.get("vdips_%s_combo_%d" % (kind, ci)))
+        hz = _vdips_hz(combo)
+        raw_cols = _s(fd.get("vdips_%s_%d__cols" % (kind, ci)))
+        if raw_cols:
+            cols = raw_cols.split("|")
+            arrays = [_list(fd, "vdips_%s_%d__c%d[]" % (kind, ci, cj)) for cj in range(len(cols))]
+            depth = max((len(a) for a in arrays), default=0)
+            rows = [[_s(arrays[cj][i]) if i < len(arrays[cj]) else "" for cj in range(len(cols))]
+                    for i in range(depth)]
+        else:
+            cols = list(VDIPS_BASE_COLS)
+            pcts = _list(fd, "vdips_%s_%d__pct[]" % (kind, ci))
+            durs = _list(fd, "vdips_%s_%d__dur[]" % (kind, ci))
+            obs = _list(fd, "vdips_%s_%d__obs[]" % (kind, ci))
+            depth = max(len(pcts), len(durs), len(obs), 0)
+            rows = [[_s(pcts[i]) if i < len(pcts) else "",
+                     _s(durs[i]) if i < len(durs) else "",
+                     _s(obs[i]) if i < len(obs) else ""] for i in range(depth)]
+        # a row nobody put anything in is not printed; the standard rows always carry
+        # their level and duration, so this only drops rows added and left alone
+        rows = [r for r in rows if any(_s(x).strip() for x in r)]
+        # the Duration column, by header rather than by position
+        try:
+            dur_at = cols.index(VDIPS_BASE_COLS[1])
+        except ValueError:
+            dur_at = None
+        if dur_at is not None:
+            for i, row in enumerate(rows):
+                if i < len(level_rows) and dur_at < len(row):
+                    row[dur_at] = _vdips_duration(level_rows[i].get("spec"), row[dur_at], hz)
+        groups.append({"combo": combo, "cols": cols, "rows": rows})
         ci += 1
     return groups
 
@@ -193,10 +275,14 @@ _CRF_PORTS = ("Power Line", "Signal Line")
 def _crf_ports(form_data):
     """The Test Port(s) chosen in the Test Specification, as canonical names.
 
-    Normally one; a value naming both is honoured so the document can carry a row and a
-    picture for each. Returns [] when nothing is selected, which leaves the observation
-    table and the pictures exactly as the engineer left them."""
+    Normally one; 'Both' - or a value naming the two - is honoured so the document can
+    carry a row and a picture for each. Returns [] when nothing is selected, which leaves
+    the observation table and the pictures exactly as the engineer left them (unlike EFT,
+    where an unanswered port means both: CRF ships one port block and a blank here has
+    always meant "not decided yet")."""
     raw = _s((form_data or {}).get("test_port")).lower()
+    if "both" in raw:
+        return list(_CRF_PORTS)
     return [p for p in _CRF_PORTS if p.lower() in raw]
 
 
@@ -260,8 +346,13 @@ def _crf_spec_checkboxes(form_data):
     out["frequency_range"] = human_checkbox(
         _g("frequency_range"), ["150kHz-80MHz", "150kHz-230MHz", "Custom___"])
 
-    out["test_port_col_1"] = human_checkbox(_g("test_port"), ["Power Line"])
-    out["test_port_col_2"] = human_checkbox(_g("test_port"), ["Signal Line"])
+    # Ticked from the RESOLVED ports, not from the raw field: 'Both' has to tick both
+    # boxes, and matching the field text against each option would tick neither.
+    _sel = _crf_ports(form_data)
+    out["test_port_col_1"] = human_checkbox("Power Line" if "Power Line" in _sel else "",
+                                            ["Power Line"])
+    out["test_port_col_2"] = human_checkbox("Signal Line" if "Signal Line" in _sel else "",
+                                            ["Signal Line"])
     out["coupling_method_col_1"] = human_checkbox(_g("coupling_method"), ["CDN"])
     out["coupling_method_col_2"] = human_checkbox(_g("coupling_method"), ["EM Clamp"])
     out["eut_configuration_col_1"] = human_checkbox(_g("eut_configuration"), ["Tabletop"])
@@ -295,25 +386,73 @@ def _crf_spec_checkboxes(form_data):
     return out
 
 
+#: How many blank Signal Line rows a fresh CRF form starts with, matching the printed
+#: form the lab works from.
+CRF_OBS_SEED_ROWS = 4
+
+
+def crf_obs_seed_rows(values, count=CRF_OBS_SEED_ROWS):
+    """Starting rows for CRF's Signal Line observation table.
+
+    The three specification-derived columns are pre-filled so the engineer only types
+    the Port Name and picks the Observation; `values` is the form's own prefill, so a
+    change of Frequency Range or Test Level on the form is what these follow.
+    """
+    freq = _crf_freq_mhz((values or {}).get("frequency_range"))
+    level = _s((values or {}).get("test_level"))
+    coupling = _s((values or {}).get("coupling_method"))
+    return [{"c0": freq, "c1": "", "c2": level, "c3": coupling, "c4": ""}
+            for _ in range(max(1, count))]
+
+
 def _crf_build_context(form_data):
     """CRF docx context.
 
-    The TEST OBSERVATION table is not free-form: every column except Observation is
-    dictated by the Test Specification, and the row exists per Test Port selected there.
-    The engineer's Observation letter is carried over by position, so choosing A/B/C/D
-    survives a change of port or level."""
+    TEST OBSERVATION is the Signal Line table: one row per signal PORT the engineer
+    listed, which is why the second column is Port Name. The rows are taken as posted -
+    all five columns - so an added row reaches the document and a port name is not
+    overwritten by the specification. A row counts as used when it names a port or
+    carries an observation; the three pre-filled columns alone do not make a row real,
+    or the blank starting rows would all print.
+
+    Fallback: a draft saved before the table became free-form holds only the Observation
+    letters (test_observation_rows__c4[]), so with no usable rows the old behaviour still
+    applies - one row per Test Port, with the specification's own values.
+    """
     out = _crf_spec_checkboxes(form_data)
     ports = _crf_ports(form_data)
+
+    freq_spec = _crf_freq_mhz(form_data.get("frequency_range"))
+    level_spec = _s(form_data.get("test_level"))
+    coupling_spec = _s(form_data.get("coupling_method"))
+
+    posted = {c: _list(form_data, "test_observation_rows__c%d[]" % c) for c in range(5)}
+    depth = max((len(v) for v in posted.values()), default=0)
+    named = []
+    for i in range(depth):
+        row = {"c%d" % c: (_s(posted[c][i]) if i < len(posted[c]) else "") for c in range(5)}
+        if not row["c1"]:
+            continue                    # a row with no port name is one nobody filled in
+        # Only what was left blank is filled from the specification, so a per-port
+        # frequency or level the engineer typed is never overwritten.
+        row["c0"] = row["c0"] or freq_spec
+        row["c2"] = row["c2"] or level_spec
+        row["c3"] = row["c3"] or coupling_spec
+        named.append(row)
+    if named:
+        out["test_observation_rows"] = named
+        return out
+
+    # Nothing named a port: either a fresh datasheet whose blank rows were left alone, or a
+    # draft saved before this table became the engineer's own - those hold only the
+    # Observation letters. Both keep the old one-row-per-Test-Port rendering.
     if not ports:
         return out
-    freq = _crf_freq_mhz(form_data.get("frequency_range"))
-    level = _s(form_data.get("test_level"))
-    coupling = _s(form_data.get("coupling_method"))
-    posted = _list(form_data, "test_observation_rows__c4[]")
+    legacy = _list(form_data, "test_observation_rows__c4[]")
     rows = []
     for i, port in enumerate(ports):
-        rows.append({"c0": freq, "c1": port, "c2": level, "c3": coupling,
-                     "c4": _s(posted[i]) if i < len(posted) else ""})
+        rows.append({"c0": freq_spec, "c1": port, "c2": level_spec, "c3": coupling_spec,
+                     "c4": _s(legacy[i]) if i < len(legacy) else ""})
     out["test_observation_rows"] = rows
     return out
 
@@ -632,10 +771,13 @@ def _pfmf_build_context(form_data):
 _ESD_OBS_GROUPS = {
     "ind": (8, ("HCP (0°)", "HCP (90°)", "HCP (180°)", "HCP (270°)",
                 "VCP (0°)", "VCP (90°)", "VCP (180°)", "VCP (270°)")),
-    "dir": (3, ()),
-    "air": (3, ()),
+    # Direct and Air each ship ONE row, named as the reference datasheet names it - the
+    # points themselves are shown in the Test Setup picture rather than listed. More rows
+    # are added on the form when a test needs them.
+    "dir": (1, ("Points on Conductive surface mentioned in the below figure",)),
+    "air": (1, ("Points on non-conductive surface mentioned in the below figure",)),
 }
-_ESD_ROW_KEY_RE = re.compile(r"^(ind|dir|air)_r(\d+)_(?:name|c[1-8])$")
+_ESD_ROW_KEY_RE = re.compile(r"^(ind|dir|air)\d*_r(\d+)_(?:name|c[1-8])$")
 
 #: The ESD discharge ladder, in the order the observation grids print it: each level is a
 #: pair of columns, +kV then -kV. Air discharge is the only field that reaches 15 kV.
@@ -703,6 +845,62 @@ def esd_group_columns(form_data, group):
     return len(esd_group_levels(form_data, group))
 
 
+#: A slot id is a kind plus an instance number for the second and later of that kind:
+#: 'dir' is the table the reference prints, 'dir2' one the engineer added. The three base
+#: slots always exist, so a draft written before this reads unchanged.
+_ESD_SLOT_RE = re.compile(r"^(ind|dir|air)(\d*)$")
+
+#: What each kind's table is called where it prints.
+ESD_KIND_TITLES = {"ind": "Contact Discharge Indirect Method:",
+                   "dir": "Contact Discharge Direct Method:",
+                   "air": "Air Discharge:"}
+
+
+def esd_slot_kind(slot):
+    """'dir' for 'dir' and for 'dir2', or '' when the id is not one of ours."""
+    m = _ESD_SLOT_RE.match(_s(slot).strip())
+    return m.group(1) if m else ""
+
+
+def esd_obs_slots(form_data):
+    """Every observation table, in print order: the three the reference has, then the ones
+    the engineer added, in the order they were added."""
+    listed = [s for s in _s((form_data or {}).get("esd_obs_tables")).split(",")
+              if esd_slot_kind(s)]
+    out = list(_ESD_OBS_GROUPS)
+    for slot in listed:
+        slot = slot.strip()
+        if slot not in out:
+            out.append(slot)
+    return out
+
+
+def esd_extra_tables(form_data):
+    """The ADDED observation tables, ready for the generator: title, levels and rows.
+
+    The three standard tables are left out - they are filled from the template as before.
+    A table with nothing in it still prints: the engineer added it on purpose.
+    """
+    out = []
+    for slot in esd_obs_slots(form_data):
+        if slot in _ESD_OBS_GROUPS:
+            continue
+        kind = esd_slot_kind(slot)
+        levels = esd_group_levels(form_data, kind)
+        rows = []
+        for i in range(1, esd_row_count(form_data, slot) + 1):
+            name = _s((form_data or {}).get("%s_r%d_name" % (slot, i)))
+            cells = [_s((form_data or {}).get("%s_r%d_c%d" % (slot, i, c)))
+                     for c in range(1, len(levels) + 1)]
+            if not name and not any(cells):
+                continue
+            rows.append({"sno": str(len(rows) + 1), "name": name, "cells": cells})
+        out.append({"slot": slot, "kind": kind,
+                    "title": ESD_KIND_TITLES.get(kind, ""),
+                    "levels": levels, "rows": rows})
+    return out
+
+
 def esd_row_count(form_data, group):
     """How many rows the ESD grid `group` has: the schema's own, or more if the engineer
     added some.
@@ -714,6 +912,8 @@ def esd_row_count(form_data, group):
     posts empty strings, so the index is there either way).
     """
     base = _ESD_OBS_GROUPS.get(group, (0, ()))[0]
+    if group not in _ESD_OBS_GROUPS:
+        base = 1                       # an added table starts with one row of its own
     fd = form_data or {}
     stated = _s(fd.get("esd_rows_%s" % group))
     if stated.isdigit():
@@ -752,6 +952,50 @@ def _esd_filled_groups(form_data):
                (grp != "ind" and _s(fd.get("%s_r%d_name" % (grp, i)))):
                 out.add(grp)
                 break
+    return out
+
+
+#: The TEST SETUP PICTURES blocks, in the order the datasheet prints them: each is a
+#: grid of photos with ONE caption under it, as the reference datasheet draws it. The
+#: engineer adds as many photos to a block as the test produced - the reference has 4, 4,
+#: 4 and 5.
+ESD_PIC_BLOCKS = (
+    ("hcp", "Photo 1: ESD test setup - Indirect discharge (HCP)"),
+    ("vcp", "Photo 2: ESD test setup - Indirect discharge (VCP)"),
+    ("contact", "Photo 3: ESD Contact discharge test points"),
+    ("air", "Photo 4: ESD Air discharge test points"),
+)
+ESD_PIC_PREFIX = "esd_pic_"
+
+
+def esd_pic_keys(image_keys, prefix):
+    """This block's photo field names, in slot order.
+
+    Read from the IMAGES rather than the form: a file input never appears in form_data
+    (it arrives in request.files and is saved before the context is built), and a draft
+    reload has the paths but not the inputs. Either way the images dict is the one place
+    that knows which photos exist.
+    """
+    head = "%s%s_" % (ESD_PIC_PREFIX, prefix)
+    found = []
+    for key in (image_keys or ()):
+        k = _s(key)
+        if k.startswith(head) and k[len(head):].isdigit():
+            found.append((int(k[len(head):]), k))
+    return [k for _i, k in sorted(found)]
+
+
+def esd_pic_blocks(form_data, image_keys=None):
+    """[{prefix, caption, keys:[...]}] for the four blocks, ready for the generator.
+
+    The caption is the engineer's if they typed one, else the block's standard wording.
+    """
+    out = []
+    for prefix, label in ESD_PIC_BLOCKS:
+        typed = _s((form_data or {}).get("%s%s_caption" % (ESD_PIC_PREFIX, prefix)))
+        out.append({"prefix": prefix,
+                    "caption": typed or label,
+                    "keys": esd_pic_keys(image_keys, prefix)})
     return out
 
 
@@ -812,6 +1056,15 @@ def _esd_build_context(form_data):
     # B2 counts as its letter, and 'NA' or a blank cannot outrank a real observation. Same
     # rule as SURGE. What was recorded decides; the field only keeps its own value when not
     # one cell has been filled in.
+    # Tables the engineer added beyond the three the reference prints. The standard three
+    # are still filled from the template; these are built after them.
+    ctx["esd_extra_tables"] = esd_extra_tables(form_data)
+
+    # TEST SETUP PICTURES: four blocks of photos, each with one caption. Only the caption
+    # is decided here; which photos a block holds is resolved by the generator, which is
+    # the side that has the saved paths.
+    ctx["esd_pic_blocks"] = esd_pic_blocks(form_data)
+
     ctx["met_performance_criteria"] = (
         worst_performance_code([_c for grp in _ESD_OBS_GROUPS
                                 for _row in ctx.get("esd_%s_rows" % grp, [])
@@ -826,10 +1079,10 @@ def esd_met_criteria(form_data):
     recorded. Used on the FORM path too, so the value on screen is the one the document
     will carry."""
     cells = []
-    for grp in _ESD_OBS_GROUPS:
-        cols = esd_group_columns(form_data, grp)
-        for i in range(1, esd_row_count(form_data, grp) + 1):
-            cells.extend(_s((form_data or {}).get("%s_r%d_c%d" % (grp, i, c)))
+    for slot in esd_obs_slots(form_data):
+        cols = esd_group_columns(form_data, esd_slot_kind(slot) or slot)
+        for i in range(1, esd_row_count(form_data, slot) + 1):
+            cells.extend(_s((form_data or {}).get("%s_r%d_c%d" % (slot, i, c)))
                          for c in range(1, cols + 1))
     return worst_performance_code(cells)
 
@@ -1100,6 +1353,9 @@ def build_context(schema, form_data, request_obj=None):
         # Ambient / Humidity / Test Date / Tested by split into the 1-3 per-day sections
         # the engineer chose; the finaliser divides the value cell.
         ctx["_vdips_meta"] = {"row_splits": _re_row_splits(form_data)}
+        # Extra Test Setup pictures, sharing RE's slot naming so the form repeater, the
+        # image-save allowlist and the generator's resolver all work unchanged.
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
     if schema.get("code") == "EFT":
         ctx.update(_eft_build_context(form_data))
         # The spec row shows the modification state NUMBER only.

@@ -179,6 +179,7 @@
     },
     {
       "title": "TEST SETUP PICTURES",
+      "allow_extra_images": true,
       "items": [
         {
           "type": "image",

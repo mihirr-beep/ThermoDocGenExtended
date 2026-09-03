@@ -142,9 +142,8 @@
         <div class="flex items-center justify-between mb-2 border-b border-gray-200 pb-2">
           <div>
             <h2 class="text-lg font-bold text-gray-900">{{ ns.n }}. {{ sec.title }}</h2>
-            <p class="text-xs text-gray-500 mt-1">One Voltage-Dips + one Interruption table per combo in <strong>EUT Input Voltage &amp; Frequency</strong> (separate combos with &ldquo;/&rdquo;). Level&nbsp;% and Duration are auto-filled from the derived Test Level; choose the Observation (A/B/C/D).</p>
+            <p class="text-xs text-gray-500 mt-1">One Voltage-Dips and one Interruption table per supply in <strong>EUT Input Voltage &amp; Frequency</strong> (separate them with &ldquo;/&rdquo; or &ldquo;;&rdquo;). Supplies more than 20&nbsp;V apart are tested at both frequencies, so each voltage gets a table per frequency. Level&nbsp;% and Duration come from the derived Test Level and follow each table&rsquo;s own frequency; add rows or columns as the test needs them.</p>
           </div>
-          <button type="button" onclick="generateVdipsObservation()" class="shrink-0 text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">Generate from EUT Voltages</button>
         </div>
         <div id="vdips-obs-records" class="mt-3"></div>
         {# data-legend-required: every description must be filled before the form submits #}
@@ -316,6 +315,34 @@
                 </div>
               </div>
 
+            {% elif it.layout == 'esd_pics' %}
+              {# One TEST SETUP PICTURES block: the datasheet prints its photos as a grid,
+                 two across, with a single caption under them - so the form takes a set of
+                 photos per block rather than one photo per caption. Slots are named
+                 esd_pic_<block>_<i>; the document reads them from the saved images, so the
+                 numbering only has to be unique within the block. #}
+              <div class="md:col-span-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-semibold text-gray-700">{{ it.label }}</span>
+                  <button type="button" onclick="esdAddPic('{{ it.key_prefix }}')"
+                          class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">+ Add image</button>
+                </div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Caption printed under this block</label>
+                <input type="text" name="esd_pic_{{ it.key_prefix }}_caption"
+                       value="{{ prefill.get('esd_pic_' ~ it.key_prefix ~ '_caption', '') or it.label }}"
+                       class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded mb-3">
+                <div id="esd-pics-{{ it.key_prefix }}" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+                <template id="tpl-esd-pic-{{ it.key_prefix }}">
+                  <div class="esd-pic relative border border-gray-200 rounded-lg p-2 bg-white">
+                    <button type="button" onclick="esdDelPic(this)" title="Remove this image"
+                            class="absolute top-1 right-2 text-red-500 hover:text-red-700 font-bold leading-none text-lg">&times;</button>
+                    <label class="block text-xs font-medium text-gray-600 mb-1 pr-6">Image %%N%%</label>
+                    <input type="file" name="esd_pic_{{ it.key_prefix }}_%%I%%" accept="image/*" class="w-full text-xs">
+                  </div>
+                </template>
+                <p class="text-xs text-gray-500 mt-2">Two photos print per row, in the order added. The reference datasheet carries four here (five for Air discharge).</p>
+              </div>
+
             {% elif it.layout == 'esd_obs' %}
               {# The Test Level columns follow this grid's discharge field in the Test
                  Specification, cumulatively: +-4kV shows +2 -2 +4 -4 and no more. Every
@@ -346,7 +373,7 @@
                     {% for row in it['rows'] %}
                     <tr>
                       <td class="p-1 border border-gray-300 js-esd-sno">{{ row.sno }}</td>
-                      <td class="p-1 border border-gray-300">{% if it.name_editable or not row.name %}<input name="{{ row.key }}_name" value="{{ prefill.get(row.key ~ '_name', '') }}" class="w-full px-1 py-1 border rounded">{% else %}{{ row.name }}{% endif %}</td>
+                      <td class="p-1 border border-gray-300">{% if it.name_editable or not row.name %}<input name="{{ row.key }}_name" value="{{ prefill.get(row.key ~ '_name', '') or row.name or '' }}" class="w-full px-1 py-1 border rounded">{% else %}{{ row.name }}{% endif %}</td>
                       {% for _c in _lad %}{% set n = loop.index %}
                       <td class="p-1 border border-gray-300 js-esd-lvl" data-kv="{{ _c.kv }}"{% if _c.label not in _vis %} style="display:none"{% endif %}>
                         <select name="{{ row.key }}_c{{ n }}" class="w-12 px-1 py-1 border rounded js-obs-code">
@@ -368,10 +395,16 @@
                 {# How many rows this grid has. Posted so a removed row cannot come back from
                    a merged draft that still holds its cells. #}
                 <input type="hidden" name="esd_rows_{{ it.key_prefix }}" value="{{ it['rows']|length }}">
-                <div class="mt-1">
+                <div class="mt-1 flex gap-2">
                   <button type="button" onclick="esdAddObsRow(this)"
                           class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>
+                  {# Another table of this kind - a second set of points measured
+                     separately. The table the reference prints cannot be removed; an
+                     added one carries its own cross. #}
+                  <button type="button" onclick="esdAddObsTable('{{ it.key_prefix }}')"
+                          class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add table</button>
                 </div>
+                <div class="esd-extra-tables mt-3" data-kind="{{ it.key_prefix }}"></div>
                 {% endif %}
               </div>
               {# One common observation legend for ALL esd_obs tables, emitted once
@@ -380,6 +413,10 @@
                  caused legends to appear under the wrong table. #}
               {% set _esd_last = (sec['items']|selectattr('layout','equalto','esd_obs')|list|last) %}
               {% if it is sameas _esd_last %}
+              {# Which observation tables exist, in order: the three the reference prints
+                 are implicit, so this lists only what was added. #}
+              <input type="hidden" id="esd-obs-tables" name="esd_obs_tables"
+                     value="{{ prefill.get('esd_obs_tables', '') }}">
               <div id="esd-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
               <script type="application/json" id="esd-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
               {% endif %}
@@ -959,7 +996,7 @@
     });
 
     /* Observation "Dwell time (s)" mirrors the Test-Specification Dwell Time. The unit is
-       already in the column heading, so only the NUMBER is copied across - the
+       already in the column heading, so only the \d+(?:\.\d+)?BER is copied across - the
        specification says "3 seconds" but the cell must read "3". */
     var dwell = document.querySelector('[name="dwell_time"]');
     var targets = ['f_80_to_1000_col_2', 'f_1000_to_6000_col_2'];
@@ -1516,6 +1553,151 @@
     });
     esdSyncLevels();
   });
+
+  /* ---- TEST SETUP PICTURES: a set of photos per block --------------------
+   * Each block prints as a grid with one caption, so the form collects photos per block
+   * rather than one photo per caption. A slot posts esd_pic_<block>_<i>; the document
+   * resolves them from the saved images, so an index only has to be unique in its block -
+   * removing a slot therefore needs no renumbering.
+   */
+  var __esdPicSeq = {};
+
+  /* ---- another observation table of a given kind -------------------------
+   * A slot id is the kind plus an instance number ('dir2'), which is what the server
+   * reads from esd_obs_tables. The added table is cloned from the kind's own grid, so it
+   * always carries that kind's current Test Level columns, and its inputs are renamed
+   * from <kind>_r<i>_* to <slot>_r<i>_*.
+   */
+  function __esdSlotList() {
+    var el = document.getElementById('esd-obs-tables');
+    if (!el) return [];
+    return (el.value || '').split(',').map(function (s) { return s.trim(); })
+                                      .filter(function (s) { return s; });
+  }
+
+  function __esdSlotSave(list) {
+    var el = document.getElementById('esd-obs-tables');
+    if (el) el.value = list.join(',');
+  }
+
+  function __esdNextSlot(kind) {
+    var used = __esdSlotList();
+    var n = 2;
+    while (used.indexOf(kind + n) >= 0) n++;
+    return kind + n;
+  }
+
+  function esdAddObsTable(kind) {
+    var base = document.querySelector('tbody[data-esd-group="' + kind + '"]');
+    var host = document.querySelector('.esd-extra-tables[data-kind="' + kind + '"]');
+    if (!base || !host) return null;
+    var card = base.closest('div.md\\:col-span-2') || base.closest('div');
+    var slot = __esdNextSlot(kind);
+    var copy = card.cloneNode(true);
+
+    // its own identity, and only ONE row to start with
+    var body = copy.querySelector('tbody[data-esd-group]');
+    body.setAttribute('data-esd-group', slot);
+    body.setAttribute('data-esd-fixed', '0');          // every row here is the engineer's
+    while (body.children.length > 1) body.removeChild(body.lastElementChild);
+
+    copy.querySelectorAll('input, select').forEach(function (el) {
+      if (!el.name) return;
+      el.name = el.name.replace(new RegExp('^' + kind + '_r'), slot + '_r')
+                       .replace('esd_rows_' + kind, 'esd_rows_' + slot);
+      if (el.tagName === 'SELECT') {
+        el.value = '';
+        el.querySelectorAll('option[selected]').forEach(function (o) { o.removeAttribute('selected'); });
+      } else if (el.type !== 'hidden') {
+        el.value = '';
+      }
+    });
+    // the name cell of an added table is always the engineer's to type
+    body.querySelectorAll('td').forEach(function (td) {
+      if (td.querySelector('input, select, button')) return;
+      var txt = (td.textContent || '').trim();
+      if (txt && !/^\d+$/.test(txt)) {
+        td.innerHTML = '<input class="w-full px-1 py-1 border rounded">';
+      }
+    });
+    // its own nested hosts must not collide with the originals
+    var nested = copy.querySelector('.esd-extra-tables');
+    if (nested) nested.parentNode.removeChild(nested);
+    var lbl = copy.querySelector('.text-sm.font-semibold, .text-sm.font-bold');
+    if (lbl) lbl.textContent = (lbl.textContent || '').replace(/:?$/, '') + ' (added):';
+
+    // a cross to remove it again
+    var bar = copy.querySelector('div.mt-1');
+    if (bar) {
+      var add = bar.querySelector('button[onclick^="esdAddObsTable"]');
+      if (add) bar.removeChild(add);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'text-xs px-2 py-1 border rounded-lg text-red-600 hover:bg-red-50';
+      del.textContent = '\u00d7 Remove this table';
+      del.setAttribute('onclick', "esdDelObsTable(this, '" + slot + "')");
+      bar.appendChild(del);
+    }
+    host.appendChild(copy);
+    var list = __esdSlotList();
+    list.push(slot);
+    __esdSlotSave(list);
+    if (typeof __esdReindexObsRows === 'function') __esdReindexObsRows(body);
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    return copy;
+  }
+
+  function esdDelObsTable(btn, slot) {
+    var card = btn.closest('div');
+    while (card && !card.querySelector('tbody[data-esd-group]')) card = card.parentNode;
+    if (!card) return;
+    card.parentNode.removeChild(card);
+    __esdSlotSave(__esdSlotList().filter(function (s) { return s !== slot; }));
+    if (typeof esdSyncMetCriteria === 'function') esdSyncMetCriteria();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  function esdAddPic(prefix, opts) {
+    var host = document.getElementById('esd-pics-' + prefix);
+    var tpl = document.getElementById('tpl-esd-pic-' + prefix);
+    if (!host || !tpl) return null;
+    // reuse a saved slot's own index on reload, so the photo already stored under that
+    // name still belongs to it
+    var idx = (opts && opts.idx != null) ? opts.idx : (__esdPicSeq[prefix] || 0);
+    __esdPicSeq[prefix] = Math.max(__esdPicSeq[prefix] || 0, idx + 1);
+    var wrap = document.createElement('div');
+    wrap.innerHTML = tpl.innerHTML
+      .replace(/%%I%%/g, idx)
+      .replace(/%%N%%/g, host.children.length + 1).trim();
+    var block = wrap.firstElementChild;
+    host.appendChild(block);
+    block.querySelectorAll('input[type=file]').forEach(function (el) {
+      if (typeof wireImageInput === 'function') wireImageInput(el);
+    });
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+    return block;
+  }
+
+  function esdDelPic(btn) {
+    var block = btn.closest('.esd-pic');
+    if (!block) return;
+    var host = block.parentNode;
+    block.parentNode.removeChild(block);
+    // the visible numbering is cosmetic, so it is the only thing that renumbers
+    Array.prototype.forEach.call(host.children, function (el, i) {
+      var lbl = el.querySelector('label');
+      if (lbl) lbl.textContent = 'Image ' + (i + 1);
+    });
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  function __esdRestorePics(seed) {
+    Object.keys(seed || {}).forEach(function (prefix) {
+      (seed[prefix] || []).forEach(function (idx) { esdAddPic(prefix, { idx: idx }); });
+      // always leave one empty slot ready, so a block is never a dead end
+      if (!(seed[prefix] || []).length) esdAddPic(prefix);
+    });
+  }
 
   function __esdReindexObsRows(body) {
     var group = body.getAttribute('data-esd-group');
@@ -2230,6 +2412,15 @@
     // upload-driven tables (RE Functional Check): build from the draft, or the defaults
     if (typeof initUploadTables === 'function') initUploadTables();
     syncRowDeleteButtons();
+
+    // ESD's picture blocks: rebuild the slots a saved draft filled, so the saved-image
+    // previews below find their inputs.
+    (function () {
+      var ESD_PIC_SEED = {{ esd_pic_seed|tojson if esd_pic_seed else '{}' }};
+      if (typeof __esdRestorePics === 'function' && Object.keys(ESD_PIC_SEED).length) {
+        __esdRestorePics(ESD_PIC_SEED);
+      }
+    })();
 
     // Rebuild the extra-picture slots a saved draft had, keeping each slot's original
     // index so the image it holds still matches. Must run BEFORE the saved-image
@@ -3435,10 +3626,14 @@
 <script>
   /* =========================================================================
      Voltage Dips & Interruptions — derived Test Level + dynamic Test Observation
-     Numbers are kept here for the form preview; durations follow the reference
-     document (25 / 250 for every frequency). pct = % Ut, spec = duration text
-     shown in the Test-Level block, dur = numeric duration used in the
+     Numbers are kept here for the form preview. pct = % Ut, spec = duration text
+     shown in the Test-Level block, dur = the numeric duration AT 50 Hz used in the
      observation tables, crit = required performance criterion.
+
+     Where the duration depends on the supply frequency the spec carries the pair:
+     "25/30 cycles" is 25 cycles at 50 Hz and 30 at 60 Hz, both being 500 ms - and the
+     same for 10/12 and 250/300. vdipsDuration() picks per combo; _vdips_duration in
+     generic_service.py applies the same rule to the document.
      ========================================================================= */
   var VDIPS_LEVELS = {
     'Basic': {
@@ -3559,27 +3754,239 @@
   }
 
   // ---- one observation table (kind = 'dips' | 'intr') ----
-  function vdipsObsTable(kind, ci, combo, rows) {
+  /* One observation table. The three standard columns come from the derived Test Level;
+   * beyond that the engineer owns the grid - rows and columns can both be added, because
+   * a dips test can carry extra phase-angle or note columns the template never knew
+   * about. Posted shape, read by _vdips_groups():
+   *
+   *   vdips_<kind>_combo_<ci>        the heading (the supply)
+   *   vdips_<kind>_<ci>__cols        every column header, pipe-joined
+   *   vdips_<kind>_<ci>__c<cj>[]     one array per column, row-aligned
+   *
+   * The legacy __pct[] / __dur[] / __obs[] arrays are still read on the server, so a
+   * draft saved before this keeps rendering.
+   */
+  var VDIPS_BASE_COLS = ['Test Level % Ut', 'Duration (cycles/periods)', 'Observation'];
+
+  function vdipsCellInput(kind, ci, cj, value, isObs) {
+    var name = 'vdips_' + kind + '_' + ci + '__c' + cj + '[]';
+    if (isObs) return vdipsObsSelect(name, value);
+    return '<input name="' + name + '" value="' + esc(value == null ? '' : value) +
+           '" class="w-full px-1 py-1 border rounded text-center">';
+  }
+
+  function vdipsObsTable(kind, ci, combo, rows, cols, baseRows) {
     var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
-    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3">';
+    cols = (cols && cols.length) ? cols : VDIPS_BASE_COLS.slice();
+    // The rows the standard defines stay; anything past them was added and can be removed.
+    baseRows = (baseRows == null) ? rows.length : baseRows;
+    var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mb-3 js-vdips-card"' +
+               ' data-kind="' + esc(kind) + '" data-ci="' + ci + '" data-base-rows="' + baseRows + '">';
     html += '<div class="text-xs font-bold text-gray-700 mb-2">' + esc(combo) + '</div>';
     html += '<input type="hidden" name="vdips_' + kind + '_combo_' + ci + '" value="' + esc(combo) + '">';
+    html += '<input type="hidden" class="js-vdips-cols" name="vdips_' + kind + '_' + ci + '__cols" value="' + esc(cols.join('|')) + '">';
     html += '<div class="overflow-x-auto"><table class="w-full text-xs border border-gray-200"><thead><tr>';
-    html += '<th class="' + thc + '">Test Level % Ut</th><th class="' + thc + '">Duration (cycles/periods)</th><th class="' + thc + '">Observation</th></tr></thead><tbody>';
-    rows.forEach(function (r, ri) {
-      html += '<tr>'
-        + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.pct) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__pct[]" value="' + esc(r.pct) + '"></td>'
-        + '<td class="p-1 border border-gray-200 text-center bg-gray-50">' + esc(r.dur) + '<input type="hidden" name="vdips_' + kind + '_' + ci + '__dur[]" value="' + esc(r.dur) + '"></td>'
-        + '<td class="p-1 border border-gray-200">'
-        + vdipsObsSelect('vdips_' + kind + '_' + ci + '__obs[]',
-                         __vdipsSavedObs(kind, ci, ri)) + '</td>'
-        + '</tr>';
+    cols.forEach(function (c, cj) {
+      // the three standard headings are fixed; an added column names itself and can go
+      html += (cj < VDIPS_BASE_COLS.length)
+        ? '<th class="' + thc + '">' + esc(c) + '</th>'
+        : '<th class="' + thc + '"><div class="flex items-center gap-1">' +
+          '<input class="js-vdips-head w-full px-1 py-0.5 border rounded text-center text-xs font-semibold"' +
+          ' value="' + esc(c) + '" placeholder="column">' +
+          '<button type="button" onclick="vdipsDelCol(this)" title="Remove this column"' +
+          ' class="text-red-500 font-semibold leading-none">&times;</button></div></th>';
     });
-    return html + '</tbody></table></div></div>';
+    html += '<th class="' + thc + ' w-6"></th>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r, ri) {
+      html += '<tr>';
+      cols.forEach(function (c, cj) {
+        var v = (r.cells && r.cells.length > cj) ? r.cells[cj]
+              : (cj === 0 ? r.pct : cj === 1 ? r.dur
+                 : cj === 2 ? __vdipsSavedObs(kind, ci, ri) : '');
+        html += '<td class="p-1 border border-gray-200">' +
+                vdipsCellInput(kind, ci, cj, v, c === 'Observation') + '</td>';
+      });
+      html += '<td class="p-1 text-center">' + (ri >= baseRows
+        ? '<button type="button" onclick="vdipsDelRow(this)" title="Remove this row"' +
+          ' class="text-red-500 font-semibold">&times;</button>'
+        : '') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<div class="mt-1 flex gap-2">' +
+            '<button type="button" onclick="vdipsAddRow(this)" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button>' +
+            '<button type="button" onclick="vdipsAddCol(this)" class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add column</button>' +
+            '</div>';
+    return html + '</div>';
+  }
+
+  // --- add / remove row and column, per table -------------------------------
+  function __vdipsCard(btn) { return btn.closest('.js-vdips-card'); }
+
+  function vdipsAddRow(btn) {
+    var card = __vdipsCard(btn);
+    var body = card ? card.querySelector('tbody') : null;
+    if (!body) return;
+    var cols = (card.querySelector('.js-vdips-cols').value || '').split('|');
+    var kind = card.getAttribute('data-kind'), ci = card.getAttribute('data-ci');
+    var tds = cols.map(function (c, cj) {
+      return '<td class="p-1 border border-gray-200">' +
+             vdipsCellInput(kind, ci, cj, '', c === 'Observation') + '</td>';
+    }).join('');
+    var tr = document.createElement('tr');
+    tr.innerHTML = tds + '<td class="p-1 text-center"><button type="button"' +
+                   ' onclick="vdipsDelRow(this)" title="Remove this row"' +
+                   ' class="text-red-500 font-semibold">&times;</button></td>';
+    body.appendChild(tr);
+    var first = tr.querySelector('input');
+    if (first) first.focus();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  // Only an ADDED row carries a cross, so the rows the standard defines cannot be removed.
+  // Cells post as arrays, so position is all that matters: dropping the <tr> is the whole
+  // job and nothing needs renaming.
+  function vdipsDelRow(btn) {
+    var tr = btn.closest('tr');
+    if (!tr) return;
+    tr.parentNode.removeChild(tr);
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  function vdipsAddCol(btn) {
+    var card = __vdipsCard(btn);
+    if (!card) return;
+    var holder = card.querySelector('.js-vdips-cols');
+    var cols = (holder.value || '').split('|').filter(function (c) { return c !== ''; });
+    var cj = cols.length;
+    var kind = card.getAttribute('data-kind'), ci = card.getAttribute('data-ci');
+    var thc = 'p-1 text-center bg-gray-50 border border-gray-200';
+    var headRow = card.querySelector('thead tr');
+    var th = document.createElement('th');
+    th.className = thc;
+    th.innerHTML = '<div class="flex items-center gap-1">' +
+      '<input class="js-vdips-head w-full px-1 py-0.5 border rounded text-center text-xs font-semibold" value="" placeholder="column">' +
+      '<button type="button" onclick="vdipsDelCol(this)" title="Remove this column"' +
+      ' class="text-red-500 font-semibold leading-none">&times;</button></div>';
+    headRow.insertBefore(th, headRow.lastElementChild);
+    card.querySelectorAll('tbody tr').forEach(function (tr) {
+      var td = document.createElement('td');
+      td.className = 'p-1 border border-gray-200';
+      td.innerHTML = vdipsCellInput(kind, ci, cj, '', false);
+      tr.insertBefore(td, tr.lastElementChild);
+    });
+    vdipsSyncCols(card);
+    var input = th.querySelector('input');
+    if (input) input.focus();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  // Removing a column DOES need renaming: the cell arrays are indexed, so every column
+  // after the one that went shifts down by one.
+  function vdipsDelCol(btn) {
+    var card = __vdipsCard(btn);
+    var th = btn.closest('th');
+    if (!card || !th) return;
+    var heads = Array.prototype.slice.call(card.querySelectorAll('thead th'));
+    var at = heads.indexOf(th);
+    if (at < VDIPS_BASE_COLS.length) return;
+    th.parentNode.removeChild(th);
+    card.querySelectorAll('tbody tr').forEach(function (tr) {
+      if (tr.children.length > at) tr.removeChild(tr.children[at]);
+    });
+    vdipsSyncCols(card);
+    vdipsRenumberCells(card);
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
+  }
+
+  // Re-point every cell input at its column's current position.
+  function vdipsRenumberCells(card) {
+    var kind = card.getAttribute('data-kind'), ci = card.getAttribute('data-ci');
+    var ncol = (card.querySelector('.js-vdips-cols').value || '').split('|').length;
+    card.querySelectorAll('tbody tr').forEach(function (tr) {
+      for (var cj = 0; cj < ncol; cj++) {
+        var cell = tr.children[cj];
+        if (!cell) continue;
+        var input = cell.querySelector('input, select');
+        if (input) input.name = 'vdips_' + kind + '_' + ci + '__c' + cj + '[]';
+      }
+    });
+  }
+
+  // Keep the posted header list in step with what the header inputs say.
+  function vdipsSyncCols(card) {
+    var holder = card.querySelector('.js-vdips-cols');
+    if (!holder) return;
+    var cols = VDIPS_BASE_COLS.slice();
+    card.querySelectorAll('thead .js-vdips-head').forEach(function (h) { cols.push(h.value || ''); });
+    holder.value = cols.join('|');
+  }
+
+  // The duration for one combo's supply frequency, from the standard's own pair.
+  // Mirrors _vdips_duration() in generic_service.py, which applies the same rule to a
+  // table that was built before this.
+  function vdipsHz(combo) {
+    var m = /(\d+(?:\.\d+)?)\s*Hz/i.exec(String(combo || ''));
+    return m ? parseFloat(m[1]) : null;
+  }
+  function vdipsDuration(spec, dur, hz) {
+    var m = /(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/.exec(String(spec || ''));
+    if (!m || hz == null) return dur;
+    var have = String(dur == null ? '' : dur).trim();
+    if (have && have !== m[1] && have !== m[2]) return dur;   // not one of the pair: leave it
+    return hz >= 60 ? m[2] : m[1];
+  }
+  // This combo's rows: the level set with each duration resolved for ITS frequency.
+  function vdipsRowsFor(rows, combo) {
+    var hz = vdipsHz(combo);
+    return (rows || []).map(function (r) {
+      return { pct: r.pct, spec: r.spec, crit: r.crit, dur: vdipsDuration(r.spec, r.dur, hz) };
+    });
   }
 
   function vdipsSplitCombos(str) {
     return (str || '').split(/[\/;\n]/).map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+  }
+
+  // How far apart two supply voltages have to be before each one is tested at BOTH
+  // frequencies. Two ratings within 20 V are the same supply written two ways
+  // (220/230); further apart they are genuinely different supplies.
+  var VDIPS_VOLTAGE_SPREAD = 20;
+
+  function vdipsVolts(combo) {
+    var m = /(\d+(?:\.\d+)?)\s*V/i.exec(String(combo || ''));
+    return m ? parseFloat(m[1]) : null;
+  }
+
+  /* The tables to build from 'EUT Input Voltage & Frequency'.
+   *
+   * "120 V, 50 Hz; 240 V, 60 Hz" names two supplies 120 V apart, so the EUT is tested
+   * at each voltage AND each frequency - four tables: 120/50, 120/60, 240/50, 240/60.
+   * Within VDIPS_VOLTAGE_SPREAD the listed pairs are used as they are. Anything the
+   * field holds that is not a "<volts> V, <hz> Hz" pair is passed through untouched, so
+   * a hand-written heading still gets its own table.
+   */
+  function vdipsCombos(str) {
+    var listed = vdipsSplitCombos(str);
+    var volts = [], freqs = [], parsed = true;
+    listed.forEach(function (c) {
+      var v = vdipsVolts(c), f = vdipsHz(c);
+      if (v == null || f == null) { parsed = false; return; }
+      if (volts.indexOf(v) < 0) volts.push(v);
+      if (freqs.indexOf(f) < 0) freqs.push(f);
+    });
+    if (!parsed || volts.length < 2 || freqs.length < 2) return listed;
+    if (Math.max.apply(null, volts) - Math.min.apply(null, volts) <= VDIPS_VOLTAGE_SPREAD) return listed;
+    volts.sort(function (a, b) { return a - b; });
+    freqs.sort(function (a, b) { return a - b; });
+    var out = [];
+    volts.forEach(function (v) {
+      freqs.forEach(function (f) {
+        out.push(String(v) + ' V, ' + String(f) + ' Hz');
+      });
+    });
+    return out;
   }
 
   function generateVdipsObservation(silent) {
@@ -3588,20 +3995,28 @@
     if (!host) return;
     if (!set) { if (!silent) showMessage('Select an Immunity Test Requirement (Basic / Industrial) first.', 'error'); return; }
     var vf = inputByName('eut_input_voltage_frequency');
-    var combos = vdipsSplitCombos(vf ? vf.value : '');
+    var combos = vdipsCombos(vf ? vf.value : '');
     if (!combos.length) { if (!silent) showMessage("Fill 'EUT Input Voltage & Frequency' first (separate combos with '/').", 'error'); return; }
     if (!silent && host.querySelector('select') &&
         !confirm('Replace the current observation tables with ' + combos.length + ' combo(s) generated from the EUT voltages?')) return;
 
     var html = '<div class="text-sm font-bold text-gray-800 mb-2">Voltage Dips:</div>';
-    combos.forEach(function (combo, ci) { html += vdipsObsTable('dips', ci, combo, set.dips); });
+    combos.forEach(function (combo, ci) { html += vdipsObsTable('dips', ci, combo, vdipsRowsFor(set.dips, combo), null, set.dips.length); });
     html += '<div class="text-sm font-bold text-gray-800 mb-2 mt-4">Interruptions:</div>';
-    combos.forEach(function (combo, ci) { html += vdipsObsTable('intr', ci, combo, set.intr); });
+    combos.forEach(function (combo, ci) { html += vdipsObsTable('intr', ci, combo, vdipsRowsFor(set.intr, combo), null, set.intr.length); });
     host.innerHTML = html;
     // the saved observations are used once, on the first build; changing the
     // supply voltages or pressing Generate rebuilds empty, as the confirm
     // dialog promises
     __vdipsSeedActive = false;
+    // an added column names itself in its header input: keep the posted list in step
+    host.querySelectorAll('.js-vdips-card').forEach(function (card) {
+      card.addEventListener('input', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('js-vdips-head')) {
+          vdipsSyncCols(card);
+        }
+      });
+    });
     if (!silent) showMessage('Generated observation tables for ' + combos.length + ' combo(s).', 'success');
     if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
@@ -4187,8 +4602,44 @@
       });
       html += '</tr>';
     });
-    html += '</tbody></table></div></div>';
+    html += '</tbody></table></div>';
+    // The Signal Line table names its own rows (RS 232, RJ45, ...) and an EUT can carry
+    // more than the three the form starts with, so that table can grow. The Power Line
+    // table's rows are the standard coupling paths, so it stays fixed.
+    if (editableRows) {
+      html += '<div class="mt-1"><button type="button" onclick="eftAddObsRow(this)"' +
+              ' class="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50">+ Add row</button></div>';
+    }
+    html += '</div>';
     return html;
+  }
+
+  // One more row on an editable EFT observation table (the Signal Line one). Cloned from
+  // the last row so it always matches the column set the table was built with, then
+  // blanked and renamed to continue the index - the server reads rows by index until one
+  // is missing, so the sequence is all that matters.
+  function eftAddObsRow(btn) {
+    var card = btn.closest('div.border') || btn.parentElement.parentElement;
+    var body = card ? card.querySelector('tbody') : null;
+    if (!body || !body.lastElementChild) return;
+    var ri = body.children.length;                  // 0-based: the next free index
+    var tr = body.lastElementChild.cloneNode(true);
+    tr.querySelectorAll('input, select').forEach(function (el) {
+      var m = /^eft_obs_(\w+?)_(?:row_(\d+)|(\d+)__c(\d+))$/.exec(el.name || '');
+      if (!m) return;
+      var kind = m[1];
+      el.name = (m[2] != null) ? 'eft_obs_' + kind + '_row_' + ri
+                               : 'eft_obs_' + kind + '_' + ri + '__c' + m[4];
+      el.value = '';
+      if (el.querySelectorAll) {
+        el.querySelectorAll('option[selected]').forEach(function (o) { o.removeAttribute('selected'); });
+      }
+    });
+    body.appendChild(tr);
+    var first = tr.querySelector('input');
+    if (first) first.focus();
+    if (typeof rebuildEftLegend === 'function') rebuildEftLegend();
+    if (typeof triggerAutoSave === 'function') triggerAutoSave();
   }
   function generateEftObservation(silent) {
     var host = document.getElementById('eft-obs-records'); if (!host) return;
@@ -4219,6 +4670,13 @@
 
   // ---- Observation legend: one 'code: description' row per UNIQUE cell value ----
   var eftLegendComments = {};   // code -> description, preserved across rebuilds
+  // A is ALWAYS listed and carries the standard wording - the same line the other
+  // datasheets pre-fill. B/C/D describe an actual observed failure, so boilerplate
+  // there would be wrong more often than right; the engineer types those.
+  var EFT_LEGEND_ALWAYS = ['A'];
+  var EFT_LEGEND_DEFAULTS = {
+    'A': 'No degradation was observed during the test based on the parameters monitored.'
+  };
   function eftUniqueObsCodes() {
     var host = document.getElementById('eft-obs-records');
     if (!host) return [];
@@ -4232,7 +4690,14 @@
   function rebuildEftLegend() {
     var box = document.getElementById('eft-obs-legend'); if (!box) return;
     var codes = eftUniqueObsCodes();
+    EFT_LEGEND_ALWAYS.forEach(function (c) { if (codes.indexOf(c) < 0) codes.push(c); });
+    codes.sort();
     if (!codes.length) { box.innerHTML = ''; return; }
+    codes.forEach(function (c) {
+      if (eftLegendComments[c] == null && EFT_LEGEND_DEFAULTS[c] != null) {
+        eftLegendComments[c] = EFT_LEGEND_DEFAULTS[c];
+      }
+    });
     var html = '<div class="border border-gray-200 bg-white rounded-lg p-3 mt-3">' +
       '<div class="text-xs font-bold text-gray-700 mb-1">Observation legend</div>' +
       '<p class="text-xs text-gray-500 mb-2">Describe what each observation code entered above stands for.</p>';

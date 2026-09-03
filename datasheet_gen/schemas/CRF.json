@@ -68,7 +68,7 @@
             { "key": "product_standard", "label": "Product Standard", "input": "text", "default": "" },
             { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
             { "key": "immunity_test_requirement", "label": "Immunity Test Requirement", "input": "text", "options": ["Basic", "Industrial", "Controlled", "Custom"], "default": "" },
-            { "key": "test_port", "label": "Test Port", "input": "text", "options": ["Power Line", "Signal Line"], "default": "" },
+            { "key": "test_port", "label": "Test Port", "input": "text", "options": ["Power Line", "Signal Line", "Both"], "default": "" },
             { "key": "coupling_method", "label": "Coupling Method", "input": "text", "options": ["CDN", "EM Clamp"], "default": "" },
             { "key": "test_level", "label": "Test Level (Vrms)", "input": "text", "options": ["1", "3", "10", "Custom"], "default": "" },
             { "key": "frequency_range", "label": "Frequency Range", "input": "text", "options": ["150kHz-80MHz", "150kHz-230MHz", "Custom"], "default": "" },
@@ -194,7 +194,7 @@
         {
           "type": "fields",
           "fields": [
-            { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
+            { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "A" },
             { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
           ]
         },

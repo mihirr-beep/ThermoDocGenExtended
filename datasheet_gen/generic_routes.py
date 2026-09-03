@@ -122,6 +122,7 @@ def g_form(code, assignment_id):
     measurement_groups = []
     extra_photos = []
     esd_ladder, esd_level_fields = [], {}
+    esd_pic_seed = {}
     if draft:
         draft_status = (record or {}).get("status", "")
         for k, v in draft.items():
@@ -200,19 +201,15 @@ def g_form(code, assignment_id):
             from .generic_service import flicker_normalize_values
             flicker_normalize_values(pre, _parent_request(a))
         if code == "CRF":
-            # TEST OBSERVATION mirrors the Test Specification: show the derived row(s) on
-            # the form too, so the engineer sees what the document will carry and has an
-            # Observation dropdown to fill even on a draft that saved no rows.
-            from .generic_service import (_crf_build_context, _re_functional_mode_names,
+            # TEST OBSERVATION is the engineer's own Signal Line table (a row per signal
+            # port, hence the Port Name column), so the derived per-port row is no longer
+            # seeded onto the form - it put a port TYPE in Port Name. Saved rows come back
+            # through the generic table restore below; a draft holding none gets the blank
+            # starting rows further down, exactly like a fresh datasheet.
+            from .generic_service import (_re_functional_mode_names,
                                           crf_normalize_procedure_breaks)
             # a CRLF draft would show (and then re-save) the tripled blank lines
             crf_normalize_procedure_breaks(pre)
-            _crows = (_crf_build_context(draft) or {}).get("test_observation_rows")
-            if _crows:
-                for _sec in schema.get("sections", []):
-                    for _it in _sec.get("items", []):
-                        if _it.get("key") == "test_observation_rows":
-                            _it["rows"] = _crows
             _cm = _re_functional_mode_names(_parent_request(a))
             if _cm:
                 pre["test_mode"] = _cm
@@ -354,6 +351,19 @@ def g_form(code, assignment_id):
     # from the same table the document is built from and the admin page edits, so the three
     # cannot drift - the two hardcoded copies in the template did.
     from . import procedures as _procedures
+    if code == "CRF":
+        # TEST OBSERVATION is the Signal Line table: a row per signal port the engineer
+        # lists. A fresh datasheet starts with the same blank rows the printed form has,
+        # with the three specification-derived columns already filled so only Port Name
+        # and Observation are left to enter. Outside the draft branch above on purpose -
+        # this is what a datasheet with no draft yet should show; a saved draft's own rows
+        # are restored there and win, because they are only seeded when there are none.
+        from .generic_service import crf_obs_seed_rows
+        for _sec in schema.get("sections", []):
+            for _it in _sec.get("items", []):
+                if _it.get("key") == "test_observation_rows" and not _it.get("rows"):
+                    _it["rows"] = crf_obs_seed_rows(pre)
+
     if code == "ESD":
         # The Test Level columns each observation grid shows follow its discharge field in
         # the Test Specification, cumulatively: +-4kV means +-2kV was applied too, so that
@@ -369,6 +379,14 @@ def g_form(code, assignment_id):
             for _it in _sec.get("items", []):
                 if _it.get("layout") == "esd_obs":
                     _it["levels"] = esd_group_levels(pre, _it.get("key_prefix"))
+        # Which photo slots each TEST SETUP PICTURES block already holds, so the form can
+        # rebuild them and show the stored photo. Read from the record's images: a file
+        # lives there once saved, and is never posted back into form_data.
+        from .generic_service import ESD_PIC_BLOCKS, esd_pic_keys
+        _saved = list((R.images_from_record(record) or {}).keys()) if record else []
+        for _prefix, _label in ESD_PIC_BLOCKS:
+            esd_pic_seed[_prefix] = [int(k.rsplit("_", 1)[1])
+                                     for k in esd_pic_keys(_saved, _prefix)]
 
     return render_template(
         "datasheet_gen/generic_form.html",
@@ -394,6 +412,7 @@ def g_form(code, assignment_id):
         measurement_groups=measurement_groups,
         extra_photos=extra_photos,
         esd_ladder=esd_ladder, esd_level_fields=esd_level_fields,
+        esd_pic_seed=esd_pic_seed,
         reviewers=_reviewer_candidates(),
         assigned_reviewer_id=a.peer_reviewer_user_id,
         entry_status=a.status,
@@ -500,7 +519,7 @@ def _save_generic_images(ikeys, assignment_id):
         # repeatable slots aren't in the schema: RE measurement plots and the extra
         # test-setup pictures the engineer adds on the form
         for k in request.files.keys():
-            if k.startswith(("meas_img_", "re_extra_photo_")) and k not in all_keys:
+            if k.startswith(("meas_img_", "re_extra_photo_", "esd_pic_")) and k not in all_keys:
                 all_keys.append(k)
     for k in all_keys:
         fs = request.files.get(k)

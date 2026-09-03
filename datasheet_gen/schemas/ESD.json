@@ -38,7 +38,10 @@
     {
       "title": "FUNCTIONAL CHECK",
       "items": [
-        { "type": "field", "key": "sop_reference", "label": "SOP Reference Number", "input": "text", "default": "IEC-SOP-503" }
+        { "type": "field", "key": "sop_reference", "label": "SOP Reference Number", "input": "text", "default": "IEC-SOP-503" },
+        { "type": "image", "key": "img_fc_1", "label": "Functional Check – ESD Verification 1", "caption": true },
+        { "type": "image", "key": "img_fc_2", "label": "Functional Check – ESD Verification 2", "caption": true },
+        { "type": "image", "key": "img_fc_3", "label": "Functional Check – ESD Verification 3", "caption": true }
       ]
     },
     {
@@ -139,9 +142,7 @@
           "key_prefix": "dir",
           "allow_add_rows": true,
           "rows": [
-            { "key": "dir_r1", "sno": "1" },
-            { "key": "dir_r2", "sno": "2" },
-            { "key": "dir_r3", "sno": "3" }
+            { "key": "dir_r1", "sno": "1", "name": "Points on Conductive surface mentioned in the below figure" }
           ]
         },
         {
@@ -152,9 +153,7 @@
           "key_prefix": "air",
           "allow_add_rows": true,
           "rows": [
-            { "key": "air_r1", "sno": "1" },
-            { "key": "air_r2", "sno": "2" },
-            { "key": "air_r3", "sno": "3" }
+            { "key": "air_r1", "sno": "1", "name": "Points on non-conductive surface mentioned in the below figure" }
           ]
         }
       ]
@@ -162,10 +161,10 @@
     {
       "title": "TEST SETUP PICTURES",
       "items": [
-        { "type": "image", "key": "img_photo_1", "label": "Photo 1: ESD test setup - Indirect discharge (HCP)", "caption": true },
-        { "type": "image", "key": "img_photo_2", "label": "Photo 2: ESD test setup - Indirect discharge (VCP)", "caption": true },
-        { "type": "image", "key": "img_photo_3", "label": "Photo 3: ESD Contact discharge test points", "caption": true },
-        { "type": "image", "key": "img_photo_4", "label": "Photo 4: ESD Air discharge test points", "caption": true }
+        { "type": "custom", "layout": "esd_pics", "key_prefix": "hcp", "label": "Photo 1: ESD test setup - Indirect discharge (HCP)" },
+        { "type": "custom", "layout": "esd_pics", "key_prefix": "vcp", "label": "Photo 2: ESD test setup - Indirect discharge (VCP)" },
+        { "type": "custom", "layout": "esd_pics", "key_prefix": "contact", "label": "Photo 3: ESD Contact discharge test points" },
+        { "type": "custom", "layout": "esd_pics", "key_prefix": "air", "label": "Photo 4: ESD Air discharge test points" }
       ]
     },
     {

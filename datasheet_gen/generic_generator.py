@@ -1205,6 +1205,252 @@ def _re_relabel_captions_custom_range(doc, custom_range, bands=None):
     return renamed
 
 
+#: Width of the Voltage-Dips observation tables, in twips - the page area the rest of the
+#: datasheet's tables occupy.
+_VDIPS_OBS_TOTAL_TWIPS = 9016
+
+
+def _vdips_obs_table(doc, group):
+    """One supply's observation table: a header row, then a row per level.
+
+    Built here rather than filled from the template because the engineer can add columns
+    as well as rows, and docxtpl cannot widen a table that is fixed in the .docx. Columns
+    share the width equally, so a two-column table and a six-column one both fill the page.
+    """
+    cols = [c for c in (group.get("cols") or [])]
+    rows = group.get("rows") or []
+    if not cols:
+        return None
+    share = _VDIPS_OBS_TOTAL_TWIPS // len(cols)
+    widths = [share] * len(cols)
+    widths[-1] += _VDIPS_OBS_TOTAL_TWIPS - sum(widths)
+    t = _surge_shell(doc, 1 + len(rows), len(cols), share)
+    for cj, name in enumerate(cols):
+        _surge_cell(t, 0, cj, name, bold=True)
+    for ri, row in enumerate(rows):
+        for cj in range(len(cols)):
+            _surge_cell(t, 1 + ri, cj, row[cj] if cj < len(row) else "")
+    _surge_set_grid(t, widths)
+    return t._tbl
+
+
+def _vdips_insert_observation(doc, groups, anchor_text):
+    """Replace an anchor paragraph with one titled table per supply.
+
+    The anchor goes whatever happens, so a datasheet with no observation table prints its
+    heading and nothing else rather than a sentinel.
+    """
+    anchor = None
+    for p in doc.paragraphs:
+        if (p.text or "").strip() == anchor_text:
+            anchor = p
+            break
+    if anchor is None:
+        return 0
+    style = anchor.style
+    made = 0
+    for group in groups or ():
+        el = _vdips_obs_table(doc, group)
+        if el is None:
+            continue
+        title = anchor.insert_paragraph_before(group.get("combo") or "", style=style)
+        for run in title.runs:
+            run.bold = True
+        title._p.addnext(el)
+        made += 1
+        anchor.insert_paragraph_before("", style=style)   # breathing room before the next
+    anchor._p.getparent().remove(anchor._p)
+    return made
+
+
+def _justify_procedure(doc, heading="TEST PROCEDURE"):
+    """Justify the Test Procedure, splitting its soft line breaks into real paragraphs.
+
+    The text arrives as ONE paragraph with soft breaks between the lines, and justifying
+    that stretches every break-terminated line across the page - which is exactly why
+    polish_layout() left-aligns anything carrying soft breaks. So the breaks become
+    paragraph boundaries first: each line is then its own paragraph, its last line is not
+    stretched, and the result is justified text that reads properly. Runs keep their own
+    formatting, so a bold port label stays bold.
+
+    Returns the number of paragraphs that ended up justified.
+    """
+    from copy import deepcopy
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    done = 0
+    for par in list(_procedure_paragraphs(doc, heading)):
+        segments, current = [], []
+        for run in par._p.findall(qn("w:r")):
+            rpr = run.find(qn("w:rPr"))
+            for child in list(run):
+                if child.tag == qn("w:br") and child.get(qn("w:type")) != "page":
+                    segments.append(current)
+                    current = []
+                elif child.tag == qn("w:t"):
+                    current.append((child.text or "", rpr))
+                elif child.tag == qn("w:tab"):
+                    current.append(("	", rpr))
+        segments.append(current)
+
+        if len(segments) > 1:
+            # rebuild: the first segment stays in this paragraph, the rest follow it
+            for run in par._p.findall(qn("w:r")):
+                par._p.remove(run)
+            anchor = par._p
+            for si, seg in enumerate(segments):
+                target = par._p if si == 0 else deepcopy(par._p)
+                if si:
+                    for run in target.findall(qn("w:r")):
+                        target.remove(run)
+                    anchor.addnext(target)
+                    anchor = target
+                for text, rpr in seg:
+                    run = target.makeelement(qn("w:r"), {})
+                    if rpr is not None:
+                        run.append(deepcopy(rpr))
+                    el = run.makeelement(qn("w:t"), {})
+                    el.set(qn("xml:space"), "preserve")
+                    el.text = text
+                    run.append(el)
+                    target.append(run)
+        for par2 in _procedure_paragraphs(doc, heading):
+            par2.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            done += 1
+        break                      # the whole section is handled in one pass
+    return done
+
+
+def _procedure_paragraphs(doc, heading="TEST PROCEDURE"):
+    """The body paragraphs of the Test Procedure section: from its heading to the next one."""
+    out, on = [], False
+    for par in doc.paragraphs:
+        text = " ".join((par.text or "").split())
+        style = (par.style.name if par.style is not None else "") or ""
+        is_heading = style.strip().lower().startswith("heading")
+        if is_heading:
+            if on:
+                break
+            on = text.upper().startswith(heading)
+            continue
+        if on:
+            out.append(par)
+    return out
+
+
+def _bold_procedure_port_labels(doc, labels=("Power Line:", "Signal Line:")):
+    """Bold the port label that opens a Test Procedure block, leaving its text alone.
+
+    The procedure is ONE paragraph carrying the whole textarea, with the four lines
+    separated by soft breaks - so "Power Line:" is not a paragraph that could simply be
+    bolded, it is a few characters in the middle of a single run. This rebuilds that
+    paragraph's runs, splitting at each label, and bolds only the label. The run's own
+    formatting (font, size) is copied to every piece, and the soft breaks keep their
+    positions, so nothing about the layout changes.
+
+    Returns the number of paragraphs changed.
+    """
+    from copy import deepcopy
+    changed_paras = 0
+    for par in _procedure_paragraphs(doc):
+        pieces, changed = [], False
+        for run in par._p.findall(qn("w:r")):
+            rpr = run.find(qn("w:rPr"))
+            for child in list(run):
+                if child.tag == qn("w:t"):
+                    pieces.append(["t", child.text or "", rpr, False])
+                elif child.tag == qn("w:br"):
+                    pieces.append(["br", "", rpr, False])
+                elif child.tag == qn("w:tab"):
+                    pieces.append(["tab", "", rpr, False])
+        if not pieces:
+            continue
+        split = []
+        for kind, text, rpr, _bold in pieces:
+            if kind != "t" or not text:
+                split.append([kind, text, rpr, False])
+                continue
+            rest = text
+            while rest:
+                at, label = -1, None
+                for candidate in labels:
+                    i = rest.find(candidate)
+                    if i >= 0 and (at < 0 or i < at):
+                        at, label = i, candidate
+                if label is None:
+                    split.append(["t", rest, rpr, False])
+                    break
+                if at:
+                    split.append(["t", rest[:at], rpr, False])
+                split.append(["t", label, rpr, True])
+                changed = True
+                rest = rest[at + len(label):]
+        if not changed:
+            continue
+        for run in par._p.findall(qn("w:r")):
+            par._p.remove(run)
+        for kind, text, rpr, bold in split:
+            run = par._p.makeelement(qn("w:r"), {})
+            props = deepcopy(rpr) if rpr is not None else run.makeelement(qn("w:rPr"), {})
+            b = props.find(qn("w:b"))
+            if bold:
+                if b is None:
+                    b = props.makeelement(qn("w:b"), {})
+                    props.insert(0, b)
+                b.attrib.pop(qn("w:val"), None)         # <w:b/> with no val = on
+            elif b is not None:
+                props.remove(b)
+            if len(props):
+                run.append(props)
+            if kind == "t":
+                el = run.makeelement(qn("w:t"), {})
+                el.set(qn("xml:space"), "preserve")
+                el.text = text
+                run.append(el)
+            else:
+                run.append(run.makeelement(qn("w:br") if kind == "br" else qn("w:tab"), {}))
+            par._p.append(run)
+        changed_paras += 1
+    return changed_paras
+
+
+def _tighten_heading_to_image(doc, heading="TEST SETUP PICTURES"):
+    """Drop the blank paragraphs between a section heading and its first picture.
+
+    The template carries spacers there; with the heading's own spacing they read as an
+    empty line between the title and the image. The image's OWN paragraph has no text but
+    does carry a drawing, so it is never mistaken for a spacer.
+    """
+    body = doc.element.body
+    pm = {p._p: p for p in doc.paragraphs}
+    seq = [el for el in body.iterchildren()]
+    start = None
+    for i, el in enumerate(seq):
+        if el.tag != qn("w:p"):
+            continue
+        par = pm.get(el)
+        if par is None:
+            continue
+        if " ".join((par.text or "").split()).upper().startswith(heading):
+            start = i
+            break
+    if start is None:
+        return 0
+    removed = []
+    for el in seq[start + 1:]:
+        if el.tag != qn("w:p"):
+            break                                   # a table: nothing to tighten
+        text = "".join(t.text or "" for t in el.iter(qn("w:t"))).strip()
+        has_img = el.findall(".//" + qn("w:drawing")) or el.findall(".//" + qn("w:pict"))
+        if has_img or text:
+            break                                   # reached the picture (or real content)
+        if el.find(".//" + qn("w:sectPr")) is not None:
+            break
+        removed.append(el)
+    for el in removed:
+        body.remove(el)
+    return len(removed)
+
+
 def _keep_captions_with_pictures(doc):
     """A picture and the label printed under it must never land on different pages.
 
@@ -1247,25 +1493,37 @@ def _drop_captionless_photos(doc):
     Every test shares the fixed img_photo_N slots, so this is not RE-specific and no
     longer carries the _re_ prefix: SURGE shipped 'Photo 1: Surge test setup - Power
     Line' over blank space, and because the report now splices the datasheet's own
-    pages, that caption reached LIST OF FIGURES as a figure pointing at nothing."""
+    pages, that caption reached LIST OF FIGURES as a figure pointing at nothing.
+
+    Walks the body ELEMENTS rather than the paragraphs, because a photo does not have to
+    live in a paragraph: ESD prints each block as a TABLE of photos with one caption
+    under it, and reading the previous *paragraph* there found an unrelated blank one and
+    deleted a caption whose photos were sitting right above it."""
     body = doc.element.body
-    paras = list(doc.paragraphs)
+    seq = list(body.iterchildren())
+    pm = {p._p: p for p in doc.paragraphs}
     removed = []
-    for i, p in enumerate(paras):
+    for i, el in enumerate(seq):
+        p = pm.get(el)
+        if p is None:
+            continue
         t = (p.text or "").strip()
         if not (t.upper().startswith("PHOTO ") and ":" in t):
             continue
-        prev = paras[i - 1] if i > 0 else None
+        prev = seq[i - 1] if i > 0 else None
         if prev is None:
             continue
-        if prev._p.findall(".//" + qn("w:drawing")):
-            continue                        # has a picture -> keep
-        if (prev.text or "").strip():
+        if prev.findall(".//" + qn("w:drawing")):
+            continue                        # a picture above it, in a paragraph OR a table
+        if prev.tag != qn("w:p"):
+            continue                        # a table with no picture is not our pattern
+        prev_par = pm.get(prev)
+        if prev_par is not None and (prev_par.text or "").strip():
             continue                        # not this caption's (empty) image paragraph
-        removed.extend([p, prev])
-    for p in removed:
-        if p._p.getparent() is not None:
-            body.remove(p._p)
+        removed.extend([el, prev])
+    for el in removed:
+        if el.getparent() is not None:
+            body.remove(el)
     return len(removed) // 2
 
 
@@ -2051,6 +2309,129 @@ def _esd_drop_empty_observation(doc, filled):
     return removed
 
 
+#: Photos per row in an ESD picture block, and the width each one gets, as the
+#: reference datasheet lays them out: two across the page.
+_ESD_PIC_PER_ROW = 2
+_ESD_PIC_WIDTH_CM = 7.4
+
+
+def _esd_extra_obs_table(doc, spec):
+    """One added observation table, drawn like the three the template ships.
+
+    Two header rows: 'S. No.' and 'Name of test points' merged down both, and
+    'Test Level (kV)' spanning the level columns above their own names.
+    """
+    levels = spec.get("levels") or []
+    rows = spec.get("rows") or []
+    if not levels:
+        return None
+    ncol = 2 + len(levels)
+    share = (_ESD_OBS_TOTAL_TWIPS - sum(_ESD_OBS_LABEL_TWIPS)) // max(1, len(levels))
+    widths = list(_ESD_OBS_LABEL_TWIPS) + [share] * len(levels)
+    widths[-1] += _ESD_OBS_TOTAL_TWIPS - sum(widths)
+    t = _surge_shell(doc, 2 + max(1, len(rows)), ncol, share)
+    t.cell(0, 0).merge(t.cell(1, 0))
+    t.cell(0, 1).merge(t.cell(1, 1))
+    _surge_cell(t, 0, 0, "S. No.", bold=True)
+    _surge_cell(t, 0, 1, "Name of test points", bold=True)
+    if len(levels) > 1:
+        t.cell(0, 2).merge(t.cell(0, ncol - 1))
+    _surge_cell(t, 0, 2, "Test Level (kV)", bold=True)
+    for i, name in enumerate(levels):
+        _surge_cell(t, 1, 2 + i, name, bold=True)
+    for ri, row in enumerate(rows or [{}]):
+        _surge_cell(t, 2 + ri, 0, row.get("sno", "") or str(ri + 1))
+        _surge_cell(t, 2 + ri, 1, row.get("name", ""))
+        cells = row.get("cells") or []
+        for ci in range(len(levels)):
+            _surge_cell(t, 2 + ri, 2 + ci, cells[ci] if ci < len(cells) else "")
+    _surge_set_grid(t, widths)
+    return t._tbl
+
+
+def _esd_insert_extra_obs(doc, tables, anchor_text="[[esd extra observation tables]]"):
+    """Put the added observation tables after the three the template printed.
+
+    Each gets the same bold title its kind carries in the template, so a second Direct
+    table reads as another 'Contact Discharge Direct Method:' block rather than as an
+    unlabelled grid. The anchor goes whatever happens.
+    """
+    anchor = None
+    for p in doc.paragraphs:
+        if (p.text or "").strip() == anchor_text:
+            anchor = p
+            break
+    if anchor is None:
+        return 0
+    style = anchor.style
+    made = 0
+    for spec in tables or ():
+        el = _esd_extra_obs_table(doc, spec)
+        if el is None:
+            continue
+        title = anchor.insert_paragraph_before(spec.get("title") or "", style=style)
+        for run in title.runs:
+            run.bold = True
+        title._p.addnext(el)
+        made += 1
+    anchor._p.getparent().remove(anchor._p)
+    return made
+
+
+def _esd_insert_picture_block(doc, block, img_paths, anchor_text):
+    """Replace one anchor with this block's photos in a grid, then its caption.
+
+    The reference datasheet prints each block as a two-column table of photos with a
+    single caption underneath - not one photo per caption, which is all the old
+    {{ img_photo_N }} slot could do. Photos are added post-render with add_picture
+    because docxtpl's InlineImage only exists while the template is being rendered, and
+    the grid's shape is not known until the engineer has uploaded.
+
+    A block with nothing uploaded leaves neither table nor caption: the anchor goes and
+    the section simply does not mention it.
+    """
+    from docx.shared import Cm
+    anchor = None
+    for p in doc.paragraphs:
+        if (p.text or "").strip() == anchor_text:
+            anchor = p
+            break
+    if anchor is None:
+        return 0
+    from .generic_service import esd_pic_keys
+    keys = block.get("keys") or esd_pic_keys(list((img_paths or {}).keys()), block.get("prefix"))
+    paths = [img_paths.get(k) for k in keys]
+    paths = [p for p in paths if p and os.path.exists(p)]
+    if not paths:
+        anchor._p.getparent().remove(anchor._p)
+        return 0
+    rows = (len(paths) + _ESD_PIC_PER_ROW - 1) // _ESD_PIC_PER_ROW
+    table = doc.add_table(rows=rows, cols=_ESD_PIC_PER_ROW)
+    table.style = "Table Grid"
+    for i, path in enumerate(paths):
+        cell = table.cell(i // _ESD_PIC_PER_ROW, i % _ESD_PIC_PER_ROW)
+        para = cell.paragraphs[0]
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        para.add_run().add_picture(path, width=Cm(_ESD_PIC_WIDTH_CM))
+    # an odd photo count leaves the last cell empty rather than stretching the picture
+    caption = anchor.insert_paragraph_before(block.get("caption") or "", style=anchor.style)
+    for run in caption.runs:
+        run.bold = True
+    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption._p.addprevious(table._tbl)            # table above its caption
+    anchor._p.getparent().remove(anchor._p)
+    return len(paths)
+
+
+def _esd_insert_pictures(doc, blocks, img_paths):
+    """Every ESD picture block, each at its own anchor."""
+    made = 0
+    for block in blocks or ():
+        made += _esd_insert_picture_block(
+            doc, block, img_paths or {}, "[[esd pictures %s]]" % block.get("prefix"))
+    return made
+
+
 def _esd_finalize(doc, context):
     """ESD reference-format corrections.
 
@@ -2134,6 +2515,11 @@ def _eft_finalize(doc, context):
             if ports and not ports.get(key, True)]
     if drop:
         _drop_photo_blocks(doc, lambda txt: any(d in txt for d in drop))
+    # Client review: the port label that opens a procedure block reads bold, and the
+    # blank line the template leaves between the TEST SETUP PICTURES title and the
+    # first picture goes.
+    _bold_procedure_port_labels(doc)
+    _tighten_heading_to_image(doc)
     _re_renumber_photos(doc)
 
     for tb in doc.tables:
@@ -2499,6 +2885,11 @@ def _vdips_finalize(doc, context):
     _bullet_monitoring_parameters(doc)
     _re_fix_signature(doc)          # no border on the signature image
     collapse_blank_runs(doc)        # the doubled blank line under TEST SETUP PICTURES
+    # The client asked for the procedure to read justified rather than ragged-right.
+    _justify_procedure(doc)
+    # ...and the single one that is left: the title sits directly above the photo, the
+    # same as EFT after the client's review.
+    _tighten_heading_to_image(doc)
     _ce_tune_plot_spacing(doc)      # image -> caption gap, as on the other datasheets
     _re_renumber_photos(doc)
 
@@ -2848,6 +3239,20 @@ def render(code, context, img_keys, img_paths, output_path):
     if code == "SURGE":
         _surge_insert_observation(tpl.docx, context.get("surge_obs_tables"),
                                   context.get("surge_obs_anchor") or "[[observation tables]]")
+
+    if code == "ESD":
+        # Observation tables the engineer added, after the three the template printed.
+        _esd_insert_extra_obs(tpl.docx, context.get("esd_extra_tables"))
+        # TEST SETUP PICTURES: four blocks, each a grid of photos with one caption.
+        # After the render, because the grid's shape follows what was uploaded.
+        _esd_insert_pictures(tpl.docx, context.get("esd_pic_blocks"), img_paths or {})
+
+    if code == "VOLTAGEDIPS":
+        # The observation grids are the engineer's: rows AND columns are theirs, so the
+        # tables are built here onto the template's anchors.
+        _vdips_insert_observation(tpl.docx, context.get("vdips_dips_groups"), "[[dips tables]]")
+        _vdips_insert_observation(tpl.docx, context.get("vdips_intr_groups"),
+                                  "[[interruption tables]]")
         _eft_insert_legend(tpl.docx, context.get("surge_obs_legend"))
 
     if code == "PFMF":
@@ -2885,10 +3290,12 @@ def render(code, context, img_keys, img_paths, output_path):
     # EQUIPMENT USED / 2.7 SOFTWARE USED / 2.8 RESULT) is kept together on the last
     # page. RE has its own paginator (_re_paginate) so it is excluded.
     if code != "RE":
-        # SURGE: 2.6 / 2.7 carry one data row each, so forcing them onto their own page
-        # leaves the setup-pictures page half empty - the client asked for them to fill it.
-        # They stay glued together, so Word still moves the whole block if it will not fit.
-        paginate_generic_datasheet(tpl.docx, force_last_block_page=(code != "SURGE"))
+        # SURGE and VOLTAGEDIPS: 2.6 / 2.7 carry one data row each, so forcing them onto
+        # their own page leaves the setup-pictures page empty below the photo - which is
+        # what the client reads as "unnecessary space below the image". They stay glued
+        # together, so Word still moves the whole block when it will not fit.
+        paginate_generic_datasheet(
+            tpl.docx, force_last_block_page=(code not in ("SURGE", "VOLTAGEDIPS")))
 
     _add_image_borders(tpl.docx)                     # thin black border on every image
     if code == "RE":
