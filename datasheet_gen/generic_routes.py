@@ -143,9 +143,15 @@ def g_form(code, assignment_id):
         # copy of the pairing rule.
         try:
             from .form_extract import LEGEND_PREFIX, observation_legend
+            from .generic_service import force_legend_a, normalize_image_sizes
+            # a size the form pre-filled from a default that has since changed
+            normalize_image_sizes(pre, code)
             legend = observation_legend(code, draft)
             if legend:
-                payload = [{"code": c, "desc": d} for c, d in legend]
+                # A's wording is boilerplate and the same on every datasheet, so a draft
+                # saved against older text shows the current one. B/C/D describe what was
+                # actually observed and keep whatever the engineer typed.
+                payload = force_legend_a([{"code": c, "desc": d} for c, d in legend])
                 # Under BOTH names. Most datasheets seed from prefill
                 # ['obs_legend']; EFT and PFMF have their own legend widget and
                 # read the namespaced key instead. Setting only the bare one
@@ -221,10 +227,13 @@ def g_form(code, assignment_id):
             # a draft still holding '<Standard name>' gets the basic standard
             from .generic_service import (normalize_procedure_basic, _DERIVED_BASIC_STANDARDS,
                                           esd_row_count, esd_met_criteria,
-                                          esd_group_levels)
+                                          esd_group_levels, _re_functional_mode_names)
             normalize_procedure_basic(
                 pre, (pre.get("basic_standard") or "").strip()
                 or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
+            _dm = _re_functional_mode_names(parent)
+            if _dm:
+                pre["test_mode"] = _dm
             # Met Performance Criteria follows the observation grids, so the form shows what
             # the document will carry. Without this the field kept whatever the request or an
             # older draft put there - typically the REQUIRED criteria, which is a different
@@ -304,6 +313,11 @@ def g_form(code, assignment_id):
             # index so the image already stored under that name still shows
             from .generic_service import re_extra_photo_slots
             extra_photos = re_extra_photo_slots(draft)
+        elif code == "VOLTAGEFLICKER":
+            # extra Test Setup pictures come back on a draft reload, each keeping its slot
+            # index so the image already stored under that name still shows
+            from .generic_service import re_extra_photo_slots
+            extra_photos = re_extra_photo_slots(draft)
         elif code == "HARMONIC":
             # both: the harmonic measurement / limit rows AND the extra pictures. These were
             # briefly two branches, and the first one shadowed the second.
@@ -379,14 +393,28 @@ def g_form(code, assignment_id):
             for _it in _sec.get("items", []):
                 if _it.get("layout") == "esd_obs":
                     _it["levels"] = esd_group_levels(pre, _it.get("key_prefix"))
-        # Which photo slots each TEST SETUP PICTURES block already holds, so the form can
-        # rebuild them and show the stored photo. Read from the record's images: a file
-        # lives there once saved, and is never posted back into form_data.
-        from .generic_service import ESD_PIC_BLOCKS, esd_pic_keys
-        _saved = list((R.images_from_record(record) or {}).keys()) if record else []
-        for _prefix, _label in ESD_PIC_BLOCKS:
-            esd_pic_seed[_prefix] = [int(k.rsplit("_", 1)[1])
-                                     for k in esd_pic_keys(_saved, _prefix)]
+
+    # Which photo slots each repeatable block already holds, so the form can rebuild them
+    # and show the stored photo. Read from the record's images: a file lives there once
+    # saved, and is never posted back into form_data.
+    #
+    # Driven by the SCHEMA, not by a test code: ESD's TEST SETUP PICTURES, and the
+    # FUNCTIONAL CHECK photos on ESD, EFT and PFMF, all use the same widget. A datasheet
+    # that declares none simply gets an empty seed.
+    from .generic_service import ESD_PIC_DEFAULT_SLOTS, esd_pic_keys
+    _saved = list((R.images_from_record(record) or {}).keys()) if record else []
+    for _sec in schema.get("sections", []):
+        for _it in _sec.get("items", []):
+            if _it.get("layout") != "esd_pics" or not _it.get("key_prefix"):
+                continue
+            _prefix = _it["key_prefix"]
+            _idxs = [int(k.rsplit("_", 1)[1]) for k in esd_pic_keys(_saved, _prefix)]
+            # Nothing uploaded yet: open the block with the reference document's number of
+            # slots. Without this a new datasheet showed a single slot per block, so the
+            # grid printed one photo beside an empty cell instead of the 2x2 the
+            # reference has - the engineer had to find '+ Add image' to get the rest.
+            esd_pic_seed[_prefix] = _idxs or list(
+                range(ESD_PIC_DEFAULT_SLOTS.get(_prefix, 1)))
 
     return render_template(
         "datasheet_gen/generic_form.html",
@@ -595,8 +623,13 @@ def g_save_draft(code):
         # Gating the child tables on this flag left them holding the PREVIOUS
         # content of the form between manual saves - see records._full_tier for
         # the measured cost of not doing that.
-        form_data.pop("_full_save", None)
+        # The manual button sends _full_save=1; autosave does not. Only the deliberate
+        # save renders and mirrors - see _mirror_draft_on_full_save.
+        full_save = bool(form_data.pop("_full_save", None))
         R.upsert_record(a, code, form_data, images, R.DRAFT, user=current_user)
+        if full_save:
+            # the images are passed in: they were saved above, and their streams are spent
+            _mirror_draft_on_full_save(code, schema, a, form_data, tco_id, images)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
@@ -639,7 +672,44 @@ def g_delete_draft(code, assignment_id):
     return jsonify(success=True, message="Draft removed")
 
 
-def _render_datasheet_docx(code, schema, a, form_data, tco_id):
+def _mirror_datasheet(entry_id, local_path, approved):
+    """Hand one generated datasheet to the SharePoint mirror, if it is switched on.
+
+    Never raises: a mirror failure is recorded on the planner entry, and the workflow
+    action that triggered it has already been committed.
+    """
+    try:
+        from utils import sharepoint_mirror
+        sharepoint_mirror.push_async(entry_id, local_path, approved=approved)
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.warning("SharePoint mirror not started for entry %s: %s",
+                                   entry_id, exc)
+
+
+def _mirror_draft_on_full_save(code, schema, a, form_data, tco_id, images=None):
+    """Render the draft and mirror it to Draft/, on a manual save only.
+
+    A draft has no .docx of its own - g_save_draft deliberately does not generate one, so
+    a draft exists as datasheet_records.form_json plus the projection tables. It therefore
+    has to be rendered here before it can be uploaded, through the same renderer the real
+    routes use.
+
+    The render output does NOT become datasheet_file_path: that field means "the document
+    that went for review", and report_gen splices from it. This is a copy for SharePoint.
+    """
+    try:
+        from utils import sharepoint_mirror
+        if not sharepoint_mirror.enabled():
+            return
+        out, _images, _filename = _render_datasheet_docx(
+            code, schema, a, form_data, tco_id, images=images)
+        sharepoint_mirror.push_async(a.id, out, approved=False)
+    except Exception as exc:  # noqa: BLE001 - saving a draft must never fail on this
+        current_app.logger.warning("SharePoint draft mirror skipped for entry %s: %s",
+                                   a.id, exc)
+
+
+def _render_datasheet_docx(code, schema, a, form_data, tco_id, images=None):
     """Build the datasheet .docx from form_data; return (path, images, filename).
     Shared by 'send to peer review' (initial generation) and the post-approval
     'generate final' regeneration so both produce an identical document."""
@@ -648,7 +718,11 @@ def _render_datasheet_docx(code, schema, a, form_data, tco_id):
     # Modes -> Test Mode) are resolved even when regenerating from an older draft
     ctx = gs.build_context(schema, form_data, request_obj=parent)
     ikeys = gs.image_keys(schema)
-    images = _save_generic_images(ikeys, a.id)
+    # An upload's stream can only be read once per request. `images` lets a caller that
+    # has ALREADY saved this request's files hand them over: saving again would read
+    # exhausted streams and write 0-byte files - and with same-second timestamps the
+    # names collide, so the good photo is overwritten with nothing.
+    images = dict(images) if images is not None else _save_generic_images(ikeys, a.id)
     # reuse any image saved in an earlier draft that wasn't re-uploaded now
     for k, p in R.draft_images(a.id).items():
         if k not in images and p and os.path.exists(p):
@@ -710,6 +784,8 @@ def g_generate(code):
             a, f"Datasheet generated and sent to {reviewer.username} for peer review.",
             current_user.username, "SENT FOR REVIEW")
         db.session.commit()
+        # What went for review is a draft until it is approved, so it mirrors to Draft/.
+        _mirror_datasheet(a.id, out, approved=False)
 
         try:
             R.upsert_record(a, code, form_data, images, R.SUBMITTED,
@@ -794,6 +870,8 @@ def g_generate_final(code, assignment_id):
         out, images, filename = _render_datasheet_docx(code, schema, a, form_data, a.tco_id)
         a.datasheet_file_path = out
         db.session.commit()
+        # A regenerated final replaces the approved copy in SharePoint.
+        _mirror_datasheet(a.id, out, approved=True)
         return jsonify(success=True, filename=filename,
                        download_url=url_for("datasheet_generic.g_download", assignment_id=a.id))
     except Exception as exc:  # noqa: BLE001

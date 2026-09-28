@@ -87,6 +87,49 @@ def iter_scalar_fields(schema):
                 yield it
 
 
+#: Per-slot image sizes that used to be the default and are not any more, in mm.
+#: Keyed by (test code, key prefix). See superseded_image_size().
+_SUPERSEDED_IMG_SIZES = {
+    ("EFT", "img_fc"): (140.0, 52.0),      # was a short wide box; now 16 x 9 cm
+    ("SURGE", "img_fc"): (140.0, 52.0),
+}
+
+
+def superseded_image_size(code, key, w_mm, h_mm):
+    """True when this stored size is one the form pre-filled from an old default."""
+    for (_c, _prefix), (_w, _h) in _SUPERSEDED_IMG_SIZES.items():
+        if _c == (code or "").upper() and key.startswith(_prefix):
+            return abs(w_mm - _w) < 0.5 and abs(h_mm - _h) < 0.5
+    return False
+
+
+def normalize_image_sizes(values, code):
+    """Rewrite superseded per-image sizes in a form prefill to the current default.
+
+    So the engineer SEES 16 x 9 in the size boxes on an existing draft, matching what the
+    document will now print. Returns the number of slots changed.
+    """
+    from .generic_generator import _box          # local: the generator owns the boxes
+    changed = 0
+    for _key in list(values or {}):
+        if not _key.endswith("__wcm"):
+            continue
+        _base = _key[:-len("__wcm")]
+        _hkey = _base + "__hcm"
+        try:
+            _w = float(_s(values.get(_key))) * 10.0
+            _h = float(_s(values.get(_hkey))) * 10.0
+        except (TypeError, ValueError):
+            continue
+        if not superseded_image_size(code, _base, _w, _h):
+            continue
+        _nw, _nh = _box(_base, code)
+        values[_key] = "%g" % (_nw / 10.0)
+        values[_hkey] = "%g" % (_nh / 10.0)
+        changed += 1
+    return changed
+
+
 def image_keys(schema):
     keys = []
     for sec in schema["sections"]:
@@ -369,11 +412,26 @@ def _crf_spec_checkboxes(form_data):
     # pair of option groups; the untested port simply has nothing ticked.
     chosen = _g("test_level")
     ports = _crf_ports(form_data)
+    # A level that is none of the three standard ones is a CUSTOM value, and it ticks the
+    # Custom box with the number written into its blank ("Custom 5"). Without this an
+    # engineer who entered 5 got a Test Level row with NOTHING ticked and the value
+    # nowhere on the page - the box only ever matched the literal word "Custom".
+    _standard = {v for v, _ in _CRF_TEST_LEVELS if v != "Custom"}
+    custom_level = chosen if (chosen and chosen not in _standard and chosen != "Custom") else ""
 
     def _level_cell(ticked):
         rt = RunsXml()
         for i, (value, label) in enumerate(_CRF_TEST_LEVELS):
-            rt.add(_box_run(bool(ticked) and chosen == value))
+            if value == "Custom":
+                hit = bool(ticked) and bool(custom_level or chosen == "Custom")
+                # The number is written into the blank only for a port that was actually
+                # tested. A Power-Line-only test printed "Custom 5" in the Signal Line
+                # cell too - unticked, but still saying a 5 Vrms level applied there.
+                if custom_level and ticked:
+                    label = "Custom %s" % custom_level
+            else:
+                hit = bool(ticked) and chosen == value
+            rt.add(_box_run(hit))
             rt.add(_label_run(" " + label + ("    " if i % 2 == 0 else "")))
             if i == 1:
                 rt.add('<w:r><w:br/></w:r>')
@@ -520,7 +578,7 @@ def _eft_build_context(form_data):
         if code and code not in seen:
             seen.add(code)
             legend.append({"code": code, "desc": _s(descs[i]) if i < len(descs) else ""})
-    ctx["eft_obs_legend"] = legend
+    ctx["eft_obs_legend"] = force_legend_a(legend)
     return ctx
 
 
@@ -690,7 +748,7 @@ def _surge_build_context(form_data):
         if code and code not in seen:
             seen.add(code)
             legend.append({"code": code, "desc": _s(descs[i]) if i < len(descs) else ""})
-    ctx["surge_obs_legend"] = legend
+    ctx["surge_obs_legend"] = force_legend_a(legend)
     return ctx
 
 
@@ -761,7 +819,12 @@ def _pfmf_build_context(form_data):
         if c and c not in seen:
             seen.add(c)
             legend.append({"code": c, "desc": _s(descs[i]) if i < len(descs) else ""})
-    ctx["pfmf_obs_legend"] = legend
+    # A method that was not used prints NA in its columns, so the legend has to say what
+    # NA means - the reference datasheet carries the line whenever those cells appear.
+    if _pfmf_methods(form_data) != {"proximity", "immersion"}:
+        if not any((e.get("code") or "").strip().upper() == "NA" for e in legend):
+            legend.append({"code": "NA", "desc": "Not Applicable"})
+    ctx["pfmf_obs_legend"] = force_legend_a(legend)
     return ctx
 
 
@@ -966,6 +1029,72 @@ ESD_PIC_BLOCKS = (
     ("air", "Photo 4: ESD Air discharge test points"),
 )
 ESD_PIC_PREFIX = "esd_pic_"
+
+#: How many photo slots a block opens with on a NEW datasheet, from the reference document
+#: (IEC-FRM-509): four per block, five for Air discharge. The engineer can still add or
+#: remove slots - this only decides what is there to fill in before they touch anything.
+#: A block that already has saved photos rebuilds those slots instead, so a reload is
+#: faithful to what was uploaded rather than being topped up to this count.
+ESD_PIC_DEFAULT_SLOTS = {"hcp": 4, "vcp": 4, "contact": 4, "air": 5, "fc": 1}
+
+#: The FUNCTIONAL CHECK photos. They use the same slot machinery as the test-setup blocks
+#: (prefix 'fc') but are not one of them: each carries its own numbered caption instead of
+#: sharing one under a grid, so they are rendered separately.
+#: Criterion A's legend wording. A is boilerplate - it says nothing was observed - so
+#: unlike B/C/D it reads the same on every datasheet. Canonical here; the generator takes
+#: it from this module, and generic_form.html keeps a JS copy for the live widget.
+LEGEND_DEFAULT_A = ("No degradation was observed during the test based on the "
+                    "parameters monitored.")
+
+
+def force_legend_a(legend):
+    """Return `legend` with A carrying the standard wording, adding A when it is absent.
+
+    B/C/D describe what was actually observed, so those are left exactly as typed. A is
+    forced rather than merely defaulted so a datasheet saved against the template's older
+    boilerplate picks the current wording up on its next render.
+    """
+    out, seen = [], False
+    for entry in legend or ():
+        if ((entry or {}).get("code") or "").strip().upper() == "A":
+            entry = dict(entry, desc=LEGEND_DEFAULT_A)
+            seen = True
+        out.append(entry)
+    if not seen:
+        out.insert(0, {"code": "A", "desc": LEGEND_DEFAULT_A})
+    return out
+
+
+ESD_FC_PREFIX = "fc"
+
+#: The numbered label printed under each FUNCTIONAL CHECK photo. ESD is the only datasheet
+#: whose reference document captions them; EFT and PFMF print the pictures bare, which is
+#: what their templates did with their fixed slots.
+FC_LABELS = {"ESD": "Functional Check – ESD Verification"}
+
+#: Photos uploaded before these slots became repeatable, per test code. Kept so an existing
+#: datasheet does not lose the images it already has.
+FC_LEGACY_KEYS = {
+    "ESD": ("img_fc_1", "img_fc_2", "img_fc_3"),
+    "EFT": ("img_fc_1", "img_fc_2", "img_fc_3"),
+    "PFMF": ("img_functional_check",),
+}
+
+
+def fc_images(image_keys, code):
+    """The FUNCTIONAL CHECK photos to print, in slot order.
+
+    Returns [] when nothing was uploaded, which is what keeps a label - or an empty frame -
+    off a datasheet that has no functional-check photo.
+    """
+    _code = (code or "").upper()
+    keys = list(esd_pic_keys(image_keys, ESD_FC_PREFIX))
+    for legacy in FC_LEGACY_KEYS.get(_code, ()):     # pre-repeatable uploads still print
+        if legacy in (image_keys or ()) and legacy not in keys:
+            keys.append(legacy)
+    label = FC_LABELS.get(_code)
+    return [{"key": k, "caption": ("%s %d" % (label, n)) if label else ""}
+            for n, k in enumerate(keys, start=1)]
 
 
 def esd_pic_keys(image_keys, prefix):
@@ -1203,12 +1332,15 @@ def build_context(schema, form_data, request_obj=None):
         if _c and _c not in _seen:
             _seen.add(_c)
             _legend.append({"code": _c, "desc": _s(_leg_descs[_i]) if _i < len(_leg_descs) else ""})
-    ctx["obs_legend"] = _legend
+    # A is boilerplate and reads the same everywhere, so it is forced here - where
+    # every generic legend is built - rather than per datasheet.
+    ctx["obs_legend"] = force_legend_a(_legend)
     # Per-image document size (Word-style Shape Width x Height in cm), posted as
     # <key>__wcm / <key>__hcm; stored in mm for the generator. When absent, the
     # generator falls back to that slot's default box.
     _img_boxes = {}
     _size_keys = list(image_keys(schema))
+    _code_now = (schema.get("code") or "").upper()
     if schema.get("code") in ("RE", "SURGE", "HARMONIC", "CRF", "PFMF", "RS_RI", "EFT"):
         # extra test-setup pictures aren't in the schema, but their size is set the
         # same way by the image editor
@@ -1217,9 +1349,16 @@ def build_context(schema, form_data, request_obj=None):
         _w, _h = _s(form_data.get(_ik + "__wcm")), _s(form_data.get(_ik + "__hcm"))
         if _w and _h:
             try:
-                _img_boxes[_ik] = (float(_w) * 10.0, float(_h) * 10.0)
+                _wmm, _hmm = float(_w) * 10.0, float(_h) * 10.0
             except ValueError:
-                pass
+                continue
+            # A size equal to a SUPERSEDED default was never chosen by anyone: the form
+            # seeds these boxes from the slot's default and every save posts them back, so
+            # an old default gets baked into the draft and then outranks the new one for
+            # ever. Anything else the engineer typed is honoured as before.
+            if superseded_image_size(_code_now, _ik, _wmm, _hmm):
+                continue
+            _img_boxes[_ik] = (_wmm, _hmm)
     ctx["_img_boxes"] = _img_boxes
     # Upload-driven tables (columns come from the uploaded file), one per flagged section.
     for _ut in upload_tables(schema):
@@ -1411,6 +1550,12 @@ def build_context(schema, form_data, request_obj=None):
         ctx.update(_esd_build_context(form_data))
         # The spec row shows the modification state NUMBER only.
         re_normalize_legacy_values(ctx)
+        # Test Mode prints the mode NAMES ('Mode A, Mode B'), not the description the
+        # requester typed for each. The form path is wired separately, in collect_prefill.
+        if request_obj is not None:
+            _dmodes = _re_functional_mode_names(request_obj)
+            if _dmodes:
+                ctx["test_mode"] = _dmodes
         # The procedure's opening sentence names the BASIC standard.
         normalize_procedure_basic(
             ctx, _s(ctx.get("basic_standard")) or _DERIVED_BASIC_STANDARDS.get("ESD", ""))
@@ -1466,6 +1611,9 @@ def build_context(schema, form_data, request_obj=None):
         # engineer chose. Field bases match RE's, so its collector is reused; the finaliser
         # splits the value cell.
         ctx["_flicker_meta"] = {"row_splits": _re_row_splits(form_data)}
+        # Extra Test Setup pictures, sharing RE's slot naming so the form repeater, the
+        # image-save allowlist and the generator's resolver all work unchanged.
+        ctx["re_extra_photos"] = _re_extra_photos(form_data)
     # The EUT-support wording follows EUT Configuration on every datasheet that has a rule
     # (procedures.SUPPORT_RULES), not just the three that grew one by hand. Applied here so a
     # branch above cannot miss it and a draft saved before the rule existed is corrected;
@@ -2134,7 +2282,7 @@ def collect_prefill(schema, request_obj, assignment):
             # requester typed for each one. Other datasheets keep the full text.
             pre[f["key"]] = (_re_functional_mode_names(request_obj) or test_mode) \
                 if _code in ("RE", "SURGE", "HARMONIC", "VOLTAGEFLICKER", "VOLTAGEDIPS",
-                             "CRF", "PFMF", "RS_RI", "EFT") \
+                             "CRF", "PFMF", "RS_RI", "EFT", "ESD") \
                 else test_mode
         elif _code == "CRF" and k == "immunity_test_requirement":
             v = _s(crf_spec.get("immunityTestRequirement"))

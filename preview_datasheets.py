@@ -88,6 +88,12 @@ def build_form_data(code, schema):
 
     # 2) images: a sample per slot, sized to the slot box (cm), + caption where allowed
     images, ikeys = {}, gs.image_keys(schema)
+    # The repeatable FUNCTIONAL CHECK slots are a custom layout, not schema image fields,
+    # so image_keys() does not see them. Seed one so the preview keeps showing a capture.
+    for _sec in schema.get("sections", []):
+        for _it in _sec.get("items", []):
+            if _it.get("layout") == "esd_pics" and _it.get("key_prefix") == "fc":
+                ikeys.append("esd_pic_fc_0")
     for k in ikeys:
         box = gg._box(k, code)
         images[k] = make_sample_image(code, k, box)

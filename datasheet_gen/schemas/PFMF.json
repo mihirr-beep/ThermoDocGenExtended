@@ -3,18 +3,44 @@
   "name": "Power-Frequency Magnetic Field",
   "form": "IEC-FRM-514",
   "sections": [
-    { "title": "Power-Frequency Magnetic Field", "items": [] },
-    { "title": "EUT AND TECHNICAL DETAILS", "items": [] },
+    {
+      "title": "Power-Frequency Magnetic Field",
+      "items": []
+    },
+    {
+      "title": "EUT AND TECHNICAL DETAILS",
+      "items": []
+    },
     {
       "title": "EUT DETAILS",
       "items": [
         {
           "type": "fields",
           "fields": [
-            { "key": "job_number", "label": "Job Number", "input": "text", "default": "" },
-            { "key": "eut_name", "label": "EUT Name", "input": "text", "default": "" },
-            { "key": "eut_model_sku_number", "label": "EUT Model/SKU Number", "input": "text", "default": "" },
-            { "key": "eut_serial_number", "label": "EUT Serial Number", "input": "text", "default": "" }
+            {
+              "key": "job_number",
+              "label": "Job Number",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_name",
+              "label": "EUT Name",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_model_sku_number",
+              "label": "EUT Model/SKU Number",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_serial_number",
+              "label": "EUT Serial Number",
+              "input": "text",
+              "default": ""
+            }
           ]
         }
       ]
@@ -25,12 +51,31 @@
         {
           "type": "table",
           "key": "eut_modification_rec_rows",
-          "rows": [ { "c0": "0", "c1": "Initial state", "c2": "-", "c3": "-" } ],
+          "rows": [
+            {
+              "c0": "0",
+              "c1": "Initial state",
+              "c2": "-",
+              "c3": "-"
+            }
+          ],
           "columns": [
-            { "key": "c0", "label": "Modification state" },
-            { "key": "c1", "label": "Description of Modification still fitted to EUT" },
-            { "key": "c2", "label": "Modification fitted by" },
-            { "key": "c3", "label": "Date modification fitted" }
+            {
+              "key": "c0",
+              "label": "Modification state"
+            },
+            {
+              "key": "c1",
+              "label": "Description of Modification still fitted to EUT"
+            },
+            {
+              "key": "c2",
+              "label": "Modification fitted by"
+            },
+            {
+              "key": "c3",
+              "label": "Date modification fitted"
+            }
           ]
         }
       ]
@@ -38,67 +83,207 @@
     {
       "title": "FUNCTIONAL CHECK",
       "items": [
-        { "type": "field", "key": "sop_reference", "label": "SOP Reference Number", "input": "text", "default": "IEC-SOP-511" },
-        { "type": "image", "key": "img_functional_check", "label": "Functional Check Image" }
+        {
+          "type": "field",
+          "key": "sop_reference",
+          "label": "SOP Reference Number",
+          "input": "text",
+          "default": "IEC-SOP-511"
+        },
+        {
+          "type": "custom",
+          "layout": "esd_pics",
+          "key_prefix": "fc",
+          "no_caption": true,
+          "label": "Functional Check photos"
+        }
       ]
     },
     {
       "title": "MONITORING PARAMETERS:",
       "items": [
-        { "type": "textarea", "key": "monitoring_parameters", "label": "Monitoring Parameters" }
+        {
+          "type": "textarea",
+          "key": "monitoring_parameters",
+          "label": "Monitoring Parameters"
+        }
       ]
     },
-    { "title": "POWER FREQUENCY MAGNETIC FIELD IMMUNITY TEST", "items": [] },
+    {
+      "title": "POWER FREQUENCY MAGNETIC FIELD IMMUNITY TEST",
+      "items": []
+    },
     {
       "title": "TEST SPECIFICATION",
       "items": [
         {
           "type": "fields",
           "fields": [
-            { "key": "product_standard", "label": "Product Standard", "input": "text", "default": "" },
-            { "key": "basic_standard", "label": "Basic Standard", "input": "text", "default": "" },
-            { "key": "immunity_test_requirement", "label": "Immunity test requirement", "input": "text", "checkbox": ["Basic", "Industrial", "Controlled", "Custom"], "default": "" },
-            { "key": "test_port", "label": "Test Port", "input": "text", "default": "Enclosure" },
-            { "key": "test_level", "label": "Test Level", "input": "text", "checkbox": ["1A/m", "3A/m", "30A/m", "Custom"], "default": "" },
-            { "key": "test_method", "label": "Test Method", "input": "text", "options": ["Proximity method", "Immersion method", "Both"], "default": "" }
+            {
+              "key": "product_standard",
+              "label": "Product Standard",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "basic_standard",
+              "label": "Basic Standard",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "immunity_test_requirement",
+              "label": "Immunity test requirement",
+              "input": "text",
+              "checkbox": [
+                "Basic",
+                "Industrial",
+                "Controlled",
+                "Custom"
+              ],
+              "default": ""
+            },
+            {
+              "key": "test_port",
+              "label": "Test Port",
+              "input": "text",
+              "default": "Enclosure"
+            },
+            {
+              "key": "test_level",
+              "label": "Test Level",
+              "input": "text",
+              "checkbox": [
+                "1A/m",
+                "3A/m",
+                "30A/m",
+                "Custom"
+              ],
+              "default": ""
+            },
+            {
+              "key": "test_method",
+              "label": "Test Method",
+              "input": "text",
+              "options": [
+                "Proximity method",
+                "Immersion method",
+                "Both"
+              ],
+              "default": ""
+            }
           ]
         },
-        { "type": "custom", "layout": "pfmf_coil", "label": "Coil Orientation" },
+        {
+          "type": "custom",
+          "layout": "pfmf_coil",
+          "label": "Coil Orientation"
+        },
         {
           "type": "fields",
           "fields": [
-            { "key": "test_duration", "label": "Test Duration (sec)", "input": "text", "default": "60" },
-            { "key": "test_mode", "label": "Test Mode", "input": "text", "default": "" },
-            { "key": "eut_modification_state", "label": "EUT Modification State \n(Refer 1.2)", "input": "text", "default": "" },
-            { "key": "eut_configuration", "label": "EUT Configuration", "input": "text", "options": ["Tabletop", "Floor standing"], "default": "" },
-            { "key": "eut_input_voltage_frequency", "label": "EUT Input Voltage & Frequency", "input": "text", "default": "" },
-            { "key": "test_frequency", "label": "Test Frequency", "input": "text", "default": "50Hz & 60Hz" },
-            { "key": "ambient_temperature", "label": "Ambient Temperature (°C)", "input": "text", "default": "",
-  "split_group": true
-},
-            { "key": "relative_humidity", "label": "Relative Humidity (%)", "input": "text", "default": "",
-  "split_group": true
-},
-            { "key": "test_date", "label": "Test Date", "input": "text", "default": "",
-  "split_group": true
-},
-            { "key": "tested_by", "label": "Tested by", "input": "text", "default": "",
-  "split_group": true
-}
+            {
+              "key": "test_duration",
+              "label": "Test Duration (sec)",
+              "input": "text",
+              "default": "60"
+            },
+            {
+              "key": "test_mode",
+              "label": "Test Mode",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_modification_state",
+              "label": "EUT Modification State \n(Refer 1.2)",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "eut_configuration",
+              "label": "EUT Configuration",
+              "input": "text",
+              "options": [
+                "Tabletop",
+                "Floor standing"
+              ],
+              "default": ""
+            },
+            {
+              "key": "eut_input_voltage_frequency",
+              "label": "EUT Input Voltage & Frequency",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "test_frequency",
+              "label": "Test Frequency",
+              "input": "text",
+              "default": "50Hz & 60Hz"
+            },
+            {
+              "key": "ambient_temperature",
+              "label": "Ambient Temperature (°C)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "relative_humidity",
+              "label": "Relative Humidity (%)",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "test_date",
+              "label": "Test Date",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            },
+            {
+              "key": "tested_by",
+              "label": "Tested by",
+              "input": "text",
+              "default": "",
+              "split_group": true
+            }
           ]
         }
       ],
       "split_rows": [
-        { "base": "ambient_temperature", "label": "Ambient Temperature (°C)", "type": "text" },
-        { "base": "relative_humidity", "label": "Relative Humidity (%)", "type": "text" },
-        { "base": "test_date", "label": "Test Date", "type": "date" },
-        { "base": "tested_by", "label": "Tested by", "type": "text" }
+        {
+          "base": "ambient_temperature",
+          "label": "Ambient Temperature (°C)",
+          "type": "text"
+        },
+        {
+          "base": "relative_humidity",
+          "label": "Relative Humidity (%)",
+          "type": "text"
+        },
+        {
+          "base": "test_date",
+          "label": "Test Date",
+          "type": "date"
+        },
+        {
+          "base": "tested_by",
+          "label": "Tested by",
+          "type": "text"
+        }
       ]
     },
     {
       "title": "DEVIATION FROM THE STANDARD",
       "items": [
-        { "type": "textarea", "key": "deviation", "label": "Deviation" }
+        {
+          "type": "textarea",
+          "key": "deviation",
+          "label": "Deviation"
+        }
       ]
     },
     {
@@ -119,28 +304,204 @@
           "type": "fields",
           "layout": "pfmf_obs",
           "bands": [
-            { "key": "pf_50", "label": "50 Hz" },
-            { "key": "pf_60", "label": "60 Hz" }
+            {
+              "key": "pf_50",
+              "label": "50 Hz"
+            },
+            {
+              "key": "pf_60",
+              "label": "60 Hz"
+            }
           ],
           "fields": [
-            { "key": "pf_50_col_1", "input": "text", "default": "3" },
-            { "key": "pf_50_col_2", "input": "text", "default": "50" },
-            { "key": "pf_50_col_3", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_4", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_5", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_6", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_7", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_8", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_50_col_9", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_1", "input": "text", "default": "3" },
-            { "key": "pf_60_col_2", "input": "text", "default": "60" },
-            { "key": "pf_60_col_3", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_4", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_5", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_6", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_7", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_8", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" },
-            { "key": "pf_60_col_9", "input": "text", "options": ["A", "B", "C", "D", "NA"], "default": "" }
+            {
+              "key": "pf_50_col_1",
+              "input": "text",
+              "default": "3"
+            },
+            {
+              "key": "pf_50_col_2",
+              "input": "text",
+              "default": "50"
+            },
+            {
+              "key": "pf_50_col_3",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_4",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_5",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_6",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_7",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_8",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_50_col_9",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_1",
+              "input": "text",
+              "default": "3"
+            },
+            {
+              "key": "pf_60_col_2",
+              "input": "text",
+              "default": "60"
+            },
+            {
+              "key": "pf_60_col_3",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_4",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_5",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_6",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_7",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_8",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            },
+            {
+              "key": "pf_60_col_9",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "NA"
+              ],
+              "default": ""
+            }
           ]
         }
       ]
@@ -148,9 +509,24 @@
     {
       "title": "TEST SETUP PICTURES",
       "items": [
-        { "type": "image", "key": "img_photo_1", "label": "Photo 1: PFMF test setup – X axis", "caption": true },
-        { "type": "image", "key": "img_photo_2", "label": "Photo 2: PFMF test setup – Y axis", "caption": true },
-        { "type": "image", "key": "img_photo_3", "label": "Photo 3: PFMF test setup – Z axis", "caption": true }
+        {
+          "type": "image",
+          "key": "img_photo_1",
+          "label": "Photo 1: PFMF test setup – X axis",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "img_photo_2",
+          "label": "Photo 2: PFMF test setup – Y axis",
+          "caption": true
+        },
+        {
+          "type": "image",
+          "key": "img_photo_3",
+          "label": "Photo 3: PFMF test setup – Z axis",
+          "caption": true
+        }
       ],
       "allow_extra_images": true
     },
@@ -161,11 +537,26 @@
           "type": "table",
           "key": "test_equipment_used_rows",
           "columns": [
-            { "key": "c0", "label": "Equipment Name" },
-            { "key": "c1", "label": "Make" },
-            { "key": "c2", "label": "Model No." },
-            { "key": "c3", "label": "Serial No." },
-            { "key": "c4", "label": "Calibration Due" }
+            {
+              "key": "c0",
+              "label": "Equipment Name"
+            },
+            {
+              "key": "c1",
+              "label": "Make"
+            },
+            {
+              "key": "c2",
+              "label": "Model No."
+            },
+            {
+              "key": "c3",
+              "label": "Serial No."
+            },
+            {
+              "key": "c4",
+              "label": "Calibration Due"
+            }
           ]
         }
       ]
@@ -177,10 +568,21 @@
           "type": "table",
           "key": "software_used_rows",
           "fixed": true,
-          "rows": [ { "c0": "iec.control", "c1": "10.3.2" } ],
+          "rows": [
+            {
+              "c0": "iec.control",
+              "c1": "10.3.2"
+            }
+          ],
           "columns": [
-            { "key": "c0", "label": "Software Name" },
-            { "key": "c1", "label": "Software Version" }
+            {
+              "key": "c0",
+              "label": "Software Name"
+            },
+            {
+              "key": "c1",
+              "label": "Software Version"
+            }
           ]
         }
       ]
@@ -191,16 +593,53 @@
         {
           "type": "fields",
           "fields": [
-            { "key": "required_performance_criteria", "label": "Required Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" },
-            { "key": "met_performance_criteria", "label": "Met Performance Criteria", "input": "text", "options": ["A", "B", "C", "D"], "default": "" }
+            {
+              "key": "required_performance_criteria",
+              "label": "Required Performance Criteria",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "default": ""
+            },
+            {
+              "key": "met_performance_criteria",
+              "label": "Met Performance Criteria",
+              "input": "text",
+              "options": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ],
+              "default": ""
+            }
           ]
         },
         {
           "type": "fields",
           "fields": [
-            { "key": "name", "label": "Name", "input": "text", "default": "" },
-            { "key": "signature", "label": "Signature", "input": "image", "default": "" },
-            { "key": "date", "label": "Date", "input": "text", "default": "" }
+            {
+              "key": "name",
+              "label": "Name",
+              "input": "text",
+              "default": ""
+            },
+            {
+              "key": "signature",
+              "label": "Signature",
+              "input": "image",
+              "default": ""
+            },
+            {
+              "key": "date",
+              "label": "Date",
+              "input": "text",
+              "default": ""
+            }
           ]
         }
       ]

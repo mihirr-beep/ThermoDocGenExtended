@@ -12,7 +12,7 @@ from docx.oxml.ns import qn
 
 from .layout import (polish_layout, page_break_before_top_sections, ce_finalize_layout,
                      enforce_arial_fonts, enforce_body_arial, enforce_arial_procedure,
-                     _ce_center_tables, _ce_fill_empty_cells, _ce_tune_plot_spacing)
+                     _ce_center_tables, _ce_fill_empty_cells, _ce_tune_plot_spacing, _ce_bold_headers)
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "word_templates", "IEC-FRM-504_CE.docx")
 
@@ -268,9 +268,17 @@ def render_ce_datasheet(context, output_path, images=None, template_path=TEMPLAT
     # Test Equipment Used, Software Used, EUT Modification Record). Runs after the Arial
     # enforcement so nothing rewrites the alignment afterwards.
     _ce_center_tables(tpl.docx)
+    # 2.5 MEASUREMENT DATA is generated per measurement record, so unlike the templated
+    # tables its header row carried no bold.
+    _ce_bold_headers(tpl.docx)
     # Pull each plot up under its "Line:"/"Neutral:" label, and give the data table room
     # below its "Figure N:" caption. Last, so no earlier spacing pass overrides it.
     _ce_tune_plot_spacing(tpl.docx)
+    # The two rules every datasheet shares. Imported here rather than at module scope
+    # because generic_generator imports from this module.
+    from .generic_generator import _underline_sop_reference, _justify_procedure
+    _underline_sop_reference(tpl.docx)
+    _justify_procedure(tpl.docx)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     tpl.save(output_path)
     return output_path

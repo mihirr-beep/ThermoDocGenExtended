@@ -5730,6 +5730,17 @@ Please do not reply to this email.
             _record_datasheet_transition(
                 entry, 'Approved',
                 comment_text or 'Datasheet approved during peer review.')
+            # Mirror the approved datasheet to SharePoint: in a thread, and after the
+            # transition is recorded, so a SharePoint outage cannot fail an approval. The
+            # outcome lands on planner_entries.sharepoint_error either way, and the local
+            # file stays where it is - report_gen splices it off disk.
+            try:
+                from utils import sharepoint_mirror
+                sharepoint_mirror.push_async(
+                    entry.id, entry.datasheet_file_path, approved=True)
+            except Exception as exc:  # noqa: BLE001 - approval must not depend on this
+                logger.warning('SharePoint mirror not started for entry %s: %s',
+                               entry.id, exc)
             return True, 'Peer review approved successfully', 200
         if normalized_action == 'reject':
             if not comment_text:
@@ -12320,6 +12331,23 @@ Please do not reply to this email.
                                 test_name
                             )
                             continue
+                        # planner_entries.start_date / end_date are NOT NULL. A legacy
+                        # assignment carrying no schedule inserted NULL, the INSERT failed,
+                        # and the whole backfill for that request was rolled back - so the
+                        # request ended up with NO planner entries at all and its
+                        # datasheets had no 'Generate Datasheet' button to reach them.
+                        # Fall back to when the test actually started, else when the
+                        # request was raised.
+                        if start_date_obj is None or end_date_obj is None:
+                            fallback_date = (
+                                getattr(request, 'test_commencement_date', None)
+                                or getattr(request, 'created_at', None))
+                            if isinstance(fallback_date, datetime):
+                                fallback_date = fallback_date.date()
+                            if not isinstance(fallback_date, date):
+                                fallback_date = date.today()
+                            start_date_obj = start_date_obj or fallback_date
+                            end_date_obj = end_date_obj or start_date_obj
                         total_hours_raw = assignment.get('total_hours')
                         try:
                             total_hours_value = float(total_hours_raw) if total_hours_raw not in (

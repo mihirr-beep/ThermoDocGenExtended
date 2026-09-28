@@ -18,15 +18,35 @@ from .layout import (polish_layout, page_break_before_top_sections, enforce_aria
 TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
 
+#: Datasheets whose functional-check capture is a 16 x 9 cm frame.
+_FC_16X9_CODES = ("EFT", "SURGE")
+
 def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
         return (40, 20)              # signatures stay small
-    if "img_fc" in k:
-        return (140, 52)             # functional-check captures: short so all 3 fit on one page
+    if "img_fc" in k or "_pic_fc_" in k:
+        # EFT and SURGE print their capture at exactly 16 x 9 cm, the size their reference
+        # documents show in Word's Size panel. Applied as an EXACT size (see
+        # _exact_size_slot), so a capture that is not 16:9 is fitted to the frame rather
+        # than printing smaller. ESD and PFMF keep the older short box.
+        return (160, 90) if (code or "").upper() in _FC_16X9_CODES else (140, 52)
     # All test-setup photos and measurement/emission plots default to
     # 15.92 cm (W) x 9.5 cm (H) = 159.2 x 95 mm; editable per-image in the form.
     return (159.2, 95)
+
+
+#: Slots whose box is a FRAME, not a maximum: the image is sized to it exactly. Every
+#: other slot scales to fit inside its box so nothing is ever distorted.
+_EXACT_SIZE_SLOTS = tuple((c, p) for c in _FC_16X9_CODES
+                          for p in ("img_fc", "_pic_fc_"))
+
+
+def _exact_size_slot(code, key):
+    """True when this slot prints at its box size exactly, whatever the image's shape."""
+    k = (key or "").lower()
+    return any(c == (code or "").upper() and (k.startswith(p) or p in k)
+               for c, p in _EXACT_SIZE_SLOTS)
 
 
 def _fit(tpl, path, box, exact=False):
@@ -147,6 +167,30 @@ def _re_paginate(doc):
                                 cp.paragraph_format.keep_with_next = True
 
 
+#: Width for the 'Coupling path / line' column, in twips. The label measures 2036 twips
+#: in the header font (Arial bold 11pt); Word's default cell margins take another 216, and
+#: the rest is slack. Every column used to share the table width equally, which left the
+#: label 1589 twips of text space and wrapped it onto a second line.
+_EFT_OBS_LABEL_TWIPS = 2312
+
+
+def _eft_obs_widths(doc, n_levels):
+    """Column widths for one EFT observation grid.
+
+    The total is taken from the section rather than a constant, so the table spans the
+    text column exactly whatever the page setup is. The label column is capped at half the
+    table so a grid with very few levels cannot end up with hairline value columns.
+    """
+    section = doc.sections[0]
+    total = int((section.page_width - section.left_margin - section.right_margin) / 635)
+    label = min(_EFT_OBS_LABEL_TWIPS, total // 2)
+    n = max(1, n_levels)
+    share = (total - label) // n
+    widths = [label] + [share] * n
+    widths[-1] += total - sum(widths)          # absorb the rounding, keeping the exact total
+    return widths
+
+
 def _eft_insert_observation(doc, power, signal):
     """Insert the EFT dynamic observation table(s) right after the 'Power Line:' /
     'Signal Line:' heading paragraphs. Columns are variable (built from the selected
@@ -158,24 +202,41 @@ def _eft_insert_observation(doc, power, signal):
         return None
 
     def _build(data):
+        """Two header rows: 'Coupling path / line' down the side, and a 'Test Level (kV)'
+        banner spanning the level columns above their values - the shape the reference
+        document and the other observation grids use."""
         if not data or not data.get("cols"):
             return None
         cols, rows = data["cols"], data.get("rows", [])
-        t = doc.add_table(rows=1 + len(rows), cols=1 + len(cols))
+        t = doc.add_table(rows=2 + len(rows), cols=1 + len(cols))
         try:
             t.style = "Table Grid"
         except Exception:
             pass
-        hdr = t.rows[0].cells
-        hdr[0].text = "Coupling path / line"
+        # merge FIRST: python-docx concatenates the text of merged cells, so the labels
+        # go in afterwards
+        label_cell = t.cell(0, 0).merge(t.cell(1, 0))          # down the two header rows
+        banner = t.cell(0, 1)
+        if len(cols) > 1:
+            banner = banner.merge(t.cell(0, len(cols)))        # across the level columns
+        label_cell.text = "Coupling path / line"
+        banner.text = "Test Level (kV)"
         for j, c in enumerate(cols):
-            hdr[1 + j].text = c
+            t.cell(1, 1 + j).text = c
         for i, row in enumerate(rows):
-            cs = t.rows[1 + i].cells
+            cs = t.rows[2 + i].cells
             cs[0].text = row.get("label", "")
             for j, v in enumerate(row.get("cells", [])):
                 if 1 + j < len(cs):
                     cs[1 + j].text = v
+        for hr in (0, 1):                                      # both header rows read bold
+            for cell in t.rows[hr].cells:
+                for par in cell.paragraphs:
+                    for run in par.runs:
+                        run.bold = True
+        # Fixed widths, applied AFTER the merges so the banner cell gets the summed span.
+        # Without this Word autofits and the label column wraps.
+        _surge_set_grid(t, _eft_obs_widths(doc, len(cols)))
         el = t._tbl
         el.getparent().remove(el)          # detach from the end; re-inserted at the marker
         return el
@@ -193,9 +254,6 @@ def _eft_insert_observation(doc, power, signal):
 
 #: The standard wording for A, the only code that carries boilerplate. B/C/D describe an
 #: actual observed failure, so their text belongs to the engineer.
-_LEGEND_DEFAULT_A = "No degradation was observed during the test based on the parameters monitored."
-
-
 def _eft_insert_legend(doc, legend):
     """Replace the template's static 'A: ... / B: ...' observation legend with one
     '<code>: <description>' paragraph per unique code the engineer entered.
@@ -209,7 +267,8 @@ def _eft_insert_legend(doc, legend):
     """
     import re
     if not legend:
-        legend = [{"code": "A", "desc": _LEGEND_DEFAULT_A}]
+        from .generic_service import LEGEND_DEFAULT_A
+        legend = [{"code": "A", "desc": LEGEND_DEFAULT_A}]
     statics = [p for p in doc.paragraphs
                if re.match(r"^\s*[A-Za-z0-9]{1,3}\s*:\s", p.text or "")
                and not p.text.strip().lower().startswith(("power line", "signal line"))]
@@ -1313,10 +1372,12 @@ def _justify_procedure(doc, heading="TEST PROCEDURE"):
                     el.text = text
                     run.append(el)
                     target.append(run)
-        for par2 in _procedure_paragraphs(doc, heading):
-            par2.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            done += 1
-        break                      # the whole section is handled in one pass
+    # Every paragraph in the section, not just the first: SURGE's procedure opens with a
+    # blank paragraph, and stopping at it left the real text unsplit - so it kept its soft
+    # breaks and polish_layout left-aligned it again straight afterwards.
+    for par2 in _procedure_paragraphs(doc, heading):
+        par2.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        done += 1
     return done
 
 
@@ -1413,12 +1474,16 @@ def _bold_procedure_port_labels(doc, labels=("Power Line:", "Signal Line:")):
     return changed_paras
 
 
-def _tighten_heading_to_image(doc, heading="TEST SETUP PICTURES"):
+def _tighten_heading_to_image(doc, heading="TEST SETUP PICTURES", keep=0):
     """Drop the blank paragraphs between a section heading and its first picture.
 
     The template carries spacers there; with the heading's own spacing they read as an
     empty line between the title and the image. The image's OWN paragraph has no text but
     does carry a drawing, so it is never mistaken for a spacer.
+
+    `keep` leaves that many spacers in place: EFT wanted the image hard against the title
+    (keep=0, the default), VOLTAGEFLICKER wanted one blank line rather than the two the
+    template carries.
     """
     body = doc.element.body
     pm = {p._p: p for p in doc.paragraphs}
@@ -1446,9 +1511,27 @@ def _tighten_heading_to_image(doc, heading="TEST SETUP PICTURES"):
         if el.find(".//" + qn("w:sectPr")) is not None:
             break
         removed.append(el)
+    if keep:
+        removed = removed[keep:]                    # leave the first `keep` spacers alone
     for el in removed:
         body.remove(el)
     return len(removed)
+
+
+def _drop_spacers_before_last_block(doc, heading="TEST EQUIPMENT USED"):
+    """Remove blank paragraphs left immediately before the final block.
+
+    Pagination already does this, but the per-datasheet finalisers run after it and can
+    leave new ones behind. Returns the number removed.
+    """
+    from .layout import _remove_blank_spacers_before
+    target = heading.strip().upper()
+    for par in doc.paragraphs:
+        if (par.text or "").strip().upper().startswith(target):
+            before = len(doc.paragraphs)
+            _remove_blank_spacers_before(par)
+            return before - len(doc.paragraphs)
+    return 0
 
 
 def _keep_captions_with_pictures(doc):
@@ -1868,7 +1951,12 @@ def _surge_bold_port_headings(doc, heading="TEST PROCEDURE"):
                     rPr.append(rPr.makeelement(_qn("w:b"), {}))
                 done += 1
             el.append(r)
-        want = False        # only the procedure's own text block
+        # Deliberately NOT stopping here. This used to clear `want` after the first
+        # paragraph carrying a label, which was right while the procedure was a single
+        # paragraph of soft-broken lines. _justify_procedure now splits those lines into
+        # real paragraphs, so "Power Line:" and "Signal Line:" are separate ones and
+        # stopping at the first left Signal Line unbolded. The loop already breaks at the
+        # next heading, which is what bounds it to this section.
     return done
 
 
@@ -1885,6 +1973,41 @@ _HARMONIC_AVGMAX_GRID = (560,                    # Hn
                          830, 900, 830, 940,     # Average:  Ieff, of Limit, Limit, Result
                          830, 900, 830, 940,     # Maximum:  Ieff, of Limit, Limit, Result
                          1450)                   # Harmonic Result
+
+
+#: Side padding for the avg/max cells, in twips. The template ships 192 a side - 384 per
+#: column - which on an 830-twip column leaves 446 for text where "0.780" needs 549, so
+#: every reading wrapped onto a second line. 56 keeps the numbers off the borders and
+#: still fits the widest header word in every column.
+_HARMONIC_AVGMAX_CELL_MARGIN = 56
+
+
+def _harmonic_set_cell_margins(tb, side_twips):
+    """Set the left/right padding on every CELL of a table.
+
+    Done per cell, not on tblCellMar: these cells carry their own w:tcMar, and a cell's
+    own margin overrides the table default - setting only the table's changed nothing.
+    """
+    n = 0
+    for tr in tb._tbl.findall(qn("w:tr")):
+        for tc in tr.findall(qn("w:tc")):
+            tcPr = tc.find(qn("w:tcPr"))
+            if tcPr is None:
+                tcPr = tc.makeelement(qn("w:tcPr"), {})
+                tc.insert(0, tcPr)
+            mar = tcPr.find(qn("w:tcMar"))
+            if mar is None:
+                mar = tcPr.makeelement(qn("w:tcMar"), {})
+                tcPr.append(mar)
+            for side in ("left", "right"):
+                el = mar.find(qn("w:" + side))
+                if el is None:
+                    el = mar.makeelement(qn("w:" + side), {})
+                    mar.append(el)
+                el.set(qn("w:w"), str(int(side_twips)))
+                el.set(qn("w:type"), "dxa")
+            n += 1
+    return n
 
 
 def _harmonic_fix_avgmax_table(doc):
@@ -1915,6 +2038,8 @@ def _harmonic_fix_avgmax_table(doc):
             _surge_set_grid(tb, list(_HARMONIC_AVGMAX_GRID))
         else:
             _sync_row_widths(tb)          # unexpected column count: at least agree with the grid
+        # The grid alone was not enough: each cell's own padding ate 384 twips of it.
+        _harmonic_set_cell_margins(tb, _HARMONIC_AVGMAX_CELL_MARGIN)
         for tr in tb._tbl.findall(qn("w:tr")):
             h = tr.find(qn("w:trPr") + "/" + qn("w:trHeight"))
             if h is not None and h.get(qn("w:hRule")) == "exact":
@@ -2041,6 +2166,26 @@ _PFMF_METHOD_COLUMNS = {"proximity": (2, 3, 4, 5),      # 0deg / 90deg / 180deg 
                         "immersion": (6, 7, 8)}         # X / Y / Z
 
 
+def _pfmf_mark_na(tb, cols, header_rows=3, value="NA"):
+    """Write `value` into the data cells of a coil-method group that was not tested.
+
+    The columns STAY. The reference datasheet prints both methods and fills the one that
+    does not apply, so the reader can see it was considered rather than wondering whether
+    it was forgotten - dropping the columns left the table a different shape per datasheet.
+    Returns the number of cells filled.
+    """
+    want = set(cols)
+    filled = 0
+    for ri, tr in enumerate(tb._tbl.findall(qn("w:tr"))):
+        if ri < header_rows:
+            continue                      # Coil Orientation / method / orientation labels
+        for tc, g0, span in _tc_spans(tr):
+            if want.intersection(range(g0, g0 + span)):
+                _esd_set_cell_text(tc, value)
+                filled += 1
+    return filled
+
+
 def _pfmf_finalize(doc, context):
     """PFMF reference-format corrections.
 
@@ -2072,12 +2217,9 @@ def _pfmf_finalize(doc, context):
         hdr = _ce_table_header(obs)
         if "field strength" not in hdr or "test frequency" not in hdr:
             continue
-        drop = []
         for name, cols in _PFMF_METHOD_COLUMNS.items():
             if name not in methods:
-                drop.extend(cols)
-        if drop:
-            _drop_grid_columns(obs, drop)
+                _pfmf_mark_na(obs, cols)
         # the three stacked heading rows (Coil Orientation / method / orientation)
         for ri in range(min(3, len(obs.rows))):
             _bold_row(obs, ri)
@@ -2423,6 +2565,70 @@ def _esd_insert_picture_block(doc, block, img_paths, anchor_text):
     return len(paths)
 
 
+#: Where each datasheet's FUNCTIONAL CHECK photos are inserted, and how they are sized.
+#: The box and the exact/fit rule come from _box() and _exact_size_slot(), so the slot is
+#: sized the same whether it was uploaded into the old fixed field or the repeatable one.
+#: How a repeatable functional-check slot is named, for sizing lookups.
+ESD_PIC_PREFIX_FOR_BOX = "esd_pic_"
+
+_FC_ANCHORS = {
+    "ESD": "[[esd functional check images]]",
+    "EFT": "[[functional check images]]",
+    "PFMF": "[[functional check images]]",
+}
+
+
+def _insert_fc_images(doc, images, img_paths, anchor_text, box, exact=False):
+    """Replace the anchor with one picture and its numbered label per uploaded slot.
+
+    Nothing uploaded means the anchor simply goes. The template used to carry a fixed
+    caption per slot, so a datasheet with no functional-check photo still printed
+    "Functional Check - ESD Verification 1/2/3" over blank space.
+
+    Added after the render because docxtpl's InlineImage only exists during one, and how
+    many pictures there are is not known until the engineer has uploaded them.
+    """
+    from docx.shared import Mm
+    anchor = None
+    for p in doc.paragraphs:
+        if (p.text or "").strip() == anchor_text:
+            anchor = p
+            break
+    if anchor is None:
+        return 0
+    bw, bh = box
+    made = 0
+    for item in images or ():
+        path = (img_paths or {}).get(item.get("key"))
+        if not (path and os.path.exists(path)):
+            continue
+        try:
+            from PIL import Image as _PILImage
+            iw, ih = _PILImage.open(path).size
+        except Exception:  # noqa: BLE001 - an unreadable file simply does not print
+            continue
+        if not (iw and ih):
+            continue
+        if exact:
+            size = {"width": Mm(bw), "height": Mm(bh)}   # a frame: fill it exactly
+        else:
+            # fit inside the box on whichever edge binds first, so nothing is distorted
+            size = {"width": Mm(bw)} if iw * bh >= ih * bw else {"height": Mm(bh)}
+        pic = anchor.insert_paragraph_before("", style=anchor.style)
+        pic.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pic.add_run().add_picture(path, **size)
+        text = item.get("caption") or ""
+        if text:                               # EFT and PFMF print their captures bare
+            try:
+                cap = anchor.insert_paragraph_before(text, style="Caption")
+            except KeyError:                   # a template without the Caption style
+                cap = anchor.insert_paragraph_before(text, style=anchor.style)
+            cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        made += 1
+    anchor._p.getparent().remove(anchor._p)
+    return made
+
+
 def _esd_insert_pictures(doc, blocks, img_paths):
     """Every ESD picture block, each at its own anchor."""
     made = 0
@@ -2430,6 +2636,26 @@ def _esd_insert_pictures(doc, blocks, img_paths):
         made += _esd_insert_picture_block(
             doc, block, img_paths or {}, "[[esd pictures %s]]" % block.get("prefix"))
     return made
+
+
+def _tighten_cell_spacing(tbl):
+    """Zero the paragraph spacing inside a table's cells, and set single line spacing.
+
+    The document default is 8pt after every paragraph (w:spacing after="160") with 1.08
+    line spacing, and a table cell inherits both. In a vertically centred cell that
+    trailing space belongs to the content block, so a one-character observation was
+    centred WITH its 8pt tail - the letter sat high and the slack showed up underneath it.
+    The template's own header cells already carry after=0, which is why only the data rows
+    looked wrong.
+    """
+    from docx.shared import Pt
+    for row in tbl.rows:
+        for cell in row.cells:
+            for par in cell.paragraphs:
+                pf = par.paragraph_format
+                pf.space_before = Pt(0)
+                pf.space_after = Pt(0)
+                pf.line_spacing = 1.0
 
 
 def _esd_finalize(doc, context):
@@ -2475,8 +2701,12 @@ def _esd_finalize(doc, context):
             _ce_center_table(tb)
         elif hdr.startswith("s. no") or hdr.startswith("s.no"):
             _set_row_height(tb, _ESD_OBS_ROW_CM)
+            _ce_center_table(tb)                 # observation rows read centred throughout
+            _tighten_cell_spacing(tb)            # no inherited gap under each value
 
     _bullet_monitoring_parameters(doc)
+    # 2.x RESULT: the criteria values read centred in their cell, not hard left.
+    _center_result_criteria(doc)
     _re_fix_signature(doc)
     _strip_trailing_empty_paragraphs(doc)
 
@@ -2751,9 +2981,14 @@ def _crf_finalize(doc, context):
            ("modification state" in hdr and "description" in hdr) or \
            ("frequency range" in hdr and "coupling method" in hdr):   # 2.4 TEST OBSERVATION
             _ce_center_table(tb2)
+            if "frequency range" in hdr:
+                # the same inherited 8pt that left a gap under every ESD observation
+                _tighten_cell_spacing(tb2)
 
     # 2.x RESULT: the criteria values read centred in their cell, not hard left.
     _center_result_criteria(doc)
+    # the template carries two spacers under the pictures heading; one is wanted
+    _tighten_heading_to_image(doc, keep=1)
     _re_fix_signature(doc)
 
 
@@ -2829,6 +3064,41 @@ def _center_row_values(tb, row_idx, skip_label=True):
     return n
 
 
+#: Matches an observation legend line: a short code, a colon, then its description.
+_LEGEND_LINE_RE = re.compile(r"^\s*[A-Za-z0-9]{1,3}\s*:\s")
+
+
+def _insert_legend_note(doc, text="Note:", heading="TEST OBSERVATION"):
+    """Put a bold 'Note:' line immediately above the observation legend.
+
+    The reference datasheet heads the legend with it. The search is bounded to the
+    TEST OBSERVATION section so a "1: ..." line elsewhere cannot be mistaken for the
+    legend, and it is idempotent - a document that already carries the line is left
+    alone, so running the finaliser twice cannot stack two of them.
+    """
+    paras = doc.paragraphs
+    want = text.strip().rstrip(":").lower()
+    inside = False
+    for i, par in enumerate(paras):
+        name = (par.style.name if par.style is not None else "") or ""
+        body = " ".join((par.text or "").split())
+        if name.strip().lower().startswith("heading"):
+            if inside:
+                return 0                       # left the section without finding a legend
+            inside = body.upper().startswith(heading)
+            continue
+        if not inside or not _LEGEND_LINE_RE.match(par.text or ""):
+            continue
+        prev = paras[i - 1] if i else None
+        if prev is not None and " ".join((prev.text or "").split()).rstrip(":").lower() == want:
+            return 0                           # already there
+        note = par.insert_paragraph_before(text, style=par.style)
+        for run in note.runs:
+            run.bold = True
+        return 1
+    return 0
+
+
 def _vdips_finalize(doc, context):
     """VOLTAGEDIPS reference-format corrections.
 
@@ -2886,12 +3156,13 @@ def _vdips_finalize(doc, context):
     _re_fix_signature(doc)          # no border on the signature image
     collapse_blank_runs(doc)        # the doubled blank line under TEST SETUP PICTURES
     # The client asked for the procedure to read justified rather than ragged-right.
-    _justify_procedure(doc)
     # ...and the single one that is left: the title sits directly above the photo, the
     # same as EFT after the client's review.
     _tighten_heading_to_image(doc)
     _ce_tune_plot_spacing(doc)      # image -> caption gap, as on the other datasheets
     _re_renumber_photos(doc)
+    # the reference datasheet heads the observation legend with a bold "Note:"
+    _insert_legend_note(doc)
 
 
 def _bold_header_cells(tb, *labels):
@@ -2916,6 +3187,80 @@ def _bold_header_cells(tb, *labels):
                     run.bold = True
                     changed += 1
     return changed
+
+
+def _underline_sop_reference(doc, needle="sop reference number", add_spacer=False):
+    """Underline the SOP reference number in 'conducted as per SOP reference number: X.'
+
+    Every datasheet carries this line, so the VALUE is taken as everything after the colon
+    rather than matched against IEC-SOP-nnn: HARMONIC ships no default and CE is free text,
+    and both must underline whatever the engineer actually entered. A trailing full stop
+    stays outside the underline.
+
+    The sentence renders as a single run, so the value is split into its own run to carry
+    the underline while the rest of the sentence keeps the formatting it had.
+
+    `add_spacer` is for VOLTAGEFLICKER alone, where a table butts straight up against the
+    sentence and the client asked for a blank line between them. It is NOT the default:
+    EFT also has a table there and its layout is not meant to change.
+    """
+    from copy import deepcopy
+    done = 0
+    for par in doc.paragraphs:
+        if needle not in (par.text or "").lower():
+            continue
+        for run in list(par.runs):
+            text = run.text or ""
+            if ":" not in text:
+                continue                        # the value is not in this run
+            head, _, value = text.partition(":")
+            tail = ""
+            stripped = value.rstrip()
+            trailing = value[len(stripped):]
+            if stripped.endswith("."):          # keep the full stop out of the underline
+                stripped, tail = stripped[:-1], "."
+            lead = stripped[:len(stripped) - len(stripped.lstrip())]
+            stripped = stripped.strip()
+            if not stripped:
+                continue                        # nothing entered yet - nothing to underline
+            if any(r.underline for r in par.runs):
+                return 0                        # already done; never split the runs twice
+            anchor = run._r
+            for piece, underline in ((head + ":" + lead, False),
+                                     (stripped, True),
+                                     (tail + trailing, False)):
+                if not piece:
+                    continue
+                el = deepcopy(anchor)               # inherit this run's formatting
+                for child in list(el):
+                    if child.tag != qn("w:rPr"):
+                        el.remove(child)
+                t = el.makeelement(qn("w:t"), {})
+                t.text = piece
+                t.set(qn("xml:space"), "preserve")
+                el.append(t)
+                if underline:
+                    rpr = el.find(qn("w:rPr"))
+                    if rpr is None:
+                        rpr = el.makeelement(qn("w:rPr"), {})
+                        el.insert(0, rpr)
+                    u = rpr.makeelement(qn("w:u"), {})
+                    u.set(qn("w:val"), "single")
+                    rpr.append(u)
+                anchor.addprevious(el)
+            par._p.remove(anchor)
+            done += 1
+            break
+
+        nxt = par._p.getnext()
+        if add_spacer and nxt is not None and nxt.tag == qn("w:tbl"):
+            blank = deepcopy(par._p)
+            for child in list(blank):
+                if child.tag != qn("w:pPr"):
+                    blank.remove(child)
+            par._p.addnext(blank)
+        break
+    return done
 
 
 def _flicker_finalize(doc, context):
@@ -2955,8 +3300,16 @@ def _flicker_finalize(doc, context):
         # 'Measured Value', TEST LIMITS the one without it.
         elif "flicker measurement" in hdr and "measured value" in hdr:
             _bold_header_cells(tb2, "Measured Value", "Limit")
+            _ce_center_table(tb2)                   # 2.5 MEASUREMENT DATA, like TEST LIMITS
         elif "flicker measurement" in hdr and "limit" in hdr:
             _bold_header_cells(tb2, "Limit")
+            _ce_center_table(tb2)                   # TEST LIMITS reads centred throughout
+
+    # the template carries two spacers under the pictures heading; one is wanted
+    _tighten_heading_to_image(doc, keep=1)
+    # extras appended by the engineer continue the sequence after the standard slot,
+    # rather than restarting at 'Photo 1'
+    _re_renumber_photos(doc)
 
 
 def _surge_finalize(doc, context):
@@ -3010,6 +3363,8 @@ def _surge_finalize(doc, context):
                          _ce_strip_blanks_before_breaks, collapse_blank_runs,
                          fit_picture_block)
     collapse_blank_runs(doc)
+    # 2.x RESULT: the criteria values read centred in their cell, not hard left.
+    _center_result_criteria(doc)
     # Two full-size photos plus the heading and captions come to just over one page, so trim
     # the images by the few percent that keeps the section whole.
     fit_picture_block(doc, "TEST SETUP PICTURES")
@@ -3184,7 +3539,8 @@ def render(code, context, img_keys, img_paths, output_path):
         p = img_paths.get(k)
         custom = _img_boxes.get(k)
         box = custom or _box(k, code)
-        context[k] = _fit(tpl, p, box, exact=bool(custom)) if (p and os.path.exists(p)) else ""
+        exact = bool(custom) or _exact_size_slot(code, k)
+        context[k] = _fit(tpl, p, box, exact=exact) if (p and os.path.exists(p)) else ""
     if code == "RE":
         for group in context.get("measurement_groups") or []:
             # One entry per plot: the standard Vertical/Horizontal pair for each band the
@@ -3243,9 +3599,19 @@ def render(code, context, img_keys, img_paths, output_path):
     if code == "ESD":
         # Observation tables the engineer added, after the three the template printed.
         _esd_insert_extra_obs(tpl.docx, context.get("esd_extra_tables"))
+        pass
         # TEST SETUP PICTURES: four blocks, each a grid of photos with one caption.
         # After the render, because the grid's shape follows what was uploaded.
         _esd_insert_pictures(tpl.docx, context.get("esd_pic_blocks"), img_paths or {})
+
+    # FUNCTIONAL CHECK photos: one slot by default, as many as the engineer added, and
+    # nothing at all when none was uploaded.
+    if code in _FC_ANCHORS:
+        from .generic_service import fc_images
+        _fc_key = "%sfc_1" % ESD_PIC_PREFIX_FOR_BOX
+        _insert_fc_images(
+            tpl.docx, fc_images(list((img_paths or {}).keys()), code), img_paths or {},
+            _FC_ANCHORS[code], _box(_fc_key, code), exact=_exact_size_slot(code, _fc_key))
 
     if code == "VOLTAGEDIPS":
         # The observation grids are the engineer's: rows AND columns are theirs, so the
@@ -3272,6 +3638,12 @@ def render(code, context, img_keys, img_paths, output_path):
     # pointing at no figure. RE has always done this inside _re_finalize, which owns its
     # own ordering, so it is excluded here rather than cleaned twice. Runs before
     # pagination so the reclaimed space is laid out.
+    # Formatting every datasheet shares, applied once here rather than per finaliser:
+    # the SOP reference number reads underlined, and TEST PROCEDURE is justified so the
+    # body text fills the column instead of ragging down the right-hand side.
+    _underline_sop_reference(tpl.docx, add_spacer=(code == "VOLTAGEFLICKER"))
+    _justify_procedure(tpl.docx)
+
     if code != "RE":
         _drop_captionless_photos(tpl.docx)
 
@@ -3320,6 +3692,14 @@ def render(code, context, img_keys, img_paths, output_path):
         _eft_finalize(tpl.docx, context)
     elif code == "ESD":
         _esd_finalize(tpl.docx, context)
+    # The finalisers above run AFTER pagination, and some of them prune paragraphs:
+    # CRF drops the photo slot for the port that was not tested, which leaves a blank
+    # where pagination had already removed the spacers. A blank sitting immediately
+    # before the forced page break spills onto the next page by itself, and the break
+    # then pushes the block to the page after it - which reads as a blank page.
+    if code != "RE":
+        _drop_spacers_before_last_block(tpl.docx)
+
     # Last, so no paginator can undo it: every picture stays on the page that carries
     # the label printed under it.
     _keep_captions_with_pictures(tpl.docx)

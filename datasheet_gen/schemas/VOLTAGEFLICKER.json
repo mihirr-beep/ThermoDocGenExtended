@@ -110,12 +110,30 @@
           "label": "Flicker Measurements",
           "import": "flicker_rtf",
           "columns": [
-            { "key": "c0", "label": "" },
-            { "key": "c1", "label": "Plt" },
-            { "key": "c2", "label": "Max Pst" },
-            { "key": "c3", "label": "Max dc" },
-            { "key": "c4", "label": "Max dmax" },
-            { "key": "c5", "label": "Max Tmax" }
+            {
+              "key": "c0",
+              "label": ""
+            },
+            {
+              "key": "c1",
+              "label": "Plt"
+            },
+            {
+              "key": "c2",
+              "label": "Max Pst"
+            },
+            {
+              "key": "c3",
+              "label": "Max dc"
+            },
+            {
+              "key": "c4",
+              "label": "Max dmax"
+            },
+            {
+              "key": "c5",
+              "label": "Max Tmax"
+            }
           ]
         }
       ]
@@ -214,10 +232,26 @@
         }
       ],
       "split_rows": [
-        { "base": "ambient_temperature", "label": "Ambient Temperature (°C)", "type": "text" },
-        { "base": "relative_humidity", "label": "Relative Humidity (%)", "type": "text" },
-        { "base": "test_date", "label": "Test Date", "type": "date" },
-        { "base": "tested_by", "label": "Tested by", "type": "text" }
+        {
+          "base": "ambient_temperature",
+          "label": "Ambient Temperature (°C)",
+          "type": "text"
+        },
+        {
+          "base": "relative_humidity",
+          "label": "Relative Humidity (%)",
+          "type": "text"
+        },
+        {
+          "base": "test_date",
+          "label": "Test Date",
+          "type": "date"
+        },
+        {
+          "base": "tested_by",
+          "label": "Tested by",
+          "type": "text"
+        }
       ]
     },
     {
@@ -238,8 +272,14 @@
           "key": "flicker_limits_rows",
           "fixed": true,
           "columns": [
-            { "key": "c0", "label": "Flicker Measurement" },
-            { "key": "c1", "label": "Limit" }
+            {
+              "key": "c0",
+              "label": "Flicker Measurement"
+            },
+            {
+              "key": "c1",
+              "label": "Limit"
+            }
           ]
         }
       ]
@@ -264,9 +304,18 @@
           "fixed": true,
           "import": "flicker_meas",
           "columns": [
-            { "key": "c0", "label": "Flicker Measurement" },
-            { "key": "c1", "label": "Measured Value" },
-            { "key": "c2", "label": "Limit" }
+            {
+              "key": "c0",
+              "label": "Flicker Measurement"
+            },
+            {
+              "key": "c1",
+              "label": "Measured Value"
+            },
+            {
+              "key": "c2",
+              "label": "Limit"
+            }
           ]
         }
       ]
@@ -280,7 +329,8 @@
           "label": "Photo 1: Voltage fluctuations & flicker emissions test setup_Power Port",
           "caption": true
         }
-      ]
+      ],
+      "allow_extra_images": true
     },
     {
       "title": "TEST EQUIPMENT USED",

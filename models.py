@@ -717,6 +717,13 @@ class PlannerEntry(db.Model):
     report_access_granted = db.Column(db.Boolean, default=False, nullable=False)
     report_access_granted_at = db.Column(db.DateTime, nullable=True)
 
+    # SharePoint mirror of the generated datasheet. The local .docx stays authoritative -
+    # report_gen reads it off disk - so these are a record of the copy, not a replacement.
+    sharepoint_draft_url = db.Column(db.String(1000), nullable=True)
+    sharepoint_approved_url = db.Column(db.String(1000), nullable=True)
+    sharepoint_synced_at = db.Column(db.DateTime, nullable=True)
+    sharepoint_error = db.Column(db.Text, nullable=True)
+
     def __repr__(self):
         return f'<PlannerEntry {self.test_person_name} {self.test_name} {self.start_date} - {self.end_date}>'
 
@@ -868,6 +875,10 @@ class EMCRequest(TimestampMixin, db.Model):
     requester_signature = db.Column(LONGTEXT, nullable=True)
 
     job_number = db.Column(db.String(100), nullable=True)
+    # The SharePoint job folder's name, resolved once on the first upload and reused after.
+    # job_number and product_name are both editable later, and re-deriving the name would
+    # scatter one request's datasheets across folders.
+    sharepoint_folder_name = db.Column(db.String(255), nullable=True)
     sample_condition = db.Column(db.String(200), nullable=True)
     capability_available = db.Column(db.String(200), nullable=True)
     sample_received_date = db.Column(db.Date, nullable=True)

@@ -33,6 +33,21 @@ _REQUIRED = {
     "report_comments": "ADD COLUMN report_comments TEXT NULL",
     "report_uploaded_at": "ADD COLUMN report_uploaded_at DATETIME NULL",
     "report_uploaded_by": "ADD COLUMN report_uploaded_by INT NULL",
+    # SharePoint mirror. The URLs are what the UI can link to; synced_at and error make a
+    # failed push visible and retryable instead of silently lost. VARCHAR(1000) because a
+    # Graph webUrl carries the whole encoded path.
+    "sharepoint_draft_url": "ADD COLUMN sharepoint_draft_url VARCHAR(1000) NULL",
+    "sharepoint_approved_url": "ADD COLUMN sharepoint_approved_url VARCHAR(1000) NULL",
+    "sharepoint_synced_at": "ADD COLUMN sharepoint_synced_at DATETIME NULL",
+    "sharepoint_error": "ADD COLUMN sharepoint_error TEXT NULL",
+}
+
+#: The job folder's name, resolved once and kept on the REQUEST. product_name and
+#: job_number stay editable after datasheets are uploaded, so re-deriving this per upload
+#: would split one request's datasheets across two SharePoint folders the first time
+#: somebody fixed a typo.
+_REQUIRED_REQUEST = {
+    "sharepoint_folder_name": "ADD COLUMN sharepoint_folder_name VARCHAR(255) NULL",
 }
 
 
@@ -73,3 +88,22 @@ def ensure_datasheet_columns(app):
 
         if added:
             app.logger.info("datasheet_gen: added planner_entries columns: %s", ", ".join(added))
+
+        # the request-side column, same pattern
+        try:
+            if "iec_emc_requests" in inspector.get_table_names():
+                have = {c["name"] for c in inspector.get_columns("iec_emc_requests")}
+                for name, clause in _REQUIRED_REQUEST.items():
+                    if name in have:
+                        continue
+                    try:
+                        db.session.execute(text(f"ALTER TABLE iec_emc_requests {clause}"))
+                        db.session.commit()
+                        app.logger.info("datasheet_gen: added iec_emc_requests.%s", name)
+                    except Exception as exc:
+                        db.session.rollback()
+                        if not any(w in str(exc).lower() for w in ("duplicate", "exists")):
+                            app.logger.error(
+                                "datasheet_gen: failed adding iec_emc_requests.%s: %s", name, exc)
+        except Exception as exc:  # noqa: BLE001 - boot must not depend on this
+            app.logger.warning("datasheet_gen: iec_emc_requests column check skipped: %s", exc)

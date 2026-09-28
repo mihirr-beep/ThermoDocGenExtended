@@ -409,7 +409,32 @@ _CE_CENTERED_TABLES = (
     ("equipment name", "calibration"),   # 2.7 TEST EQUIPMENT USED
     ("software name", "software version"),  # 2.8 SOFTWARE USED
     ("modification state",),             # 1.2 EUT MODIFICATION RECORD
+    ("name of the test", "uncertainty"),  # 1.3 MEASUREMENT UNCERTAINITY
 )
+
+#: CE tables whose header row reads bold. Most carry it from the template; MEASUREMENT
+#: DATA is built per measurement record, so its header came out unbolded.
+_CE_BOLD_HEADER_TABLES = (
+    ("q-peak", "margin"),                # 2.5 MEASUREMENT DATA (Line and Neutral)
+)
+
+
+def _ce_bold_headers(doc, header_rows=1):
+    """Bold the header row of the CE tables the reference draws bold."""
+    n = 0
+    for tbl in doc.tables:
+        hdr = _ce_table_header(tbl)
+        if not hdr:
+            continue
+        if not any(all(w in hdr for w in words) for words in _CE_BOLD_HEADER_TABLES):
+            continue
+        for row in tbl.rows[:header_rows]:
+            for cell in row.cells:
+                for par in cell.paragraphs:
+                    for run in par.runs:
+                        run.bold = True
+        n += 1
+    return n
 
 
 def _ce_center_tables(doc):
@@ -915,14 +940,23 @@ def polish_layout(doc):
         if _has_image(p):
             # image centered like its caption, and glued to the caption below
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            _keep_with_next(p)
+            # ONLY to a caption. Gluing unconditionally chained one picture to the next
+            # where a section prints several with no captions between them (EFT's and
+            # PFMF's functional-check captures), so the whole run had to fit on one page
+            # and jumped to the next together, leaving the rest of the current one empty.
+            nxt = paras[i + 1] if i + 1 < len(paras) else None
+            if nxt is not None and CAPTION_RE.match(_text(nxt).strip()):
+                _keep_with_next(p)
             # glue the preceding heading (skipping blanks) to the image so a
             # section title can never be orphaned at a page bottom
             j = i - 1
-            while j >= 0 and not _text(paras[j]).strip():
+            while j >= 0 and not _text(paras[j]).strip() and not _has_image(paras[j]):
                 _keep_with_next(paras[j])
                 j -= 1
-            if j >= 0 and not CAPTION_RE.match(_text(paras[j]).strip()):
+            # ...but only when it really is a heading or label. The walk above stops at a
+            # picture, and gluing whatever it stopped on chained one capture to the next.
+            if (j >= 0 and not _has_image(paras[j])
+                    and not CAPTION_RE.match(_text(paras[j]).strip())):
                 _keep_with_next(paras[j])
         elif _soft_breaks(p):
             # justified paragraphs + soft line-breaks = words stretched across
@@ -934,7 +968,11 @@ def polish_layout(doc):
             # (and any blank spacers under it) to the first following content
             _keep_with_next(p)
             j = i + 1
-            while j < len(paras) and not _text(paras[j]).strip():
+            # Stop at the first picture. A picture paragraph carries no TEXT, so walking
+            # on "not blank" alone glued a heading to every capture under it - the whole
+            # run then had to fit one page and jumped together, leaving the rest empty.
+            while (j < len(paras) and not _text(paras[j]).strip()
+                   and not _has_image(paras[j])):
                 _keep_with_next(paras[j])
                 j += 1
 
@@ -959,6 +997,24 @@ def polish_layout(doc):
         rows = tbl.rows
         for tr in rows:
             _row_cant_split(tr)          # never split a row across pages
+        # A one-column strip of pictures is not a "small block table". Its rows are tall,
+        # so gluing them together forces the whole strip onto the next page and leaves the
+        # rest of the current one empty - EFT's three functional-check captures did exactly
+        # that, wasting 12.6 cm under 1.2 EUT MODIFICATION RECORD. Each row still cannot
+        # split internally; the rows are simply allowed to flow.
+        #
+        # Deliberately narrow: "contains a picture" would also match the Tested By /
+        # Signature / Date block, which is mostly text and must never be split.
+        _trs = tbl._tbl.findall(qn("w:tr"))
+        _has_pic = bool(tbl._tbl.findall(".//" + qn("w:drawing")))
+        _has_text = any("".join(t.text or "" for t in tr.iter(qn("w:t"))).strip()
+                        for tr in _trs)
+        # "pictures or nothing", not "every row a picture": the template carries three
+        # fixed slots, so uploading one or two leaves the rest empty - and requiring a
+        # drawing in every row meant a half-filled strip was still glued and still
+        # jumped to the next page.
+        if len(tbl.columns) == 1 and _has_pic and not _has_text:
+            continue
         if len(rows) <= 6:
             # small block tables (sign-off, limits, software...) stay on one page
             for tr in rows[:-1]:

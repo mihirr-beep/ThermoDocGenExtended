@@ -338,9 +338,14 @@ def save_draft_ce():
         # Gating the child tables on this flag left them holding the PREVIOUS
         # content of the form between manual saves - see records._full_tier for
         # the measured cost of not doing that.
-        form_data.pop("_full_save", None)
+        # The manual button sends _full_save=1; autosave (every ~2s) does not. Only the
+        # deliberate save renders and mirrors.
+        full_save = bool(form_data.pop("_full_save", None))
         R.upsert_record(assignment, "CE", form_data, images, R.DRAFT,
                         user=current_user)
+        if full_save:
+            # the images are passed in: saved above, and their streams are spent
+            _mirror_ce_draft_on_full_save(assignment, form_data, tco_id, files, images)
         return jsonify(success=True, message="Draft saved")
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
@@ -382,12 +387,45 @@ def ce_delete_draft(assignment_id):
     return jsonify(success=True, message="Draft removed")
 
 
-def _render_ce_docx(assignment, form_data, tco_id, files):
+def _mirror_ce_datasheet(entry_id, local_path, approved):
+    """Hand one generated CE datasheet to the SharePoint mirror, if it is switched on."""
+    try:
+        from utils import sharepoint_mirror
+        sharepoint_mirror.push_async(entry_id, local_path, approved=approved)
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.warning("SharePoint mirror not started for entry %s: %s",
+                                   entry_id, exc)
+
+
+def _mirror_ce_draft_on_full_save(assignment, form_data, tco_id, files, images=None):
+    """Render the CE draft and mirror it to Draft/, on a manual save only.
+
+    save_draft_ce deliberately generates no document, so the draft has to be rendered here
+    before it can be uploaded. The output is NOT written to datasheet_file_path - that
+    field means "the document that went for review", and report_gen splices from it.
+    """
+    try:
+        from utils import sharepoint_mirror
+        if not sharepoint_mirror.enabled():
+            return
+        out, _images, _filename = _render_ce_docx(
+            assignment, form_data, tco_id, files, images=images)
+        sharepoint_mirror.push_async(assignment.id, out, approved=False)
+    except Exception as exc:  # noqa: BLE001 - saving a draft must never fail on this
+        current_app.logger.warning("SharePoint draft mirror skipped for entry %s: %s",
+                                   assignment.id, exc)
+
+
+def _render_ce_docx(assignment, form_data, tco_id, files, images=None):
     """Build the CE datasheet .docx; return (path, images, filename). Shared by
     'send to peer review' and the post-approval 'generate final' regeneration."""
     parent = _parent_request(assignment)
     context = build_ce_context(form_data)
-    images = _merge_draft_images(assignment.id, _save_images(files, assignment.id))
+    # `images` lets a caller that already saved this request's uploads hand them over -
+    # saving again would read exhausted streams and write 0-byte files over the good ones.
+    images = _merge_draft_images(
+        assignment.id,
+        dict(images) if images is not None else _save_images(files, assignment.id))
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_tco = secure_filename(str(tco_id or (parent.tco_id if parent else "") or "TCO"))
     filename = f"{safe_tco}_CE_{ts}.docx"
@@ -490,6 +528,7 @@ def generate_ce():
         _append_review_note(
             assignment, f"CE datasheet generated and sent to {reviewer.username} for peer review.",
             current_user.username, "SENT FOR REVIEW")
+        _mirror_ce_datasheet(assignment.id, output_path, approved=False)
         _apply_test_date(assignment, form_data)
         db.session.commit()
 
@@ -540,6 +579,8 @@ def generate_ce_final(assignment_id):
         output_path, images, filename = _render_ce_docx(assignment, form_data, assignment.tco_id, None)
         assignment.datasheet_file_path = output_path
         db.session.commit()
+        # A regenerated final replaces the approved copy in SharePoint.
+        _mirror_ce_datasheet(assignment.id, output_path, approved=True)
         return jsonify(
             success=True,
             filename=filename,

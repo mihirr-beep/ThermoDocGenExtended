@@ -23,3 +23,6 @@ openai-agents==0.18.2
 logfire==4.37.0
 docxcompose==2.2.0
 openpyxl==3.1.2
+msal==1.31.1
+requests==2.32.3
+truststore==0.10.1

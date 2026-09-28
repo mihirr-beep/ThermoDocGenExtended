@@ -67,3 +67,12 @@ outputs/
 
 # runtime-generated datasheet output
 new_ouput_files/
+
+# OneNote drops a table-of-contents file into every folder it indexes
+*.onetoc2
+
+# Timestamped backups taken before editing a Word template or schema
+*.before_*
+
+# Preview/regression renders
+test_output/

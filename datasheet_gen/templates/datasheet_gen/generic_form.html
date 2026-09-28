@@ -327,10 +327,14 @@
                   <button type="button" onclick="esdAddPic('{{ it.key_prefix }}')"
                           class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-semibold">+ Add image</button>
                 </div>
+                {# no_caption: the FUNCTIONAL CHECK photos each carry their own numbered
+                   label, so there is no single caption to type for the block. #}
+                {% if not it.no_caption %}
                 <label class="block text-xs font-medium text-gray-600 mb-1">Caption printed under this block</label>
                 <input type="text" name="esd_pic_{{ it.key_prefix }}_caption"
                        value="{{ prefill.get('esd_pic_' ~ it.key_prefix ~ '_caption', '') or it.label }}"
                        class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded mb-3">
+                {% endif %}
                 <div id="esd-pics-{{ it.key_prefix }}" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
                 <template id="tpl-esd-pic-{{ it.key_prefix }}">
                   <div class="esd-pic relative border border-gray-200 rounded-lg p-2 bg-white">
@@ -340,7 +344,7 @@
                     <input type="file" name="esd_pic_{{ it.key_prefix }}_%%I%%" accept="image/*" class="w-full text-xs">
                   </div>
                 </template>
-                <p class="text-xs text-gray-500 mt-2">Two photos print per row, in the order added. The reference datasheet carries four here (five for Air discharge).</p>
+                <p class="text-xs text-gray-500 mt-2">{% if it.no_caption %}Each photo prints with its own numbered label. Nothing prints for a slot left empty.{% else %}Two photos print per row, in the order added. The reference datasheet carries four here (five for Air discharge).{% endif %}</p>
               </div>
 
             {% elif it.layout == 'esd_obs' %}
@@ -417,7 +421,11 @@
                  are implicit, so this lists only what was added. #}
               <input type="hidden" id="esd-obs-tables" name="esd_obs_tables"
                      value="{{ prefill.get('esd_obs_tables', '') }}">
-              <div id="esd-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"></div>
+              {# data-legend-always: 'A' is listed from the start with its standard
+                 wording. Codes the engineer selects start blank - B/C/D describe an
+                 actual observed failure, so boilerplate there would usually be wrong. #}
+              <div id="esd-obs-legend" class="md:col-span-2 mt-1" data-legend-prefix="obs_legend"
+                   data-legend-always="A"></div>
               <script type="application/json" id="esd-obs-legend-seed">{{ prefill.get('obs_legend', [])|tojson }}</script>
               {% endif %}
 
@@ -909,22 +917,55 @@
 {% if code == 'CRF' %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    /* Test Level: choosing "Custom" prompts for a numeric value which becomes the
-       selected value (added as an option) so it flows through to the document. */
+    /* Test Level: choosing "Custom" reveals a numeric box, and what is typed there
+       becomes the stored value (added as an option) so it reaches the document AND the
+       Test Observation table below. It was a window.prompt, which browsers can block,
+       offered no way to correct a typo, and left nothing visible on the form. */
     var lvl = document.querySelector('[name="test_level"]');
     if (lvl) {
-      lvl.addEventListener('change', function () {
-        if (lvl.value !== 'Custom') return;
-        var v = (window.prompt('Enter the custom Test Level (Vrms):', '') || '').trim();
-        if (!v) { lvl.value = ''; return; }
-        var has = Array.prototype.some.call(lvl.options, function (o) { return o.value === v; });
-        if (!has) {
-          var opt = document.createElement('option');
-          opt.value = v; opt.textContent = v;
-          lvl.insertBefore(opt, lvl.querySelector('option[value="Custom"]'));
+      var LVL_STD = ['1', '3', '10'];
+      var lvlBox = document.createElement('input');
+      lvlBox.type = 'number';
+      lvlBox.step = 'any';
+      lvlBox.min = '0';
+      lvlBox.placeholder = 'Custom Test Level in Vrms, e.g. 5';
+      lvlBox.className = 'mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg';
+      lvlBox.setAttribute('aria-label', 'Custom Test Level (Vrms)');
+      lvlBox.style.display = 'none';
+      lvl.parentNode.appendChild(lvlBox);
+
+      function lvlIsCustom(v) {
+        return v === 'Custom' || (!!v && LVL_STD.indexOf(v) < 0);
+      }
+      function lvlShowBox() {
+        var v = lvl.value;
+        lvlBox.style.display = lvlIsCustom(v) ? '' : 'none';
+        if (lvlIsCustom(v) && v !== 'Custom' && lvlBox.value !== v) lvlBox.value = v;
+        if (!lvlIsCustom(v)) lvlBox.value = '';
+      }
+      function lvlSet(v) {
+        v = (v || '').trim();
+        // cleared: fall back to the bare Custom option, so the row still reads
+        // "Custom___" rather than silently keeping the old number
+        lvl.value = v || 'Custom';
+        if (v) {
+          var has = Array.prototype.some.call(lvl.options, function (o) { return o.value === v; });
+          if (!has) {
+            var opt = document.createElement('option');
+            opt.value = v; opt.textContent = v;
+            lvl.insertBefore(opt, lvl.querySelector('option[value="Custom"]'));
+          }
+          lvl.value = v;
         }
-        lvl.value = v;
+        // the observation-table mirroring and autosave both listen for this
+        lvl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      lvl.addEventListener('change', function () {
+        lvlShowBox();
+        if (lvl.value === 'Custom') lvlBox.focus();
       });
+      lvlBox.addEventListener('input', function () { lvlSet(lvlBox.value); });
+      lvlShowBox();          // a saved custom value comes back with its box filled in
     }
 
     /* Mirror the Test-Specification selections into the Test Observation table:
@@ -4749,12 +4790,16 @@
     // boilerplate there would be wrong more often than right - the engineer types it.
     'A': 'No degradation was observed during the test based on the parameters monitored.'
   };
+  //: A is always listed, even before any cell is set to it - pfmfLegend above already
+  //  holds its standard wording, so the description comes out pre-filled.
+  var PFMF_LEGEND_ALWAYS = ['A'];
   function pfmfUniqueObsCodes() {
     var seen = {};
     document.querySelectorAll('.pfmf-obs-cell').forEach(function (el) {
       var v = (el.value || '').trim();
       if (v) seen[v] = true;
     });
+    PFMF_LEGEND_ALWAYS.forEach(function (c) { if (!seen[c]) seen[c] = true; });
     return Object.keys(seen).sort();
   }
   function rebuildPfmfLegend() {
