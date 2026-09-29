@@ -19,17 +19,20 @@ TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
 
 #: Datasheets whose functional-check capture is a 16 x 9 cm frame.
-_FC_16X9_CODES = ("EFT", "SURGE")
+_FC_16X9_CODES = ("EFT", "SURGE", "PFMF")
 
 def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
         return (40, 20)              # signatures stay small
     if "img_fc" in k or "_pic_fc_" in k:
-        # EFT and SURGE print their capture at exactly 16 x 9 cm, the size their reference
-        # documents show in Word's Size panel. Applied as an EXACT size (see
+        # EFT, SURGE and PFMF print their capture at exactly 16 x 9 cm, the size their
+        # reference documents show in Word's Size panel - and 16 cm is the text column
+        # (15.92), so it runs margin to margin. Applied as an EXACT size (see
         # _exact_size_slot), so a capture that is not 16:9 is fitted to the frame rather
-        # than printing smaller. ESD and PFMF keep the older short box.
+        # than printing smaller: PFMF's 14 x 5.2 box was height-limiting a 16:9 capture
+        # to 9.24 cm wide, which is what made it look small against the margins.
+        # ESD keeps the older short box; nobody has asked for it to change.
         return (160, 90) if (code or "").upper() in _FC_16X9_CODES else (140, 52)
     # All test-setup photos and measurement/emission plots default to
     # 15.92 cm (W) x 9.5 cm (H) = 159.2 x 95 mm; editable per-image in the form.
@@ -680,6 +683,99 @@ def _re_set_row_sections(tb, row_idx, values):
 _RE_NEW_COLS = (3, 2, 1, 6)          # new columns per original value column -> 12
 
 
+#: The per-row section counts the form offers (1, 2 or 3 days), which the spec table's
+#: value area must be able to divide into equally.
+_VDIPS_SECTION_COUNTS = (2, 3)
+
+
+def _equal_width_spans(widths, n):
+    """How many grid columns each of n EQUAL-WIDTH sections takes, or None.
+
+    Dividing the column COUNT instead is what made VOLTAGEDIPS print a lopsided row:
+    its value area is 1240|1240|205|1035|1650 twips, so three sections split 2/2/1 by
+    count and came out 2480, 1240 and 1650 wide. None here means the boundaries cannot
+    land on equal widths, and the caller keeps the old behaviour rather than guessing.
+    """
+    total = sum(widths)
+    if n < 1 or total <= 0 or total % n:
+        return None
+    target = total // n
+    spans, acc, cur = [], 0, 0
+    for w in widths:
+        acc += w
+        cur += 1
+        if acc == target:
+            spans.append(cur)
+            acc, cur = 0, 0
+        elif acc > target:
+            return None                       # a column straddles a section boundary
+    return spans if (not acc and len(spans) == n) else None
+
+
+def _regrid_for_equal_sections(tb, parts, label_cols=1):
+    """Add the grid boundaries needed to divide the value area into `parts` equal
+    sections, keeping every boundary the table already has.
+
+    _re_regrid_value_area replaces the value area with EQUAL columns, which is why
+    VOLTAGEDIPS could not use it: that area carries the Test Level sub-columns
+    (1240/1240/205/1035/1650) and equalising them would move those. Taking the UNION of
+    the existing boundaries and the wanted cuts keeps every sub-column exactly where it
+    was and only subdivides, so the Test Level rows are untouched and a split row can
+    now land on thirds. Returns False and changes nothing if the cuts are not whole
+    twips.
+    """
+    widths = _grid_widths(tb)
+    if len(widths) <= label_cols:
+        return False
+    keep, value = widths[:label_cols], widths[label_cols:]
+    total = sum(value)
+
+    edges = set()
+    acc = 0
+    for w in value:
+        acc += w
+        edges.add(acc)
+    for n in parts:
+        for i in range(1, n):
+            if (total * i) % n:
+                return False                  # not a whole twip: leave the table alone
+            edges.add(total * i // n)
+    edges = sorted(e for e in edges if 0 < e <= total)
+    if edges == sorted(set(acc for acc in _cumulative(value))):
+        return True                           # already has every boundary wanted
+
+    new_value, prev = [], 0
+    for e in edges:
+        new_value.append(e - prev)
+        prev = e
+
+    # Remap every row: a cell covering an original width range must cover the same
+    # range of the finer grid. Only boundaries were ADDED, so each one maps exactly.
+    for tr in tb._tbl.findall(qn("w:tr")):
+        for tc, g0, span in _tc_spans(tr):
+            if g0 + span <= label_cols:
+                continue                      # label region: untouched
+            start = sum(value[:max(0, g0 - label_cols)])
+            end = start + sum(value[max(0, g0 - label_cols):g0 - label_cols + span])
+            _set_span(tc, sum(1 for e in edges if start < e <= end) or 1)
+
+    grid = tb._tbl.find(qn("w:tblGrid"))
+    for gc in grid.findall(qn("w:gridCol")):
+        grid.remove(gc)
+    for w in keep + new_value:
+        gc = grid.makeelement(qn("w:gridCol"), {})
+        gc.set(qn("w:w"), str(w))
+        grid.append(gc)
+    return True
+
+
+def _cumulative(widths):
+    acc = 0
+    for w in widths:
+        acc += w
+        yield acc
+
+
 def _set_cell_sections(tb, row_idx, cell_idx, values):
     """Split ONE value cell of a spec row into len(values) side-by-side sections.
 
@@ -687,6 +783,9 @@ def _set_cell_sections(tb, row_idx, cell_idx, values):
     where a row has a single value cell. RS_RI's rows carry one cell per frequency band, so
     splitting the whole area would collapse the bands together; this replaces just the cell
     at `cell_idx` (1 = first value cell) and leaves its neighbours alone.
+
+    Sections are made EQUAL IN WIDTH where the grid allows it, falling back to an even
+    split of the column count when it does not.
     """
     if row_idx is None or cell_idx is None or not values:
         return False
@@ -694,12 +793,14 @@ def _set_cell_sections(tb, row_idx, cell_idx, values):
     cells = _tc_spans(tr)
     if cell_idx >= len(cells):
         return False
-    proto, _, span = cells[cell_idx]
+    proto, g0, span = cells[cell_idx]
     n = min(len(values), span)                 # cannot make more sections than grid columns
     if n < 1:
         return False
-    base, extra = divmod(span, n)
-    spans = [base + (1 if i < extra else 0) for i in range(n)]
+    spans = _equal_width_spans(_grid_widths(tb)[g0:g0 + span], n)
+    if spans is None:
+        base, extra = divmod(span, n)
+        spans = [base + (1 if i < extra else 0) for i in range(n)]
     _set_span(proto, spans[0])
     _write_tc_text(proto, values[0])
     anchor = proto
@@ -1835,18 +1936,88 @@ _SURGE_VALUE_REGRID = (3, 3)
 _SURGE_LABEL_COLS = 2
 
 
+def _bullet_num_id(doc):
+    """A numId in this document whose level 0 is a real bullet, or None.
+
+    Every template already ships a numbering part with Word's stock bullet definitions,
+    so the list joins one of those rather than inventing a definition: a numId that no
+    abstractNum backs renders as nothing at all.
+    """
+    try:
+        numbering = doc.part.numbering_part.element
+    except (AttributeError, KeyError, ValueError):
+        return None                          # no numbering part: caller falls back
+    bullets = set()
+    for an in numbering.findall(qn("w:abstractNum")):
+        for lvl in an.findall(qn("w:lvl")):
+            if lvl.get(qn("w:ilvl")) != "0":
+                continue
+            fmt = lvl.find(qn("w:numFmt"))
+            if fmt is not None and fmt.get(qn("w:val")) == "bullet":
+                bullets.add(an.get(qn("w:abstractNumId")))
+    for num in numbering.findall(qn("w:num")):
+        ref = num.find(qn("w:abstractNumId"))
+        if ref is not None and ref.get(qn("w:val")) in bullets:
+            return num.get(qn("w:numId"))
+    return None
+
+
+def _make_list_item(par, num_id, style_name="List Paragraph"):
+    """Put one paragraph into the real bullet list `num_id`.
+
+    Word draws the bullet with the PARAGRAPH MARK's run properties, not the text's. The
+    templates mark their placeholder paragraphs blue (w:color 0070C0) as an editing hint,
+    and although the visible runs are rewritten black, the mark kept that colour - so the
+    first real bullets printed blue against black text. The mark's explicit colour is
+    dropped here so the bullet inherits the body colour, as the typed '*' character used
+    to by virtue of living in an ordinary run.
+    """
+    if style_name:
+        try:
+            par.style = par.part.document.styles[style_name]
+        except (KeyError, AttributeError):
+            pass                             # style missing: numbering alone still works
+    pPr = par._p.get_or_add_pPr()
+    mark = pPr.find(qn("w:rPr"))
+    if mark is not None:
+        for colour in mark.findall(qn("w:color")):
+            mark.remove(colour)
+    for old in pPr.findall(qn("w:numPr")):
+        pPr.remove(old)
+    numPr = pPr.makeelement(qn("w:numPr"), {})
+    ilvl = numPr.makeelement(qn("w:ilvl"), {})
+    ilvl.set(qn("w:val"), "0")
+    num = numPr.makeelement(qn("w:numId"), {})
+    num.set(qn("w:val"), str(num_id))
+    numPr.append(ilvl)
+    numPr.append(num)
+    # numPr belongs directly after pStyle, before the direct formatting
+    pStyle = pPr.find(qn("w:pStyle"))
+    if pStyle is not None:
+        pStyle.addnext(numPr)
+    else:
+        pPr.insert(0, numPr)
+
+
 def _bullet_monitoring_parameters(doc, heading="MONITORING PARAMETERS", bullet="•"):
     """Turn the Monitoring Parameters block into one bulleted line per point.
 
     The value arrives as a single paragraph of soft-broken lines, each already numbered by
     whoever typed the Test Request ('1.', '3.', '4.', ...) - numbering that often skips.
-    Split it into a paragraph per point, drop that leading number and prefix a bullet with a
-    hanging indent, so the list reads as a list.
+    Split it into a paragraph per point and drop that leading number.
+
+    The points become a REAL Word list - a w:numPr joining one of the template's own
+    bullet definitions - not a literal bullet character and a tab. Typed bullets look
+    right until someone edits the list: they do not renumber, Word will not promote or
+    demote them, they are not recognised by the navigation pane or by anything that reads
+    the document structure, and selecting the text selects the bullet with it. `bullet`
+    is kept only for the fallback below.
     """
     from docx.shared import Pt as _Pt
     from docx.text.paragraph import Paragraph
     body = doc.element.body
     pm = {p._p: p for p in doc.paragraphs}
+    num_id = _bullet_num_id(doc)
     want = False
     made = 0
     for el in list(body.iterchildren()):
@@ -1866,7 +2037,8 @@ def _bullet_monitoring_parameters(doc, heading="MONITORING PARAMETERS", bullet="
             continue
         # one point per line; a line may be numbered, or bulleted already
         points = [ln.strip() for ln in re.split(r"[\r\n\v]+", raw) if ln.strip()]
-        points = [re.sub(r"^(?:\d+\s*[.)]\s*|[•\-–]\s*)", "", pt).strip() for pt in points]
+        points = [re.sub(r"^(?:\d+\s*[.)]\s*|[•\-–]\s*)", "", pt).strip()
+                  for pt in points]
         points = [pt for pt in points if pt]
         if not points:
             continue
@@ -1879,10 +2051,17 @@ def _bullet_monitoring_parameters(doc, heading="MONITORING PARAMETERS", bullet="
                 anchor.addnext(new)
                 anchor = new
                 target = Paragraph(new, p._parent)
-            _write_para_text(target, "%s\t%s" % (bullet, pt))
-            target.paragraph_format.left_indent = _Pt(18)
-            target.paragraph_format.first_line_indent = _Pt(-18)
-            target.paragraph_format.space_after = _Pt(2)
+            if num_id is not None:
+                _write_para_text(target, pt)
+                _make_list_item(target, num_id)
+                target.paragraph_format.space_after = _Pt(2)
+            else:
+                # No bullet definition to join - keep the old typed bullet rather than
+                # printing an unmarked paragraph that reads as body text.
+                _write_para_text(target, "%s\t%s" % (bullet, pt))
+                target.paragraph_format.left_indent = _Pt(18)
+                target.paragraph_format.first_line_indent = _Pt(-18)
+                target.paragraph_format.space_after = _Pt(2)
             target.alignment = WD_ALIGN_PARAGRAPH.LEFT
             made += 1
         want = False        # only the first text block under the heading
@@ -2081,6 +2260,10 @@ def _harmonic_finalize(doc, context):
     # Functional Check avg/max grid: fixed layout, content-proportioned columns and a
     # height rule that lets a wrapped value show (it was clipping "PASS" to "PAS").
     _harmonic_fix_avgmax_table(doc)
+    # 1.4 FUNCTIONAL CHECK data reads a point smaller than the body text. After
+    # _harmonic_fix_avgmax_table, which proportions the columns: narrower text only
+    # gives that grid more room, never less.
+    _fc_table_font(doc)
     # Extra pictures continue the sequence after the standard slot.
     _re_renumber_photos(doc)
 
@@ -2228,6 +2411,14 @@ def _pfmf_finalize(doc, context):
         # values under them (field strength, frequency, observation letters). Runs after
         # the column drop so the cells that survived are the ones centred.
         _ce_center_table(obs)
+        # ...and vertically centred for real. Without this the cells inherit the
+        # document default of 8pt after every paragraph, which Word counts as part of
+        # the content block: a centred one-line cell was centred WITH its 8pt tail and
+        # so sat 4pt high. Measured in the PDF: 'Coil Orientation' printed at 253.5
+        # inside a 252.6-274.8 band whose true centre needs 257.6. The two merged
+        # cells escaped it because they already carry after=0, which is exactly why
+        # only part of the table looked wrong.
+        _tighten_cell_spacing(obs)
         break
 
     _bullet_monitoring_parameters(doc)
@@ -3120,6 +3311,11 @@ def _vdips_finalize(doc, context):
 
     tb = _re_spec_table(doc)
     if tb is not None:
+        # Give the value area the boundaries that halves and thirds need, on top of the
+        # ones the Test Level sub-columns already use. Without this a 3-section Ambient
+        # Temperature printed 2480/1240/1650 instead of three equal parts, because the
+        # only places a cell may break are the existing sub-column edges.
+        _regrid_for_equal_sections(tb, _VDIPS_SECTION_COUNTS)
         for row in (meta.get("row_splits") or []):
             vals = row.get("values") or []
             if vals:
@@ -3415,17 +3611,29 @@ def _rs_ri_finalize(doc, context):
                 _re_fit_row_font(tb, needle)
 
     _re_fill_missing_na(doc, header_needle="calibration due", value="NA")
+    # 1.4 MONITORING PARAMETERS reads as a real bulleted list, as it does on the six other
+    # datasheets that carry the section. RS_RI was the one that never called this, so its
+    # points printed as one unmarked run-on paragraph.
+    _bullet_monitoring_parameters(doc)
     _rs_ri_unjustify(doc, "MONITORING PARAMETERS")
     _rs_ri_center_placeholders(doc)
     _rs_ri_blacken_observation(doc)
     # TEST OBSERVATION's two stacked heading rows read as bold: 'Dwell time (s) /
     # Horizontal Polarization / Vertical Polarization' and the 0/90/180/270 beneath.
-    from .layout import _ce_table_header as _hdr
+    from .layout import _ce_center_table, _ce_table_header as _hdr
     for _tb in doc.tables:
         _h = _hdr(_tb)
         if "dwell time" in _h and "polarization" in _h:
             _bold_row(_tb, 0)
             _bold_row(_tb, 1)
+            # ...and every cell reads centred, as the other datasheets' observation
+            # tables do. Only the stacked headings were centred here; the dwell times
+            # and observation letters under them sat hard left.
+            _ce_center_table(_tb)
+            # Vertically centred for real: without this the cells inherit the document
+            # default of 8pt after every paragraph, which Word counts inside the cell,
+            # so a centred one-line value sits 4pt high (see _tighten_cell_spacing).
+            _tighten_cell_spacing(_tb)
             break
     # 1.2 EUT MODIFICATION RECORD, 2.6 TEST EQUIPMENT USED and 2.7 SOFTWARE USED read as
     # centred grids, as on CE.
@@ -3452,14 +3660,14 @@ def _rs_ri_finalize(doc, context):
     _ce_strip_blanks_before_breaks(doc)
 
 
-#: RE prints its FUNCTIONAL CHECK data at 10pt; the rest of the document is 11.
-_RE_FC_TABLE_PT = 10
+#: RE and HARMONIC both print their FUNCTIONAL CHECK data at 10pt; the body text is 11.
+_FC_TABLE_PT = 10
 
 
-def _re_section_tables(doc, heading):
+def _section_tables(doc, heading):
     """The tables that sit inside one Heading-2 section, in document order.
 
-    Scoped by SECTION rather than matched on a header row: this table's headings come
+    Scoped by SECTION rather than matched on a header row: these tables' headings come
     from the file the engineer uploads, so there is no fixed text to match on.
     """
     pm = {p._p: p for p in doc.paragraphs}
@@ -3484,10 +3692,10 @@ def _re_section_tables(doc, heading):
     return found
 
 
-def _re_fc_table_font(doc, pt=_RE_FC_TABLE_PT):
-    """Set the font size of every run in RE's FUNCTIONAL CHECK tables."""
+def _fc_table_font(doc, pt=_FC_TABLE_PT):
+    """Set the font size of every run in the FUNCTIONAL CHECK tables."""
     n = 0
-    for tb in _re_section_tables(doc, "FUNCTIONAL CHECK"):
+    for tb in _section_tables(doc, "FUNCTIONAL CHECK"):
         for row in tb.rows:
             for cell in row.cells:
                 for par in cell.paragraphs:
@@ -3575,7 +3783,7 @@ def _re_finalize(doc, context):
     _re_procedure_heading_gap(doc)
     _re_keep_subsections(doc)
     # 1.x FUNCTIONAL CHECK data reads a point smaller than the body text.
-    _re_fc_table_font(doc)
+    _fc_table_font(doc)
     _re_fix_signature(doc)
 
 

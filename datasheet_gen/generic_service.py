@@ -92,6 +92,10 @@ def iter_scalar_fields(schema):
 _SUPERSEDED_IMG_SIZES = {
     ("EFT", "img_fc"): (140.0, 52.0),      # was a short wide box; now 16 x 9 cm
     ("SURGE", "img_fc"): (140.0, 52.0),
+    # PFMF joined them later. Its functional-check block is the shared esd_pics widget,
+    # so a draft can hold the old size under either the new slot name or the legacy one.
+    ("PFMF", "img_fc"): (140.0, 52.0),
+    ("PFMF", "esd_pic_fc_"): (140.0, 52.0),
 }
 
 

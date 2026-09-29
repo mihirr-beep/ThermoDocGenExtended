@@ -968,23 +968,52 @@
       lvlShowBox();          // a saved custom value comes back with its box filled in
     }
 
+    /* The observation table words the range in MHz: "150kHz-80MHz" -> "0.15 to 80".
+       This is the same conversion as generic_service._crf_freq_mhz, which prefills
+       these cells and renders the document. The two have to agree: if the form wrote
+       the raw "150kHz-80MHz" the engineer would see one thing and the datasheet print
+       another. crf_freq_sync_test.js compares the two implementations input by input,
+       so a change to either side that drifts from the other fails there. */
+    function crfFreqMhz(text) {
+      var t = (text || '').trim();
+      if (!t) return '';
+      // split once, on the FIRST separator, as the Python does with maxsplit=1
+      var sep = /\s*(?:-|–|—|to)\s*/.exec(t);
+      if (!sep) return t;
+      var parts = [t.slice(0, sep.index), t.slice(sep.index + sep[0].length)];
+      var out = [];
+      for (var i = 0; i < 2; i++) {
+        var m = /(\d+(?:\.\d+)?)\s*(k|M|G)?Hz/i.exec(parts[i]);
+        if (!m) return t;               // not a two-ended numeric range: leave it alone
+        var val = parseFloat(m[1]);
+        var unit = (m[2] || 'M').toUpperCase();
+        var mhz = unit === 'K' ? val / 1000 : (unit === 'G' ? val * 1000 : val);
+        // trailing zeros go, but the decimal point stops the strip, so 1000 stays 1000
+        out.push(mhz.toFixed(6).replace(/0+$/, '').replace(/\.$/, ''));
+      }
+      return out[0] + ' to ' + out[1];
+    }
+
     /* Mirror the Test-Specification selections into the Test Observation table:
-       Test Port -> Port Name (c1), Test Level -> Test Level Vrms (c2),
-       Coupling Method -> Coupling method (c3). Runs on change and for new rows. */
+       Frequency Range -> Frequency range MHz (c0), Test Port -> Port Name (c1),
+       Test Level -> Test Level Vrms (c2), Coupling Method -> Coupling method (c3).
+       Runs on change and for new rows. */
     var tbody = document.getElementById('rows-test_observation_rows');
     var MAP = [
+      { src: 'frequency_range', col: 'c0', fmt: crfFreqMhz },
       { src: 'test_port', col: 'c1' },
       { src: 'test_level', col: 'c2' },
       { src: 'coupling_method', col: 'c3' }
     ];
-    function srcVal(name) {
+    function srcVal(name, fmt) {
       var el = document.querySelector('[name="' + name + '"]');
-      return el ? el.value : '';
+      var v = el ? el.value : '';
+      return fmt ? fmt(v) : v;
     }
     function syncObservation() {
       if (!tbody) return;
       MAP.forEach(function (m) {
-        var v = srcVal(m.src);
+        var v = srcVal(m.src, m.fmt);
         tbody.querySelectorAll('[name="test_observation_rows__' + m.col + '[]"]')
           .forEach(function (inp) { inp.value = v; });
       });
@@ -993,7 +1022,7 @@
     function fillRow(tr) {
       MAP.forEach(function (m) {
         var inp = tr.querySelector('[name="test_observation_rows__' + m.col + '[]"]');
-        if (inp) inp.value = srcVal(m.src);
+        if (inp) inp.value = srcVal(m.src, m.fmt);
       });
     }
     MAP.forEach(function (m) {
@@ -2298,27 +2327,22 @@
       el.classList.toggle('hidden', !(all || chosen.indexOf(want) >= 0));
     });
   }
-  /* A slot carrying data-port-field is decided by THAT field reading 'Applicable', which is
-     how SURGE records its two Test Ports (there is no single test_port select to read). */
-  function syncPortFieldPictures() {
-    document.querySelectorAll('[data-port-field]').forEach(function (el) {
-      var f = document.querySelector('[name="' + el.getAttribute('data-port-field') + '"]');
-      if (!f) return;
-      var v = String(f.value || '').trim().toLowerCase();
-      // blank = not answered yet: leave the slot visible rather than hiding it early
-      el.classList.toggle('hidden', v.indexOf('not applicable') === 0);
-    });
-  }
-  function syncPortPictures() { syncTaggedBlocks('port', 'test_port'); syncPortFieldPictures(); }
+  /* A slot carrying data-port-field belongs to one of SURGE's two Test Ports (it has no
+     single test_port select, so data-port alone cannot place it).
+
+     These slots used to be HIDDEN whenever their port field read 'Not Applicable', and
+     that value is not typed by the engineer - it is derived from the request's cable
+     intake, and is what a request carrying no cable data falls back to. The result was a
+     TEST SETUP PICTURES section offering only "Additional pictures", with no way to add
+     the primary photo except by editing Test Port in the specification above, which
+     changes the printed spec table. Photo slots therefore no longer hide: an empty one
+     costs a line on the form and nothing at all in the document, because the generator
+     prints only the slots that were filled and _drop_captionless_photos removes the
+     caption of one that was not. The attribute stays: it still says which port a slot
+     belongs to, and it is what surge_pic_slots_test.js reads. */
+  function syncPortPictures() { syncTaggedBlocks('port', 'test_port'); }
   function syncMethodColumns() { syncTaggedBlocks('method', 'test_method'); }
   document.addEventListener('DOMContentLoaded', function () {
-    // each per-port Applicable field re-runs the picture visibility when changed
-    document.querySelectorAll('[data-port-field]').forEach(function (el) {
-      var f = document.querySelector('[name="' + el.getAttribute('data-port-field') + '"]');
-      if (!f) return;
-      f.addEventListener('change', syncPortFieldPictures);
-      f.addEventListener('input', syncPortFieldPictures);
-    });
     [['test_port', syncPortPictures], ['test_method', syncMethodColumns]].forEach(function (pair) {
       var sel = document.querySelector('[name="' + pair[0] + '"]');
       if (sel) {
