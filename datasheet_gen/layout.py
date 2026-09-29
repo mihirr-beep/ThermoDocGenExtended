@@ -1126,6 +1126,14 @@ def ce_finalize_layout(doc):
         for k in range(start, last):
             paras[k].paragraph_format.keep_together = True
         for k in range(start, last - 1):
+            # Allow the page to break immediately BEFORE a picture. Gluing straight
+            # through a run of them makes the whole block unbreakable, and once it no
+            # longer fits a page Word has to break it somewhere - which stranded a label
+            # on the next page, away from the image it belongs to, with blank space left
+            # behind. Leaving the join before each picture free means the break lands
+            # between one image+caption pair and the next, never inside a pair.
+            if _has_image(paras[k + 1]):
+                continue
             paras[k].paragraph_format.keep_with_next = True
 
     # 2.5 Measurement Data, one record per Test.

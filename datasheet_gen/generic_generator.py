@@ -3452,6 +3452,51 @@ def _rs_ri_finalize(doc, context):
     _ce_strip_blanks_before_breaks(doc)
 
 
+#: RE prints its FUNCTIONAL CHECK data at 10pt; the rest of the document is 11.
+_RE_FC_TABLE_PT = 10
+
+
+def _re_section_tables(doc, heading):
+    """The tables that sit inside one Heading-2 section, in document order.
+
+    Scoped by SECTION rather than matched on a header row: this table's headings come
+    from the file the engineer uploads, so there is no fixed text to match on.
+    """
+    pm = {p._p: p for p in doc.paragraphs}
+    tm = {t._tbl: t for t in doc.tables}
+    want = heading.strip().upper()
+    inside, found = False, []
+    for el in doc.element.body.iterchildren():
+        if el.tag == qn("w:p"):
+            par = pm.get(el)
+            if par is None:
+                continue
+            name = (par.style.name if par.style is not None else "") or ""
+            if name.strip().lower().startswith("heading"):
+                text = " ".join((par.text or "").split()).upper()
+                if inside and not text.startswith(want):
+                    break                       # left the section
+                inside = text.startswith(want)
+        elif el.tag == qn("w:tbl") and inside:
+            tb = tm.get(el)
+            if tb is not None:
+                found.append(tb)
+    return found
+
+
+def _re_fc_table_font(doc, pt=_RE_FC_TABLE_PT):
+    """Set the font size of every run in RE's FUNCTIONAL CHECK tables."""
+    n = 0
+    for tb in _re_section_tables(doc, "FUNCTIONAL CHECK"):
+        for row in tb.rows:
+            for cell in row.cells:
+                for par in cell.paragraphs:
+                    for run in par.runs:
+                        run.font.size = Pt(pt)
+                        n += 1
+    return n
+
+
 def _re_finalize(doc, context):
     """Apply the RE reference-format corrections that can't be templated."""
     meta = (context or {}).get("_re_meta") or {}
@@ -3529,6 +3574,8 @@ def _re_finalize(doc, context):
     # not touch this; here we set space_AFTER on the one heading that needs it.
     _re_procedure_heading_gap(doc)
     _re_keep_subsections(doc)
+    # 1.x FUNCTIONAL CHECK data reads a point smaller than the body text.
+    _re_fc_table_font(doc)
     _re_fix_signature(doc)
 
 
