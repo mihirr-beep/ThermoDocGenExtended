@@ -2147,11 +2147,15 @@
   function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':String(s)); return d.innerHTML; }
   function cssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s; }
 
-  // Mirror datasheet_gen/generic_generator._box (aspect box the .docx fits images into)
+  // Mirror datasheet_gen/generic_generator._box (aspect box the .docx fits images into).
+  // The functional-check box is not copied here: g_form passes _box's own answer for this
+  // datasheet (16 x 9 cm on ESD, EFT, PFMF and SURGE), so the two cannot drift apart.
+  var FC_BOX_MM = {{ (fc_box_mm or [140, 52])|tojson }};
   function imageBoxMM(key){
     var k=(key||'').toLowerCase();
     if (k.indexOf('sign')>=0) return [40,20];     // signatures stay small
-    if (k.indexOf('img_fc')>=0) return [140,52];  // functional-check captures (3 per page)
+    // functional-check captures: the fixed img_fc_N slots and the repeatable esd_pic_fc_N
+    if (k.indexOf('img_fc')>=0 || k.indexOf('_pic_fc_')>=0) return FC_BOX_MM.slice();
     return [159.2,95];                            // photos + plots: 15.92 x 9.5 cm (W x H)
   }
   // Per-image document size in CM (Word-style Shape Width x Height). Falls back to

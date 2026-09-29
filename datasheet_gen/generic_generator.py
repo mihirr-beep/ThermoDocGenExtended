@@ -19,20 +19,21 @@ TPL_DIR = os.path.join(os.path.dirname(__file__), "word_templates")
 
 
 #: Datasheets whose functional-check capture is a 16 x 9 cm frame.
-_FC_16X9_CODES = ("EFT", "SURGE", "PFMF")
+_FC_16X9_CODES = ("EFT", "SURGE", "PFMF", "ESD")
 
 def _box(key, code=None):
     k = key.lower()
     if "sign" in k:
         return (40, 20)              # signatures stay small
     if "img_fc" in k or "_pic_fc_" in k:
-        # EFT, SURGE and PFMF print their capture at exactly 16 x 9 cm, the size their
-        # reference documents show in Word's Size panel - and 16 cm is the text column
-        # (15.92), so it runs margin to margin. Applied as an EXACT size (see
+        # EFT, SURGE, PFMF and ESD print their capture at exactly 16 x 9 cm, the size
+        # their reference documents show in Word's Size panel - and 16 cm is the text
+        # column (15.92), so it runs margin to margin. Applied as an EXACT size (see
         # _exact_size_slot), so a capture that is not 16:9 is fitted to the frame rather
         # than printing smaller: PFMF's 14 x 5.2 box was height-limiting a 16:9 capture
         # to 9.24 cm wide, which is what made it look small against the margins.
-        # ESD keeps the older short box; nobody has asked for it to change.
+        # ESD joined last, for the same reason: its capture printed 8.7 cm wide under
+        # 1.3 while the TEST SETUP PICTURES grid below it spans the text column.
         return (160, 90) if (code or "").upper() in _FC_16X9_CODES else (140, 52)
     # All test-setup photos and measurement/emission plots default to
     # 15.92 cm (W) x 9.5 cm (H) = 159.2 x 95 mm; editable per-image in the form.

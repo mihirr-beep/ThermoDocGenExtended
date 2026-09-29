@@ -441,6 +441,11 @@ def g_form(code, assignment_id):
         extra_photos=extra_photos,
         esd_ladder=esd_ladder, esd_level_fields=esd_level_fields,
         esd_pic_seed=esd_pic_seed,
+        # The functional-check photo box for THIS datasheet, taken from the generator so
+        # the form frames an upload - and labels its size - the way the document prints
+        # it. The form used to carry its own copy, which still said 14 x 5.2 (or 15.92 x
+        # 9.5) after _box moved to 16 x 9, so every capture was re-stretched on upload.
+        fc_box_mm=list(gg._box("esd_pic_fc_1", code)),
         reviewers=_reviewer_candidates(),
         assigned_reviewer_id=a.peer_reviewer_user_id,
         entry_status=a.status,
